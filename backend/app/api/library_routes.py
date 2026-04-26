@@ -1063,7 +1063,7 @@ def list_movies():
 
 @library_bp.route('/movies/<uuid:id>', methods=['GET'])
 def get_movie_detail(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1097,7 +1097,7 @@ def list_review_resources():
 
 @library_bp.route('/movies/<uuid:id>/resources', methods=['GET'])
 def get_movie_resources(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1106,7 +1106,7 @@ def get_movie_resources(id):
 
 @library_bp.route('/movies/<uuid:id>/seasons', methods=['GET'])
 def get_movie_seasons(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1120,7 +1120,7 @@ def get_movie_seasons(id):
 @library_bp.route('/movies/<uuid:id>', methods=['PATCH'])
 def update_movie_detail(id):
     """手动修改电影元数据。"""
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1176,7 +1176,7 @@ def update_movie_detail(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/refresh', methods=['POST'])
 def refresh_movie_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1230,7 +1230,7 @@ def refresh_movie_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/re-scrape', methods=['POST'])
 def re_scrape_movie_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1321,7 +1321,7 @@ def batch_re_scrape_movie_metadata():
             if not isinstance(raw_movie_id, str) or not raw_movie_id.strip():
                 return api_error(code=40024, msg=f"Invalid item at index {index}: movie id required")
 
-            movie = Movie.query.get(raw_movie_id.strip())
+            movie = db.session.get(Movie, raw_movie_id.strip())
             if not movie:
                 results.append({
                     "movie_id": raw_movie_id.strip(),
@@ -1384,7 +1384,7 @@ def batch_re_scrape_movie_metadata():
 
 @library_bp.route('/movies/<uuid:id>/metadata/preview', methods=['POST'])
 def preview_movie_metadata_pipeline(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1428,7 +1428,7 @@ def preview_movie_metadata_pipeline(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/search', methods=['GET'])
 def search_movie_metadata_candidates(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1459,7 +1459,7 @@ def search_movie_metadata_candidates(id):
 
 @library_bp.route('/resources/<uuid:id>/metadata', methods=['PATCH'])
 def update_resource_metadata(id):
-    resource = MediaResource.query.get(str(id))
+    resource = db.session.get(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -1491,7 +1491,7 @@ def update_resource_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/resources/metadata', methods=['PATCH'])
 def update_movie_resources_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1557,7 +1557,7 @@ def update_movie_resources_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/seasons/<int:season>/metadata', methods=['PATCH'])
 def update_movie_season_metadata(id, season):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1603,7 +1603,7 @@ def update_movie_season_metadata(id, season):
 
 @library_bp.route('/movies/<uuid:id>/metadata/match', methods=['POST'])
 def match_movie_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 

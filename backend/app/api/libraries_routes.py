@@ -67,7 +67,7 @@ def _scan_library_background_task(app, library_id):
     with app.app_context():
         session_started = False
         try:
-            library = Library.query.get(library_id)
+            library = db.session.get(Library, library_id)
             if not library:
                 logger.warning('Library scan skipped library_id=%s reason=not_found', library_id)
                 return
@@ -94,7 +94,7 @@ def _scan_library_background_task(app, library_id):
 
 
 def _get_library_or_404(id):
-    library = Library.query.get(id)
+    library = db.session.get(Library, id)
     if not library:
         return None, api_error(code=40410, msg='Library not found', http_status=404)
     return library, None
@@ -351,7 +351,7 @@ def bind_library_source(id):
     if not source_id:
         return api_error(code=40001, msg='Missing required field: source_id')
 
-    source = StorageSource.query.get(source_id)
+    source = db.session.get(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg='Source not found', http_status=404)
 

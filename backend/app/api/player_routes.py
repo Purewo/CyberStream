@@ -4,6 +4,7 @@ import os
 
 from flask import Blueprint, Response, redirect, request, stream_with_context
 
+from backend.app.extensions import db
 from backend.app.models import MediaResource
 from backend.app.providers.factory import provider_factory
 
@@ -38,7 +39,7 @@ def _guess_video_mime_type(resource):
 
 @player_bp.route('/resources/<uuid:id>/stream', methods=['GET'])
 def stream_resource(id):
-    resource = MediaResource.query.get(str(id))
+    resource = db.session.get(MediaResource, str(id))
     if not resource:
         logger.warning("Stream resource not found id=%s", id)
         return Response("Resource not found", status=404)

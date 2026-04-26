@@ -171,7 +171,7 @@ def get_featured_movies(limit=5, custom_hero_id=None):
     featured_movies = []
 
     if custom_hero_id:
-        hero_movie = Movie.query.get(custom_hero_id)
+        hero_movie = db.session.get(Movie, custom_hero_id)
         if hero_movie:
             featured_movies.append(hero_movie)
 

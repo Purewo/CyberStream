@@ -68,16 +68,16 @@
 - 保留 `include_duplicates` 或类似排查入口
 - 不在当前稳定版改变默认语义
 
-#### 1.2 SQLAlchemy 2.0 警告清理
+#### 1.2 SQLAlchemy 2.0 警告清理（已完成）
 需求：
 - 将 `Query.get()` 逐步迁移为 `db.session.get(Model, id)`
 
-风险：
-- 范围较广，但风险可控
+状态：
+- 已在 `develop/1.17.0` 完成等价迁移
+- 全量 unittest 已通过
 
 建议：
-- 单独开小版本做机械性迁移
-- 保持行为不变，跑全量测试
+- 后续新增代码继续使用 `db.session.get(Model, id)`
 
 #### 1.3 元数据复核工作台增强
 需求：

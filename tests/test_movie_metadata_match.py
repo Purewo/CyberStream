@@ -76,7 +76,7 @@ class MovieMetadataMatchTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("Movie metadata matched", payload["msg"])
 
-        refreshed = Movie.query.get(movie.id)
+        refreshed = db.session.get(Movie, movie.id)
         self.assertEqual("tv/67954", refreshed.tmdb_id)
         self.assertEqual("画江湖之不良人", refreshed.title)
         self.assertEqual(2016, refreshed.year)
@@ -122,7 +122,7 @@ class MovieMetadataMatchTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
 
-        refreshed = Movie.query.get(movie.id)
+        refreshed = db.session.get(Movie, movie.id)
         self.assertEqual("tv/302809", refreshed.tmdb_id)
         self.assertEqual("画江湖之不良人Ⅵ", refreshed.title)
         self.assertEqual(2016, refreshed.year)
