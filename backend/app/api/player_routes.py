@@ -1,40 +1,16 @@
 import logging
-import mimetypes
-import os
-
 from flask import Blueprint, Response, redirect, request, stream_with_context
 
 from backend.app.extensions import db
 from backend.app.models import MediaResource
 from backend.app.providers.factory import provider_factory
+from backend.app.services.playback import guess_video_mime_type
 
 logger = logging.getLogger(__name__)
 
 player_bp = Blueprint('player', __name__, url_prefix='/api/v1')
 
-VIDEO_MIME_TYPES = {
-    '.mp4': 'video/mp4',
-    '.m4v': 'video/mp4',
-    '.mkv': 'video/x-matroska',
-    '.webm': 'video/webm',
-    '.mov': 'video/quicktime',
-    '.avi': 'video/x-msvideo',
-    '.wmv': 'video/x-ms-wmv',
-    '.flv': 'video/x-flv',
-    '.ts': 'video/mp2t',
-    '.m2ts': 'video/mp2t',
-    '.iso': 'application/octet-stream',
-    '.rmvb': 'application/vnd.rn-realmedia-vbr',
-}
-
-
-def _guess_video_mime_type(resource):
-    filename = resource.filename or resource.path or ''
-    ext = os.path.splitext(filename)[1].lower()
-    if ext in VIDEO_MIME_TYPES:
-        return VIDEO_MIME_TYPES[ext]
-    guessed_type, _ = mimetypes.guess_type(filename)
-    return guessed_type or 'application/octet-stream'
+_guess_video_mime_type = guess_video_mime_type
 
 
 @player_bp.route('/resources/<uuid:id>/stream', methods=['GET'])
@@ -74,7 +50,7 @@ def stream_resource(id):
 
         headers = {
             'Accept-Ranges': 'bytes',
-            'Content-Type': _guess_video_mime_type(resource)
+            'Content-Type': guess_video_mime_type(resource)
         }
         if length:
             headers['Content-Length'] = str(length)

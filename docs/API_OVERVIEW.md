@@ -439,6 +439,7 @@
   - `resource_info.file`：文件名、路径、大小、容器、存储源
   - `resource_info.display`：展示标题、展示标签、季集、排序信息
   - `resource_info.technical`：分辨率、编码、HDR、音频、片源和质量层级
+  - `playback`：播放能力矩阵、外部播放器链接、字幕占位、网页音频兼容和转码状态
   - `metadata.trace`：解析/刮削留痕
   - `metadata.analysis`：路径清洗与刮削分析
   - `metadata.edit_context`：人工编辑上下文
@@ -454,6 +455,9 @@
   - `quality_tier/quality_tier_label/quality_rank/quality_is_reference/quality_is_original_quality`：资源质量层级
   - `flag_is_4k/flag_is_1080p/flag_is_hdr/flag_is_hdr10/flag_is_hdr10_plus/flag_is_hlg/flag_is_dolby_vision/flag_is_remux/flag_is_uhd_bluray/flag_is_lossless_audio/flag_is_original_quality/flag_is_movie_feature/flag_imax/flag_ten_bit`：解析得到的布尔辅助特征
   - `extra_tags`：仅放结构化字段覆盖不了的额外标签，例如 `IMAX`
+- `playback.stream_url` 是后端播放入口；外部播放器也可以使用该地址，AList/OpenList 会继续由该入口 302 到上游 `/d/...` 直链
+- `playback.external_player.subtitle_urls` 与 `playback.subtitles.items` 当前为占位空数组，后续接入字幕发现/下载后再填充
+- `playback.audio.web_decode_status` 会标记 DTS/AC3/E-AC3/TrueHD 等网页播放器常见无声风险；当前无 `ffmpeg` 时 `server_transcode.available=false`
 - 每个 `season_group` 额外包含：
   - `resource_ids`
   - `episode_count`

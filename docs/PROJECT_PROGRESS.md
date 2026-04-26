@@ -29,6 +29,9 @@
    - 先明确每个资源的可播放方式与限制，不直接改造现有播放主链路。
    - 输出直连/代理/跳转、Range、MIME、外部播放器、字幕、转码、FFmpeg 输入等能力字段。
    - 后续字幕、转码、投屏等功能都基于该矩阵逐步扩展。
+   - 当前已在资源对象中新增 `playback` 块，随 `GET /api/v1/movies/<id>/resources` 等已有接口返回。
+   - `playback.external_player.url` 暂指向后端 stream 入口，AList/OpenList 继续走 302 直链。
+   - 字幕当前只返回占位空数组；实时音频转码因运行环境未安装 `ffmpeg/ffprobe`，先返回不可用原因。
 
 2. 元数据工作台增强
    - 先增强失败分类、候选解释和批量重识别结果说明。

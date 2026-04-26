@@ -8,7 +8,7 @@ from tests.path_cleaner_test_utils import PROJECT_ROOT
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.app.models import MediaResource
+from backend.app.models import MediaResource, StorageSource
 
 
 class ResourceAnalysisSerializationTests(unittest.TestCase):
@@ -93,7 +93,7 @@ class ResourceAnalysisSerializationTests(unittest.TestCase):
 
         data = resource.to_dict()
 
-        self.assertEqual({"id", "resource_info", "metadata"}, set(data.keys()))
+        self.assertEqual({"id", "resource_info", "playback", "metadata"}, set(data.keys()))
         self.assertEqual("Movie - 2160P", data["resource_info"]["display"]["label"])
         self.assertEqual("Interstellar.2014.IMAX.UHD.BluRay.REMUX.2160p.HEVC.DV.HDR.TrueHD.7.1.Atmos.mkv", data["resource_info"]["file"]["filename"])
         self.assertEqual("mkv", data["resource_info"]["file"]["container"])
@@ -110,6 +110,42 @@ class ResourceAnalysisSerializationTests(unittest.TestCase):
         self.assertTrue(data["resource_info"]["technical"]["source_is_uhd_bluray"])
         self.assertEqual("reference", data["resource_info"]["technical"]["quality_tier"])
         self.assertEqual(["IMAX"], data["resource_info"]["technical"]["extra_tags"])
+        self.assertIn("external_player", data["playback"])
+        self.assertEqual([], data["playback"]["subtitles"]["items"])
+
+    def test_resource_to_dict_exposes_playback_matrix_for_external_players(self):
+        source = StorageSource(
+            id=1,
+            name="AList",
+            type="alist",
+            config={"base_url": "http://alist.local:5244", "token": "token"},
+        )
+        resource = MediaResource(
+            id="11111111-1111-1111-1111-111111111111",
+            source=source,
+            filename="Concert.2024.TrueHD.7.1.Atmos.mkv",
+            path="演唱会/Concert.2024.TrueHD.7.1.Atmos.mkv",
+            size=1234,
+            label="Movie - 2160P",
+            tech_specs={
+                "resolution": "2160P",
+                "resolution_rank": 2160,
+                "audio_codec": "Dolby TrueHD Atmos",
+            },
+        )
+
+        playback = resource.to_dict()["playback"]
+
+        self.assertEqual("/api/v1/resources/11111111-1111-1111-1111-111111111111/stream", playback["stream_url"])
+        self.assertEqual("redirect", playback["default_mode"])
+        self.assertIn("redirect", playback["playback_modes"])
+        self.assertTrue(playback["external_player"]["supported"])
+        self.assertEqual(playback["stream_url"], playback["external_player"]["url"])
+        self.assertEqual([], playback["external_player"]["subtitle_urls"])
+        self.assertFalse(playback["subtitles"]["supported"])
+        self.assertEqual("subtitle_api_not_implemented", playback["subtitles"]["reason"])
+        self.assertEqual("unsupported", playback["audio"]["web_decode_status"])
+        self.assertTrue(playback["audio"]["server_transcode"]["supported"])
 
     def test_resource_to_dict_upgrades_legacy_specs_from_filename(self):
         resource = MediaResource(

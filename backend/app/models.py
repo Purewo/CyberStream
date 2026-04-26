@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy.dialects.sqlite import JSON
 from backend.app.extensions import db
 from backend.app.providers.factory import provider_factory
+from backend.app.services.playback import build_resource_playback
 from backend.app.storage.source_registry import (
     build_source_display_root,
     get_source_capabilities,
@@ -1629,6 +1630,7 @@ class MediaResource(db.Model):
         return {
             "id": self.id,
             "resource_info": resource_info,
+            "playback": build_resource_playback(self, resource_info=resource_info),
             "metadata": {
                 "trace": metadata_trace,
                 "analysis": analysis,
