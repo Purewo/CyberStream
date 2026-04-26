@@ -1,0 +1,2628 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Cyber Media Center API (赛博影视)",
+    "description": "## 专业发烧级影视中心后端接口文档\n\n此文档定义了 Cyber Media 的核心 API 交互规范。旨在取代 Plex/Emby，提供高性能、低延迟的媒体管理与流媒体服务。\n\n### 🔗 API 生命周期说明 (x-lifecycle-status)\n我们在每个接口中定义了开发状态，请前端同学注意：\n\n1.  🔴 **pending** (未开发): 接口仅有定义，后端尚未实现，调用会返回 501。\n2.  🟠 **implemented_unverified** (已开发未验证): 代码已合并，但未经完整测试，可能存在 Bug。\n3.  ❌ **failed_verification** (验证失败): 测试发现严重问题，暂时禁止使用。\n4.  ⚠️ **passed_imperfect** (验证通过但格式不规范): 功能可用，但返回字段可能不全或命名不符合规范，后续会变动。\n5.  ✅ **stable** (验证通过): 接口稳定，可放心集成。\n\n### 🛡️ 鉴权说明\n所有非公开接口需在 Header 中携带 `Authorization: Bearer <token>`。",
+    "version": "1.11.0-beta",
+    "contact": {
+      "name": "Cyber Media Core Team",
+      "email": "dev@cybermedia.local"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://pw.pioneer.fan:84",
+      "description": "生产环境 (Production HTTPS)"
+    },
+    {
+      "url": "http://pioneer.fan:84",
+      "description": "生产环境 (Production HTTP IPv4)"
+    },
+    {
+      "url": "http://localhost:5004",
+      "description": "本地开发环境"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "✅ [验证通过] 健康检查",
+        "description": "检查后端服务连通性及数据库连接状态。",
+        "operationId": "healthCheck",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "服务正常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                },
+                "example": {
+                  "code": 200,
+                  "msg": "Pong",
+                  "data": {
+                    "status": "up",
+                    "version": "1.11.0"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scan": {
+      "get": {
+        "summary": "✅ [验证通过] 获取扫描状态",
+        "description": "轮询接口，用于获取当前扫描任务的实时进度。",
+        "operationId": "getScanStatus",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "当前状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ScanStatus"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "✅ [验证通过] 触发媒体库扫描",
+        "description": "异步触发全量或增量扫描。任务 ID 将在响应中返回，用于通过 WebSocket 监听进度。",
+        "operationId": "triggerScan",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "System"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "incremental"
+                    ],
+                    "default": "incremental"
+                  },
+                  "target_path": {
+                    "type": "string",
+                    "description": "指定扫描路径，留空则扫描全库"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "任务已接受",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "已有扫描任务正在运行"
+          }
+        }
+      }
+    },
+    "/api/v1/filters": {
+      "get": {
+        "summary": "🔵 [新增] 获取全局筛选字典",
+        "description": "统一获取侧边栏筛选菜单所需的所有元数据（分类、年份、国家等）。替代了之前零散的 genre/year/region 接口，提高前端加载效率。",
+        "operationId": "getGlobalFilters",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "include",
+            "in": "query",
+            "description": "可选：指定需要获取的筛选维度。如果为空，则返回所有。例如：'genres,years'",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "筛选字典",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FilterDictionaries"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/movies": {
+      "get": {
+        "summary": "✅ [验证通过] 获取电影列表 (全能筛选)",
+        "description": "获取电影库数据。支持多维度复合筛选：年份、地区、分类、关键词。",
+        "operationId": "listMovies",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "description": "搜索关键词",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "description": "分类筛选 (例如 'Action')。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "description": "地区/国家代码筛选 (例如 'US', 'CN', 'JP')。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "description": "年份筛选。支持单年份 '2023' 或范围 '2020-2024'。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "query",
+            "description": "存储源筛选",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "date_added",
+                "year",
+                "rating",
+                "title"
+              ],
+              "default": "date_added"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功返回分页数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/MovieSimple"
+                              }
+                            },
+                            "pagination": {
+                              "$ref": "#/components/schemas/PaginationMeta"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/movies/{id}": {
+      "get": {
+        "summary": "🟠 [已开发未验证] 获取电影详情",
+        "description": "获取单部电影的完整元数据。",
+        "operationId": "getMovieDetail",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "电影的唯一 UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "详情数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/MovieDetailed"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "未找到该电影"
+          }
+        }
+      },
+      "patch": {
+        "summary": "✅ [验证通过] 手动修改影视元数据",
+        "description": "手动更新影片元数据字段，用于修正刮削结果。",
+        "operationId": "updateMovieMetadata",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "电影 UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MovieMetadataPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功（HTTP 200；body.code 当前固定为 200）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovieDetailedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误"
+          },
+          "404": {
+            "description": "电影不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/movies/{id}/fix_match": {
+      "post": {
+        "summary": "🔵 [新增] 手动修正匹配 (Fix Match)",
+        "description": "当自动刮削错误时，用户可手动提供 TMDB ID，后端将重新下载元数据并覆盖当前电影信息。",
+        "operationId": "fixMovieMatch",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "电影的唯一 UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tmdb_id"
+                ],
+                "properties": {
+                  "tmdb_id": {
+                    "type": "string",
+                    "description": "正确的 TMDB ID"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "修正任务已提交",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{id}/stream": {
+      "get": {
+        "summary": "⚠️ [格式不规范] 视频流媒体",
+        "description": "直接返回二进制视频流。",
+        "operationId": "streamVideo",
+        "x-lifecycle-status": "passed_imperfect",
+        "tags": [
+          "Player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "container",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hls",
+                "mp4",
+                "direct"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "视频流",
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Range 请求部分内容"
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{id}/subtitles": {
+      "get": {
+        "summary": "🔵 [新增] 获取字幕列表",
+        "description": "获取与该视频资源关联的字幕文件（内置+外挂）。",
+        "operationId": "listSubtitles",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "视频资源 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "字幕列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Subtitle"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/history": {
+      "get": {
+        "summary": "❌ [验证失败] 获取观看历史",
+        "description": "性能优化中。",
+        "operationId": "getHistory",
+        "x-lifecycle-status": "failed_verification",
+        "tags": [
+          "User"
+        ],
+        "responses": {
+          "200": {
+            "description": "历史记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "🟠 [已开发未验证] 上报播放进度",
+        "description": "上报播放进度心跳。",
+        "operationId": "reportProgress",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "User"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "resource_id",
+                  "position_sec",
+                  "total_duration",
+                  "device_id"
+                ],
+                "properties": {
+                  "resource_id": {
+                    "type": "string"
+                  },
+                  "position_sec": {
+                    "type": "integer",
+                    "description": "当前播放秒数"
+                  },
+                  "total_duration": {
+                    "type": "integer",
+                    "description": "视频总秒数 (必须由播放器提供)"
+                  },
+                  "device_id": {
+                    "type": "string",
+                    "description": "设备唯一标识 (UUID)，用于多端续播区分"
+                  },
+                  "device_name": {
+                    "type": "string",
+                    "description": "设备名称 (可选)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "上报成功"
+          }
+        }
+      },
+      "delete": {
+        "summary": "🔵 [新增] 清空观看历史",
+        "description": "清空当前用户的所有观看历史记录。",
+        "operationId": "clearAllHistory",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "User"
+        ],
+        "responses": {
+          "200": {
+            "description": "清空成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/history/{resource_id}": {
+      "delete": {
+        "summary": "🔵 [新增] 删除单条历史记录",
+        "description": "删除指定资源（电影/剧集单集）的观看记录。",
+        "operationId": "deleteHistoryItem",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "User"
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "description": "要删除的资源 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "记录不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/storage/sources": {
+      "get": {
+        "summary": "✅ [验证通过] 获取存储源列表",
+        "description": "列出所有已配置的存储源。",
+        "operationId": "listStorageSources",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Storage"
+        ],
+        "responses": {
+          "200": {
+            "description": "存储源列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/StorageSource"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "🟠 [已开发未验证] 添加存储源",
+        "description": "添加新的媒体库来源。",
+        "operationId": "addStorageSource",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageSourceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "添加成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/sources/{id}": {
+      "delete": {
+        "summary": "🟠 [已开发未验证] 删除存储源",
+        "description": "移除指定的存储源配置。",
+        "operationId": "deleteStorageSource",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "存储源 ID",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "keep_metadata",
+            "in": "query",
+            "description": "是否保留元数据。",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "无法删除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "未找到指定存储源"
+          }
+        }
+      },
+      "patch": {
+        "summary": "🟠 [已开发未验证] 更新存储源配置",
+        "description": "更新存储源的连接信息或别名。",
+        "operationId": "updateStorageSource",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "存储源 ID",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageSourceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/preview": {
+      "post": {
+        "summary": "🔵 [新增] 预览/浏览存储源目录",
+        "description": "在不保存存储源的情况下，测试连接并浏览远程目录结构。",
+        "operationId": "previewStorage",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoragePreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "目录列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/FileItem"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "连接失败或配置错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/sources/{id}/scan": {
+      "post": {
+        "summary": "✅ [验证通过] 扫描指定存储源",
+        "description": "仅对指定的存储源（如某个 WebDAV）触发扫描，实现数据隔离更新。",
+        "operationId": "scanSource",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Storage"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "存储源 ID",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "扫描任务已接受",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/libraries": {
+      "get": {
+        "summary": "✅ [验证通过] 获取资源库列表",
+        "description": "列出所有逻辑资源库。",
+        "operationId": "listLibraries",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "responses": {
+          "200": {
+            "description": "资源库列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "✅ [验证通过] 创建资源库",
+        "description": "创建新的逻辑资源库。",
+        "operationId": "createLibrary",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功（HTTP 201；body.code 当前固定为 200）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}": {
+      "get": {
+        "summary": "✅ [验证通过] 获取资源库详情",
+        "description": "获取资源库详情及已绑定来源。",
+        "operationId": "getLibrary",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "资源库详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      },
+      "patch": {
+        "summary": "✅ [验证通过] 更新资源库",
+        "description": "更新资源库基础信息。",
+        "operationId": "updateLibrary",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      },
+      "delete": {
+        "summary": "✅ [验证通过] 删除资源库",
+        "description": "删除资源库及其绑定关系。",
+        "operationId": "deleteLibrary",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/sources": {
+      "get": {
+        "summary": "✅ [验证通过] 获取资源库来源绑定列表",
+        "description": "查看资源库当前绑定的所有存储源。",
+        "operationId": "listLibrarySources",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "绑定列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySourceBindingListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      },
+      "post": {
+        "summary": "✅ [验证通过] 绑定资源库来源",
+        "description": "为资源库绑定一个存储源及可选根路径。",
+        "operationId": "bindLibrarySource",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibrarySourceBindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "绑定成功（HTTP 201；body.code 当前固定为 200）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySourceBindingResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库或来源不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/sources/{binding_id}": {
+      "patch": {
+        "summary": "✅ [验证通过] 更新资源库来源绑定",
+        "description": "更新绑定的根路径、顺序与启用状态。",
+        "operationId": "updateLibrarySourceBinding",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibrarySourceUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibrarySourceBindingResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "绑定不存在"
+          }
+        }
+      },
+      "delete": {
+        "summary": "✅ [验证通过] 解绑资源库来源",
+        "description": "解除资源库与存储源的绑定关系。",
+        "operationId": "deleteLibrarySourceBinding",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "解绑成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "绑定不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/movies": {
+      "get": {
+        "summary": "✅ [验证通过] 按资源库获取影片列表",
+        "description": "按资源库绑定的 source + root_path 聚合影片列表。",
+        "operationId": "listLibraryMovies",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "影片列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovieListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/featured": {
+      "get": {
+        "summary": "✅ [验证通过] 按资源库获取置顶内容",
+        "description": "按资源库获取 featured 内容。",
+        "operationId": "getLibraryFeatured",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "置顶内容",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MovieDetailed"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/recommendations": {
+      "get": {
+        "summary": "✅ [验证通过] 按资源库获取推荐内容",
+        "description": "按资源库获取 recommendations。",
+        "operationId": "getLibraryRecommendations",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 12
+            }
+          },
+          {
+            "name": "strategy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "default",
+                "latest",
+                "top_rated"
+              ],
+              "default": "default"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "推荐内容",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MovieSimple"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/filters": {
+      "get": {
+        "summary": "✅ [验证通过] 按资源库获取筛选字典",
+        "description": "按资源库获取 genres/years/countries 筛选项。",
+        "operationId": "getLibraryFilters",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "筛选字典",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FilterDictionaries"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源库不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/scan": {
+      "post": {
+        "summary": "✅ [验证通过] 按资源库触发扫描",
+        "description": "按资源库绑定关系触发扫描，支持 root_path 限定起始路径。",
+        "operationId": "triggerLibraryScan",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "扫描任务已接受（HTTP 202；body.code 当前固定为 200）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "资源库无可用绑定"
+          },
+          "404": {
+            "description": "资源库不存在"
+          },
+          "429": {
+            "description": "已有扫描任务运行中"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 200
+          },
+          "msg": {
+            "type": "string",
+            "example": "success"
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "msg": {
+            "type": "string"
+          }
+        }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "properties": {
+          "current_page": {
+            "type": "integer"
+          },
+          "page_size": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        }
+      },
+      "ScanStatus": {
+        "type": "object",
+        "description": "实时扫描状态（按当前后端真实返回）",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "scanning"
+          },
+          "phase": {
+            "type": "string",
+            "example": "indexing"
+          },
+          "current_source": {
+            "type": "string",
+            "example": "WEBDAV:剑来"
+          },
+          "total_items": {
+            "type": "integer",
+            "example": 0
+          },
+          "processed_items": {
+            "type": "integer",
+            "example": 0
+          }
+        }
+      },
+      "Genre": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Action"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL友好的标识符",
+            "example": "action"
+          },
+          "count": {
+            "type": "integer",
+            "description": "该分类下的影片数量",
+            "example": 156
+          }
+        }
+      },
+      "Region": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "United States"
+          },
+          "code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 代码",
+            "example": "US"
+          },
+          "count": {
+            "type": "integer",
+            "description": "该地区下的影片数量",
+            "example": 420
+          }
+        }
+      },
+      "YearStats": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "example": 2023
+          },
+          "count": {
+            "type": "integer",
+            "example": 85
+          }
+        }
+      },
+      "FilterDictionaries": {
+        "type": "object",
+        "description": "全局筛选字典集合，包含所有用于前端筛选器的数据",
+        "properties": {
+          "genres": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Genre"
+            }
+          },
+          "years": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/YearStats"
+            }
+          },
+          "countries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Region"
+            }
+          }
+        }
+      },
+      "FileItem": {
+        "type": "object",
+        "description": "文件或目录项，用于预览接口",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Interstellar (2014)"
+          },
+          "path": {
+            "type": "string",
+            "description": "相对路径或完整路径",
+            "example": "/Movies/Interstellar (2014)"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "dir"
+            ],
+            "example": "dir"
+          },
+          "size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "文件大小(字节)，目录可能为null"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "extension": {
+            "type": "string",
+            "nullable": true,
+            "example": "mkv"
+          },
+          "mime_type": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "StoragePreviewRequest": {
+        "type": "object",
+        "description": "预览请求，不需提供 name",
+        "required": [
+          "type",
+          "config"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "local",
+              "webdav",
+              "smb",
+              "ftp",
+              "sftp"
+            ],
+            "description": "存储协议类型"
+          },
+          "target_path": {
+            "type": "string",
+            "default": "/",
+            "description": "希望浏览的目录路径"
+          },
+          "config": {
+            "description": "连接配置信息",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConfigLocal"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigWebDAV"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigSMB"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigFTP"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigSFTP"
+              }
+            ]
+          }
+        }
+      },
+      "StorageSource": {
+        "type": "object",
+        "description": "存储源配置实体",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Home NAS SMB"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "local",
+              "smb",
+              "webdav",
+              "ftp",
+              "sftp"
+            ],
+            "example": "smb"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "显示给前端的路径摘要"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline",
+              "scanning"
+            ]
+          }
+        }
+      },
+      "StorageSourceRequest": {
+        "type": "object",
+        "description": "添加存储源请求体",
+        "required": [
+          "name",
+          "type",
+          "config"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "My Cloud Disk",
+            "description": "自定义别名"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "local",
+              "webdav",
+              "smb",
+              "ftp",
+              "sftp"
+            ],
+            "description": "存储协议类型"
+          },
+          "config": {
+            "description": "根据协议类型动态变化的配置对象",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConfigLocal"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigWebDAV"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigSMB"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigFTP"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigSFTP"
+              }
+            ]
+          }
+        }
+      },
+      "ConfigLocal": {
+        "type": "object",
+        "title": "Local Config",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "服务器本地绝对路径",
+            "example": "/data/media/movies"
+          }
+        }
+      },
+      "ConfigWebDAV": {
+        "type": "object",
+        "title": "WebDAV Config",
+        "required": [
+          "host",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "域名或IP (不含 http 前缀)"
+          },
+          "port": {
+            "type": "integer",
+            "default": 443
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "secure": {
+            "type": "boolean",
+            "default": true,
+            "description": "True=HTTPS, False=HTTP"
+          },
+          "root": {
+            "type": "string",
+            "default": "/",
+            "description": "WebDAV 挂载根路径"
+          }
+        }
+      },
+      "ConfigSMB": {
+        "type": "object",
+        "title": "SMB Config",
+        "required": [
+          "host",
+          "share",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "SMB服务器地址 (server_name)"
+          },
+          "share": {
+            "type": "string",
+            "description": "共享文件夹名称 (share_name)"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "default": 445
+          },
+          "workgroup": {
+            "type": "string",
+            "description": "Workgroup 或 Domain"
+          }
+        }
+      },
+      "ConfigFTP": {
+        "type": "object",
+        "title": "FTP Config",
+        "required": [
+          "host",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "default": 21
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfigSFTP": {
+        "type": "object",
+        "title": "SFTP Config",
+        "required": [
+          "host",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "域名或IP (不含 http 前缀)"
+          },
+          "port": {
+            "type": "integer",
+            "default": 22
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "secure": {
+            "type": "boolean",
+            "default": true,
+            "description": "True=HTTPS, False=HTTP"
+          },
+          "root": {
+            "type": "string",
+            "default": "/",
+            "description": "SFTP 挂载根路径"
+          }
+        }
+      },
+      "MovieSimple": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "poster_url": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "number"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "country": {
+            "type": "string",
+            "description": "主要地区/国家代码 (如 'US', 'CN')",
+            "example": "US"
+          },
+          "source_ids": {
+            "type": "array",
+            "description": "该电影存在于哪些存储源ID中",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "user_data": {
+            "type": "object",
+            "description": "用户相关状态",
+            "properties": {
+              "is_played": {
+                "type": "boolean"
+              },
+              "last_played_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "date_added": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MovieDetailed": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MovieSimple"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "original_title": {
+                "type": "string"
+              },
+              "overview": {
+                "type": "string"
+              },
+              "backdrop_url": {
+                "type": "string"
+              },
+              "resources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Resource"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Resource": {
+        "type": "object",
+        "description": "具体的视频文件资源，包含来源信息",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "integer",
+            "description": "所属存储源 ID"
+          },
+          "source_name": {
+            "type": "string",
+            "example": "Home NAS"
+          },
+          "protocol": {
+            "type": "string",
+            "example": "smb"
+          },
+          "relative_path": {
+            "type": "string",
+            "description": "相对于存储源根目录的路径，非绝对路径"
+          },
+          "quality_label": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "description": "文件大小"
+          },
+          "container": {
+            "type": "string",
+            "example": "mkv"
+          },
+          "media_info": {
+            "type": "object",
+            "description": "详细媒体编码信息",
+            "properties": {
+              "video_codec": {
+                "type": "string",
+                "example": "hevc"
+              },
+              "audio_codec": {
+                "type": "string",
+                "example": "truehd"
+              },
+              "resolution": {
+                "type": "string",
+                "example": "3840x2160"
+              },
+              "bitrate": {
+                "type": "integer",
+                "description": "Kbps",
+                "example": 24500
+              }
+            }
+          }
+        }
+      },
+      "Subtitle": {
+        "type": "object",
+        "description": "字幕文件信息",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "字幕文件的资源 ID"
+          },
+          "title": {
+            "type": "string",
+            "example": "Chinese (Simplified)"
+          },
+          "language": {
+            "type": "string",
+            "example": "chi"
+          },
+          "format": {
+            "type": "string",
+            "example": "srt"
+          },
+          "is_external": {
+            "type": "boolean",
+            "description": "true=外挂字幕, false=内嵌字幕"
+          },
+          "source_path": {
+            "type": "string",
+            "description": "字幕文件相对路径"
+          }
+        }
+      },
+      "Library": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "电影库"
+          },
+          "slug": {
+            "type": "string",
+            "example": "movies"
+          },
+          "library_type": {
+            "type": "string",
+            "example": "movie"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "sort_order": {
+            "type": "integer",
+            "example": 0
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "LibrarySourceBinding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "library_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "source_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "root_path": {
+            "type": "string",
+            "example": "剑来"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "tv"
+          },
+          "scrape_enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "scan_order": {
+            "type": "integer",
+            "example": 0
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "LibraryCreateRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "slug"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "电影库"
+          },
+          "slug": {
+            "type": "string",
+            "example": "movies"
+          },
+          "library_type": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "tv",
+              "mixed",
+              "anime",
+              "documentary"
+            ],
+            "default": "movie"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "sort_order": {
+            "type": "integer",
+            "default": 0
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "LibraryUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "电影库"
+          },
+          "slug": {
+            "type": "string",
+            "example": "movies"
+          },
+          "library_type": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "tv",
+              "mixed",
+              "anime",
+              "documentary"
+            ],
+            "default": "movie"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "sort_order": {
+            "type": "integer",
+            "default": 0
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "LibrarySourceBindRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "example": 1
+          },
+          "root_path": {
+            "type": "string",
+            "default": "/",
+            "example": "剑来"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "tv"
+          },
+          "scrape_enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "scan_order": {
+            "type": "integer",
+            "default": 0
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "LibrarySourceUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "root_path": {
+            "type": "string",
+            "example": "剑来/第一季"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "tv"
+          },
+          "scrape_enabled": {
+            "type": "boolean"
+          },
+          "scan_order": {
+            "type": "integer"
+          },
+          "is_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MovieMetadataPatchRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "original_title": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "rating": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "description": {
+            "type": "string"
+          },
+          "cover": {
+            "type": "string"
+          },
+          "background_cover": {
+            "type": "string"
+          },
+          "category": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "director": {
+            "type": "string"
+          },
+          "actors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "country": {
+            "type": "string"
+          }
+        }
+      },
+      "LibraryDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Library"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LibrarySourceBinding"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "LibraryMovieListData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MovieSimple"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          }
+        }
+      },
+      "LibraryListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "LibraryDetailResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/LibraryDetail"
+              }
+            }
+          }
+        ]
+      },
+      "LibrarySourceBindingListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LibrarySourceBinding"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "LibrarySourceBindingResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/LibrarySourceBinding"
+              }
+            }
+          }
+        ]
+      },
+      "LibraryMovieListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/LibraryMovieListData"
+              }
+            }
+          }
+        ]
+      },
+      "MovieDetailedResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/MovieDetailed"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
