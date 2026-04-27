@@ -44,6 +44,8 @@
    - 面向首页或独立入口补强“现在适合看什么”的推荐能力。
    - 优先综合观看历史、未继续观看、最近入库、评分、质量标签、类型多样性和资源可播放性。
    - 避免只做随机推荐，返回可解释原因，方便前端展示推荐文案。
+   - 已补强全局 `/recommendations` 与库级 `/libraries/<id>/recommendations`：`default` 升级为综合推荐，新增 `continue_watching` 策略，并给每个影片条目返回 `recommendation` 理由、分数、排序和信号。
+   - 已新增单片上下文推荐 `/movies/<id>/recommendations`：详情/播放页下方按同系列/同标题族、同类型、同分区兜底排序，并强制动漫与非动漫互不推荐；资源库内详情页可传 `library_id`，先推库内影视，不足再全局补齐。
 
 ## 2026-04-25
 
@@ -219,6 +221,11 @@
   - `POST /api/v1/metadata/re-scrape`
   - `GET /api/v1/metadata/overview`
   - `GET /api/v1/metadata/work-items`
+- 元数据工作台接口已补强复核反馈：
+  - 单片 preview/re-scrape 返回 `explanation`，说明候选、解析信号、结果分类和推荐动作
+  - 批量 re-scrape 逐条返回 `status/changed/updated_fields/season_metadata_result`
+  - 批量失败项返回 `error.category/retryable/recommended_action`，前端可区分无资源、不可读、请求错误和后端错误
+  - 候选搜索返回 `rank/match_explanation`，说明标题、年份和媒体类型命中信号
 - 已补齐相关筛选能力：
   - `/api/v1/movies` 支持 `metadata_source_group`、`metadata_review_priority`、`metadata_issue_code`、`needs_attention`
   - `/api/v1/filters` 默认返回 `metadata_source_groups`、`metadata_review_priorities`、`metadata_issue_codes`

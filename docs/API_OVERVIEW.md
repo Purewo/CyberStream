@@ -161,7 +161,13 @@
 
 支持参数：
 - `limit`
-- `strategy=default|latest|top_rated`
+- `strategy=default|latest|top_rated|surprise|continue_watching`
+
+说明：
+- 返回结构仍是影片数组
+- 每个影片条目会额外带 `recommendation`
+- `recommendation.primary_reason` 给前端展示主推荐理由
+- `recommendation.reasons` 包含续看、最近入库、高评分、清晰度、可播放资源、类型多样性等信号
 
 ### `GET /api/v1/libraries/<id>/filters`
 按资源库获取筛选项。
@@ -341,7 +347,32 @@
 
 查询参数示例：
 - `limit`
-- `strategy=default|latest|top_rated`
+- `strategy=default|latest|top_rated|surprise|continue_watching`
+
+说明：
+- `default` 现在是综合推荐：会考虑续看、最近入库、评分、清晰度、可播放资源和类型多样性
+- `latest` 偏最近入库
+- `top_rated` 偏高评分
+- `continue_watching` 偏未看完的续看内容
+- `surprise` 保留轻随机探索
+- 每个影片条目会带 `recommendation`，便于前端展示推荐理由而不是只展示随机列表
+
+### `GET /api/v1/movies/<id>/recommendations`
+获取单片上下文相关推荐，适合详情页或播放页下方列表。
+
+支持参数：
+- `limit`
+- `library_id`：可选。资源库内详情页传当前资源库 ID，推荐会先从该库最终影片集合里选，不足再从全局补齐。
+
+说明：
+- 返回结构仍是影片数组，每个条目带 `recommendation`
+- 未传 `library_id` 时按全局单片上下文推荐
+- 传 `library_id` 时先按当前资源库候选排序，库内候选不足 `limit` 才使用库外候选补齐
+- 同系列 / 同标题族优先，例如同一电影系列或误拆成多个条目的不同季
+- 同系列数量不足时，用同类型内容补齐
+- 同类型仍不足时，只在同分区内兜底
+- 动漫与非动漫严格隔离：当前影片含 `动画` 时只推荐动漫；当前影片不含 `动画` 时绝不推荐动漫
+- 候选不足时允许返回少于 `limit`，不会跨动漫边界补齐
 
 ### `GET /api/v1/homepage`
 获取首页门户聚合数据。
@@ -546,7 +577,10 @@
 
 说明：
 - 每条影片独立执行，返回逐条结果和 summary
-- `summary` 当前包含 `total`、`updated`、`failed`、`updated_movie_ids`
+- 每条结果会返回 `status`、`changed`、`updated_fields`、`season_metadata_result`
+- 成功结果会带 `explanation`，说明本次候选来源、匹配置信度、解析信号和是否仍需人工复核
+- 失败结果会带分类后的 `error.category`、`retryable`、`recommended_action`
+- `summary` 当前包含 `total`、`succeeded`、`updated`、`unchanged`、`failed`、`status_counts`、`updated_movie_ids`、`failed_movie_ids`
 - 适合前端做批量“重新识别 / 补刮削”操作
 
 ### `POST /api/v1/movies/<id>/metadata/preview`
@@ -560,6 +594,7 @@
 - 只基于当前影片已有资源做定点预览
 - 返回 `current` 和 `preview` 两份结果，适合前端做 diff 弹窗或确认面板
 - 返回 `diff`，可直接区分哪些字段会变化、哪些字段被锁阻止覆盖
+- 返回 `explanation`，前端可直接展示为什么是 TMDB 严格命中、fallback 候选、本地 NFO、占位或孤儿分组
 - 不会修改 `movie`、`resource`、`season metadata`
 
 ### `GET /api/v1/movies/<id>/metadata/search`
@@ -574,6 +609,7 @@
 说明：
 - 未传 `query` 时，默认使用当前影片的 `original_title` 或 `title`
 - 返回候选列表，包含 `tmdb_id`、标题、年份、简介、海报、背景图、评分等
+- 每个候选会带 `rank` 和 `match_explanation`，说明标题、年份、媒体类型、海报/评分等命中信号，便于前端展示候选解释
 
 ### `POST /api/v1/movies/<id>/metadata/match`
 将单条影片手动匹配到指定 TMDB 结果，不触发扫描。

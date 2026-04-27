@@ -719,7 +719,7 @@
     "/api/v1/libraries/{id}/recommendations": {
       "get": {
         "summary": "✅ [验证通过] 按资源库获取推荐内容",
-        "description": "按资源库最终内容集获取 recommendations，支持手动加入与手动排除规则。",
+        "description": "按资源库最终内容集获取 recommendations，支持手动加入与手动排除规则。每个影片条目会带 recommendation 推荐理由。",
         "operationId": "getLibraryRecommendations",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -750,7 +750,9 @@
               "enum": [
                 "default",
                 "latest",
-                "top_rated"
+                "top_rated",
+                "surprise",
+                "continue_watching"
               ],
               "default": "default"
             }
@@ -1428,7 +1430,7 @@
             "description": "请求参数错误"
           },
           "404": {
-            "description": "电影不存在"
+            "description": "电影不存在；传入 library_id 时也可能是资源库不存在"
           }
         }
       }
@@ -1667,6 +1669,18 @@
               "type": "integer",
               "default": 8
             }
+          },
+          {
+            "name": "media_type_hint",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true,
+              "enum": [
+                "movie",
+                "tv"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1770,6 +1784,60 @@
         }
       }
     },
+    "/api/v1/movies/{id}/recommendations": {
+      "get": {
+        "summary": "获取单片上下文相关推荐",
+        "description": "用于详情页或播放页下方推荐。同系列/同标题族优先，其次同类型，最后同动漫/非动漫分区兜底；动漫与非动漫严格隔离。资源库内详情页可传 library_id，服务端会先从该资源库最终影片集合推荐，不足再从全局补齐。",
+        "operationId": "getMovieContextRecommendations",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "电影 UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 6,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "library_id",
+            "in": "query",
+            "description": "可选资源库 ID；传入后先推荐该库内影片，不足再补全局候选。",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "上下文推荐影视列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovieSimpleListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "电影不存在"
+          }
+        }
+      }
+    },
     "/api/v1/movies/{id}/seasons": {
       "get": {
         "summary": "✅ [验证通过] 获取影片季列表",
@@ -1867,7 +1935,7 @@
     "/api/v1/recommendations": {
       "get": {
         "summary": "获取全局推荐影视",
-        "description": "返回全局推荐影视列表。支持 latest、top_rated 和 default/random 策略。",
+        "description": "返回全局推荐影视列表。default 会综合续看、最近入库、评分、质量、类型多样性和资源可播放性；每个影片条目会带 recommendation 推荐理由。",
         "operationId": "getRecommendations",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -1892,7 +1960,8 @@
                 "default",
                 "latest",
                 "top_rated",
-                "surprise"
+                "surprise",
+                "continue_watching"
               ],
               "default": "default"
             }
@@ -3944,6 +4013,84 @@
           }
         }
       },
+      "MovieRecommendationReason": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "weight": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "MovieRecommendationSignals": {
+        "type": "object",
+        "properties": {
+          "progress_ratio": {
+            "type": "number",
+            "description": "最近观看进度，0 到 1"
+          },
+          "quality_badge": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "Remux",
+              "4K",
+              "HD",
+              null
+            ]
+          },
+          "resource_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "MovieRecommendation": {
+        "type": "object",
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "default",
+              "latest",
+              "top_rated",
+              "surprise",
+              "continue_watching",
+              "context"
+            ]
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "score": {
+            "type": "number"
+          },
+          "primary_reason": {
+            "$ref": "#/components/schemas/MovieRecommendationReason"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MovieRecommendationReason"
+            }
+          },
+          "reason_text": {
+            "type": "string"
+          },
+          "signals": {
+            "$ref": "#/components/schemas/MovieRecommendationSignals"
+          }
+        }
+      },
       "MovieSimple": {
         "type": "object",
         "properties": {
@@ -4031,6 +4178,9 @@
               "both"
             ],
             "description": "仅库级接口返回：auto 表示由挂载路径自动命中，manual 表示手动加入，both 表示两者同时命中。"
+          },
+          "recommendation": {
+            "$ref": "#/components/schemas/MovieRecommendation"
           },
           "user_data": {
             "$ref": "#/components/schemas/PlaybackUserData"
@@ -5620,6 +5770,40 @@
           }
         ]
       },
+      "MovieMatchSearchExplanation": {
+        "type": "object",
+        "properties": {
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "reason_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "query": {
+            "type": "string"
+          },
+          "year_hint": {
+            "type": "integer",
+            "nullable": true
+          },
+          "year_delta": {
+            "type": "integer",
+            "nullable": true
+          },
+          "media_type_hint": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "MovieMatchSearchResult": {
         "type": "object",
         "properties": {
@@ -5659,6 +5843,12 @@
               "movie",
               "tv"
             ]
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "match_explanation": {
+            "$ref": "#/components/schemas/MovieMatchSearchExplanation"
           }
         }
       },
@@ -6285,6 +6475,152 @@
           }
         }
       },
+      "MovieMetadataResolutionClassification": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "external_match、external_match_needs_review、placeholder_metadata、local_only_metadata、orphan_group 等"
+          },
+          "label": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "matched_needs_review",
+              "local_only",
+              "local_placeholder",
+              "unresolved"
+            ]
+          },
+          "requires_review": {
+            "type": "boolean"
+          },
+          "recommended_action": {
+            "type": "string"
+          }
+        }
+      },
+      "MovieMetadataResolutionCandidate": {
+        "type": "object",
+        "properties": {
+          "tmdb_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "resolved_tmdb_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "media_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv",
+              null
+            ]
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "original_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "year": {
+            "type": "integer",
+            "nullable": true
+          },
+          "source_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_group": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "is_external_match": {
+            "type": "boolean"
+          },
+          "has_poster": {
+            "type": "boolean"
+          },
+          "has_backdrop": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MovieMetadataResolutionSignals": {
+        "type": "object",
+        "properties": {
+          "title_hint": {
+            "type": "string",
+            "nullable": true
+          },
+          "year_hint": {
+            "type": "integer",
+            "nullable": true
+          },
+          "media_type_hint": {
+            "type": "string",
+            "nullable": true
+          },
+          "parse_layer": {
+            "type": "string"
+          },
+          "parse_strategy": {
+            "type": "string"
+          },
+          "parse_confidence": {
+            "type": "string"
+          },
+          "file_count": {
+            "type": "integer"
+          },
+          "nfo_candidate_count": {
+            "type": "integer"
+          },
+          "has_nfo_candidates": {
+            "type": "boolean"
+          },
+          "sample_path": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MovieMetadataResolutionFeedback": {
+        "type": "object",
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/MovieMetadataResolutionClassification"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/MovieMetadataResolutionCandidate"
+          },
+          "signals": {
+            "$ref": "#/components/schemas/MovieMetadataResolutionSignals"
+          },
+          "explanation": {
+            "type": "string"
+          }
+        }
+      },
       "MovieMetadataEntityContext": {
         "type": "object",
         "properties": {
@@ -6293,6 +6629,10 @@
           },
           "year": {
             "type": "integer",
+            "nullable": true
+          },
+          "media_type_hint": {
+            "type": "string",
             "nullable": true
           },
           "parse_layer": {
@@ -6312,12 +6652,59 @@
           },
           "resource_count": {
             "type": "integer"
+          },
+          "sample_path": {
+            "type": "string",
+            "nullable": true
           }
         }
+      },
+      "MovieMetadataSeasonApplyResult": {
+        "type": "object",
+        "properties": {
+          "upserted": {
+            "type": "integer"
+          },
+          "deleted": {
+            "type": "integer"
+          }
+        }
+      },
+      "MovieMetadataBatchError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiError"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "category": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "recommended_action": {
+                "type": "string"
+              }
+            }
+          }
+        ]
       },
       "MovieMetadataReScrapeResponseData": {
         "type": "object",
         "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "updated",
+              "unchanged",
+              "failed"
+            ]
+          },
+          "changed": {
+            "type": "boolean"
+          },
           "movie": {
             "$ref": "#/components/schemas/MovieDetailed"
           },
@@ -6327,11 +6714,20 @@
           "entity_context": {
             "$ref": "#/components/schemas/MovieMetadataEntityContext"
           },
+          "explanation": {
+            "$ref": "#/components/schemas/MovieMetadataResolutionFeedback"
+          },
           "updated_fields": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "season_metadata_result": {
+            "$ref": "#/components/schemas/MovieMetadataSeasonApplyResult"
+          },
+          "resource_trace_count": {
+            "type": "integer"
           }
         }
       },
@@ -6404,6 +6800,26 @@
             "type": "string",
             "nullable": true
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "updated",
+              "unchanged",
+              "failed"
+            ]
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "updated_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "season_metadata_result": {
+            "$ref": "#/components/schemas/MovieMetadataSeasonApplyResult"
+          },
           "metadata_state": {
             "$ref": "#/components/schemas/MetadataState"
           },
@@ -6422,8 +6838,11 @@
           "resolution": {
             "$ref": "#/components/schemas/MovieMetadataResolutionInfo"
           },
+          "explanation": {
+            "$ref": "#/components/schemas/MovieMetadataResolutionFeedback"
+          },
           "error": {
-            "$ref": "#/components/schemas/ApiError"
+            "$ref": "#/components/schemas/MovieMetadataBatchError"
           }
         }
       },
@@ -6436,10 +6855,28 @@
           "updated": {
             "type": "integer"
           },
+          "unchanged": {
+            "type": "integer"
+          },
+          "succeeded": {
+            "type": "integer"
+          },
           "failed": {
             "type": "integer"
           },
+          "status_counts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
           "updated_movie_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failed_movie_ids": {
             "type": "array",
             "items": {
               "type": "string"
@@ -6626,6 +7063,9 @@
           },
           "resolve": {
             "$ref": "#/components/schemas/MovieMetadataResolutionInfo"
+          },
+          "explanation": {
+            "$ref": "#/components/schemas/MovieMetadataResolutionFeedback"
           }
         }
       },
@@ -6643,6 +7083,9 @@
           },
           "diff": {
             "$ref": "#/components/schemas/MovieMetadataDiff"
+          },
+          "explanation": {
+            "$ref": "#/components/schemas/MovieMetadataResolutionFeedback"
           }
         }
       },

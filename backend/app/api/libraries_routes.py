@@ -5,7 +5,14 @@ from collections import Counter
 from flask import Blueprint, current_app, request
 
 from backend.app.api.helpers import build_pagination_meta, get_history_map
-from backend.app.api.library_helpers import apply_public_movie_visibility_filter, resolve_movie_sort_column
+from backend.app.api.library_helpers import (
+    apply_public_movie_visibility_filter,
+    attach_recommendation_payload,
+    build_library_movie_id_context,
+    get_recommendation_items_from_query,
+    normalize_recommendation_strategy,
+    resolve_movie_sort_column,
+)
 from backend.app.extensions import db
 from backend.app.models import Library, LibraryMovieMembership, LibrarySource, MediaResource, Movie, StorageSource
 from backend.app.services.scanner import scanner_engine
@@ -121,31 +128,7 @@ def _get_library_auto_movie_ids(library):
 
 
 def _build_library_movie_context(library):
-    auto_ids, bindings = _get_library_auto_movie_ids(library)
-    membership_rows = LibraryMovieMembership.query.filter_by(library_id=library.id).all()
-    include_ids = {row.movie_id for row in membership_rows if row.mode == 'include'}
-    exclude_ids = {row.movie_id for row in membership_rows if row.mode == 'exclude'}
-    final_ids = (auto_ids | include_ids) - exclude_ids
-
-    membership_map = {}
-    for movie_id in final_ids:
-        is_auto = movie_id in auto_ids
-        is_manual = movie_id in include_ids
-        if is_auto and is_manual:
-            membership_map[movie_id] = 'both'
-        elif is_manual:
-            membership_map[movie_id] = 'manual'
-        else:
-            membership_map[movie_id] = 'auto'
-
-    return {
-        "bindings": bindings,
-        "auto_ids": auto_ids,
-        "include_ids": include_ids,
-        "exclude_ids": exclude_ids,
-        "final_ids": final_ids,
-        "membership_map": membership_map,
-    }
+    return build_library_movie_id_context(library)
 
 
 def _build_library_movie_query(library):
@@ -575,25 +558,28 @@ def get_library_recommendations(id):
         return error_response
 
     limit = request.args.get('limit', 12, type=int)
-    strategy = request.args.get('strategy', 'default')
+    strategy = normalize_recommendation_strategy(request.args.get('strategy', 'default'))
 
     query, context = _build_library_movie_query(library)
     if query is None:
         return api_response(data=[])
 
-    if strategy == 'latest':
-        query = query.order_by(Movie.added_at.desc(), Movie.id.asc())
-    elif strategy == 'top_rated':
-        query = query.order_by(Movie.rating.desc(), Movie.id.asc())
-    else:
-        query = query.order_by(db.func.random())
-
-    movies = query.limit(limit).all()
+    recommendation_items = get_recommendation_items_from_query(query, limit=limit, strategy=strategy)
+    movies = [item["movie"] for item in recommendation_items]
     membership_map = context["membership_map"]
     history_map = get_history_map([movie.id for movie in movies])
     return api_response(data=[
-        _serialize_library_movie(movie, membership_map, user_history=history_map.get(movie.id))
-        for movie in movies
+        attach_recommendation_payload(
+            _serialize_library_movie(
+                item["movie"],
+                membership_map,
+                user_history=history_map.get(item["movie"].id),
+            ),
+            item,
+            strategy=strategy,
+            rank=index,
+        )
+        for index, item in enumerate(recommendation_items, start=1)
     ])
 
 

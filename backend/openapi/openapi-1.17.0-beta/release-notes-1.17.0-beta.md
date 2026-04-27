@@ -10,6 +10,35 @@
 - 推荐观看
 - 元数据工作台增强
 
+## 元数据工作台增强
+
+本轮补齐面向前端复核闭环的解释型字段，不改变既有接口路径：
+
+- `POST /api/v1/movies/{id}/metadata/preview` 和 `POST /api/v1/movies/{id}/metadata/re-scrape` 新增 `explanation`，包含结果分类、候选信息、解析信号和推荐动作。
+- `GET /api/v1/movies/{id}/metadata/search` 的候选项新增 `rank` 和 `match_explanation`，用于解释标题、年份、媒体类型等命中信号。
+- `POST /api/v1/metadata/re-scrape` 的逐条结果新增 `status`、`changed`、`updated_fields`、`season_metadata_result`；失败项新增 `error.category`、`retryable`、`recommended_action`。
+- 批量 summary 新增 `succeeded`、`unchanged`、`status_counts`、`failed_movie_ids`，同时保留 `updated`、`failed`、`updated_movie_ids`。
+
+## 推荐观看
+
+全局 `GET /api/v1/recommendations` 与库级 `GET /api/v1/libraries/{id}/recommendations` 保持返回影片数组，但每个影片条目新增 `recommendation`：
+
+- `strategy`、`rank`、`score`
+- `primary_reason`
+- `reasons[]`
+- `reason_text`
+- `signals.progress_ratio/quality_badge/resource_count`
+
+`default` 现在是综合推荐，会考虑续看、最近入库、评分、质量标签、资源可播放性和类型多样性。`strategy` 新增 `continue_watching`，并继续支持 `latest`、`top_rated`、`surprise`。
+
+新增单片上下文推荐接口：
+
+- `GET /api/v1/movies/{id}/recommendations`
+
+该接口用于详情页或播放页下方推荐。同系列 / 同标题族优先，同系列不足时用同类型补齐，再不足时只在同动漫或同非动漫分区内兜底。动漫与非动漫严格隔离，候选不足时允许少于 `limit`。
+
+资源库内详情页可追加 `library_id`，服务端会先从当前资源库最终影片集合推荐，库内候选不足时再从全局补齐。库内命中会带 `same_library` 理由，库外补位会带 `outside_library_fill` 理由。
+
 ## 播放能力矩阵
 
 `Resource` 对象新增 `playback` 字段。该字段会随现有资源返回一起出现，例如：
