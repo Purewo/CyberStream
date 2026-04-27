@@ -1,5 +1,53 @@
 # PROJECT_PROGRESS
 
+## 2026-04-26
+
+### 1.17.0 开发分支启动
+
+当前已在本地 Gitea 建立项目仓库，并以 `1.16.0` 稳定版作为 Git 基线：
+
+- `main`：稳定基线分支
+- `v1.16.0`：稳定版标签
+- `develop/1.17.0`：下一版本开发分支
+
+### 本次完成
+
+- 新版本第一笔工程性清理：将后端和测试中的 SQLAlchemy legacy `Query.get()` 调用迁移为 `db.session.get(Model, primary_key)`。
+- 涉及 API 层、播放链路、存储源管理、资源库管理、数据库适配层和相关测试断言。
+- 本次只做等价替换，不改变接口路径、响应结构、数据库结构或业务语义。
+
+### 本次验收
+
+- `rg "\.query\.get\(|Query\.get" backend tests` 已无残留。
+- 全量 unittest：`126 tests OK`。
+
+### 今晚攻坚目标
+
+今晚 `1.17.0` 重点围绕三个可感知能力推进：
+
+1. 播放能力矩阵
+   - 先明确每个资源的可播放方式与限制，不直接改造现有播放主链路。
+   - 输出直连/代理/跳转、Range、MIME、外部播放器、字幕、转码、FFmpeg 输入等能力字段。
+   - 后续字幕、转码、投屏等功能都基于该矩阵逐步扩展。
+   - 当前已在资源对象中新增 `playback` 块，随 `GET /api/v1/movies/<id>/resources` 等已有接口返回。
+   - `playback.external_player.url` 暂指向后端 stream 入口，AList/OpenList 继续走 302 直链。
+   - `GET /api/v1/movies/<id>/resources` 已新增 `groups.playback_sources`，用于把同名同大小的物理副本折叠成一个主播放源和多个备用播放源；`items` 仍保留全量资源，不改变播放主链路。
+   - 字幕当前只返回占位空数组；实时音频转码已提供独立 `audio-transcode` 流，前端可用 video/audio 双标签做同步播放。
+   - 音频转码按 `start` 参数从指定时间点启动，seek 时由前端重建 audio 流；后端包含 ffmpeg 进程清理、默认单并发闸门、同 session 替换旧流、AList `/d` 上游重试、远程输入 Range 内存缓存、DELETE 主动停止、history watchdog 兜底停止，以及默认 `-re` 输入限速，避免音频转码过度预读远端原片、挤占视频直链。
+   - 当前音频转码实现细节已沉淀到 `docs/AUDIO_TRANSCODE_DESIGN_NOTES.md`；前端安全接入方式见 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`。已新增资源级诊断接口 `GET /api/v1/resources/<id>/audio-transcode/diagnostics`，用于查看缓存命中、上游 Range、首包耗时、输出节流和关闭原因；后续继续验证真实前端小幅 seek、缓存命中后的持续流畅性和双标签同步策略。
+
+2. 元数据工作台增强
+   - 先增强失败分类、候选解释和批量重识别结果说明。
+   - 优先服务 raw/占位/缺海报/低置信度影片的人工复核闭环。
+   - 暂不一开始引入复杂持久化状态，避免把扫描和刮削主链路打乱。
+
+3. 推荐观看
+   - 面向首页或独立入口补强“现在适合看什么”的推荐能力。
+   - 优先综合观看历史、未继续观看、最近入库、评分、质量标签、类型多样性和资源可播放性。
+   - 避免只做随机推荐，返回可解释原因，方便前端展示推荐文案。
+   - 已补强全局 `/recommendations` 与库级 `/libraries/<id>/recommendations`：`default` 升级为综合推荐，新增 `continue_watching` 策略，并给每个影片条目返回 `recommendation` 理由、分数、排序和信号。
+   - 已新增单片上下文推荐 `/movies/<id>/recommendations`：详情/播放页下方按同系列/同标题族、同类型、同分区兜底排序，并强制动漫与非动漫互不推荐；资源库内详情页可传 `library_id`，先推库内影视，不足再全局补齐。
+
 ## 2026-04-25
 
 ### 1.16.0 稳定版收口
@@ -174,6 +222,11 @@
   - `POST /api/v1/metadata/re-scrape`
   - `GET /api/v1/metadata/overview`
   - `GET /api/v1/metadata/work-items`
+- 元数据工作台接口已补强复核反馈：
+  - 单片 preview/re-scrape 返回 `explanation`，说明候选、解析信号、结果分类和推荐动作
+  - 批量 re-scrape 逐条返回 `status/changed/updated_fields/season_metadata_result`
+  - 批量失败项返回 `error.category/retryable/recommended_action`，前端可区分无资源、不可读、请求错误和后端错误
+  - 候选搜索返回 `rank/match_explanation`，说明标题、年份和媒体类型命中信号
 - 已补齐相关筛选能力：
   - `/api/v1/movies` 支持 `metadata_source_group`、`metadata_review_priority`、`metadata_issue_code`、`needs_attention`
   - `/api/v1/filters` 默认返回 `metadata_source_groups`、`metadata_review_priorities`、`metadata_issue_codes`

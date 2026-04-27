@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 
 
-OPENAPI_PATH = PROJECT_ROOT / "backend/openapi/openapi-1.16.0-beta/openapi-1.16.0-beta.json"
+OPENAPI_PATH = PROJECT_ROOT / "backend/openapi/openapi-1.17.0-beta/openapi-1.17.0-beta.json"
 HTTP_METHODS = {"GET", "POST", "PATCH", "PUT", "DELETE"}
 
 

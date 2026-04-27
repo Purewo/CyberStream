@@ -263,7 +263,7 @@ class MovieDatabaseAdapter:
         :param source_id: 存储源ID
         :param keep_metadata: 是否保留元数据。False=级联删除(默认), True=解除关联但不删电影
         """
-        source = StorageSource.query.get(source_id)
+        source = db.session.get(StorageSource, source_id)
         if not source:
             return False, "Source not found"
 
@@ -304,7 +304,7 @@ class MovieDatabaseAdapter:
         return StorageSource.query.all()
 
     def get_source_by_id(self, sid):
-        return StorageSource.query.get(sid)
+        return db.session.get(StorageSource, sid)
 
 
 scanner_adapter = MovieDatabaseAdapter()

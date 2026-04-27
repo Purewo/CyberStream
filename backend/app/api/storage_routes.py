@@ -134,7 +134,7 @@ def list_sources():
 
 @storage_bp.route('/storage/sources/<int:id>', methods=['GET'])
 def get_source(id):
-    source = StorageSource.query.get(id)
+    source = db.session.get(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     return api_response(data=source.to_dict())
@@ -142,7 +142,7 @@ def get_source(id):
 
 @storage_bp.route('/storage/sources/<int:id>/health', methods=['GET'])
 def get_source_health(id):
-    source = StorageSource.query.get(id)
+    source = db.session.get(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     return api_response(data=source.to_dict(include_health=True))
@@ -206,7 +206,7 @@ def add_source():
 @storage_bp.route('/storage/sources/<int:id>', methods=['PATCH'])
 def update_storage_source(id):
     """v1.9.0 新增: 更新存储源配置 (支持 name, config 修改)。"""
-    source = StorageSource.query.get(id)
+    source = db.session.get(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 
@@ -255,7 +255,7 @@ def delete_source(id):
         return api_error(code=42900, msg="Scanner is running, cannot delete source", http_status=429)
 
     keep_metadata = request.args.get('keep_metadata', 'false').lower() == 'true'
-    source = StorageSource.query.get(id)
+    source = db.session.get(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 
@@ -278,7 +278,7 @@ def scan_specific_source(id):
     if not scanner_engine.try_start_scan():
         return api_error(code=42900, msg="Scanner is busy", http_status=429)
 
-    source = StorageSource.query.get(id)
+    source = db.session.get(StorageSource, id)
     if not source:
         scanner_engine.finish_scan()
         return api_error(code=40402, msg="Source not found", http_status=404)
@@ -312,7 +312,7 @@ def scan_specific_source(id):
 @storage_bp.route('/storage/sources/<int:id>/browse', methods=['GET'])
 def browse_storage_source(id):
     """浏览已保存存储源的目录，主要用于资源库绑定时选择 root_path。"""
-    source = StorageSource.query.get(id)
+    source = db.session.get(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 

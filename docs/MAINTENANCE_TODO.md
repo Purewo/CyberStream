@@ -54,30 +54,57 @@
 
 当前 `1.16.0` 已作为稳定联调基线收口，以下事项不再塞回当前版本，进入后续版本排期。
 
+#### 1.0 1.17.0 今晚攻坚目标
+
+当前优先级：
+
+1. 播放能力矩阵
+   - 增加资源级播放能力描述，明确 direct/proxy/redirect、Range、MIME、外部播放器、字幕、转码、FFmpeg 输入等能力。
+   - 第一阶段只暴露能力和限制，不改变 `/resources/<id>/stream` 的默认播放行为。
+   - 已完成资源对象 `playback` 第一版：外部播放器 URL、字幕占位、网页音频兼容风险、服务端音频转码入口。
+   - 已补 `ffmpeg/ffprobe` 用户级运行依赖，并新增实时音频转码流；当前默认单并发、同 session 替换旧流、AList `/d` 输入重试、远程输入 Range 内存缓存、支持 DELETE 主动停止、history watchdog 兜底停止和 `-re` 输入限速，优先保护原始视频直链。
+   - 实现细节已记录在 `docs/AUDIO_TRANSCODE_DESIGN_NOTES.md`，前端契约在 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`。
+   - 已新增资源级音频转码诊断接口，后续重点验证远程源 seek、缓存命中后的持续流畅性、前端双标签同步策略和真实多用户并发策略。
+
+2. 元数据复核工作台增强
+   - 强化失败分类、候选结果解释和批量重识别反馈。
+   - 优先围绕 `/metadata/work-items`、`/reviews/resources`、单片 preview/re-scrape/match、批量 re-scrape 演进。
+   - 已补单片 preview/re-scrape 解释、候选搜索解释、批量 re-scrape 状态/字段/错误分类反馈；后续可继续做前端工作台交互和真实数据批处理验证。
+
+3. 推荐观看
+   - 补强“推荐观看”能力，综合观看历史、续看、最近入库、评分、质量、类型多样性和可播放性。
+   - 返回推荐理由，避免前端只能展示随机列表。
+   - 已补全第一版推荐解释：全局与库级推荐都会返回 `recommendation`，`default` 综合续看/最近入库/评分/质量/资源/类型多样性，另支持 `continue_watching`。
+   - 已补单片上下文推荐：同系列/同标题族优先，同类型补齐，动漫与非动漫严格隔离；后续可接入 TMDB collection 提升电影系列识别准确度。
+
 #### 1.1 资源副本折叠 / 备用播放源展示
 需求：
 - 同一影片可能存在同名同大小但不同路径的多个物理副本
 - 详情页可考虑默认展示一个主资源，其余折叠为备用播放源
+
+状态：
+- 后端已在 `GET /api/v1/movies/<id>/resources` 增加 `groups.playback_sources`、`primary_resource_ids` 与副本统计字段
+- 当前只做接口层分组，不删除资源，不改变 `/resources/<id>/stream`
 
 风险：
 - 不能直接删除数据库资源，因为不同路径可能是真实可播放副本
 - 需要避免影响播放历史、资源分组、手动季集编辑
 
 建议：
-- 先做接口层分组或前端折叠展示
-- 保留 `include_duplicates` 或类似排查入口
+- 前端默认展示 `primary_resource_id`，将 `alternate_resource_ids` 作为备用播放源
+- 当前 `items` 仍保留全量资源，作为排查入口
 - 不在当前稳定版改变默认语义
 
-#### 1.2 SQLAlchemy 2.0 警告清理
+#### 1.2 SQLAlchemy 2.0 警告清理（已完成）
 需求：
 - 将 `Query.get()` 逐步迁移为 `db.session.get(Model, id)`
 
-风险：
-- 范围较广，但风险可控
+状态：
+- 已在 `develop/1.17.0` 完成等价迁移
+- 全量 unittest 已通过
 
 建议：
-- 单独开小版本做机械性迁移
-- 保持行为不变，跑全量测试
+- 后续新增代码继续使用 `db.session.get(Model, id)`
 
 #### 1.3 元数据复核工作台增强
 需求：

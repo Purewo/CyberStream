@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
@@ -89,6 +90,24 @@ class HistoryRoutesTests(unittest.TestCase):
         self.assertEqual(240, item["progress"])
         self.assertEqual(1000, item["duration"])
         self.assertNotIn("is_played", item)
+
+    @patch("backend.app.api.history_routes.record_audio_transcode_history_heartbeat")
+    def test_report_progress_notifies_audio_transcode_watchdog(self, record_heartbeat):
+        _, resource = self._movie_with_resource()
+
+        response = self.client.post("/api/v1/user/history", json={
+            "resource_id": resource.id,
+            "position_sec": 120,
+            "total_duration": 1000,
+            "session_id": "playback_01",
+        })
+
+        self.assertEqual(200, response.status_code)
+        record_heartbeat.assert_called_once_with(
+            resource.id,
+            session_id="playback_01",
+            inactive_timeout_seconds=180,
+        )
 
     def test_movie_list_and_detail_return_user_data_without_is_played(self):
         movie, resource = self._movie_with_resource()

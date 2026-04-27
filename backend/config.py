@@ -14,6 +14,26 @@ def _env_bool(key, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_int(key, default):
+    value = os.getenv(key)
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(key, default):
+    value = os.getenv(key)
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _normalize_proxy_url(value):
     raw = str(value or "").strip()
     if not raw:
@@ -74,6 +94,20 @@ TMDB_PROXIES = _build_http_proxy_map(TMDB_PROXY_URL) if TMDB_PROXY_ENABLED else 
 
 # --- 缓存目录 ---
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
+
+# --- FFmpeg 实时转码 ---
+FFMPEG_BIN = _env('CYBER_FFMPEG_BIN', _env('FFMPEG_BIN', None))
+FFMPEG_AUDIO_TRANSCODE_MAX_CONCURRENT = _env_int('FFMPEG_AUDIO_TRANSCODE_MAX_CONCURRENT', 1)
+FFMPEG_AUDIO_TRANSCODE_READ_TIMEOUT_SECONDS = _env_int('FFMPEG_AUDIO_TRANSCODE_READ_TIMEOUT_SECONDS', 60)
+FFMPEG_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS = _env_int('FFMPEG_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS', 180)
+FFMPEG_AUDIO_TRANSCODE_INPUT_RETRIES = _env_int('FFMPEG_AUDIO_TRANSCODE_INPUT_RETRIES', 2)
+FFMPEG_AUDIO_TRANSCODE_FIRST_BYTE_TIMEOUT_SECONDS = _env_int('FFMPEG_AUDIO_TRANSCODE_FIRST_BYTE_TIMEOUT_SECONDS', 90)
+FFMPEG_AUDIO_TRANSCODE_ACQUIRE_TIMEOUT_SECONDS = _env_int('FFMPEG_AUDIO_TRANSCODE_ACQUIRE_TIMEOUT_SECONDS', 3)
+FFMPEG_AUDIO_TRANSCODE_REALTIME_INPUT = _env_bool('FFMPEG_AUDIO_TRANSCODE_REALTIME_INPUT', True)
+FFMPEG_AUDIO_TRANSCODE_OUTPUT_RATE_MULTIPLIER = _env_float('FFMPEG_AUDIO_TRANSCODE_OUTPUT_RATE_MULTIPLIER', 1.5)
+FFMPEG_AUDIO_TRANSCODE_OUTPUT_INITIAL_BURST_SECONDS = _env_int('FFMPEG_AUDIO_TRANSCODE_OUTPUT_INITIAL_BURST_SECONDS', 8)
+FFMPEG_AUDIO_TRANSCODE_RANGE_CACHE_ENABLED = _env_bool('FFMPEG_AUDIO_TRANSCODE_RANGE_CACHE_ENABLED', True)
+FFMPEG_AUDIO_TRANSCODE_RANGE_CACHE_BYTES = _env_int('FFMPEG_AUDIO_TRANSCODE_RANGE_CACHE_BYTES', 256 * 1024 * 1024)
 
 # --- 扫描规则 ---
 VIDEO_EXTENSIONS = ('.MKV', '.MP4', '.MOV', '.AVI', '.M2TS', '.TS', '.ISO', '.WMV', '.FLV', '.RMVB')

@@ -2,11 +2,17 @@ import logging
 import math
 from datetime import datetime
 
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 
 from backend.app.api.helpers import build_history_item, build_pagination_meta
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource, Movie
+from backend.app.services.audio_transcode import (
+    AudioTranscodeValidationError,
+    DEFAULT_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS,
+    parse_audio_transcode_session_id,
+    record_audio_transcode_history_heartbeat,
+)
 from backend.app.utils.response import api_error, api_response
 
 logger = logging.getLogger(__name__)
@@ -43,6 +49,28 @@ def _normalize_optional_text(value, max_len=50):
     if not text:
         return None
     return text[:max_len]
+
+
+def _notify_audio_transcode_history_heartbeat(resource_id, payload):
+    try:
+        session_id = parse_audio_transcode_session_id(payload)
+    except AudioTranscodeValidationError:
+        session_id = None
+    touched = record_audio_transcode_history_heartbeat(
+        resource_id,
+        session_id=session_id,
+        inactive_timeout_seconds=current_app.config.get(
+            "FFMPEG_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS",
+            DEFAULT_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS,
+        ),
+    )
+    if touched:
+        logger.debug(
+            "Audio transcode history heartbeat resource_id=%s session_id=%s touched=%s",
+            resource_id,
+            session_id,
+            touched,
+        )
 
 
 @history_bp.route('/user/history', methods=['GET'])
@@ -122,6 +150,7 @@ def report_progress():
             db.session.delete(stale_history)
 
         db.session.commit()
+        _notify_audio_transcode_history_heartbeat(resource_id, payload)
         return api_response(msg="Progress updated")
     except Exception as e:
         db.session.rollback()

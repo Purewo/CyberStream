@@ -1,21 +1,28 @@
+import hashlib
 import logging
+import posixpath
+import re
 from datetime import datetime
 
 from flask import Blueprint, request
 
 from backend.app.api.helpers import build_pagination_meta, get_history_map, get_movie_user_history, get_resource_history_map
 from backend.app.api.library_helpers import (
+    attach_recommendation_payload,
+    build_library_movie_id_context,
     build_movie_list_query,
     build_review_queue_query,
     get_featured_movies,
+    get_context_recommendation_items,
     get_filter_options,
-    get_recommendation_movies,
+    get_recommendation_items,
+    normalize_recommendation_strategy,
     resolve_movie_sort_column,
 )
 from backend.app.db.database import scanner_adapter
 from backend.app.extensions import db
 from backend.app.metadata.rescrape import movie_metadata_rescrape_service
-from backend.app.models import MediaResource, Movie, MovieSeasonMetadata
+from backend.app.models import Library, MediaResource, Movie, MovieSeasonMetadata
 from backend.app.services.tmdb import scraper
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
@@ -498,6 +505,291 @@ def _sync_movie_season_metadata(movie, meta_data):
     )
 
 
+def _infer_metadata_media_type(tmdb_id, fallback=None):
+    if isinstance(tmdb_id, str) and '/' in tmdb_id:
+        media_type = tmdb_id.split('/', 1)[0].strip().lower()
+        if media_type in TMDB_SEARCH_SOURCE_HINTS:
+            return media_type
+
+    fallback = (fallback or '').strip().lower()
+    if fallback in TMDB_SEARCH_SOURCE_HINTS:
+        return fallback
+    return None
+
+
+def _is_external_metadata_id(tmdb_id):
+    return _infer_metadata_media_type(tmdb_id) in TMDB_SEARCH_SOURCE_HINTS
+
+
+def _build_metadata_resolution_info(resolution):
+    return {
+        "scrape_layer": resolution.scrape_layer,
+        "scrape_strategy": resolution.scrape_strategy,
+        "reason": resolution.reason,
+        "resolved_tmdb_id": resolution.resolved_tmdb_id,
+    }
+
+
+def _build_metadata_entity_context_info(entity_context, resource_count=None):
+    return {
+        "title": entity_context.title,
+        "year": entity_context.year,
+        "media_type_hint": entity_context.media_type_hint,
+        "parse_layer": entity_context.parse_layer,
+        "parse_strategy": entity_context.parse_strategy,
+        "confidence": entity_context.confidence,
+        "nfo_candidates": entity_context.nfo_candidates,
+        "resource_count": resource_count if resource_count is not None else len(entity_context.files),
+        "sample_path": entity_context.sample_path,
+    }
+
+
+def _build_metadata_resolution_feedback(resolution, entity_context=None):
+    meta_data = resolution.meta_data if isinstance(resolution.meta_data, dict) else {}
+    source_code = (meta_data.get('scraper_source') or '').strip().upper()
+    state = Movie.build_metadata_ui_state(source_code)
+    tmdb_id = meta_data.get('tmdb_id') or resolution.resolved_tmdb_id
+    media_type = _infer_metadata_media_type(tmdb_id, meta_data.get('media_type_hint'))
+    has_external_id = _is_external_metadata_id(tmdb_id) or _is_external_metadata_id(resolution.resolved_tmdb_id)
+
+    if source_code == 'LOCAL_ORPHAN':
+        classification = {
+            "code": "orphan_group",
+            "label": "Orphan Group",
+            "severity": "high",
+            "status": "unresolved",
+            "requires_review": True,
+            "recommended_action": "rename_and_match",
+        }
+        explanation = "Path parsing could not recover a reliable title, so the item was grouped as an unknown series."
+    elif state["is_placeholder"] or (not has_external_id and source_code in Movie.get_metadata_placeholder_sources()):
+        classification = {
+            "code": "placeholder_metadata",
+            "label": "Placeholder Metadata",
+            "severity": "high",
+            "status": "local_placeholder",
+            "requires_review": True,
+            "recommended_action": "match_metadata",
+        }
+        explanation = "No external metadata match was resolved, so local placeholder metadata was generated."
+    elif state["is_local_only"] and not has_external_id:
+        classification = {
+            "code": "local_only_metadata",
+            "label": "Local Only Metadata",
+            "severity": "medium",
+            "status": "local_only",
+            "requires_review": True,
+            "recommended_action": "match_metadata",
+        }
+        explanation = "Local or NFO metadata was found, but it is not linked to an external TMDB match."
+    elif state["is_external_match"] and state["needs_attention"]:
+        classification = {
+            "code": "external_match_needs_review",
+            "label": "External Match Needs Review",
+            "severity": "medium",
+            "status": "matched_needs_review",
+            "requires_review": True,
+            "recommended_action": state["recommended_action"],
+        }
+        explanation = "An external metadata candidate was resolved through a fallback path and should be reviewed."
+    elif state["is_external_match"] or has_external_id:
+        classification = {
+            "code": "external_match",
+            "label": "External Match",
+            "severity": "none",
+            "status": "matched",
+            "requires_review": False,
+            "recommended_action": state["recommended_action"],
+        }
+        explanation = "A high confidence external metadata match was resolved."
+    else:
+        classification = {
+            "code": "unresolved_metadata",
+            "label": "Unresolved Metadata",
+            "severity": "high",
+            "status": "unresolved",
+            "requires_review": True,
+            "recommended_action": "inspect_metadata",
+        }
+        explanation = "The metadata pipeline did not produce a recognized external or local result."
+
+    signals = {}
+    if entity_context:
+        signals = {
+            "title_hint": entity_context.title,
+            "year_hint": entity_context.year,
+            "media_type_hint": entity_context.media_type_hint,
+            "parse_layer": entity_context.parse_layer,
+            "parse_strategy": entity_context.parse_strategy,
+            "parse_confidence": entity_context.confidence,
+            "file_count": len(entity_context.files),
+            "nfo_candidate_count": len(entity_context.nfo_candidates),
+            "has_nfo_candidates": bool(entity_context.nfo_candidates),
+            "sample_path": entity_context.sample_path,
+        }
+
+    return {
+        "classification": classification,
+        "candidate": {
+            "tmdb_id": tmdb_id,
+            "resolved_tmdb_id": resolution.resolved_tmdb_id,
+            "media_type": media_type,
+            "title": meta_data.get('title'),
+            "original_title": meta_data.get('original_title'),
+            "year": meta_data.get('year'),
+            "source_code": source_code or None,
+            "source_group": state["source_group"],
+            "confidence": state["confidence"],
+            "is_external_match": bool(state["is_external_match"] or has_external_id),
+            "has_poster": bool(meta_data.get('cover')),
+            "has_backdrop": bool(meta_data.get('background_cover')),
+        },
+        "signals": signals,
+        "explanation": explanation,
+    }
+
+
+def _metadata_season_result_changed(season_result):
+    season_result = season_result or {}
+    return bool(season_result.get("upserted") or season_result.get("deleted"))
+
+
+def _build_metadata_apply_status(error=None, updated_fields=None, season_result=None):
+    if error:
+        return "failed"
+    if updated_fields or _metadata_season_result_changed(season_result):
+        return "updated"
+    return "unchanged"
+
+
+def _classify_metadata_error(code, msg):
+    text = (msg or '').lower()
+    category = "metadata_pipeline_error"
+    retryable = code >= 500
+    recommended_action = "retry"
+
+    if code == 40401:
+        category = "movie_not_found"
+        retryable = False
+        recommended_action = "remove_from_batch"
+    elif 40000 <= code < 50000 and code != 40026:
+        category = "validation_error"
+        retryable = False
+        recommended_action = "fix_request"
+    elif code == 40026:
+        retryable = False
+        recommended_action = "inspect_metadata"
+        if "no resources" in text:
+            category = "no_resources"
+            recommended_action = "attach_resources"
+        elif "no readable resources" in text:
+            category = "no_readable_resources"
+            recommended_action = "check_storage_source"
+        elif "infer entity" in text:
+            category = "entity_inference_failed"
+            recommended_action = "rename_and_match"
+        else:
+            category = "pipeline_rejected"
+    elif code >= 50000:
+        category = "metadata_pipeline_error"
+        retryable = True
+        recommended_action = "retry"
+
+    return {
+        "code": code,
+        "msg": msg,
+        "category": category,
+        "retryable": retryable,
+        "recommended_action": recommended_action,
+    }
+
+
+def _normalize_candidate_compare_text(value):
+    text = re.sub(r'\s+', ' ', (value or '').strip().lower())
+    text = re.sub(r'[-_.:]+', ' ', text)
+    return text.strip()
+
+
+def _build_metadata_candidate_explanation(candidate, query, year=None, media_type_hint=None):
+    normalized_query = _normalize_candidate_compare_text(query)
+    title = _normalize_candidate_compare_text(candidate.get('title'))
+    original_title = _normalize_candidate_compare_text(candidate.get('original_title'))
+    candidate_year = candidate.get('year')
+    candidate_media_type = candidate.get('media_type')
+
+    reason_codes = []
+    score = 0
+
+    if normalized_query and title == normalized_query:
+        reason_codes.append("title_exact")
+        score += 3
+    elif normalized_query and original_title == normalized_query:
+        reason_codes.append("original_title_exact")
+        score += 3
+    elif normalized_query and (normalized_query in title or normalized_query in original_title):
+        reason_codes.append("title_contains_query")
+        score += 1
+
+    year_delta = None
+    if year and candidate_year:
+        year_delta = abs(candidate_year - year)
+        if year_delta == 0:
+            reason_codes.append("year_match")
+            score += 2
+        elif year_delta <= 1:
+            reason_codes.append("near_year_match")
+            score += 1
+        else:
+            reason_codes.append("year_mismatch")
+            score -= 1
+    elif year and not candidate_year:
+        reason_codes.append("candidate_year_missing")
+
+    if media_type_hint:
+        if candidate_media_type == media_type_hint:
+            reason_codes.append("media_type_match")
+            score += 1
+        else:
+            reason_codes.append("media_type_mismatch")
+            score -= 1
+
+    if candidate.get('poster_url'):
+        reason_codes.append("poster_available")
+    if candidate.get('vote_average'):
+        reason_codes.append("rating_available")
+
+    if score >= 5:
+        confidence = "high"
+    elif score >= 2:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return {
+        "confidence": confidence,
+        "reason_codes": reason_codes,
+        "query": query,
+        "year_hint": year,
+        "year_delta": year_delta,
+        "media_type_hint": media_type_hint,
+    }
+
+
+def _annotate_metadata_candidates(candidates, query, year=None, media_type_hint=None):
+    annotated = []
+    for index, candidate in enumerate(candidates, start=1):
+        item = dict(candidate)
+        item["rank"] = index
+        item["match_explanation"] = _build_metadata_candidate_explanation(
+            item,
+            query=query,
+            year=year,
+            media_type_hint=media_type_hint,
+        )
+        annotated.append(item)
+    return annotated
+
+
 def _build_resource_label(resource, season, episode):
     label_prefix = "Movie"
     if season is not None and episode is not None:
@@ -521,6 +813,123 @@ def _is_newer_user_history(candidate, current):
     return (candidate.get("last_played_at") or "") > (current.get("last_played_at") or "")
 
 
+def _normalize_duplicate_filename(resource):
+    filename = resource.filename or posixpath.basename(resource.path or "")
+    filename = re.sub(r"\s+", " ", str(filename or "").strip().lower())
+    return filename or None
+
+
+def _build_playback_source_key(resource):
+    filename = _normalize_duplicate_filename(resource)
+    size = int(resource.size or 0)
+    if not filename or size <= 0:
+        return f"resource:{resource.id}"
+    season = resource.season if resource.season is not None else "movie"
+    episode = resource.episode if resource.episode is not None else "feature"
+    return f"{season}|{episode}|{size}|{filename}"
+
+
+def _build_playback_source_group_id(key):
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    return f"ps_{digest}"
+
+
+def _resource_quality_sort_value(resource, resource_item, user_history):
+    technical = ((resource_item.get("resource_info") or {}).get("technical") or {})
+    last_played = (user_history or {}).get("last_played_at") or ""
+    return (
+        1 if user_history else 0,
+        last_played,
+        int(technical.get("quality_rank") or 0),
+        int(technical.get("video_resolution_rank") or 0),
+        int(resource.size or 0),
+        resource.created_at or datetime.min,
+        resource.id,
+    )
+
+
+def _build_playback_source_groups(resources, resource_item_map, resource_history_map):
+    grouped = {}
+    for resource in resources:
+        grouped.setdefault(_build_playback_source_key(resource), []).append(resource)
+
+    playback_sources = []
+    for key, group_resources in grouped.items():
+        ordered_resources = sorted(
+            group_resources,
+            key=lambda resource: _resource_quality_sort_value(
+                resource,
+                resource_item_map[resource.id],
+                resource_history_map.get(resource.id),
+            ),
+            reverse=True,
+        )
+        primary = ordered_resources[0]
+        primary_item = resource_item_map[primary.id]
+        resource_ids = [resource.id for resource in ordered_resources]
+        alternate_ids = resource_ids[1:]
+        primary_info = primary_item.get("resource_info") or {}
+        primary_file = primary_info.get("file") or {}
+        primary_display = primary_info.get("display") or {}
+        source_summary = []
+        seen_source_ids = set()
+
+        for resource in ordered_resources:
+            file_info = (resource_item_map[resource.id].get("resource_info") or {}).get("file") or {}
+            storage_source = file_info.get("storage_source") or {}
+            source_id = storage_source.get("id")
+            source_key = source_id if source_id is not None else f"unknown:{resource.id}"
+            if source_key in seen_source_ids:
+                continue
+            seen_source_ids.add(source_key)
+            source_summary.append({
+                "id": source_id,
+                "name": storage_source.get("name"),
+                "type": storage_source.get("type"),
+            })
+
+        playback_sources.append({
+            "id": _build_playback_source_group_id(key),
+            "primary_resource_id": primary.id,
+            "resource_ids": resource_ids,
+            "alternate_resource_ids": alternate_ids,
+            "count": len(resource_ids),
+            "is_duplicate_group": len(resource_ids) > 1,
+            "duplicate_key": {
+                "filename": _normalize_duplicate_filename(primary),
+                "size_bytes": int(primary.size or 0),
+                "season": primary.season,
+                "episode": primary.episode,
+            },
+            "match": {
+                "type": "same_filename_size" if len(resource_ids) > 1 and not key.startswith("resource:") else "single_source",
+                "fields": ["season", "episode", "filename", "size_bytes"] if len(resource_ids) > 1 and not key.startswith("resource:") else [],
+            },
+            "display": {
+                "title": primary_display.get("title"),
+                "label": primary_display.get("label"),
+                "season": primary_display.get("season"),
+                "episode": primary_display.get("episode"),
+                "episode_label": primary_display.get("episode_label"),
+            },
+            "file": {
+                "filename": primary_file.get("filename"),
+                "size_bytes": primary_file.get("size_bytes"),
+            },
+            "source_summary": source_summary,
+            "user_data": primary_item.get("user_data"),
+        })
+
+    playback_sources.sort(key=lambda item: (
+        (item.get("display") or {}).get("season") is None,
+        (item.get("display") or {}).get("season") if (item.get("display") or {}).get("season") is not None else 0,
+        (item.get("display") or {}).get("episode") is None,
+        (item.get("display") or {}).get("episode") if (item.get("display") or {}).get("episode") is not None else 0,
+        (item.get("file") or {}).get("filename") or "",
+    ))
+    return playback_sources
+
+
 def _build_movie_resource_groups(movie):
     resources = movie.resources.all()
     resource_history_map = get_resource_history_map([resource.id for resource in resources])
@@ -539,12 +948,14 @@ def _build_movie_resource_groups(movie):
     standalone_user_history = None
     edited_items = 0
     resource_items = []
+    resource_item_map = {}
 
     for resource in resources:
         resource_dict = resource.to_dict()
         resource_user_history = resource_history_map.get(resource.id)
         resource_dict["user_data"] = resource_user_history
         resource_items.append(resource_dict)
+        resource_item_map[resource.id] = resource_dict
         display = resource_dict.get("resource_info", {}).get("display", {})
         if display.get("has_manual_metadata"):
             edited_items += 1
@@ -611,19 +1022,54 @@ def _build_movie_resource_groups(movie):
     season_groups.sort(key=lambda item: item["season"])
 
     metadata_state = movie.get_metadata_ui_state()
+    playback_sources = _build_playback_source_groups(resources, resource_item_map, resource_history_map)
+    primary_resource_ids = {item["primary_resource_id"] for item in playback_sources}
+    alternate_resource_ids = {
+        resource_id
+        for item in playback_sources
+        for resource_id in item["alternate_resource_ids"]
+    }
+
+    standalone_primary_resource_ids = [
+        resource_id for resource_id in standalone_resource_ids
+        if resource_id in primary_resource_ids
+    ]
+    standalone_alternate_resource_count = sum(
+        1 for resource_id in standalone_resource_ids
+        if resource_id in alternate_resource_ids
+    )
+
+    for season_entry in season_groups:
+        season_resource_ids = season_entry["resource_ids"]
+        season_entry["primary_resource_ids"] = [
+            resource_id for resource_id in season_resource_ids
+            if resource_id in primary_resource_ids
+        ]
+        season_entry["playback_source_count"] = len(season_entry["primary_resource_ids"])
+        season_entry["alternate_resource_count"] = sum(
+            1 for resource_id in season_resource_ids
+            if resource_id in alternate_resource_ids
+        )
 
     return {
         "items": resource_items,
         "groups": {
             "standalone": {
                 "resource_ids": standalone_resource_ids,
+                "primary_resource_ids": standalone_primary_resource_ids,
                 "count": len(standalone_resource_ids),
+                "playback_source_count": len(standalone_primary_resource_ids),
+                "alternate_resource_count": standalone_alternate_resource_count,
                 "user_data": standalone_user_history,
             },
             "seasons": season_groups,
+            "playback_sources": playback_sources,
         },
         "summary": {
             "total_items": len(resources),
+            "playback_source_count": len(playback_sources),
+            "duplicate_group_count": sum(1 for item in playback_sources if item["is_duplicate_group"]),
+            "alternate_resource_count": len(alternate_resource_ids),
             "season_count": len(season_groups),
             "standalone_count": len(standalone_resource_ids),
             "edited_items_count": edited_items,
@@ -658,17 +1104,16 @@ def _build_metadata_preview_from_resolution(resolution, entity_context):
         "parse": {
             "title": entity_context.title,
             "year": entity_context.year,
+            "media_type_hint": entity_context.media_type_hint,
             "parse_layer": entity_context.parse_layer,
             "parse_strategy": entity_context.parse_strategy,
             "confidence": entity_context.confidence,
             "nfo_candidates": entity_context.nfo_candidates,
+            "resource_count": len(entity_context.files),
+            "sample_path": entity_context.sample_path,
         },
-        "resolve": {
-            "scrape_layer": resolution.scrape_layer,
-            "scrape_strategy": resolution.scrape_strategy,
-            "reason": resolution.reason,
-            "resolved_tmdb_id": resolution.resolved_tmdb_id,
-        },
+        "resolve": _build_metadata_resolution_info(resolution),
+        "explanation": _build_metadata_resolution_feedback(resolution, entity_context),
     }
 
 
@@ -806,27 +1251,51 @@ def _build_metadata_work_items(query, page, page_size):
     }
 
 
-def _build_metadata_batch_result(movie, resolution=None, error=None):
+def _build_metadata_batch_result(
+    movie,
+    resolution=None,
+    entity_context=None,
+    updated_fields=None,
+    season_result=None,
+    error=None,
+):
     item = movie.to_metadata_work_item()
+    status = _build_metadata_apply_status(
+        error=error,
+        updated_fields=updated_fields,
+        season_result=season_result,
+    )
     result = {
         "movie_id": movie.id,
         "title": movie.title,
         "scraper_source": movie.scraper_source,
+        "status": status,
+        "changed": status == "updated",
+        "updated_fields": updated_fields or [],
+        "season_metadata_result": season_result or {"upserted": 0, "deleted": 0},
         "metadata_state": item["metadata_state"],
         "metadata_actions": item["metadata_actions"],
         "metadata_diagnostics": item["metadata_diagnostics"],
         "metadata_issues": item["metadata_issues"],
     }
     if resolution:
-        result["resolution"] = {
-            "scrape_layer": resolution.scrape_layer,
-            "scrape_strategy": resolution.scrape_strategy,
-            "reason": resolution.reason,
-            "resolved_tmdb_id": resolution.resolved_tmdb_id,
-        }
+        result["resolution"] = _build_metadata_resolution_info(resolution)
+        result["explanation"] = _build_metadata_resolution_feedback(resolution, entity_context)
     if error:
-        result["error"] = error
+        result["error"] = _classify_metadata_error(error["code"], error["msg"])
     return result
+
+
+def _build_metadata_missing_batch_result(movie_id):
+    error = _classify_metadata_error(40401, "Movie not found")
+    return {
+        "movie_id": movie_id,
+        "status": "failed",
+        "changed": False,
+        "updated_fields": [],
+        "season_metadata_result": {"upserted": 0, "deleted": 0},
+        "error": error,
+    }
 
 
 def _apply_resource_metadata_update(resource, normalized_payload):
@@ -991,13 +1460,52 @@ def get_featured_content():
 def get_recommendations():
     """v1.10.0: 获取推荐影视。"""
     limit = request.args.get('limit', 12, type=int)
-    strategy = request.args.get('strategy', 'default')
+    strategy = normalize_recommendation_strategy(request.args.get('strategy', 'default'))
 
-    movies = get_recommendation_movies(limit=limit, strategy=strategy)
+    recommendation_items = get_recommendation_items(limit=limit, strategy=strategy)
+    movies = [item["movie"] for item in recommendation_items]
     history_map = get_history_map([movie.id for movie in movies])
     return api_response(data=[
-        movie.to_simple_dict(user_history=history_map.get(movie.id))
-        for movie in movies
+        attach_recommendation_payload(
+            item["movie"].to_simple_dict(user_history=history_map.get(item["movie"].id)),
+            item,
+            strategy=strategy,
+            rank=index,
+        )
+        for index, item in enumerate(recommendation_items, start=1)
+    ])
+
+
+@library_bp.route('/movies/<uuid:id>/recommendations', methods=['GET'])
+def get_movie_context_recommendations(id):
+    movie = db.session.get(Movie, str(id))
+    if not movie:
+        return api_error(code=40401, msg="Movie not found", http_status=404)
+
+    limit = request.args.get('limit', 6, type=int)
+    preferred_movie_ids = None
+    library_id = request.args.get('library_id', type=int)
+    if library_id is not None:
+        library = db.session.get(Library, library_id)
+        if not library:
+            return api_error(code=40410, msg="Library not found", http_status=404)
+        preferred_movie_ids = build_library_movie_id_context(library)["final_ids"]
+
+    recommendation_items = get_context_recommendation_items(
+        movie,
+        limit=limit,
+        preferred_movie_ids=preferred_movie_ids,
+    )
+    movies = [item["movie"] for item in recommendation_items]
+    history_map = get_history_map([movie.id for movie in movies])
+    return api_response(data=[
+        attach_recommendation_payload(
+            item["movie"].to_simple_dict(user_history=history_map.get(item["movie"].id)),
+            item,
+            strategy="context",
+            rank=index,
+        )
+        for index, item in enumerate(recommendation_items, start=1)
     ])
 
 
@@ -1063,7 +1571,7 @@ def list_movies():
 
 @library_bp.route('/movies/<uuid:id>', methods=['GET'])
 def get_movie_detail(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1097,7 +1605,7 @@ def list_review_resources():
 
 @library_bp.route('/movies/<uuid:id>/resources', methods=['GET'])
 def get_movie_resources(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1106,7 +1614,7 @@ def get_movie_resources(id):
 
 @library_bp.route('/movies/<uuid:id>/seasons', methods=['GET'])
 def get_movie_seasons(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1120,7 +1628,7 @@ def get_movie_seasons(id):
 @library_bp.route('/movies/<uuid:id>', methods=['PATCH'])
 def update_movie_detail(id):
     """手动修改电影元数据。"""
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1176,7 +1684,7 @@ def update_movie_detail(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/refresh', methods=['POST'])
 def refresh_movie_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1230,7 +1738,7 @@ def refresh_movie_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/re-scrape', methods=['POST'])
 def re_scrape_movie_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1257,7 +1765,7 @@ def re_scrape_movie_metadata(id):
             unlock_fields=unlock_fields,
             respect_locked=True,
         )
-        _sync_movie_season_metadata(movie, meta_data)
+        season_result = _sync_movie_season_metadata(movie, meta_data)
         movie_metadata_rescrape_service.apply_resource_traces(
             result["resources"],
             result["entity_context"],
@@ -1272,24 +1780,20 @@ def re_scrape_movie_metadata(id):
             resolution.scrape_strategy,
             result["resource_count"],
         )
+        status = _build_metadata_apply_status(updated_fields=updated_fields, season_result=season_result)
         return api_response(data={
+            "status": status,
+            "changed": status == "updated",
             "movie": movie.to_detail_dict(),
-            "resolution": {
-                "scrape_layer": resolution.scrape_layer,
-                "scrape_strategy": resolution.scrape_strategy,
-                "reason": resolution.reason,
-                "resolved_tmdb_id": resolution.resolved_tmdb_id,
-            },
-            "entity_context": {
-                "title": result["entity_context"].title,
-                "year": result["entity_context"].year,
-                "parse_layer": result["entity_context"].parse_layer,
-                "parse_strategy": result["entity_context"].parse_strategy,
-                "confidence": result["entity_context"].confidence,
-                "nfo_candidates": result["entity_context"].nfo_candidates,
-                "resource_count": result["resource_count"],
-            },
+            "resolution": _build_metadata_resolution_info(resolution),
+            "entity_context": _build_metadata_entity_context_info(
+                result["entity_context"],
+                resource_count=result["resource_count"],
+            ),
+            "explanation": _build_metadata_resolution_feedback(resolution, result["entity_context"]),
             "updated_fields": updated_fields,
+            "season_metadata_result": season_result,
+            "resource_trace_count": result["resource_count"],
         }, msg="Movie metadata re-scraped")
     except ValueError as e:
         return api_error(code=40026, msg=str(e))
@@ -1321,43 +1825,50 @@ def batch_re_scrape_movie_metadata():
             if not isinstance(raw_movie_id, str) or not raw_movie_id.strip():
                 return api_error(code=40024, msg=f"Invalid item at index {index}: movie id required")
 
-            movie = Movie.query.get(raw_movie_id.strip())
+            movie = db.session.get(Movie, raw_movie_id.strip())
             if not movie:
-                results.append({
-                    "movie_id": raw_movie_id.strip(),
-                    "error": {
-                        "code": 40401,
-                        "msg": "Movie not found",
-                    }
-                })
+                results.append(_build_metadata_missing_batch_result(raw_movie_id.strip()))
                 continue
 
             try:
                 unlock_fields = _normalize_lock_field_names(item.get('metadata_unlocked_fields')) if isinstance(item, dict) else None
                 media_type_hint = _normalize_media_type_hint(item.get('media_type_hint')) if isinstance(item, dict) else None
-                result = movie_metadata_rescrape_service.resolve_movie(movie, media_type_hint=media_type_hint)
-                resolution = result["resolution"]
-                meta_data = dict(resolution.meta_data)
+                with db.session.begin_nested():
+                    result = movie_metadata_rescrape_service.resolve_movie(movie, media_type_hint=media_type_hint)
+                    resolution = result["resolution"]
+                    meta_data = dict(resolution.meta_data)
 
-                if resolution.resolved_tmdb_id:
-                    movie.tmdb_id = meta_data.get('tmdb_id') or resolution.resolved_tmdb_id
-                elif meta_data.get('tmdb_id'):
-                    movie.tmdb_id = meta_data.get('tmdb_id')
+                    if resolution.resolved_tmdb_id:
+                        movie.tmdb_id = meta_data.get('tmdb_id') or resolution.resolved_tmdb_id
+                    elif meta_data.get('tmdb_id'):
+                        movie.tmdb_id = meta_data.get('tmdb_id')
 
-                scanner_adapter.update_movie_metadata(
+                    updated_fields, _ = scanner_adapter.update_movie_metadata(
+                        movie,
+                        _build_external_metadata_update_payload(meta_data),
+                        unlock_fields=unlock_fields,
+                        respect_locked=True,
+                    )
+                    season_result = _sync_movie_season_metadata(movie, meta_data)
+                    movie_metadata_rescrape_service.apply_resource_traces(
+                        result["resources"],
+                        result["entity_context"],
+                        resolution,
+                    )
+
+                status = _build_metadata_apply_status(
+                    updated_fields=updated_fields,
+                    season_result=season_result,
+                )
+                if status == "updated":
+                    updated_movie_ids.append(movie.id)
+                results.append(_build_metadata_batch_result(
                     movie,
-                    _build_external_metadata_update_payload(meta_data),
-                    unlock_fields=unlock_fields,
-                    respect_locked=True,
-                )
-                _sync_movie_season_metadata(movie, meta_data)
-                movie_metadata_rescrape_service.apply_resource_traces(
-                    result["resources"],
-                    result["entity_context"],
-                    resolution,
-                )
-                updated_movie_ids.append(movie.id)
-                results.append(_build_metadata_batch_result(movie, resolution=resolution))
+                    resolution=resolution,
+                    entity_context=result["entity_context"],
+                    updated_fields=updated_fields,
+                    season_result=season_result,
+                ))
             except MetadataValidationError as e:
                 results.append(_build_metadata_batch_result(movie, error={"code": e.code, "msg": e.msg}))
             except ValueError as e:
@@ -1367,13 +1878,22 @@ def batch_re_scrape_movie_metadata():
                 results.append(_build_metadata_batch_result(movie, error={"code": 50014, "msg": "Re-scrape failed"}))
 
         db.session.commit()
+        status_counts = {}
+        for item in results:
+            status = item.get("status", "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+        failed_items = [item for item in results if item.get("status") == "failed"]
         return api_response(data={
             "items": results,
             "summary": {
                 "total": len(results),
+                "succeeded": len(results) - len(failed_items),
                 "updated": len(updated_movie_ids),
-                "failed": sum(1 for item in results if "error" in item),
+                "unchanged": status_counts.get("unchanged", 0),
+                "failed": len(failed_items),
+                "status_counts": status_counts,
                 "updated_movie_ids": updated_movie_ids,
+                "failed_movie_ids": [item["movie_id"] for item in failed_items if item.get("movie_id")],
             }
         }, msg="Metadata batch re-scrape completed")
     except Exception as e:
@@ -1384,7 +1904,7 @@ def batch_re_scrape_movie_metadata():
 
 @library_bp.route('/movies/<uuid:id>/metadata/preview', methods=['POST'])
 def preview_movie_metadata_pipeline(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1418,6 +1938,7 @@ def preview_movie_metadata_pipeline(id):
             },
             "preview": preview,
             "diff": diff,
+            "explanation": _build_metadata_resolution_feedback(resolution, result["entity_context"]),
         })
     except ValueError as e:
         return api_error(code=40026, msg=str(e))
@@ -1428,7 +1949,7 @@ def preview_movie_metadata_pipeline(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/search', methods=['GET'])
 def search_movie_metadata_candidates(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1446,6 +1967,12 @@ def search_movie_metadata_candidates(id):
         candidates = scraper.search_movie_candidates(query, year=year, limit=limit)
         if media_type_hint:
             candidates = [item for item in candidates if item.get('media_type') == media_type_hint]
+        candidates = _annotate_metadata_candidates(
+            candidates,
+            query=query,
+            year=year,
+            media_type_hint=media_type_hint,
+        )
         return api_response(data={
             "query": query,
             "year": year,
@@ -1459,7 +1986,7 @@ def search_movie_metadata_candidates(id):
 
 @library_bp.route('/resources/<uuid:id>/metadata', methods=['PATCH'])
 def update_resource_metadata(id):
-    resource = MediaResource.query.get(str(id))
+    resource = db.session.get(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -1491,7 +2018,7 @@ def update_resource_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/resources/metadata', methods=['PATCH'])
 def update_movie_resources_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1557,7 +2084,7 @@ def update_movie_resources_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/seasons/<int:season>/metadata', methods=['PATCH'])
 def update_movie_season_metadata(id, season):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -1603,7 +2130,7 @@ def update_movie_season_metadata(id, season):
 
 @library_bp.route('/movies/<uuid:id>/metadata/match', methods=['POST'])
 def match_movie_metadata(id):
-    movie = Movie.query.get(str(id))
+    movie = db.session.get(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 

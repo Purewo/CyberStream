@@ -161,7 +161,13 @@
 
 支持参数：
 - `limit`
-- `strategy=default|latest|top_rated`
+- `strategy=default|latest|top_rated|surprise|continue_watching`
+
+说明：
+- 返回结构仍是影片数组
+- 每个影片条目会额外带 `recommendation`
+- `recommendation.primary_reason` 给前端展示主推荐理由
+- `recommendation.reasons` 包含续看、最近入库、高评分、清晰度、可播放资源、类型多样性等信号
 
 ### `GET /api/v1/libraries/<id>/filters`
 按资源库获取筛选项。
@@ -341,7 +347,32 @@
 
 查询参数示例：
 - `limit`
-- `strategy=default|latest|top_rated`
+- `strategy=default|latest|top_rated|surprise|continue_watching`
+
+说明：
+- `default` 现在是综合推荐：会考虑续看、最近入库、评分、清晰度、可播放资源和类型多样性
+- `latest` 偏最近入库
+- `top_rated` 偏高评分
+- `continue_watching` 偏未看完的续看内容
+- `surprise` 保留轻随机探索
+- 每个影片条目会带 `recommendation`，便于前端展示推荐理由而不是只展示随机列表
+
+### `GET /api/v1/movies/<id>/recommendations`
+获取单片上下文相关推荐，适合详情页或播放页下方列表。
+
+支持参数：
+- `limit`
+- `library_id`：可选。资源库内详情页传当前资源库 ID，推荐会先从该库最终影片集合里选，不足再从全局补齐。
+
+说明：
+- 返回结构仍是影片数组，每个条目带 `recommendation`
+- 未传 `library_id` 时按全局单片上下文推荐
+- 传 `library_id` 时先按当前资源库候选排序，库内候选不足 `limit` 才使用库外候选补齐
+- 同系列 / 同标题族优先，例如同一电影系列或误拆成多个条目的不同季
+- 同系列数量不足时，用同类型内容补齐
+- 同类型仍不足时，只在同分区内兜底
+- 动漫与非动漫严格隔离：当前影片含 `动画` 时只推荐动漫；当前影片不含 `动画` 时绝不推荐动漫
+- 候选不足时允许返回少于 `limit`，不会跨动漫边界补齐
 
 ### `GET /api/v1/homepage`
 获取首页门户聚合数据。
@@ -432,13 +463,18 @@
 - 返回唯一资源列表 `items`
 - 返回分组索引 `groups.standalone.resource_ids`（无季信息资源）
 - 返回分组索引 `groups.seasons`（按 `season` 分组后的资源，只包含 `resource_ids`，不重复嵌入资源对象）
-- 返回 `summary`，包含总资源数、季数、无季资源数、已手动编辑资源数
+- 返回播放源分组索引 `groups.playback_sources`，用于详情页默认展示主播放源，并把同文件副本折叠为备用播放源
+- 返回 `summary`，包含总资源数、去重后播放源数、重复副本组数、备用资源数、季数、无季资源数、已手动编辑资源数
 - `summary` 额外包含 `season_metadata_count`
+- `items` 仍保留全量资源对象，不改变现有资源管理与排查入口；前端默认播放源列表应优先读取 `groups.playback_sources[].primary_resource_id`
+- 当前副本判定规则为同一影片内 `season/episode + filename + size_bytes` 一致；只有判定为副本的资源会出现在 `alternate_resource_ids`
+- 主播放源选择优先级：最近观看记录 > 质量层级 > 分辨率 > 文件大小 > 创建时间；这样用户从备用源看过后，默认续播会优先落到该资源
 - 每个资源只包含：
   - `id`
   - `resource_info.file`：文件名、路径、大小、容器、存储源
   - `resource_info.display`：展示标题、展示标签、季集、排序信息
   - `resource_info.technical`：分辨率、编码、HDR、音频、片源和质量层级
+  - `playback`：播放能力矩阵、外部播放器链接、字幕占位、网页音频兼容和转码状态
   - `metadata.trace`：解析/刮削留痕
   - `metadata.analysis`：路径清洗与刮削分析
   - `metadata.edit_context`：人工编辑上下文
@@ -454,9 +490,22 @@
   - `quality_tier/quality_tier_label/quality_rank/quality_is_reference/quality_is_original_quality`：资源质量层级
   - `flag_is_4k/flag_is_1080p/flag_is_hdr/flag_is_hdr10/flag_is_hdr10_plus/flag_is_hlg/flag_is_dolby_vision/flag_is_remux/flag_is_uhd_bluray/flag_is_lossless_audio/flag_is_original_quality/flag_is_movie_feature/flag_imax/flag_ten_bit`：解析得到的布尔辅助特征
   - `extra_tags`：仅放结构化字段覆盖不了的额外标签，例如 `IMAX`
+- `playback.stream_url` 是后端播放入口；外部播放器也可以使用该地址，AList/OpenList 会继续由该入口 302 到上游 `/d/...` 直链
+- `playback.external_player.subtitle_urls` 与 `playback.subtitles.items` 当前为占位空数组，后续接入字幕发现/下载后再填充
+- `playback.audio.web_decode_status` 会标记 DTS/AC3/E-AC3/TrueHD 等网页播放器常见无声风险；`server_transcode.available=true` 只表示后端音频转码能力可用，前端可让用户手动启用，`server_transcode.recommended=true` 表示后端建议优先使用转码音频
+- `GET /api/v1/resources/<id>/audio-transcode?start=0&audio_track=0&format=mp3` 返回独立实时音频流；前端 seek 后用新的 `start=video.currentTime` 重建 audio 流，与原始 video 流同步
+- 音频转码流采用 forward-only 策略：前端应优先使用当前 `audio.buffered` 完成缓冲区内 seek；只有目标时间超出音频缓冲区时才重建 `audio-transcode` 流
+- `GET /api/v1/resources/<id>/audio-transcode/diagnostics?session_id=...` 返回该资源最近音频转码诊断快照，用于联调缓存命中、上游 Range、首包耗时、输出节流和关闭原因
+- 音频转码默认输出 `audio/mpeg` MP3、双声道、48kHz，优先保证 HTML `audio` 兼容性；也支持 `format=aac` 输出 ADTS AAC
+- 前端必须为转码音频请求携带稳定 `session_id`；同一资源同一 `session_id` 的新请求会停止旧转码进程，页面卸载时调用 `DELETE /api/v1/resources/<id>/audio-transcode?session_id=...`
+- 音频转码流受 history watchdog 保护：默认 `180s` 内未收到该资源 `POST /api/v1/user/history` 进度提交，后端会主动停止 ffmpeg
+- 详细安全对接约束见 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`
 - 每个 `season_group` 额外包含：
   - `resource_ids`
+  - `primary_resource_ids`
   - `episode_count`
+  - `playback_source_count`
+  - `alternate_resource_count`
   - `edited_items_count`
   - `has_manual_metadata`
   - `sort`
@@ -464,6 +513,17 @@
   - `overview`
   - `air_date`
   - `metadata_edited_at`
+- 每个 `groups.playback_sources[]` 包含：
+  - `primary_resource_id`
+  - `resource_ids`
+  - `alternate_resource_ids`
+  - `is_duplicate_group`
+  - `duplicate_key`
+  - `match`
+  - `display`
+  - `file`
+  - `source_summary`
+  - `user_data`
 
 ### `GET /api/v1/movies/<id>/seasons`
 获取单条影片的季级聚合结果。
@@ -535,7 +595,10 @@
 
 说明：
 - 每条影片独立执行，返回逐条结果和 summary
-- `summary` 当前包含 `total`、`updated`、`failed`、`updated_movie_ids`
+- 每条结果会返回 `status`、`changed`、`updated_fields`、`season_metadata_result`
+- 成功结果会带 `explanation`，说明本次候选来源、匹配置信度、解析信号和是否仍需人工复核
+- 失败结果会带分类后的 `error.category`、`retryable`、`recommended_action`
+- `summary` 当前包含 `total`、`succeeded`、`updated`、`unchanged`、`failed`、`status_counts`、`updated_movie_ids`、`failed_movie_ids`
 - 适合前端做批量“重新识别 / 补刮削”操作
 
 ### `POST /api/v1/movies/<id>/metadata/preview`
@@ -549,6 +612,7 @@
 - 只基于当前影片已有资源做定点预览
 - 返回 `current` 和 `preview` 两份结果，适合前端做 diff 弹窗或确认面板
 - 返回 `diff`，可直接区分哪些字段会变化、哪些字段被锁阻止覆盖
+- 返回 `explanation`，前端可直接展示为什么是 TMDB 严格命中、fallback 候选、本地 NFO、占位或孤儿分组
 - 不会修改 `movie`、`resource`、`season metadata`
 
 ### `GET /api/v1/movies/<id>/metadata/search`
@@ -563,6 +627,7 @@
 说明：
 - 未传 `query` 时，默认使用当前影片的 `original_title` 或 `title`
 - 返回候选列表，包含 `tmdb_id`、标题、年份、简介、海报、背景图、评分等
+- 每个候选会带 `rank` 和 `match_explanation`，说明标题、年份、媒体类型、海报/评分等命中信号，便于前端展示候选解释
 
 ### `POST /api/v1/movies/<id>/metadata/match`
 将单条影片手动匹配到指定 TMDB 结果，不触发扫描。

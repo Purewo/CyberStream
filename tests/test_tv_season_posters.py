@@ -148,7 +148,7 @@ class TVSeasonPosterTests(unittest.TestCase):
             )
 
         self.assertEqual(200, response.status_code)
-        refreshed = Movie.query.get(movie.id)
+        refreshed = db.session.get(Movie, movie.id)
         seasons = MovieSeasonMetadata.query.filter_by(movie_id=movie.id).order_by(MovieSeasonMetadata.season.asc()).all()
         self.assertEqual("tv/67954", refreshed.tmdb_id)
         self.assertEqual([1, 2], [item.season for item in seasons])
