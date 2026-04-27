@@ -49,6 +49,17 @@
 
 第一阶段不新增独立播放能力接口，也不改变 `GET /api/v1/resources/{id}/stream` 的默认行为；音频转码通过独立流接口提供，避免影响原始视频播放链路。
 
+`GET /api/v1/movies/{id}/resources` 新增播放源分组：
+
+- `groups.playback_sources[]`
+- `groups.standalone.primary_resource_ids`
+- `groups.seasons[].primary_resource_ids`
+- `summary.playback_source_count`
+- `summary.duplicate_group_count`
+- `summary.alternate_resource_count`
+
+播放源分组按同一影片内 `season/episode + filename + size_bytes` 折叠物理副本。`items` 仍保留全量资源对象，前端可默认展示 `primary_resource_id` 对应资源，并把 `alternate_resource_ids` 展示为备用播放源。
+
 ### 字段说明
 
 - `stream_url`：后端播放入口，外部播放器也可使用该 URL；AList/OpenList 场景会继续由该入口 302 到上游 `/d/...` 直链。

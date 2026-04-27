@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import posixpath
 import re
 from datetime import datetime
 
@@ -811,6 +813,123 @@ def _is_newer_user_history(candidate, current):
     return (candidate.get("last_played_at") or "") > (current.get("last_played_at") or "")
 
 
+def _normalize_duplicate_filename(resource):
+    filename = resource.filename or posixpath.basename(resource.path or "")
+    filename = re.sub(r"\s+", " ", str(filename or "").strip().lower())
+    return filename or None
+
+
+def _build_playback_source_key(resource):
+    filename = _normalize_duplicate_filename(resource)
+    size = int(resource.size or 0)
+    if not filename or size <= 0:
+        return f"resource:{resource.id}"
+    season = resource.season if resource.season is not None else "movie"
+    episode = resource.episode if resource.episode is not None else "feature"
+    return f"{season}|{episode}|{size}|{filename}"
+
+
+def _build_playback_source_group_id(key):
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    return f"ps_{digest}"
+
+
+def _resource_quality_sort_value(resource, resource_item, user_history):
+    technical = ((resource_item.get("resource_info") or {}).get("technical") or {})
+    last_played = (user_history or {}).get("last_played_at") or ""
+    return (
+        1 if user_history else 0,
+        last_played,
+        int(technical.get("quality_rank") or 0),
+        int(technical.get("video_resolution_rank") or 0),
+        int(resource.size or 0),
+        resource.created_at or datetime.min,
+        resource.id,
+    )
+
+
+def _build_playback_source_groups(resources, resource_item_map, resource_history_map):
+    grouped = {}
+    for resource in resources:
+        grouped.setdefault(_build_playback_source_key(resource), []).append(resource)
+
+    playback_sources = []
+    for key, group_resources in grouped.items():
+        ordered_resources = sorted(
+            group_resources,
+            key=lambda resource: _resource_quality_sort_value(
+                resource,
+                resource_item_map[resource.id],
+                resource_history_map.get(resource.id),
+            ),
+            reverse=True,
+        )
+        primary = ordered_resources[0]
+        primary_item = resource_item_map[primary.id]
+        resource_ids = [resource.id for resource in ordered_resources]
+        alternate_ids = resource_ids[1:]
+        primary_info = primary_item.get("resource_info") or {}
+        primary_file = primary_info.get("file") or {}
+        primary_display = primary_info.get("display") or {}
+        source_summary = []
+        seen_source_ids = set()
+
+        for resource in ordered_resources:
+            file_info = (resource_item_map[resource.id].get("resource_info") or {}).get("file") or {}
+            storage_source = file_info.get("storage_source") or {}
+            source_id = storage_source.get("id")
+            source_key = source_id if source_id is not None else f"unknown:{resource.id}"
+            if source_key in seen_source_ids:
+                continue
+            seen_source_ids.add(source_key)
+            source_summary.append({
+                "id": source_id,
+                "name": storage_source.get("name"),
+                "type": storage_source.get("type"),
+            })
+
+        playback_sources.append({
+            "id": _build_playback_source_group_id(key),
+            "primary_resource_id": primary.id,
+            "resource_ids": resource_ids,
+            "alternate_resource_ids": alternate_ids,
+            "count": len(resource_ids),
+            "is_duplicate_group": len(resource_ids) > 1,
+            "duplicate_key": {
+                "filename": _normalize_duplicate_filename(primary),
+                "size_bytes": int(primary.size or 0),
+                "season": primary.season,
+                "episode": primary.episode,
+            },
+            "match": {
+                "type": "same_filename_size" if len(resource_ids) > 1 and not key.startswith("resource:") else "single_source",
+                "fields": ["season", "episode", "filename", "size_bytes"] if len(resource_ids) > 1 and not key.startswith("resource:") else [],
+            },
+            "display": {
+                "title": primary_display.get("title"),
+                "label": primary_display.get("label"),
+                "season": primary_display.get("season"),
+                "episode": primary_display.get("episode"),
+                "episode_label": primary_display.get("episode_label"),
+            },
+            "file": {
+                "filename": primary_file.get("filename"),
+                "size_bytes": primary_file.get("size_bytes"),
+            },
+            "source_summary": source_summary,
+            "user_data": primary_item.get("user_data"),
+        })
+
+    playback_sources.sort(key=lambda item: (
+        (item.get("display") or {}).get("season") is None,
+        (item.get("display") or {}).get("season") if (item.get("display") or {}).get("season") is not None else 0,
+        (item.get("display") or {}).get("episode") is None,
+        (item.get("display") or {}).get("episode") if (item.get("display") or {}).get("episode") is not None else 0,
+        (item.get("file") or {}).get("filename") or "",
+    ))
+    return playback_sources
+
+
 def _build_movie_resource_groups(movie):
     resources = movie.resources.all()
     resource_history_map = get_resource_history_map([resource.id for resource in resources])
@@ -829,12 +948,14 @@ def _build_movie_resource_groups(movie):
     standalone_user_history = None
     edited_items = 0
     resource_items = []
+    resource_item_map = {}
 
     for resource in resources:
         resource_dict = resource.to_dict()
         resource_user_history = resource_history_map.get(resource.id)
         resource_dict["user_data"] = resource_user_history
         resource_items.append(resource_dict)
+        resource_item_map[resource.id] = resource_dict
         display = resource_dict.get("resource_info", {}).get("display", {})
         if display.get("has_manual_metadata"):
             edited_items += 1
@@ -901,19 +1022,54 @@ def _build_movie_resource_groups(movie):
     season_groups.sort(key=lambda item: item["season"])
 
     metadata_state = movie.get_metadata_ui_state()
+    playback_sources = _build_playback_source_groups(resources, resource_item_map, resource_history_map)
+    primary_resource_ids = {item["primary_resource_id"] for item in playback_sources}
+    alternate_resource_ids = {
+        resource_id
+        for item in playback_sources
+        for resource_id in item["alternate_resource_ids"]
+    }
+
+    standalone_primary_resource_ids = [
+        resource_id for resource_id in standalone_resource_ids
+        if resource_id in primary_resource_ids
+    ]
+    standalone_alternate_resource_count = sum(
+        1 for resource_id in standalone_resource_ids
+        if resource_id in alternate_resource_ids
+    )
+
+    for season_entry in season_groups:
+        season_resource_ids = season_entry["resource_ids"]
+        season_entry["primary_resource_ids"] = [
+            resource_id for resource_id in season_resource_ids
+            if resource_id in primary_resource_ids
+        ]
+        season_entry["playback_source_count"] = len(season_entry["primary_resource_ids"])
+        season_entry["alternate_resource_count"] = sum(
+            1 for resource_id in season_resource_ids
+            if resource_id in alternate_resource_ids
+        )
 
     return {
         "items": resource_items,
         "groups": {
             "standalone": {
                 "resource_ids": standalone_resource_ids,
+                "primary_resource_ids": standalone_primary_resource_ids,
                 "count": len(standalone_resource_ids),
+                "playback_source_count": len(standalone_primary_resource_ids),
+                "alternate_resource_count": standalone_alternate_resource_count,
                 "user_data": standalone_user_history,
             },
             "seasons": season_groups,
+            "playback_sources": playback_sources,
         },
         "summary": {
             "total_items": len(resources),
+            "playback_source_count": len(playback_sources),
+            "duplicate_group_count": sum(1 for item in playback_sources if item["is_duplicate_group"]),
+            "alternate_resource_count": len(alternate_resource_ids),
             "season_count": len(season_groups),
             "standalone_count": len(standalone_resource_ids),
             "edited_items_count": edited_items,

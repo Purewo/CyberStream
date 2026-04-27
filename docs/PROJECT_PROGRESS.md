@@ -31,6 +31,7 @@
    - 后续字幕、转码、投屏等功能都基于该矩阵逐步扩展。
    - 当前已在资源对象中新增 `playback` 块，随 `GET /api/v1/movies/<id>/resources` 等已有接口返回。
    - `playback.external_player.url` 暂指向后端 stream 入口，AList/OpenList 继续走 302 直链。
+   - `GET /api/v1/movies/<id>/resources` 已新增 `groups.playback_sources`，用于把同名同大小的物理副本折叠成一个主播放源和多个备用播放源；`items` 仍保留全量资源，不改变播放主链路。
    - 字幕当前只返回占位空数组；实时音频转码已提供独立 `audio-transcode` 流，前端可用 video/audio 双标签做同步播放。
    - 音频转码按 `start` 参数从指定时间点启动，seek 时由前端重建 audio 流；后端包含 ffmpeg 进程清理、默认单并发闸门、同 session 替换旧流、AList `/d` 上游重试、远程输入 Range 内存缓存、DELETE 主动停止、history watchdog 兜底停止，以及默认 `-re` 输入限速，避免音频转码过度预读远端原片、挤占视频直链。
    - 当前音频转码实现细节已沉淀到 `docs/AUDIO_TRANSCODE_DESIGN_NOTES.md`；前端安全接入方式见 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`。已新增资源级诊断接口 `GET /api/v1/resources/<id>/audio-transcode/diagnostics`，用于查看缓存命中、上游 Range、首包耗时、输出节流和关闭原因；后续继续验证真实前端小幅 seek、缓存命中后的持续流畅性和双标签同步策略。

@@ -5521,8 +5521,23 @@
                   "type": "string"
                 }
               },
+              "primary_resource_ids": {
+                "type": "array",
+                "description": "该季中每个播放源分组的主资源 ID，前端默认展示这些资源。",
+                "items": {
+                  "type": "string"
+                }
+              },
               "episode_count": {
                 "type": "integer"
+              },
+              "playback_source_count": {
+                "type": "integer",
+                "description": "该季去重后的播放源数量。"
+              },
+              "alternate_resource_count": {
+                "type": "integer",
+                "description": "该季被折叠为备用播放源的资源数量。"
               },
               "tmdb_episode_count": {
                 "type": "integer",
@@ -5629,11 +5644,168 @@
           }
         }
       },
+      "MoviePlaybackSourceDuplicateKey": {
+        "type": "object",
+        "description": "播放源副本判定键；当前按同影片内 season/episode + 文件名 + 文件大小聚合。",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "season": {
+            "type": "integer",
+            "nullable": true
+          },
+          "episode": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "MoviePlaybackSourceMatch": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "single_source",
+              "same_filename_size"
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MoviePlaybackSourceDisplay": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "season": {
+            "type": "integer",
+            "nullable": true
+          },
+          "episode": {
+            "type": "integer",
+            "nullable": true
+          },
+          "episode_label": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MoviePlaybackSourceFile": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "size_bytes": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "MoviePlaybackSourceStorageSourceSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MoviePlaybackSourceGroup": {
+        "type": "object",
+        "description": "详情页播放源分组。重复物理副本折叠到同一组，主资源用于默认播放，alternate_resource_ids 用于备用播放源展示。",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "primary_resource_id": {
+            "type": "string"
+          },
+          "resource_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "alternate_resource_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "is_duplicate_group": {
+            "type": "boolean"
+          },
+          "duplicate_key": {
+            "$ref": "#/components/schemas/MoviePlaybackSourceDuplicateKey"
+          },
+          "match": {
+            "$ref": "#/components/schemas/MoviePlaybackSourceMatch"
+          },
+          "display": {
+            "$ref": "#/components/schemas/MoviePlaybackSourceDisplay"
+          },
+          "file": {
+            "$ref": "#/components/schemas/MoviePlaybackSourceFile"
+          },
+          "source_summary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoviePlaybackSourceStorageSourceSummary"
+            }
+          },
+          "user_data": {
+            "$ref": "#/components/schemas/PlaybackUserData"
+          }
+        }
+      },
       "MovieResourceGroupsSummary": {
         "type": "object",
         "properties": {
           "total_items": {
             "type": "integer"
+          },
+          "playback_source_count": {
+            "type": "integer",
+            "description": "去重后的播放源分组数量。"
+          },
+          "duplicate_group_count": {
+            "type": "integer",
+            "description": "包含备用副本的播放源分组数量。"
+          },
+          "alternate_resource_count": {
+            "type": "integer",
+            "description": "被折叠为备用播放源的资源数量。"
           },
           "season_count": {
             "type": "integer"
@@ -5706,6 +5878,13 @@
             "items": {
               "$ref": "#/components/schemas/SeasonGroup"
             }
+          },
+          "playback_sources": {
+            "type": "array",
+            "description": "播放源分组索引。前端默认展示 primary_resource_id 对应资源，alternate_resource_ids 作为备用播放源。",
+            "items": {
+              "$ref": "#/components/schemas/MoviePlaybackSourceGroup"
+            }
           }
         }
       },
@@ -5718,7 +5897,20 @@
               "type": "string"
             }
           },
+          "primary_resource_ids": {
+            "type": "array",
+            "description": "无季资源中每个播放源分组的主资源 ID。",
+            "items": {
+              "type": "string"
+            }
+          },
           "count": {
+            "type": "integer"
+          },
+          "playback_source_count": {
+            "type": "integer"
+          },
+          "alternate_resource_count": {
             "type": "integer"
           },
           "user_data": {

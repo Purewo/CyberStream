@@ -82,13 +82,17 @@
 - 同一影片可能存在同名同大小但不同路径的多个物理副本
 - 详情页可考虑默认展示一个主资源，其余折叠为备用播放源
 
+状态：
+- 后端已在 `GET /api/v1/movies/<id>/resources` 增加 `groups.playback_sources`、`primary_resource_ids` 与副本统计字段
+- 当前只做接口层分组，不删除资源，不改变 `/resources/<id>/stream`
+
 风险：
 - 不能直接删除数据库资源，因为不同路径可能是真实可播放副本
 - 需要避免影响播放历史、资源分组、手动季集编辑
 
 建议：
-- 先做接口层分组或前端折叠展示
-- 保留 `include_duplicates` 或类似排查入口
+- 前端默认展示 `primary_resource_id`，将 `alternate_resource_ids` 作为备用播放源
+- 当前 `items` 仍保留全量资源，作为排查入口
 - 不在当前稳定版改变默认语义
 
 #### 1.2 SQLAlchemy 2.0 警告清理（已完成）

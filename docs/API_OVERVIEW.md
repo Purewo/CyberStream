@@ -463,8 +463,12 @@
 - 返回唯一资源列表 `items`
 - 返回分组索引 `groups.standalone.resource_ids`（无季信息资源）
 - 返回分组索引 `groups.seasons`（按 `season` 分组后的资源，只包含 `resource_ids`，不重复嵌入资源对象）
-- 返回 `summary`，包含总资源数、季数、无季资源数、已手动编辑资源数
+- 返回播放源分组索引 `groups.playback_sources`，用于详情页默认展示主播放源，并把同文件副本折叠为备用播放源
+- 返回 `summary`，包含总资源数、去重后播放源数、重复副本组数、备用资源数、季数、无季资源数、已手动编辑资源数
 - `summary` 额外包含 `season_metadata_count`
+- `items` 仍保留全量资源对象，不改变现有资源管理与排查入口；前端默认播放源列表应优先读取 `groups.playback_sources[].primary_resource_id`
+- 当前副本判定规则为同一影片内 `season/episode + filename + size_bytes` 一致；只有判定为副本的资源会出现在 `alternate_resource_ids`
+- 主播放源选择优先级：最近观看记录 > 质量层级 > 分辨率 > 文件大小 > 创建时间；这样用户从备用源看过后，默认续播会优先落到该资源
 - 每个资源只包含：
   - `id`
   - `resource_info.file`：文件名、路径、大小、容器、存储源
@@ -498,7 +502,10 @@
 - 详细安全对接约束见 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`
 - 每个 `season_group` 额外包含：
   - `resource_ids`
+  - `primary_resource_ids`
   - `episode_count`
+  - `playback_source_count`
+  - `alternate_resource_count`
   - `edited_items_count`
   - `has_manual_metadata`
   - `sort`
@@ -506,6 +513,17 @@
   - `overview`
   - `air_date`
   - `metadata_edited_at`
+- 每个 `groups.playback_sources[]` 包含：
+  - `primary_resource_id`
+  - `resource_ids`
+  - `alternate_resource_ids`
+  - `is_duplicate_group`
+  - `duplicate_key`
+  - `match`
+  - `display`
+  - `file`
+  - `source_summary`
+  - `user_data`
 
 ### `GET /api/v1/movies/<id>/seasons`
 获取单条影片的季级聚合结果。
