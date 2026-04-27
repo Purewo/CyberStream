@@ -100,7 +100,7 @@
 - 将 `Query.get()` 逐步迁移为 `db.session.get(Model, id)`
 
 状态：
-- 已在 `develop/1.17.0` 完成等价迁移
+- 已在 `main` 完成等价迁移
 - 全量 unittest 已通过
 
 建议：
