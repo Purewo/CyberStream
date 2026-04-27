@@ -2100,6 +2100,367 @@
         }
       }
     },
+    "/api/v1/resources/{id}/audio-transcode": {
+      "get": {
+        "summary": "✅ [验证通过] 音频实时转码流",
+        "description": "为网页播放器提供独立音频流。前端可让 video 继续使用原始 stream_url，同时让 audio 使用该接口；播放或拖动进度时通过 start 参数重建音频流，后端从对应时间点实时转码输出。转码流启动后必须持续提交观看历史心跳，超过 X-Cyber-History-Timeout 秒未收到该资源进度提交时，后端会主动停止 ffmpeg。",
+        "operationId": "transcodeResourceAudio",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "description": "从原片多少秒开始转码。前端 seek 后应使用当前 video.currentTime 重新请求。",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "audio_track",
+            "in": "query",
+            "description": "音轨序号，按 ffmpeg 的音频流相对序号计算，0 表示第一条音轨。",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "输出音频格式。默认 mp3 优先保证 HTML audio 兼容性；aac 输出 ADTS AAC。",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "mp3",
+                "aac"
+              ],
+              "default": "mp3"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "description": "前端播放会话 ID。强烈建议每个播放器实例生成并复用；同一资源同一 session_id 的新转码请求会先停止旧转码进程。",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "实时音频转码流",
+            "headers": {
+              "X-Cyber-Audio-Start": {
+                "description": "本次转码请求的原片起始秒数。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Cyber-Audio-Track": {
+                "description": "本次转码使用的音轨序号。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Cyber-Audio-Format": {
+                "description": "本次转码输出格式。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Cyber-Playback-Session": {
+                "description": "本次转码所属播放会话 ID。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Cyber-History-Timeout": {
+                "description": "后端历史心跳兜底超时时间，单位秒。超过该时间未收到对应资源的播放进度提交时会停止转码。",
+                "schema": {
+                  "type": "string",
+                  "example": "180"
+                }
+              }
+            },
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/aac": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误，或存储源不支持 ffmpeg 输入。"
+          },
+          "404": {
+            "description": "资源不存在。"
+          },
+          "429": {
+            "description": "并发音频转码数已满，前端应稍后重试。"
+          },
+          "503": {
+            "description": "ffmpeg 不可用。"
+          }
+        }
+      },
+      "delete": {
+        "summary": "✅ [验证通过] 停止音频实时转码会话",
+        "description": "前端页面卸载、切换资源或销毁播放器时调用，用于主动停止同一资源同一 session_id 下仍在运行的音频转码进程。",
+        "operationId": "stopResourceAudioTranscode",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "停止结果。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "resource_id": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "stopped": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "session_id 缺失或格式非法。"
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{id}/audio-transcode/diagnostics": {
+      "get": {
+        "summary": "✅ [验证通过] 查询音频实时转码诊断",
+        "description": "返回指定资源最近的音频转码诊断快照。用于真实远程源联调 seek、Range 缓存、首包耗时和输出节流；输入 URL 会移除 query/fragment，避免泄漏短期签名。",
+        "operationId": "getResourceAudioTranscodeDiagnostics",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "description": "可选播放会话 ID。提供后只返回该 session 的诊断项。",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.:-]{1,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "诊断快照。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "resource_id": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "active_count": {
+                              "type": "integer"
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "diagnostic_id": {
+                                    "type": "string"
+                                  },
+                                  "resource_id": {
+                                    "type": "string"
+                                  },
+                                  "session_id": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "active": {
+                                    "type": "boolean"
+                                  },
+                                  "started_at": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  },
+                                  "updated_at": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  },
+                                  "closed_at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "nullable": true
+                                  },
+                                  "closed_reason": {
+                                    "type": "string",
+                                    "nullable": true
+                                  },
+                                  "input": {
+                                    "type": "object",
+                                    "properties": {
+                                      "url": {
+                                        "type": "string",
+                                        "nullable": true
+                                      },
+                                      "scheme": {
+                                        "type": "string",
+                                        "nullable": true
+                                      },
+                                      "is_http": {
+                                        "type": "boolean"
+                                      }
+                                    }
+                                  },
+                                  "options": {
+                                    "type": "object",
+                                    "properties": {
+                                      "start_seconds": {
+                                        "type": "number"
+                                      },
+                                      "audio_track": {
+                                        "type": "integer"
+                                      },
+                                      "format": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "counters": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "timings": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "number",
+                                      "nullable": true
+                                    }
+                                  },
+                                  "events": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "additionalProperties": true
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "session_id 格式非法。"
+          },
+          "404": {
+            "description": "资源不存在。"
+          }
+        }
+      }
+    },
     "/api/v1/reviews/resources": {
       "get": {
         "summary": "✅ [验证通过] 获取脏数据复核资源队列",
@@ -2783,7 +3144,7 @@
       },
       "post": {
         "summary": "上报播放进度",
-        "description": "上报播放进度心跳。",
+        "description": "上报播放进度心跳。使用独立音频实时转码时，该接口也是后端 watchdog 的保活信号；超过音频转码响应头 X-Cyber-History-Timeout 指定时间未提交对应 resource_id 的进度时，后端会停止转码。",
         "operationId": "reportProgress",
         "tags": [
           "User"
@@ -2818,6 +3179,11 @@
                   "device_name": {
                     "type": "string",
                     "description": "设备名称，可选"
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "description": "播放会话 ID，可选。与 audio-transcode 的 session_id 一致时可精确刷新对应转码流；不传时会刷新该资源下所有活跃转码流。",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,80}$"
                   }
                 }
               }
@@ -4220,7 +4586,7 @@
       },
       "ResourcePlayback": {
         "type": "object",
-        "description": "资源播放能力矩阵。第一阶段只描述播放方式、外部播放器链接、字幕占位和音频兼容风险，不改变 /resources/{id}/stream 的默认行为。",
+        "description": "资源播放能力矩阵。描述播放方式、外部播放器链接、字幕占位、音频兼容风险和可用的独立音频实时转码入口；不改变 /resources/{id}/stream 的默认行为。",
         "properties": {
           "stream_url": {
             "type": "string",
@@ -4358,7 +4724,7 @@
       },
       "ResourceAudioPlayback": {
         "type": "object",
-        "description": "网页播放器音频兼容和服务端音频转码状态。DTS/AC3/E-AC3/TrueHD 等会标记为 unsupported，并提示是否可由后端转码。",
+        "description": "网页播放器音频兼容和服务端音频转码状态。DTS/AC3/E-AC3/TrueHD 等会标记为 unsupported；服务端转码入口按后端能力暴露，是否建议启用由 recommended 表示。",
         "properties": {
           "codec_code": {
             "type": "string",
@@ -4392,10 +4758,12 @@
         "type": "object",
         "properties": {
           "supported": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "存储源是否支持作为 ffmpeg 输入；只表示能力支持，不代表后端已判断当前音轨必须转码。"
           },
           "available": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "服务端音频转码当前是否可用。只取决于存储源 ffmpeg_input 能力和后端 ffmpeg 可用性；即使音频编码未知或看起来可能由网页解码，也可为用户暴露手动启用入口。"
           },
           "reason": {
             "type": "string",
@@ -4405,17 +4773,93 @@
           "seek_supported": {
             "type": "boolean"
           },
+          "recommended": {
+            "type": "boolean",
+            "description": "后端是否建议启用服务端音频转码。true 表示识别到 DTS/AC3/E-AC3/TrueHD 等网页常见无声风险；false 时用户仍可手动启用。",
+            "example": true
+          },
           "endpoint": {
             "type": "string",
             "nullable": true
           },
+          "url": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v1/resources/11111111-1111-1111-1111-111111111111/audio-transcode?start=0&audio_track=0&format=mp3"
+          },
+          "start_param": {
+            "type": "string",
+            "example": "start"
+          },
+          "audio_track_param": {
+            "type": "string",
+            "example": "audio_track"
+          },
+          "format_param": {
+            "type": "string",
+            "example": "format"
+          },
+          "session_param": {
+            "type": "string",
+            "example": "session_id"
+          },
+          "default_format": {
+            "type": "string",
+            "enum": [
+              "mp3",
+              "aac"
+            ],
+            "example": "mp3"
+          },
+          "mime_type": {
+            "type": "string",
+            "example": "audio/mpeg"
+          },
           "target_codec": {
             "type": "string",
-            "example": "aac"
+            "example": "mp3"
+          },
+          "channels": {
+            "type": "integer",
+            "example": 2
+          },
+          "sample_rate": {
+            "type": "integer",
+            "example": 48000
+          },
+          "requires_history_heartbeat": {
+            "type": "boolean",
+            "example": true
+          },
+          "history_timeout_seconds": {
+            "type": "integer",
+            "example": 180
           },
           "mode": {
             "type": "string",
-            "example": "audio_only_transmux_placeholder"
+            "example": "separate_audio_stream"
+          },
+          "sync_strategy": {
+            "type": "string",
+            "example": "video_audio_dual_element"
+          },
+          "buffer_strategy": {
+            "type": "string",
+            "example": "forward_only",
+            "description": "音频转码流只从 start 指定时间向后连续输出。前端应把 audio.buffered 作为主要缓冲区。"
+          },
+          "seek_strategy": {
+            "type": "string",
+            "example": "use_buffered_audio_or_restart",
+            "description": "seek 时优先在当前 audio.buffered 内调整 currentTime；目标不在缓冲区时再用新的 start 重建。"
+          },
+          "restart_policy": {
+            "type": "string",
+            "example": "restart_only_when_target_outside_buffer"
+          },
+          "frontend_should_rebuild_on_every_seek": {
+            "type": "boolean",
+            "example": false
           }
         }
       },

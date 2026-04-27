@@ -18,7 +18,7 @@
 - `PATCH /api/v1/resources/{id}/metadata`
 - `PATCH /api/v1/movies/{id}/resources/metadata`
 
-第一阶段不新增独立播放能力接口，也不改变 `GET /api/v1/resources/{id}/stream` 的默认行为。
+第一阶段不新增独立播放能力接口，也不改变 `GET /api/v1/resources/{id}/stream` 的默认行为；音频转码通过独立流接口提供，避免影响原始视频播放链路。
 
 ### 字段说明
 
@@ -37,10 +37,25 @@
 - `audio.web_decode_risk = true`
 - `web_player.needs_server_audio_transcode = true`
 
-当前运行环境尚未安装 `ffmpeg` / `ffprobe`，因此服务端实时音频转码暂时只返回能力占位：
+`server_transcode.available` 现在表示后端转码能力可用，不再要求后端提前识别音轨一定无法网页解码；即使音频编码未知或看起来可能支持，只要存储源支持 ffmpeg 输入且后端 ffmpeg 可用，前端也可以暴露“使用转码音频”的手动入口。`server_transcode.recommended=true` 才表示后端建议优先启用转码。
 
-- `audio.server_transcode.supported = true`
-- `audio.server_transcode.available = false`
-- `audio.server_transcode.reason = ffmpeg_not_installed`
+当前已新增独立音频实时转码接口：
 
-后续真正接入实时音频转码时，需要独立实现 seek 同步、Range 映射和服务器中转策略。
+- `GET /api/v1/resources/{id}/audio-transcode?start=0&audio_track=0&format=mp3`
+- 强烈建议前端追加 `session_id`；同一资源同一 `session_id` 的新请求会先停止旧转码进程，并短暂等待旧进程释放单并发名额，避免 seek 时被旧流挡成 `429`。
+- 页面卸载、切换资源或销毁播放器时调用 `DELETE /api/v1/resources/{id}/audio-transcode?session_id=...` 主动停止会话。
+- 转码流启动后必须持续提交 `POST /api/v1/user/history`。默认 `180` 秒内未收到对应 `resource_id` 的进度提交时，后端会主动停止 ffmpeg，避免前端测试或悬挂连接长期占用远程下载流。
+- 默认输出 `audio/mpeg` MP3，优先保证 HTML `audio` 兼容性。
+- 默认下混到双声道、48kHz，避免网页端多声道解码差异影响播放。
+- 可选 `format=aac` 输出 ADTS AAC。
+- `start` 表示从原片多少秒开始转码，前端拖动进度后应以新的 `video.currentTime` 重建音频流。
+- 音频转码流采用 forward-only 策略。前端应优先用当前 `audio.buffered` 完成缓冲区内 seek；只有目标时间超出音频缓冲区时才释放旧 audio 并用新的 `start` 重建。
+- 后端会限制并发转码数；达到上限时返回 `429`。
+- AList `/d` 或网盘 CDN 首次 Range 偶发失败时，后端会在同一个转码请求内部重试上游输入，并在首包前必要时重启 ffmpeg；前端不要用频繁重建 `audio.src` 的方式自行重试。
+- 后端会对远程输入 HTTP Range 做进程内内存缓存，默认 256MB，用于复用 MKV 索引和相邻 seek 的原始字节片段；不缓存完整转码文件，不写磁盘。缓存按资源归属清理：history 判断同一 `session_id` 切换资源后，如果旧资源没有其他活跃观看会话，会清理旧资源缓存。
+- 后端默认启用 ffmpeg `-re` 输入限速，优先保护原始视频直链，避免音频转码从同一个远端原片过度预读并挤占 CDN 带宽；seek 后音频首包可能略慢，前端不要因短暂等待频繁重建 `audio.src`。
+- 新增 `GET /api/v1/resources/{id}/audio-transcode/diagnostics?session_id=...`，用于真实源联调时查看缓存命中、上游 Range 打开次数、首包耗时、输出字节与关闭原因。诊断中的输入 URL 会去掉 query/fragment，避免泄漏短期签名。
+
+`playback.audio.server_transcode` 会在可用时返回 `endpoint`、默认 `url`、`start_param`、`audio_track_param`、`format_param`、`session_param`、`mime_type` 和 `sync_strategy=video_audio_dual_element`。
+
+前端安全对接细节见 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`。

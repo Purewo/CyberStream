@@ -457,7 +457,14 @@
   - `extra_tags`：仅放结构化字段覆盖不了的额外标签，例如 `IMAX`
 - `playback.stream_url` 是后端播放入口；外部播放器也可以使用该地址，AList/OpenList 会继续由该入口 302 到上游 `/d/...` 直链
 - `playback.external_player.subtitle_urls` 与 `playback.subtitles.items` 当前为占位空数组，后续接入字幕发现/下载后再填充
-- `playback.audio.web_decode_status` 会标记 DTS/AC3/E-AC3/TrueHD 等网页播放器常见无声风险；当前无 `ffmpeg` 时 `server_transcode.available=false`
+- `playback.audio.web_decode_status` 会标记 DTS/AC3/E-AC3/TrueHD 等网页播放器常见无声风险；`server_transcode.available=true` 只表示后端音频转码能力可用，前端可让用户手动启用，`server_transcode.recommended=true` 表示后端建议优先使用转码音频
+- `GET /api/v1/resources/<id>/audio-transcode?start=0&audio_track=0&format=mp3` 返回独立实时音频流；前端 seek 后用新的 `start=video.currentTime` 重建 audio 流，与原始 video 流同步
+- 音频转码流采用 forward-only 策略：前端应优先使用当前 `audio.buffered` 完成缓冲区内 seek；只有目标时间超出音频缓冲区时才重建 `audio-transcode` 流
+- `GET /api/v1/resources/<id>/audio-transcode/diagnostics?session_id=...` 返回该资源最近音频转码诊断快照，用于联调缓存命中、上游 Range、首包耗时、输出节流和关闭原因
+- 音频转码默认输出 `audio/mpeg` MP3、双声道、48kHz，优先保证 HTML `audio` 兼容性；也支持 `format=aac` 输出 ADTS AAC
+- 前端必须为转码音频请求携带稳定 `session_id`；同一资源同一 `session_id` 的新请求会停止旧转码进程，页面卸载时调用 `DELETE /api/v1/resources/<id>/audio-transcode?session_id=...`
+- 音频转码流受 history watchdog 保护：默认 `180s` 内未收到该资源 `POST /api/v1/user/history` 进度提交，后端会主动停止 ffmpeg
+- 详细安全对接约束见 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`
 - 每个 `season_group` 额外包含：
   - `resource_ids`
   - `episode_count`

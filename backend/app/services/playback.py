@@ -1,9 +1,15 @@
 import mimetypes
 import os
-import shutil
 
 from flask import has_request_context, url_for
 
+from backend.app.services.audio_transcode import (
+    DEFAULT_AUDIO_TRANSCODE_FORMAT,
+    DEFAULT_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS,
+    build_audio_transcode_url_params,
+    get_audio_transcode_profile,
+    is_ffmpeg_available as _is_ffmpeg_available,
+)
 from backend.app.storage.source_registry import get_source_capabilities
 
 
@@ -25,6 +31,7 @@ VIDEO_MIME_TYPES = {
 WEB_AUDIO_UNSAFE_CODECS = {
     'ac3': 'AC3 is not consistently supported by HTML5 video audio decoders',
     'eac3': 'E-AC3 is not consistently supported by HTML5 video audio decoders',
+    'dolby_atmos': 'Dolby Atmos tracks are commonly carried as E-AC3 or TrueHD and are not consistently supported by HTML5 video audio decoders',
     'dts_x': 'DTS:X is not supported by common HTML5 video audio decoders',
     'dts_hd_ma': 'DTS-HD MA is not supported by common HTML5 video audio decoders',
     'truehd': 'TrueHD is not supported by common HTML5 video audio decoders',
@@ -42,7 +49,7 @@ def guess_video_mime_type(resource):
 
 
 def is_ffmpeg_available():
-    return bool(shutil.which('ffmpeg'))
+    return _is_ffmpeg_available()
 
 
 def _stream_url(resource):
@@ -52,6 +59,15 @@ def _stream_url(resource):
     if has_request_context():
         return url_for('player.stream_resource', id=resource_id, _external=True)
     return f"/api/v1/resources/{resource_id}/stream"
+
+
+def _audio_transcode_endpoint(resource):
+    resource_id = getattr(resource, 'id', None)
+    if not resource_id:
+        return None
+    if has_request_context():
+        return url_for('player.transcode_resource_audio', id=resource_id, _external=True)
+    return f"/api/v1/resources/{resource_id}/audio-transcode"
 
 
 def _source_capabilities(resource):
@@ -98,6 +114,17 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None)
     source_type, source_capabilities = _source_capabilities(resource)
     technical = (resource_info or {}).get("technical") or {}
     stream_url = _stream_url(resource)
+    audio_transcode_endpoint = _audio_transcode_endpoint(resource)
+    default_transcode_profile = get_audio_transcode_profile(DEFAULT_AUDIO_TRANSCODE_FORMAT)
+    default_transcode_params = build_audio_transcode_url_params()
+    default_transcode_query = "&".join(
+        f"{key}={value}" for key, value in default_transcode_params.items()
+    )
+    audio_transcode_url = (
+        f"{audio_transcode_endpoint}?{default_transcode_query}"
+        if audio_transcode_endpoint
+        else None
+    )
     mime_type = guess_video_mime_type(resource)
     redirect_supported = bool(source_capabilities.get("redirect_stream"))
     stream_supported = bool(source_capabilities.get("stream"))
@@ -110,6 +137,8 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None)
     ffmpeg_ready = is_ffmpeg_available() if ffmpeg_available is None else bool(ffmpeg_available)
     audio_state = _audio_web_decode_state(technical)
     needs_audio_transcode = bool(audio_state["web_decode_risk"])
+    transcode_supported = bool(ffmpeg_input_supported)
+    transcode_available = bool(transcode_supported and ffmpeg_ready)
     playback_modes = []
 
     if redirect_supported:
@@ -117,13 +146,12 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None)
     elif stream_supported:
         playback_modes.append("proxy")
 
-    transcode_available = bool(needs_audio_transcode and ffmpeg_ready and ffmpeg_input_supported)
     transcode_reason = None
-    if needs_audio_transcode and not transcode_available:
-        if not ffmpeg_ready:
-            transcode_reason = "ffmpeg_not_installed"
-        elif not ffmpeg_input_supported:
+    if not transcode_available:
+        if not ffmpeg_input_supported:
             transcode_reason = "provider_ffmpeg_input_not_supported"
+        elif not ffmpeg_ready:
+            transcode_reason = "ffmpeg_not_installed"
         else:
             transcode_reason = "audio_transcode_not_enabled"
 
@@ -133,13 +161,13 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None)
             "code": "web_audio_decode_risk",
             "message": audio_state["reason"],
         })
-    if transcode_reason:
+    if needs_audio_transcode and transcode_reason:
         warnings.append({
             "code": transcode_reason,
             "message": "Server-side audio transcoding is not currently available",
         })
 
-    return {
+    playback = {
         "stream_url": stream_url,
         "mime_type": mime_type,
         "storage_type": source_type,
@@ -171,14 +199,37 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None)
         "audio": {
             **audio_state,
             "server_transcode": {
-                "supported": needs_audio_transcode,
+                "supported": transcode_supported,
                 "available": transcode_available,
                 "reason": transcode_reason,
                 "seek_supported": transcode_available,
+                "recommended": needs_audio_transcode,
                 "endpoint": None,
-                "target_codec": "aac",
-                "mode": "audio_only_transmux_placeholder",
+                "url": None,
+                "start_param": "start",
+                "audio_track_param": "audio_track",
+                "format_param": "format",
+                "session_param": "session_id",
+                "default_format": default_transcode_profile.format,
+                "mime_type": default_transcode_profile.mime_type,
+                "target_codec": default_transcode_profile.target_codec,
+                "channels": default_transcode_profile.channels,
+                "sample_rate": default_transcode_profile.sample_rate,
+                "requires_history_heartbeat": True,
+                "history_timeout_seconds": DEFAULT_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS,
+                "mode": "separate_audio_stream",
+                "sync_strategy": "video_audio_dual_element",
+                "buffer_strategy": "forward_only",
+                "seek_strategy": "use_buffered_audio_or_restart",
+                "restart_policy": "restart_only_when_target_outside_buffer",
+                "frontend_should_rebuild_on_every_seek": False,
             },
         },
         "warnings": warnings,
     }
+
+    if transcode_available:
+        playback["audio"]["server_transcode"]["endpoint"] = audio_transcode_endpoint
+        playback["audio"]["server_transcode"]["url"] = audio_transcode_url
+
+    return playback

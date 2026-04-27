@@ -535,6 +535,10 @@ class AListProvider(StorageProvider):
 
     def get_ffmpeg_input(self, path):
         try:
-            return self._fetch_raw_url(path)
+            public_download_url, _request_download_url = self._build_signed_download_urls(path)
+            return public_download_url
         except Exception:
-            return self._build_download_url(path)
+            try:
+                return self._fetch_raw_url(path)
+            except Exception:
+                return self._build_download_url(path)

@@ -68,6 +68,48 @@ TMDB 专用代理地址，默认 `http://127.0.0.1:17890`。
 
 ---
 
+### 2.4 FFmpeg 实时转码配置
+
+#### `FFMPEG_BIN`
+指定 ffmpeg 可执行文件路径。未设置时后端会自动查找 `ffmpeg`、`~/.local/bin/ffmpeg`、`/usr/local/bin/ffmpeg`、`/usr/bin/ffmpeg`。
+
+环境变量：`CYBER_FFMPEG_BIN` 或 `FFMPEG_BIN`。
+
+#### `FFMPEG_AUDIO_TRANSCODE_MAX_CONCURRENT`
+实时音频转码全局并发上限，默认 `1`。联调阶段不建议调高，避免前端误触发多条远程下载和转码流。
+
+#### `FFMPEG_AUDIO_TRANSCODE_READ_TIMEOUT_SECONDS`
+ffmpeg 读取远程输入的超时时间，默认 `60` 秒。AList/网盘大文件在首次 seek 时可能触发多段 Range 读取，低于该值容易出现首包前超时。
+
+#### `FFMPEG_AUDIO_TRANSCODE_INPUT_RETRIES`
+实时音频转码内部输入代理的上游重试次数，默认 `2`。用于处理 AList `/d` 链接或网盘 CDN 首次 Range 请求偶发失败、断流、超时的问题；重试发生在同一个后端转码请求内部，不需要前端重建 `audio`。
+
+#### `FFMPEG_AUDIO_TRANSCODE_FIRST_BYTE_TIMEOUT_SECONDS`
+实时音频转码首包超时时间，默认 `90` 秒。拖动到远处时间点后，如果 ffmpeg 长时间没有输出任何音频字节，后端会在首包前主动重建输入代理和 ffmpeg，避免前端无限等待。
+
+#### `FFMPEG_AUDIO_TRANSCODE_ACQUIRE_TIMEOUT_SECONDS`
+实时音频转码抢占限流等待时间，默认 `3` 秒。同一 `session_id` seek 时后端会先停止旧流，再给旧 ffmpeg 短时间退出窗口，避免新流被旧流瞬时占用的单并发名额挡成 `429`。
+
+#### `FFMPEG_AUDIO_TRANSCODE_REALTIME_INPUT`
+ffmpeg 原生 `-re` 输入限速开关，默认 `true`。优先保护原始视频直链，避免音频转码从同一个远端原片过度预读，挤占浏览器视频播放带宽并把 Range 缓存窗口推得过远。若后续只在高速内网或本地源上使用，可按场景关闭。
+
+#### `FFMPEG_AUDIO_TRANSCODE_OUTPUT_RATE_MULTIPLIER`
+实时音频转码输出限速倍率，默认 `1.5`。后端会按目标音频码率的约 1.5 倍向前端输出，让 audio 元素持续积累小缓冲，避免严格 1 倍实时输出导致网络轻微抖动后卡顿。
+
+#### `FFMPEG_AUDIO_TRANSCODE_OUTPUT_INITIAL_BURST_SECONDS`
+实时音频转码初始突发缓冲秒数，默认 `8`。每条转码流启动后，后端会先尽快输出约 8 秒音频给前端，之后再进入输出限速。
+
+#### `FFMPEG_AUDIO_TRANSCODE_RANGE_CACHE_ENABLED`
+实时音频转码远程输入 Range 内存缓存开关，默认 `true`。缓存的是 AList `/d` / 网盘 CDN 返回的原始视频字节片段，主要用于复用 MKV 头部、尾部索引和相邻 seek 的 cluster，不缓存完整转码文件。缓存按资源归属管理；history 判断同一 `session_id` 切换到其他资源且旧资源没有其他活跃观看会话时，会清理旧资源缓存。
+
+#### `FFMPEG_AUDIO_TRANSCODE_RANGE_CACHE_BYTES`
+实时音频转码远程输入 Range 内存缓存上限，默认 `268435456` 字节（256MB）。超过上限按最近使用情况淘汰旧片段；缓存只在后端进程内存中，重启后清空，不写磁盘。
+
+#### `FFMPEG_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS`
+实时音频转码 history watchdog 超时时间，默认 `180` 秒。超过该时间未收到对应资源的 `POST /api/v1/user/history` 播放进度提交时，后端会主动停止 ffmpeg。
+
+---
+
 ## 3. 当前属于历史残留或弱依赖的配置
 
 ### 3.1 `STORAGE_MODE`

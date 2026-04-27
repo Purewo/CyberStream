@@ -336,6 +336,15 @@ class AListProviderTests(unittest.TestCase):
             request_url,
         )
 
+    def test_ffmpeg_input_prefers_public_signed_download_url(self):
+        provider = self.create_provider(token="static-token")
+        provider._fetch_raw_url = lambda path: (_ for _ in ()).throw(AssertionError("should not use raw url first"))
+
+        self.assertEqual(
+            "http://alist.local:5244/d/library/%E7%94%B5%E5%BD%B1/movie.mkv?sign=signed-token",
+            provider.get_ffmpeg_input("电影/movie.mkv"),
+        )
+
     def test_build_download_url_keeps_base_path(self):
         provider = self.create_provider(base_url="https://alist.example.com/base", root="/movies", token="static-token")
 

@@ -61,8 +61,10 @@
 1. 播放能力矩阵
    - 增加资源级播放能力描述，明确 direct/proxy/redirect、Range、MIME、外部播放器、字幕、转码、FFmpeg 输入等能力。
    - 第一阶段只暴露能力和限制，不改变 `/resources/<id>/stream` 的默认播放行为。
-   - 已完成资源对象 `playback` 第一版：外部播放器 URL、字幕占位、网页音频兼容风险、服务端音频转码占位。
-   - 下一步如要实现实时音频转码，需要先补 `ffmpeg/ffprobe` 运行依赖，再设计 seek 同步和服务器中转策略。
+   - 已完成资源对象 `playback` 第一版：外部播放器 URL、字幕占位、网页音频兼容风险、服务端音频转码入口。
+   - 已补 `ffmpeg/ffprobe` 用户级运行依赖，并新增实时音频转码流；当前默认单并发、同 session 替换旧流、AList `/d` 输入重试、远程输入 Range 内存缓存、支持 DELETE 主动停止、history watchdog 兜底停止和 `-re` 输入限速，优先保护原始视频直链。
+   - 实现细节已记录在 `docs/AUDIO_TRANSCODE_DESIGN_NOTES.md`，前端契约在 `docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md`。
+   - 已新增资源级音频转码诊断接口，后续重点验证远程源 seek、缓存命中后的持续流畅性、前端双标签同步策略和真实多用户并发策略。
 
 2. 元数据复核工作台增强
    - 强化失败分类、候选结果解释和批量重识别反馈。
