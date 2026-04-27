@@ -294,7 +294,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 - 资源库分页接口 `GET /api/v1/libraries/1/movies?page=1&page_size=1` 返回 `200`，包含 `pagination`
 - Avatar 资源接口已验证可返回 `UHD Blu-ray Remux`、`HDR10`、`Dolby TrueHD 7.1 Atmos`、`HEVC` 等技术字段
 
-当前版本后续只做必要小修；下一轮大功能进入后续版本。
+该基线作为历史回归参考保留。当前主干版本为 `1.17.0`，发布前仍应优先执行本清单中的健康检查、OpenAPI 校验与全量 unittest。
 
 ---
 

@@ -126,4 +126,4 @@ PROXIES = TMDB_PROXIES
 
 # --- 应用版本 ---
 # 统一版本源：健康检查、文档与发布说明均应以此为准
-APP_VERSION = "1.16.0"
+APP_VERSION = "1.17.0"

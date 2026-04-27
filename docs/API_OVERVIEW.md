@@ -4,14 +4,14 @@
 
 ## 0. 当前基线
 
-当前稳定版本：`1.16.0`
+当前版本：`1.17.0`
 
 当前 OpenAPI 联调基线：
 
-- `backend/openapi/openapi-1.16.0-beta/openapi-1.16.0-beta.json`
-- `backend/openapi/openapi-1.16.0-beta/release-notes-1.16.0-beta.md`
+- `backend/openapi/openapi-1.17.0-beta/openapi-1.17.0-beta.json`
+- `backend/openapi/openapi-1.17.0-beta/release-notes-1.17.0-beta.md`
 
-本版已收口，后续大功能进入下一版本。当前版本只做必要 bug 修复和联调缺口补丁。
+当前 `main` 即最新版主干，后续小步提交直接进入 `main`。
 
 ## 1. 健康检查
 
@@ -824,9 +824,9 @@
 
 ## 9. 版本收口说明
 
-本文件为接手期概览文档，不替代 OpenAPI。当前 `1.16.0` 已作为稳定联调基线收口，新增大功能应进入下一版本。
+本文件为接手期概览文档，不替代 OpenAPI。当前 `1.17.0` 已作为 `main` 主干联调基线。
 
 当前必须保持同步的契约文件：
 
-- `backend/openapi/openapi-1.16.0-beta/openapi-1.16.0-beta.json`
-- `backend/openapi/openapi-1.16.0-beta/release-notes-1.16.0-beta.md`
+- `backend/openapi/openapi-1.17.0-beta/openapi-1.17.0-beta.json`
+- `backend/openapi/openapi-1.17.0-beta/release-notes-1.17.0-beta.md`

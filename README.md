@@ -11,28 +11,30 @@
 
 ## 当前状态
 
-当前仓库为已接手维护版本，已确认本地可运行。`1.16.0` 已作为当前稳定基线收口，后续大功能进入下一版本开发。
+当前仓库为已接手维护版本，已确认本地可运行。当前 `main` 即最新版主干，暂不再维护长期开发分支。
 
 - 项目目录：`/home/pureworld/赛博影视`
-- 当前统一版本：`1.16.0`
+- 当前统一版本：`1.17.0`
 - 本地调试端口：`5004`
 - 公网调试入口：`http://pw.pioneer.fan:84`
 - 公网 HTTPS 入口：`https://pw.pioneer.fan:84`
 
-### 1.16.0 稳定基线
+### 1.17.0 当前主干
 
-本版已完成前后端联调所需的主要后端能力：
+当前主干已在 `1.16.0` 稳定基线之上继续补强以下能力：
 
 - 首页门户聚合与首页配置
 - 逻辑资源库、挂载点绑定、手动 include/exclude 规则
 - 公开影视库过滤，默认隐藏 raw/占位/缺海报待处理影片
 - 影视列表与资源库列表分页、排序、质量标签
 - 资源详情技术信息结构化，覆盖 `REMUX`、`4K`、`HDR10`、`Dolby Atmos`、`HEVC`、`UHD Blu-ray Remux`、`Dolby TrueHD 7.1 Atmos`
+- 资源播放能力矩阵、外部播放器链接、音频转码入口与诊断信息
+- 影片资源播放源分组，支持同名同大小副本折叠为备用播放源
+- 全局、资源库级和单片上下文推荐，并返回可解释推荐理由
+- 元数据工作台失败分类、候选解释和批量重识别反馈
 - 存储源目录预览、已保存来源浏览、扫描入口与播放链路
 - 观看历史保留，但列表/详情不再返回 `is_played` 给前端展示“已观看”标签
-- OpenAPI `1.16.0-beta` 与运行时路由对齐
-
-下一版本再做大功能；当前版本只接受必要的小修和联调缺口修补。
+- OpenAPI `1.17.0-beta` 与运行时路由对齐
 
 ## 快速启动
 
@@ -66,7 +68,7 @@ nohup /home/pureworld/赛博影视/.venv/bin/python -m backend.run > /home/purew
 - `docs/VERSIONING.md`：版本管理规范
 - `docs/STORAGE_CONFIG_FLOW.md`：存储源配置流说明
 - `docs/MAINTENANCE_TODO.md`：正式维护优先级清单
-- `backend/openapi/openapi-1.16.0-beta/release-notes-1.16.0-beta.md`：当前 OpenAPI 联调基线更新说明
+- `backend/openapi/openapi-1.17.0-beta/release-notes-1.17.0-beta.md`：当前 OpenAPI 联调基线更新说明
 
 ## 技术栈
 
