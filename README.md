@@ -9,6 +9,15 @@
 - 视频流播放
 - 观看历史记录
 
+## 速览
+<img width="2017" height="1098" alt="2efe0139ddf88073488b548002db4977" src="https://github.com/user-attachments/assets/78e454c4-1845-4fb7-8de7-735d863192df" />
+
+<img width="2017" height="1097" alt="adb91f776747a30502a18bc60580eb42" src="https://github.com/user-attachments/assets/65c2cf4f-9d15-4f8e-8513-1d44d90c653e" />
+
+<img width="2021" height="1101" alt="b3b5985a1a9c7d49b5093586a0779884" src="https://github.com/user-attachments/assets/aa1a5904-62c2-4901-b4f6-8d23c3f387b7" />
+
+<img width="2011" height="1100" alt="106362f2d287782cfe941f88ea932290" src="https://github.com/user-attachments/assets/5ba7eee8-cc9d-4fc7-82c9-7555a0ba6609" />
+
 ## 当前状态
 
 当前仓库为已接手维护版本，已确认本地可运行。当前 `main` 即最新版主干，暂不再维护长期开发分支。
