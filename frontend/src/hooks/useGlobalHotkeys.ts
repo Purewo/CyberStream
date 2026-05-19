@@ -6,7 +6,7 @@
 // never eat user typing.
 
 import { useEffect } from 'react';
-import { toggleFullscreen } from '../platform';
+import { isFullscreen, toggleFullscreen } from '../platform';
 
 function isEditableTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
@@ -23,6 +23,20 @@ export function useGlobalHotkeys() {
       if (e.key === 'F11') {
         e.preventDefault();
         toggleFullscreen().catch(() => { /* permission denied — ignore */ });
+        return;
+      }
+      // Escape only exits fullscreen — never closes overlays here. Overlay
+      // close is handled inside Player.tsx / modals so they can prompt for
+      // unsaved state. We bail early when not fullscreen so the keystroke
+      // bubbles to whatever component wanted it.
+      if (e.key === 'Escape') {
+        isFullscreen().then((fs) => {
+          if (fs) {
+            // Don't preventDefault — components downstream may still want
+            // Esc, but make sure we leave fullscreen first.
+            toggleFullscreen().catch(() => {});
+          }
+        }).catch(() => {});
         return;
       }
     };
