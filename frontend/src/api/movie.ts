@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants/index';
+import { getApiBase } from '../platform';
 import { fetchApi, fetchApiRaw, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse, ApiMovieList } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 import type { components } from './schema';
@@ -113,17 +113,17 @@ export const movieService = {
   },
   
   getStreamUrl: (resourceId: string): string => {
-    return `${API_BASE}/v1/resources/${resourceId}/stream`;
+    return `${getApiBase()}/v1/resources/${resourceId}/stream`;
   },
   
   getSubtitleUrl: (resourceId: string, subtitle: any): string => {
     if (typeof subtitle === 'string') {
-        return `${API_BASE}/v1/resources/${resourceId}/stream?subtitle_id=${subtitle}`;
+        return `${getApiBase()}/v1/resources/${resourceId}/stream?subtitle_id=${subtitle}`;
     }
     if (subtitle?.web_player?.url) {
-        return subtitle.web_player.url.replace(/^\/api/, API_BASE);
+        return subtitle.web_player.url.replace(/^\/api/, getApiBase());
     }
-    return `${API_BASE}/v1/resources/${resourceId}/stream?subtitle_id=${subtitle?.id || subtitle}`;
+    return `${getApiBase()}/v1/resources/${resourceId}/stream?subtitle_id=${subtitle?.id || subtitle}`;
   },
 
   searchOnlineSubtitles: async (resourceId: string, keyword?: string): Promise<any> => {
@@ -152,7 +152,7 @@ export const movieService = {
       if (downloadIndex !== undefined) {
         payload.download_index = downloadIndex;
       }
-      const res = await fetch(`${API_BASE}/v1/resources/${resourceId}/subtitles/online/download`, {
+      const res = await fetch(`${getApiBase()}/v1/resources/${resourceId}/subtitles/online/download`, {
         method: "POST",
         headers: {
           'Content-Type': 'application/json'
@@ -184,7 +184,7 @@ export const movieService = {
     formData.append("set_default", String(setDefault));
 
     // For file upload, we need to omit the Content-Type header so the browser sets the boundary correctly
-    const res = await fetch(`${API_BASE}/v1/resources/${resourceId}/subtitles/upload`, {
+    const res = await fetch(`${getApiBase()}/v1/resources/${resourceId}/subtitles/upload`, {
       method: "POST",
       body: formData,
     });
@@ -244,7 +244,7 @@ export const movieService = {
     if (force) body.force = force;
     if (note) body.note = note;
     
-    const res = await fetch(`${API_BASE}/v1/movies/${queryId}/catalog-visibility`, {
+    const res = await fetch(`${getApiBase()}/v1/movies/${queryId}/catalog-visibility`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -368,7 +368,7 @@ export const movieService = {
   delete: async (id: string | number): Promise<boolean> => {
     try {
       const queryId = movieService.getRealId(id);
-      const res = await fetch(`${API_BASE}/v1/movies/${queryId}`, { method: 'DELETE' });
+      const res = await fetch(`${getApiBase()}/v1/movies/${queryId}`, { method: 'DELETE' });
       return res.ok;
     } catch {
       return false;

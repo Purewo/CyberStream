@@ -12,6 +12,7 @@ import { ContextMenu } from './components/ui/ContextMenu';
 import { ScanProgressBar } from './components/ui/ScanProgressBar';
 import { Toaster } from './components/ui/Toaster';
 import { movieService, libraryService, userService } from './api';
+import { getPublicUrlBase, writeClipboard } from './platform';
 import { getStyles, toast } from './utils';
 import { Movie, ViewState } from './types';
 import { useThemeSettings } from './hooks/useThemeSettings';
@@ -118,8 +119,14 @@ const App = () => {
          setMetadataMovie(movie);
          break;
        case 'share':
-         navigator.clipboard.writeText(`你看《${movie.title}》了吗？超赞：${window.location.origin}/movie/${movie.id}`);
-         alert('分享链接已复制到剪贴板！'); 
+         try {
+           const origin = getPublicUrlBase();
+           const link = origin ? `${origin}/movie/${movie.id}` : `/movie/${movie.id}`;
+           await writeClipboard(`你看《${movie.title}》了吗？超赞：${link}`);
+           toast.success('分享链接已复制到剪贴板');
+         } catch {
+           toast.error('复制失败，请检查剪贴板权限');
+         }
          break;
        case 'favorite':
          await handleToggleFavorite(movie);

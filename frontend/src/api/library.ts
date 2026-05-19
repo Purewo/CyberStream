@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants/index';
+import { getApiBase } from '../platform';
 import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse, ApiMovieList } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 
@@ -24,7 +24,7 @@ export const libraryService = {
 
   updateLibrary: async (id: number, data: any): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/libraries/${id}`, {
+      const res = await fetch(`${getApiBase()}/v1/libraries/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -37,7 +37,7 @@ export const libraryService = {
 
   deleteLibrary: async (id: number): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/libraries/${id}`, {
+      const res = await fetch(`${getApiBase()}/v1/libraries/${id}`, {
         method: 'DELETE'
       });
       return res.ok;
@@ -53,7 +53,7 @@ export const libraryService = {
 
   bindLibrarySource: async (libraryId: number, sourceId: number, rootPath: string = '/'): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/libraries/${libraryId}/sources`, {
+      const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_id: sourceId, root_path: rootPath })
@@ -66,7 +66,7 @@ export const libraryService = {
 
   unbindLibrarySource: async (libraryId: number, bindingId: number): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/libraries/${libraryId}/sources/${bindingId}`, {
+      const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/sources/${bindingId}`, {
         method: 'DELETE'
       });
       return res.ok;
@@ -111,7 +111,7 @@ export const libraryService = {
 
   scanLibrary: async (libraryId: number): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/libraries/${libraryId}/scan`, {
+      const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/scan`, {
         method: 'POST'
       });
       return res.ok || res.status === 202;
@@ -136,7 +136,7 @@ export const libraryService = {
 
   createMovieMembership: async (libraryId: number, mode: 'include' | 'exclude', movieIds: string[], sortOrder = 0): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/libraries/${libraryId}/movie-memberships`, {
+      const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/movie-memberships`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode, movie_ids: movieIds, sort_order: sortOrder })
@@ -149,7 +149,7 @@ export const libraryService = {
 
   deleteMovieMemberships: async (libraryId: number, movieIds: string[]): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/libraries/${libraryId}/movie-memberships/delete`, {
+      const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/movie-memberships/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ movie_ids: movieIds })

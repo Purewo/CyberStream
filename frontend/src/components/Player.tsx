@@ -5,7 +5,7 @@ import { Movie, PlayOptions, Episode } from '../types';
 import { movieService, userService, resourceService } from '../api';
 import { formatDuration } from '../utils';
 import { SciFiProgressRing, EcgLoading } from './ui/CyberComponents';
-import { API_BASE } from '../constants';
+import { getApiBase } from '../platform';
 
 interface PlayerProps {
   movie: Movie;
@@ -491,7 +491,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
     
     return () => {
       if (currentEpisode?.id) {
-         const prefix = API_BASE.replace(/\/$/, '');
+         const prefix = getApiBase().replace(/\/$/, '');
          fetch(`${prefix}/v1/resources/${currentEpisode.id}/audio-transcode?session_id=${encodeURIComponent(sessionIdRef.current)}`, {
            method: 'DELETE',
            keepalive: true
@@ -564,7 +564,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
      if (path.startsWith('http://') || path.startsWith('https://')) {
          fullPath = path;
      } else {
-         let prefix = API_BASE.replace(/\/$/, '');
+         let prefix = getApiBase().replace(/\/$/, '');
          if (prefix.endsWith('/api') && path.startsWith('/api/')) {
              path = path.substring(4);
          }
@@ -684,7 +684,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   const handleShowDiagnostics = async () => {
     if (!currentEpisode?.id) return;
     try {
-        const prefix = API_BASE.replace(/\/$/, '');
+        const prefix = getApiBase().replace(/\/$/, '');
         const res = await fetch(`${prefix}/v1/resources/${currentEpisode.id}/audio-transcode/diagnostics?session_id=${encodeURIComponent(sessionIdRef.current)}`);
         const data = await res.json();
         console.log('Audio Transcode Diagnostics:', data);
@@ -1185,7 +1185,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
 
   const cancelAudioTranscode = () => {
       if (currentEpisode?.id) {
-         const prefix = API_BASE.replace(/\/$/, '');
+         const prefix = getApiBase().replace(/\/$/, '');
          fetch(`${prefix}/v1/resources/${currentEpisode.id}/audio-transcode?session_id=${encodeURIComponent(sessionIdRef.current)}`, {
            method: 'DELETE',
            keepalive: true

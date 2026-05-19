@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants/index';
+import { getApiBase } from '../platform';
 import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 
@@ -12,7 +12,7 @@ export const homeService = {
   },
   updateHomepageConfig: async (config: any): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/homepage/config`, {
+      const res = await fetch(`${getApiBase()}/v1/homepage/config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)

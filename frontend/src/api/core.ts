@@ -1,6 +1,12 @@
 import { API_BASE } from '../constants/index';
+import { getApiBase, storage } from '../platform';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 import { formatBytes, toast } from '../utils/index';
+
+// Backwards-compat re-export. `API_BASE` is the static, build-time constant
+// (still consumed by a handful of legacy call sites + the web platform impl);
+// `getApiBase()` is the runtime-resolved value that respects PC user config.
+export { API_BASE };
 
 // Types defining the raw API response structure based on openapi.json
 interface ApiResponse<T> {
@@ -53,7 +59,7 @@ interface ApiMovieDetailed extends ApiMovieSimple {
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, options);
+    const res = await fetch(`${getApiBase()}${path}`, options);
     if (!res.ok) {
       console.warn(`API Error ${res.status} on ${path}`);
       return null;
@@ -83,7 +89,7 @@ interface RawApiResult<T> {
 
 async function fetchApiRaw<T>(path: string, options?: RequestInit): Promise<RawApiResult<T>> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, options);
+    const res = await fetch(`${getApiBase()}${path}`, options);
     let body: any = null;
     try { body = await res.json(); } catch { /* non-json or empty */ }
     return {
@@ -166,15 +172,16 @@ const parseDuration = (val: string | number | undefined): number => {
   return Math.floor(num);
 };
 
-// Helper to fix asset urls relative to API_BASE
+// Helper to fix asset urls relative to the current backend base.
 const resolveAssetUrl = (url?: string) => {
   if (!url) return undefined;
   if (url.startsWith('http')) return url;
+  const base = getApiBase();
   if (url.startsWith('/api/')) {
-    return `${API_BASE}${url.substring(4)}`; // Replace /api with API_BASE
+    return `${base}${url.substring(4)}`; // Replace /api with API_BASE
   }
   if (url.startsWith('/v1/')) {
-    return `${API_BASE}${url}`;
+    return `${base}${url}`;
   }
   return url;
 };
@@ -308,10 +315,10 @@ const mapSeasonCardToUi = (sc: import('../types/index').SeasonCard, parent: ApiM
 };
 
 const getDeviceId = () => {
-    let id = localStorage.getItem('cyber_device_id');
+    let id = storage().get('cyber_device_id');
     if (!id) {
         id = crypto.randomUUID();
-        localStorage.setItem('cyber_device_id', id);
+        storage().set('cyber_device_id', id);
     }
     return id;
 };

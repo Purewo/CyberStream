@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText } from 'lucide-react';
 import { Movie, PlayOptions, HistoryItem } from '../types';
 import { movieService } from '../api';
-import { API_BASE } from '../constants';
 import { formatBytes, formatDuration } from '../utils';
 import { MovieCard } from '../components/movies/Cards';
 import { TechBadge } from '../components/ui/CyberComponents';

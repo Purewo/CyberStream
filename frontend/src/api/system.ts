@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants/index';
+import { getApiBase } from '../platform';
 import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 import type { components } from './schema';
@@ -25,7 +25,7 @@ export const systemService = {
       const body: any = { type };
       if (targetPath) body.target_path = targetPath;
       
-      const res = await fetch(`${API_BASE}/v1/scan`, {
+      const res = await fetch(`${getApiBase()}/v1/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)

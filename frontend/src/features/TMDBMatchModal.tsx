@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { Search, Loader2, Check, X, Database, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { movieService } from '../api';
 import { toast } from '../utils';
-import { API_BASE } from '../constants';
+import { getApiBase } from '../platform';
 
 const resolveCandidatePoster = (cand: any): string | null => {
   const url = cand.poster_url || cand.poster;
   if (url) {
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    if (url.startsWith('/api/')) return `${API_BASE}${url.substring(4)}`;
+    if (url.startsWith('/api/')) return `${getApiBase()}${url.substring(4)}`;
     return url;
   }
   if (cand.poster_path) return `https://image.tmdb.org/t/p/w200${cand.poster_path}`;
@@ -18,8 +18,8 @@ const resolveCandidatePoster = (cand: any): string | null => {
 const resolvePreviewPoster = (url?: string | null): string | null => {
   if (!url) return null;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  if (url.startsWith('/api/')) return `${API_BASE}${url.substring(4)}`;
-  if (url.startsWith('/v1/')) return `${API_BASE}${url}`;
+  if (url.startsWith('/api/')) return `${getApiBase()}${url.substring(4)}`;
+  if (url.startsWith('/v1/')) return `${getApiBase()}${url}`;
   return url;
 };
 

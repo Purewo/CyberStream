@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants/index';
+import { getApiBase } from '../platform';
 import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 import type { components } from './schema';
@@ -34,7 +34,7 @@ export const resourceService = {
   },
 
   getAudioTranscodeUrl: (id: string, start?: number, force_bitrate?: number): string => {
-    let url = `${API_BASE}/v1/resources/${id}/audio-transcode`;
+    let url = `${getApiBase()}/v1/resources/${id}/audio-transcode`;
     const params = new URLSearchParams();
     if (start !== undefined) params.append('start', String(start));
     if (force_bitrate !== undefined) params.append('force_bitrate', String(force_bitrate));
@@ -45,7 +45,7 @@ export const resourceService = {
 
   stopAudioTranscode: async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/v1/resources/${id}/audio-transcode`, {
+      const res = await fetch(`${getApiBase()}/v1/resources/${id}/audio-transcode`, {
         method: 'DELETE'
       });
       return res.ok;

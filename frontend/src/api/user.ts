@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants/index';
+import { getApiBase } from '../platform';
 import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 
@@ -66,19 +66,19 @@ export const userService = {
 
   clearHistory: async (): Promise<void> => {
     try {
-      await fetch(`${API_BASE}/v1/user/history`, { method: 'DELETE' });
+      await fetch(`${getApiBase()}/v1/user/history`, { method: 'DELETE' });
     } catch (e) { console.error(e); }
   },
 
   deleteHistoryItem: async (resourceId: string): Promise<void> => {
     try {
-      await fetch(`${API_BASE}/v1/user/history/${resourceId}`, { method: 'DELETE' });
+      await fetch(`${getApiBase()}/v1/user/history/${resourceId}`, { method: 'DELETE' });
     } catch (e) { console.error(e); }
   },
 
   reportHistory: async (resourceId: string, positionSec: number, totalDuration: number, sessionId?: string) => {
     try {
-      await fetch(`${API_BASE}/v1/user/history`, {
+      await fetch(`${getApiBase()}/v1/user/history`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
