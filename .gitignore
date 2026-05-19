@@ -49,6 +49,7 @@ frontend/pnpm-debug.log*
 
 # pc client
 pc/vendor/
+pc/dist/
 pc/src-tauri/target/
 pc/src-tauri/gen/schemas/
 pc/src-tauri/Cargo.lock
