@@ -46,3 +46,10 @@ frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/pnpm-debug.log*
+
+# pc client
+pc/vendor/
+pc/src-tauri/target/
+pc/src-tauri/gen/schemas/
+pc/src-tauri/Cargo.lock
+pc/src-tauri/.cargo/
