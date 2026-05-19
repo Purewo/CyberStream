@@ -132,6 +132,8 @@ const BackendServerCard: React.FC = () => {
   const isPc = platform().kind === 'pc';
   const [value, setValue] = useState<string>(() => platform().getApiBase());
   const [saving, setSaving] = useState(false);
+  const [mpvProbing, setMpvProbing] = useState(false);
+  const [mpvStatus, setMpvStatus] = useState<string | null>(null);
   // The Web build's API_BASE is baked in at build time, so editing is meaningless;
   // we still render the card read-only so users know which host they're hitting.
   const persist = async (next: string) => {
@@ -151,6 +153,29 @@ const BackendServerCard: React.FC = () => {
       toast.error('保存失败');
     } finally {
       setSaving(false);
+    }
+  };
+  const probeMpv = async () => {
+    if (!isPc) return;
+    setMpvProbing(true);
+    setMpvStatus(null);
+    try {
+      const { getMpvBridge } = await import('../platform/mpv');
+      const bridge = await getMpvBridge();
+      // Non-embedded probe: spawn mpv in its own window so we can see it
+      // without coordinating with the React layer yet (M3.2 will embed).
+      const pipeName = await bridge.start();
+      const version = await bridge.getProperty<string>('mpv-version');
+      const hwdec = await bridge.getProperty<string | null>('hwdec-current').catch(() => null);
+      await bridge.stop();
+      setMpvStatus(`OK · ${version} · pipe=${pipeName.split('\\').pop()} · hwdec=${hwdec ?? 'idle'}`);
+      toast.success('libmpv 检测通过');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMpvStatus(`FAIL · ${msg}`);
+      toast.error('libmpv 检测失败：' + msg);
+    } finally {
+      setMpvProbing(false);
     }
   };
   return (
@@ -184,6 +209,31 @@ const BackendServerCard: React.FC = () => {
           </button>
         )}
       </div>
+      {isPc && (
+        <div className="mt-5 pt-5 border-t border-white/5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm text-gray-300 font-['Rajdhani']">libmpv 桥接自检</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">
+                启动 mpv 子进程、IPC 握手、读取版本和硬解能力，然后退出。
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={probeMpv}
+              disabled={mpvProbing}
+              className="px-3 py-1.5 text-xs font-bold border border-white/20 text-gray-200 hover:border-primary hover:text-primary transition-colors disabled:opacity-40"
+            >
+              {mpvProbing ? '检测中…' : '运行检测'}
+            </button>
+          </div>
+          {mpvStatus && (
+            <div className="mt-3 px-3 py-2 bg-black/40 border border-white/5 text-[11px] font-mono text-gray-400 break-all">
+              {mpvStatus}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

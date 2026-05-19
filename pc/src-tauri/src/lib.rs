@@ -1,7 +1,8 @@
 // CyberStream PC · library entry
 //
-// M0 scope: just enough to bring up an empty Tauri window that loads the
-// existing React frontend. mpv embedding lands in M3 (mpv.rs).
+// Wires the Tauri shell, plugins, and the mpv embedding bridge.
+
+mod mpv;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -10,7 +11,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .invoke_handler(tauri::generate_handler![ping])
+        .manage(mpv::MpvManager::new())
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            mpv::mpv_start,
+            mpv::mpv_stop,
+            mpv::mpv_command,
+            mpv::mpv_load_file,
+            mpv::mpv_set_property,
+            mpv::mpv_get_property,
+            mpv::mpv_observe_property,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
