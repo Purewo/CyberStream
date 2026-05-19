@@ -29,7 +29,24 @@ If you're a "good enough" user, this system will feel over-engineered. If you tr
 
 ## Screenshots
 
-> Coming soon. Will be placed under `docs/screenshots/`.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/01-home.png" alt="Home · responsive backdrop and horizontal carousels" /></td>
+    <td width="50%"><img src="docs/screenshots/02-movie-detail.png" alt="Movie detail · real tech-spec badges + seven external players" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Home · backdrop follows the focused title, multi-section horizontal carousels in one viewport</sub></td>
+    <td align="center"><sub>Movie detail · REMUX / 4K / HDR10 / Dolby Atmos badges + 7 one-click external player handoffs</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/03-governance.png" alt="Governance · episode review workbench" /></td>
+    <td width="50%"><img src="docs/screenshots/04-subtitle-manager.png" alt="Subtitle manager · same-folder + online subtitles in one place" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Governance · missing episodes / duplicate numbers / count drift diagnosed at a glance</sub></td>
+    <td align="center"><sub>Subtitle manager · current subs + SubHD / Zimuku online search, candidates ranked srt &gt; unknown &gt; sup</sub></td>
+  </tr>
+</table>
 
 ---
 
