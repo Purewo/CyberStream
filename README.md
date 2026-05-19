@@ -217,6 +217,8 @@ OpenAPI 当前基线：`backend/openapi/openapi-1.21.0-beta/openapi-1.21.0-beta.
 
 `1.21.0` —— 单主干维护，`main` 即最新版。
 
+**PC 客户端 1.21.0-pc.0**：Tauri + WebView2 + 内嵌 mpv runtime，Windows 11 优先。下载安装包见 [Releases](https://github.com/Purewo/CyberStream/releases)，构建文档见 [pc/README.md](pc/README.md)。
+
 ---
 
 ## 使用须知

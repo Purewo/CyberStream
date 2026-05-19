@@ -4,8 +4,22 @@ Tauri (Rust + WebView2) shell that wraps the React frontend and embeds libmpv
 for hardware-accelerated playback. Backend continues to run on your NAS or
 home server — this client never bundles it.
 
-> Status: **M0 — Tauri skeleton + mpv IPC self-test** (1.21.0-pc.M0)
+> Status: **1.21.0-pc.0 — first installable build**
 > Tracking doc: [docs/PC_CLIENT_GOAL.md](../docs/PC_CLIENT_GOAL.md)
+
+---
+
+## What you get in 1.21.0-pc.0
+
+| Capability | State |
+|---|---|
+| Bundled installer | MSI (~50 MB, includes mpv runtime) |
+| External player handoff | PotPlayer / VLC / IINA / nPlayer / MX / Infuse — all routed through Tauri shell, zero browser blocking |
+| Backend URL config | Profile → SYSTEM → 后端服务器 (persists, no rebuild needed) |
+| F11 fullscreen + Esc exit | Window-level fullscreen; whole UI maximizes, not just the video |
+| Same React UI as Web | 100% feature parity with the web build at 1.21.0 |
+| libmpv bridge | Rust IPC bridge present, self-test in 设置 → 后端服务器. Player.tsx integration deferred to a follow-up — for now use external player handoff for true 4K REMUX / DV playback |
+| Code signing | Not yet — Windows SmartScreen will warn; click "More info → Run anyway" |
 
 ---
 
@@ -14,8 +28,8 @@ home server — this client never bundles it.
 ```
 pc/
 ├── src-tauri/      Rust shell (Tauri 2)
-├── scripts/        Node helpers (e.g. mpv IPC self-test)
-└── vendor/         Third-party binaries (NOT in git — see below)
+├── scripts/        Node helpers (mpv IPC self-test)
+└── vendor/         Third-party binaries (NOT in git)
     └── mpv/        mpv.exe + d3dcompiler_43.dll (Windows)
 ```
 
@@ -24,16 +38,13 @@ final installer bundles them via `bundle.resources` in `tauri.conf.json`.
 
 ---
 
-## Prerequisites
+## Prerequisites (build from source)
 
 - **Windows 11** (24H2 or newer recommended)
 - **Node.js 22+** for the React frontend
-- **Rust 1.77+** (`rustup`) — installs `cargo`, `rustc` you already have if
-  you set up Tauri before
+- **Rust 1.77+** (`rustup`)
 - **WebView2 Runtime** — preinstalled on Windows 11
 - **`cargo-tauri`** — `cargo install tauri-cli --version "^2.0" --locked`
-
----
 
 ## First-time setup
 
@@ -54,12 +65,6 @@ cd ..
 node pc/scripts/verify_mpv_ipc.mjs
 ```
 
-The IPC self-test spawns mpv with `--input-ipc-server`, queries a few
-properties (`mpv-version`, `ffmpeg-version`, `platform`), and exits 0 on
-success.
-
----
-
 ## Run in dev mode
 
 ```bash
@@ -67,45 +72,36 @@ cd pc/src-tauri
 cargo tauri dev
 ```
 
-This launches Vite on port 3000 (via `beforeDevCommand`), waits for it, then
-opens the Tauri window pointing at `http://localhost:3000`. Hot reload works
-the same as the pure-web flow.
+Vite serves on port 3000; Tauri opens a window pointed at it. Hot reload
+works the same as the pure-web flow.
 
-> If port 3000 is already taken (e.g. you also have `npm run dev` running in
-> another shell), kill the other process first — Tauri does not currently fall
-> back to a different port.
-
----
-
-## Build a release (M5 onwards)
+## Build the MSI
 
 ```bash
 cd pc/src-tauri
 cargo tauri build
 ```
 
-Output goes to `pc/src-tauri/target/release/bundle/`:
-- `msi/CyberStream_1.21.0_x64_en-US.msi`
-- `nsis/CyberStream_1.21.0_x64-setup.exe`
+Output: `pc/src-tauri/target/release/bundle/msi/CyberStream_1.21.0_x64_en-US.msi`.
 
-Both bundle `pc/vendor/mpv/mpv.exe` as a resource. **Do not** ship the
-unsigned installer to end users yet — Windows SmartScreen will block it. v1
-ships unsigned with a setup-doc workaround; signing comes later.
+The MSI bundles `pc/vendor/mpv/*` as resources. Install on a fresh machine
+to verify everything wired up.
+
+NSIS is deferred — the Tauri toolchain pulls nsis-3.11.zip from GitHub at
+build time and times out from regional networks. Re-enable in
+`tauri.conf.json` (`bundle.targets`) if your network allows it.
 
 ---
 
-## What's wired so far (M0)
+## Known gaps (will iterate post-pc.0)
 
-- Tauri 2 shell with Shell, Dialog, Store, Clipboard plugins enabled
-- Single window (1440x900, min 1024x640) loading the existing React SPA
-- One Rust command: `ping()` returns `CARGO_PKG_VERSION` for adapter sanity
-  check (consumed by `frontend/src/platform/pc.ts` once that lands in M1)
-- Icon set generated from a placeholder seed (replace with real artwork
-  before M5)
-
-## What's next
-
-See [`docs/PC_CLIENT_GOAL.md`](../docs/PC_CLIENT_GOAL.md). M1 introduces the
-platform adapter (`frontend/src/platform/`); M3 swaps the in-page `<video>`
-for libmpv child windows controlled over IPC; M4 polishes hotkeys + GPU
-status; M5 ships an installer.
+- **libmpv embedding** — the Rust bridge spawns mpv on demand and the IPC
+  protocol is wired up, but Player.tsx still drives the in-page `<video>`
+  element. For 4K HEVC / Dolby Vision today, prefer the external-player
+  handoff (PotPlayer / VLC / IINA buttons on the movie detail page) which
+  goes through `tauri-plugin-shell` and bypasses any browser decoder
+  limits.
+- **Code signing** — unsigned MSI will trigger SmartScreen.
+- **No auto-update** — pull a fresh MSI from Releases manually for now.
+- **Windows only** — macOS / Linux ports follow once the Win build
+  stabilizes.

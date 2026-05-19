@@ -217,6 +217,8 @@ Current OpenAPI baseline: `backend/openapi/openapi-1.21.0-beta/openapi-1.21.0-be
 
 `1.21.0` — single mainline; `main` always represents the latest release.
 
+**PC client 1.21.0-pc.0**: Tauri + WebView2 + bundled mpv runtime, Windows 11 first. Grab the installer from [Releases](https://github.com/Purewo/CyberStream/releases), build instructions in [pc/README.md](pc/README.md).
+
 ---
 
 ## Attribution requirements
