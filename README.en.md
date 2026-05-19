@@ -193,6 +193,7 @@ The frontend `API_BASE` lives in `frontend/src/constants/index.ts` and points at
 |---|---|
 | Project handover | [docs/PROJECT_HANDOVER.md](docs/PROJECT_HANDOVER.md) |
 | Project progress | [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) |
+| **PC client goal (v1)** | [docs/PC_CLIENT_GOAL.md](docs/PC_CLIENT_GOAL.md) |
 | Architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | API overview | [docs/API_OVERVIEW.md](docs/API_OVERVIEW.md) |
 | Metadata pipeline | [docs/METADATA_PIPELINE_V1.md](docs/METADATA_PIPELINE_V1.md) |

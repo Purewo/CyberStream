@@ -193,6 +193,7 @@ npm run lint         # 仅类型检查（无 ESLint）
 |---|---|
 | 项目移交 | [docs/PROJECT_HANDOVER.md](docs/PROJECT_HANDOVER.md) |
 | 项目进度 | [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) |
+| **PC 客户端目标 (v1)** | [docs/PC_CLIENT_GOAL.md](docs/PC_CLIENT_GOAL.md) |
 | 架构说明 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | API 概览 | [docs/API_OVERVIEW.md](docs/API_OVERVIEW.md) |
 | 元数据管线 | [docs/METADATA_PIPELINE_V1.md](docs/METADATA_PIPELINE_V1.md) |
