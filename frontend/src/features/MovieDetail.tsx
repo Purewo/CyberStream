@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText } from 'lucide-react';
 import { Movie, PlayOptions, HistoryItem } from '../types';
 import { movieService } from '../api';
+import { shellOpen } from '../platform';
 import { formatBytes, formatDuration } from '../utils';
 import { MovieCard } from '../components/movies/Cards';
 import { TechBadge } from '../components/ui/CyberComponents';
@@ -13,6 +14,25 @@ import nplayerIcon from '../icons/players/nplayer.png';
 import mxplayerIcon from '../icons/players/mxplayer.png';
 import mxplayerProIcon from '../icons/players/mxplayer_pro.png';
 import infuseIcon from '../icons/players/infuse.png';
+
+const ExternalPlayerButton: React.FC<{ title: string; icon: string; url: string }> = ({ title, icon, url }) => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    shellOpen(url).catch((err) => {
+      console.warn(`[external-player] ${title} failed:`, err);
+    });
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={title}
+      className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all"
+    >
+      <img src={icon} alt={title} width="32" height="32" className="block rounded-sm" />
+    </button>
+  );
+};
 
 interface MovieDetailProps {
   movie: Movie;
@@ -590,27 +610,13 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                             <span className="w-8 h-[1px] bg-gray-600 block"></span>
                         </div>
                         <div className="flex flex-wrap gap-2 text-primary-50">
-                            <a href={`potplayer://${externalVideoUrl}`} title="PotPlayer" className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all">
-                                <img src={potplayerIcon} alt="PotPlayer" width="32" height="32" className="block rounded-sm" />
-                            </a>
-                            <a href={`iina://weblink?url=${externalVideoUrl}`} title="IINA" className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all">
-                                <img src={iinaIcon} alt="IINA" width="32" height="32" className="block rounded-sm" />
-                            </a>
-                            <a href={`vlc://${externalVideoUrl}`} title="VLC" className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all">
-                                <img src={vlcIcon} alt="VLC" width="32" height="32" className="block rounded-sm" />
-                            </a>
-                            <a href={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} title="nPlayer" className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all">
-                                <img src={nplayerIcon} alt="nPlayer" width="32" height="32" className="block rounded-sm" />
-                            </a>
-                            <a href={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end`} title="MX Player" className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all">
-                                <img src={mxplayerIcon} alt="MX Player" width="32" height="32" className="block rounded-sm" />
-                            </a>
-                            <a href={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.pro;type=video/*;end`} title="MX Player Pro" className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all">
-                                <img src={mxplayerProIcon} alt="MX Player Pro" width="32" height="32" className="block rounded-sm" />
-                            </a>
-                            <a href={`infuse://x-callback-url/play?url=${encodeURIComponent(externalVideoUrl)}`} title="Infuse" className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all">
-                                <img src={infuseIcon} alt="Infuse" width="32" height="32" className="block rounded-sm" />
-                            </a>
+                            <ExternalPlayerButton title="PotPlayer" icon={potplayerIcon} url={`potplayer://${externalVideoUrl}`} />
+                            <ExternalPlayerButton title="IINA" icon={iinaIcon} url={`iina://weblink?url=${externalVideoUrl}`} />
+                            <ExternalPlayerButton title="VLC" icon={vlcIcon} url={`vlc://${externalVideoUrl}`} />
+                            <ExternalPlayerButton title="nPlayer" icon={nplayerIcon} url={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} />
+                            <ExternalPlayerButton title="MX Player" icon={mxplayerIcon} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end`} />
+                            <ExternalPlayerButton title="MX Player Pro" icon={mxplayerProIcon} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.pro;type=video/*;end`} />
+                            <ExternalPlayerButton title="Infuse" icon={infuseIcon} url={`infuse://x-callback-url/play?url=${encodeURIComponent(externalVideoUrl)}`} />
                         </div>
                     </div>
                 )}

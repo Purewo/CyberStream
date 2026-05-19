@@ -42,6 +42,17 @@ export interface Platform {
 
   /** Write plain text to the system clipboard. */
   writeClipboard(text: string): Promise<void>;
+
+  /**
+   * Toggle the host window's fullscreen state. No-op on Web (the existing
+   * Player.tsx still handles per-element requestFullscreen for the in-page
+   * video). On PC this drives the Tauri window so the entire UI goes
+   * fullscreen, not just the video element.
+   */
+  toggleFullscreen(): Promise<void>;
+
+  /** Whether the host window is currently fullscreen. */
+  isFullscreen(): Promise<boolean>;
 }
 
 export interface PlatformStorage {
@@ -76,4 +87,6 @@ export const getApiBase = (): string => platform().getApiBase();
 export const getPublicUrlBase = (): string => platform().getPublicUrlBase();
 export const shellOpen = (url: string): Promise<void> => platform().shellOpen(url);
 export const writeClipboard = (text: string): Promise<void> => platform().writeClipboard(text);
+export const toggleFullscreen = (): Promise<void> => platform().toggleFullscreen();
+export const isFullscreen = (): Promise<boolean> => platform().isFullscreen();
 export const storage = (): PlatformStorage => platform().storage;

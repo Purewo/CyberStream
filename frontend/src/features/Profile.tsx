@@ -16,8 +16,9 @@ import {
 } from "lucide-react";
 import { MovieCard } from "../components/movies/Cards";
 import { Movie, UserSettings, Achievement } from "../types";
-import { THEMES } from "../constants";
+import { THEMES, API_BASE } from "../constants";
 import { formatBytes, toast } from "../utils";
+import { platform } from "../platform";
 
 import { HistoryPage } from "./History";
 import { Leaderboard } from "./Leaderboard";
@@ -126,6 +127,66 @@ const PROTOCOLS = [
     desc: "整合多种网盘与云服务的聚合路由节点",
   },
 ];
+
+const BackendServerCard: React.FC = () => {
+  const isPc = platform().kind === 'pc';
+  const [value, setValue] = useState<string>(() => platform().getApiBase());
+  const [saving, setSaving] = useState(false);
+  // The Web build's API_BASE is baked in at build time, so editing is meaningless;
+  // we still render the card read-only so users know which host they're hitting.
+  const persist = async (next: string) => {
+    if (!isPc) return;
+    const cleaned = next.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(cleaned)) {
+      toast.error('请输入合法的 http(s) 地址');
+      return;
+    }
+    setSaving(true);
+    try {
+      const mod = await import('../platform/pc');
+      mod.setApiBase(cleaned);
+      toast.success('已保存。下次刷新或重启窗口后生效。');
+    } catch (e) {
+      console.error(e);
+      toast.error('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
+      <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-2">
+        <Hexagon size={18} /> 后端服务器
+      </h3>
+      <p className="text-xs text-gray-500 font-['Rajdhani'] mb-5 leading-relaxed">
+        {isPc
+          ? 'PC 客户端连接的后端 API 地址。修改后下次刷新生效。例：https://nas.local:5004/api'
+          : `当前 Web 构建固定连接：${API_BASE}（如需切换请在构建时修改 API_BASE）。`}
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={!isPc}
+          spellCheck={false}
+          autoComplete="off"
+          className="flex-1 bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white focus:border-primary outline-none disabled:opacity-60"
+        />
+        {isPc && (
+          <button
+            type="button"
+            onClick={() => persist(value)}
+            disabled={saving || value.trim() === platform().getApiBase()}
+            className="px-4 py-2 text-sm font-bold border border-primary text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 interface ProfilePageProps {
   settings: UserSettings;
@@ -1010,6 +1071,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       case "SYSTEM":
         return (
           <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 max-w-2xl">
+            <BackendServerCard />
             <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
               <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-6 flex items-center gap-2">
                 <Settings2 size={18} /> 视觉特效

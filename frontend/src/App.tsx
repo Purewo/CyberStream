@@ -14,6 +14,7 @@ import { Toaster } from './components/ui/Toaster';
 import { movieService, libraryService, userService } from './api';
 import { getPublicUrlBase, writeClipboard } from './platform';
 import { getStyles, toast } from './utils';
+import { useGlobalHotkeys } from './hooks/useGlobalHotkeys';
 import { Movie, ViewState } from './types';
 import { useThemeSettings } from './hooks/useThemeSettings';
 import { useUserData } from './hooks/useUserData';
@@ -22,6 +23,7 @@ import { TMDBMatchModal } from './features/TMDBMatchModal';
 
 const App = () => { 
   const { settings, setSettings, themeName, setThemeName, currentTheme } = useThemeSettings();
+  useGlobalHotkeys();
   const { 
     favorites, handleToggleFavorite, 
     history, setHistory, handleClearHistory, handleDeleteHistoryItem, refreshHistory,

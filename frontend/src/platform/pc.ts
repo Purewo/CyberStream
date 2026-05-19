@@ -56,6 +56,16 @@ export function createPcPlatform(): Platform {
       const { writeText } = await import('@tauri-apps/plugin-clipboard-manager');
       await writeText(text);
     },
+    async toggleFullscreen() {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      const fs = await win.isFullscreen();
+      await win.setFullscreen(!fs);
+    },
+    async isFullscreen() {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      return await getCurrentWindow().isFullscreen();
+    },
   };
 }
 

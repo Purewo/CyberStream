@@ -49,5 +49,26 @@ export function createWebPlatform(): Platform {
       ta.select();
       try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
     },
+    async toggleFullscreen() {
+      const doc = document as Document & {
+        webkitFullscreenElement?: Element;
+        webkitExitFullscreen?: () => Promise<void>;
+      };
+      const root = document.documentElement as HTMLElement & {
+        webkitRequestFullscreen?: () => Promise<void>;
+      };
+      const inFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+      if (inFs) {
+        if (doc.exitFullscreen) await doc.exitFullscreen();
+        else if (doc.webkitExitFullscreen) await doc.webkitExitFullscreen();
+      } else {
+        if (root.requestFullscreen) await root.requestFullscreen();
+        else if (root.webkitRequestFullscreen) await root.webkitRequestFullscreen();
+      }
+    },
+    async isFullscreen() {
+      const doc = document as Document & { webkitFullscreenElement?: Element };
+      return !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+    },
   };
 }

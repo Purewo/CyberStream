@@ -5,7 +5,22 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "shell:allow-open",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    {
+      "identifier": "shell:allow-open",
+      "allow": [
+        { "url": "https://**" },
+        { "url": "http://**" },
+        { "url": "potplayer://**" },
+        { "url": "vlc://**" },
+        { "url": "iina://**" },
+        { "url": "nplayer-**" },
+        { "url": "infuse://**" },
+        { "url": "intent:**" },
+        { "url": "mailto:*" }
+      ]
+    },
     "dialog:default",
     "store:default",
     "clipboard-manager:default"
