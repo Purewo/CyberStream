@@ -7,6 +7,7 @@ from backend.app.api.helpers import get_history_map
 from backend.app.api.library_helpers import apply_movie_filters, apply_public_movie_visibility_filter
 from backend.app.extensions import db
 from backend.app.models import HomepageSetting, Movie
+from backend.app.services.user_access import apply_current_user_movie_visibility_filter, can_current_user_access_movie_id
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
 
@@ -264,6 +265,8 @@ def _select_custom_section_movies(section, used_ids, animation_section_enabled):
         movie = db.session.get(Movie, movie_id)
         if not movie:
             continue
+        if not can_current_user_access_movie_id(movie.id):
+            continue
         if not _passes_section_rules(movie, section, used_ids, animation_section_enabled):
             continue
         movies.append(movie)
@@ -273,7 +276,9 @@ def _select_custom_section_movies(section, used_ids, animation_section_enabled):
 
 
 def _select_latest_section_movies(section, used_ids, animation_section_enabled):
-    query = apply_public_movie_visibility_filter(apply_movie_filters(Movie.query, genre=section["genre"]))
+    query = apply_current_user_movie_visibility_filter(
+        apply_public_movie_visibility_filter(apply_movie_filters(Movie.query, genre=section["genre"]))
+    )
     query = query.filter(Movie.cover.isnot(None), Movie.cover != "")
     query = query.order_by(Movie.added_at.desc(), Movie.id.asc())
 
@@ -307,10 +312,10 @@ def _select_section_movies(section, used_ids, animation_section_enabled):
 def _select_hero_movie(setting):
     if setting.hero_movie_id:
         hero_movie = db.session.get(Movie, setting.hero_movie_id)
-        if hero_movie:
+        if hero_movie and can_current_user_access_movie_id(hero_movie.id):
             return hero_movie, "custom"
 
-    hero_movie = apply_public_movie_visibility_filter(Movie.query).filter(
+    hero_movie = apply_current_user_movie_visibility_filter(apply_public_movie_visibility_filter(Movie.query)).filter(
         Movie.background_cover.isnot(None),
         Movie.background_cover != "",
     ).order_by(Movie.added_at.desc(), Movie.id.asc()).first()

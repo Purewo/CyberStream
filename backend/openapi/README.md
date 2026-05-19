@@ -16,9 +16,9 @@ backend/openapi/
 当前版本：
 
 ```text
-backend/openapi/openapi-1.17.0-beta/
-  openapi-1.17.0-beta.json
-  release-notes-1.17.0-beta.md
+backend/openapi/openapi-1.21.0-beta/
+  openapi-1.21.0-beta.json
+  release-notes-1.21.0-beta.md
 ```
 
 ## 约定说明
@@ -34,3 +34,14 @@ backend/openapi/openapi-1.17.0-beta/
 - 某一版的接口说明必须和该版 OpenAPI 放在同一目录
 - 通用设计文档、架构文档、运行文档继续放在 `docs/`
 - 面向某一具体版本的联调说明，不再单独散落到 `docs/`
+
+## 运行时入口
+
+前端联调时可直接从后端读取当前契约：
+
+- `GET /api/v1/docs`：文档索引
+- `GET /api/v1/openapi.json`：当前 OpenAPI JSON 原文
+- `GET /api/v1/docs/openapi.json`：OpenAPI JSON 别名
+- `GET /api/v1/docs/<doc_key>`：白名单 Markdown 文档原文
+
+这些接口返回的是固定文档文件，不支持任意路径读取。

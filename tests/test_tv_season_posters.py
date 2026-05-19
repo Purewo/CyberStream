@@ -144,6 +144,7 @@ class TVSeasonPosterTests(unittest.TestCase):
                 json={
                     "tmdb_id": "tv/67954",
                     "media_type_hint": "tv",
+                    "apply": True,
                 },
             )
 
@@ -176,6 +177,95 @@ class TVSeasonPosterTests(unittest.TestCase):
         self.assertEqual(2, len(seasons_payload["items"]))
         self.assertEqual("https://image.tmdb.org/t/p/w500/season-1.jpg", seasons_payload["items"][0]["poster_url"])
         self.assertEqual(2, seasons_payload["summary"]["season_metadata_count"])
+        self.assertEqual("needs_attention", seasons_payload["summary"]["episode_diagnostics"]["status"])
+        self.assertEqual([1, 2], seasons_payload["summary"]["episode_diagnostics"]["seasons_needing_attention"])
+
+    def test_seasons_endpoint_reports_episode_diagnostics(self):
+        movie = Movie(
+            tmdb_id="tv/diagnostics",
+            title="缺集番剧",
+            original_title="Episode Diagnostics",
+            year=2026,
+            cover="https://image.tmdb.org/t/p/w500/series.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        db.session.add(MovieSeasonMetadata(movie_id=movie.id, season=1, title="第一季", episode_count=5))
+        db.session.add_all([
+            MediaResource(movie_id=movie.id, path="anime/S01E01.mkv", filename="S01E01.mkv", season=1, episode=1),
+            MediaResource(movie_id=movie.id, path="anime/S01E03.mkv", filename="S01E03.mkv", season=1, episode=3),
+            MediaResource(movie_id=movie.id, path="anime/S01E03.1080p.mkv", filename="S01E03.1080p.mkv", season=1, episode=3),
+            MediaResource(movie_id=movie.id, path="anime/S01-special.mkv", filename="S01-special.mkv", season=1),
+        ])
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/seasons")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        season = data["items"][0]
+        diagnostics = season["episode_diagnostics"]
+
+        self.assertEqual("needs_attention", diagnostics["status"])
+        self.assertEqual("incomplete", diagnostics["coverage_status"])
+        self.assertEqual(5, diagnostics["expected_episode_count"])
+        self.assertEqual("metadata", diagnostics["expected_source"])
+        self.assertEqual([1, 3], diagnostics["available_episode_numbers"])
+        self.assertEqual([2, 4, 5], diagnostics["missing_episode_numbers"])
+        self.assertEqual([3], diagnostics["duplicate_episode_numbers"])
+        self.assertEqual(1, len(diagnostics["unnumbered_resource_ids"]))
+        self.assertEqual(
+            {
+                "episode_count_mismatch",
+                "episode_number_missing",
+                "duplicate_episode_numbers",
+                "missing_episode_numbers",
+            },
+            set(diagnostics["issue_codes"]),
+        )
+        self.assertEqual("needs_attention", data["summary"]["episode_diagnostics"]["status"])
+        self.assertEqual([1], data["summary"]["episode_diagnostics"]["seasons_needing_attention"])
+
+    def test_episode_diagnostics_endpoint_returns_dry_run_repair_plan(self):
+        movie = Movie(
+            tmdb_id="tv/repair-plan",
+            title="修复建议番剧",
+            original_title="Episode Repair Plan",
+            year=2026,
+            cover="https://image.tmdb.org/t/p/w500/series.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        db.session.add(MovieSeasonMetadata(movie_id=movie.id, season=1, title="第一季", episode_count=3))
+        first = MediaResource(movie_id=movie.id, path="anime/S01E01.mkv", filename="S01E01.mkv", season=1, episode=1)
+        missing_slot = MediaResource(movie_id=movie.id, path="anime/S01E02.mkv", filename="S01E02.mkv", season=1)
+        occupied_slot = MediaResource(movie_id=movie.id, path="anime/S01E03.mkv", filename="S01E03.mkv", season=1)
+        duplicate_a = MediaResource(movie_id=movie.id, path="anime/S01E03.1080p.mkv", filename="S01E03.1080p.mkv", season=1, episode=3)
+        duplicate_b = MediaResource(movie_id=movie.id, path="anime/S01E03.2160p.mkv", filename="S01E03.2160p.mkv", season=1, episode=3)
+        db.session.add_all([first, missing_slot, occupied_slot, duplicate_a, duplicate_b])
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/episode-diagnostics")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertTrue(data["dry_run"])
+        self.assertEqual(f"/api/v1/movies/{movie.id}/resources/metadata", data["apply_endpoint"])
+        self.assertEqual(
+            [{"id": missing_slot.id, "season": 1, "episode": 2}],
+            data["apply_payload"]["items"],
+        )
+        self.assertEqual(1, len(data["seasons"]))
+        suggestion_types = {item["type"] for item in data["seasons"][0]["suggestions"]}
+        self.assertIn("update_resource_episode", suggestion_types)
+        self.assertIn("manual_review", suggestion_types)
+        self.assertIn("review_duplicate_episode", suggestion_types)
+        self.assertEqual(["parsed_episode_already_occupied"], [item["code"] for item in data["warnings"]])
+        self.assertEqual("needs_attention", data["summary"]["status"])
 
 
 if __name__ == "__main__":

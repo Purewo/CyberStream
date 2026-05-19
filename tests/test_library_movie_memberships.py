@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from sqlalchemy.exc import IntegrityError
 
@@ -14,6 +14,17 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.models import Library, LibraryMovieMembership, LibrarySource, MediaResource, Movie, StorageSource
+
+
+class _ImmediateThread:
+    def __init__(self, target=None, args=None, kwargs=None):
+        self.target = target
+        self.args = args or ()
+        self.kwargs = kwargs or {}
+
+    def start(self):
+        if self.target:
+            self.target(*self.args, **self.kwargs)
 
 
 class LibraryMovieMembershipTests(unittest.TestCase):
@@ -292,6 +303,31 @@ class LibraryMovieMembershipTests(unittest.TestCase):
             response = self.client.post(f"/api/v1/libraries/{self.library.id}/scan")
 
         self.assertEqual(429, response.status_code)
+
+    def test_library_scan_uses_binding_scraper_options(self):
+        binding = LibrarySource.query.filter_by(library_id=self.library.id, source_id=self.source_a.id).first()
+        binding.content_type = "tv"
+        binding.scrape_enabled = False
+        binding.scraper_policy = {"provider_order": ["tmdb", "local"]}
+        db.session.commit()
+
+        with patch("backend.app.api.libraries_routes.threading.Thread", _ImmediateThread), \
+                patch("backend.app.api.libraries_routes.scanner_engine") as scanner_mock:
+            scanner_mock.try_start_scan.return_value = True
+
+            response = self.client.post(f"/api/v1/libraries/{self.library.id}/scan")
+
+        self.assertEqual(202, response.status_code)
+        scanner_mock.scan_source.assert_any_call(
+            ANY,
+            app_instance=ANY,
+            root_path="movies",
+            content_type="tv",
+            scrape_enabled=False,
+            library_id=self.library.id,
+            library_source_id=binding.id,
+            scraper_policy={"provider_order": ["tmdb", "local"]},
+        )
 
 
 if __name__ == "__main__":

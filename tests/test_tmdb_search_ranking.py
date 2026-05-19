@@ -85,6 +85,47 @@ class TMDBSearchRankingTests(unittest.TestCase):
         self.assertFalse(scraper.session.trust_env)
         self.assertEqual(scraper.proxies, {"http": "http://127.0.0.1:17890", "https": "http://127.0.0.1:17890"})
 
+    def test_details_fall_back_to_english_when_localized_payload_is_sparse(self):
+        scraper = self.build_scraper()
+        calls = []
+
+        def fake_get(url, params=None):
+            calls.append(params.get("language"))
+            if params.get("language") == "zh-CN":
+                return {
+                    "id": 1312801,
+                    "title": "Foundation",
+                    "original_title": "Foundation",
+                    "release_date": "2024-12-31",
+                    "overview": "",
+                    "poster_path": None,
+                    "backdrop_path": None,
+                    "genres": [{"name": "Mystery"}],
+                    "production_countries": [{"name": "US"}],
+                    "credits": {"cast": [], "crew": []},
+                }
+            return {
+                "id": 1312801,
+                "title": "Foundation",
+                "original_title": "Foundation",
+                "release_date": "2024-12-31",
+                "overview": "An old hotel. A missing woman.",
+                "poster_path": "/foundation.jpg",
+                "backdrop_path": "/foundation-bg.jpg",
+                "genres": [{"name": "Mystery"}],
+                "production_countries": [{"name": "US"}],
+                "credits": {"cast": [], "crew": []},
+            }
+
+        with patch.object(scraper, "_get", side_effect=fake_get):
+            details = scraper.get_movie_details("movie/1312801")
+
+        self.assertEqual(["zh-CN", "en-US"], calls)
+        self.assertEqual("Foundation", details["title"])
+        self.assertEqual("An old hotel. A missing woman.", details["description"])
+        self.assertEqual("https://image.tmdb.org/t/p/w500/foundation.jpg", details["cover"])
+        self.assertEqual("https://image.tmdb.org/t/p/original/foundation-bg.jpg", details["background_cover"])
+
 
 if __name__ == "__main__":
     unittest.main()

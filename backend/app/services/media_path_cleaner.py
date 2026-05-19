@@ -40,18 +40,24 @@ class MediaPathCleaner:
         )
         self.re_episode = re.compile(r'(?i)(?:E|EP|第)\s*(\d+)(?:集|\s|$)')
         self.re_s_e = re.compile(r'(?i)S(\d+)[.\s_-]*E(\d+)')
+        self.re_inline_chinese_season_episode = re.compile(
+            r'(?i)^(?P<title>.+?)(?<!\d)(?:[\s._\-]*第\s*)?'
+            r'(?P<season>\d{1,2}|[一二三四五六七八九十]{1,3})'
+            r'(?:\s*(?:季|Season|S))?[\s._\-]*第\s*'
+            r'(?P<episode>\d{1,3})\s*[集话話]?(?:\s*(?:END|完结))?$'
+        )
         self.re_leading_number = re.compile(r'^(\d{1,4})[\s\.]+')
         self.re_year = re.compile(config.REGEX_PATTERNS['year'])
         self.re_noise = re.compile(
             r'(?i)\b(?:'
             r'2160p|1080p|720p|480p|4k|5k|8k|HD|UHD|FHD|'
             r'HEVC|AVC|H\.?264|H\.?265|X264|X265|VC1|VP9|AV1|'
-            r'HDR\d*|DOLBY|VISION|ATMOS|TRUEHD|DTS-?X?|DTS-?HD|MA|HD-?MA|AAC|AC3|E-?AC3|DDP\d*|'
+            r'HDR\d*|DV|DOVI|DOLBY|VISION|ATMOS|TRUEHD|DTS-?X?|DTS-?HD|MA|HD-?MA|AAC|AC3|E-?AC3|DDP\d(?:\.\d)?|DDP\d*|H|'
             r'[57]\.1|[257]\.0|'
             r'\d{1,2}bit|SDR|'
             r'BLURAY|REMUX|WEB-?DL|WEBRIP|HDTV|BD|'
             r'PROPER|REPACK|EXTENDED|UNRATED|DIRECTORS?|CUT|'
-            r'MULTI|COMPLETE|INTERNAL|'
+            r'MULTI|COMPLETE|INTERNAL|ATVP|AMZN|DSNP|NF|'
             r'SWTYBLZ|FGT|OMFUG|DREAMHD|EPSiLON|SPARKS|RARBG|'
             r'HQ|FPS\d*|60FPS|120FPS|\d+FPS|HIGH BITRATE|'
             r'MP4|MKV|AVI|'
@@ -76,7 +82,67 @@ class MediaPathCleaner:
             'COLLECTION', 'COLLECTIONS', 'PUBLIC', 'DAV', 'HIGH BITRATE', '60FPS', '120FPS',
             'HQ', 'EXTRAS', 'SPECIALS', 'FEATURETTES',
             '电影', '影片', '影视', '剧集', '电视剧', '连续剧', '动画', '动漫', '番剧', '合集', '资源',
-            '我的视频', '高码率',
+            '我的视频', '高码率', '未分类', '独立资源',
+        }
+
+    def _parse_number_token(self, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.isdigit():
+            return int(text)
+
+        numbers = {
+            '零': 0,
+            '一': 1,
+            '二': 2,
+            '两': 2,
+            '三': 3,
+            '四': 4,
+            '五': 5,
+            '六': 6,
+            '七': 7,
+            '八': 8,
+            '九': 9,
+        }
+        if text == '十':
+            return 10
+        if '十' in text:
+            left, right = text.split('十', 1)
+            tens = numbers.get(left, 1) if left else 1
+            ones = numbers.get(right, 0) if right else 0
+            return tens * 10 + ones
+        return numbers.get(text)
+
+    def _season_number_from_match(self, match, group_index=1):
+        if not match:
+            return None
+        season = self._parse_number_token(match.group(group_index))
+        return season if season and season > 0 else None
+
+    def _strip_filename_prefix_noise(self, text):
+        text = (text or '').rsplit('.', 1)[0].strip()
+        text = re.sub(r'^\[[^\]]+\]\s*', ' ', text).strip()
+        text = re.sub(r'^【[^】]+】\s*', ' ', text).strip()
+        return text
+
+    def _extract_inline_chinese_season_episode(self, filename):
+        base_name = self._strip_filename_prefix_noise(filename)
+        match = self.re_inline_chinese_season_episode.match(base_name)
+        if not match:
+            return None
+
+        title = self.clean_name(match.group('title'))
+        season = self._parse_number_token(match.group('season'))
+        episode = self._parse_number_token(match.group('episode'))
+        if self._is_garbage_title(title) or season is None or episode is None:
+            return None
+        return {
+            "title": title,
+            "season": season,
+            "episode": episode,
         }
 
     def clean_name(self, text):
@@ -114,6 +180,10 @@ class MediaPathCleaner:
         if m1:
             return int(m1.group(1)), int(m1.group(2))
 
+        inline = self._extract_inline_chinese_season_episode(filename)
+        if inline:
+            return inline["season"], inline["episode"]
+
         m2 = self.re_episode.search(filename)
         if m2:
             return None, int(m2.group(1))
@@ -126,6 +196,19 @@ class MediaPathCleaner:
                 return None, num
 
         return None, None
+
+    def _extract_numeric_episode_filename(self, filename):
+        base_name = re.sub(r'\.[^.]+$', '', filename or '').strip()
+        match = re.match(r'(?i)^(?:EP?)?\s*0*(\d{1,3})(?=$|[\s._\-])', base_name)
+        if not match:
+            return None
+        try:
+            episode = int(match.group(1))
+        except ValueError:
+            return None
+        if 1 <= episode <= 200:
+            return episode
+        return None
 
     def extract_year(self, text):
         if not text:
@@ -174,6 +257,10 @@ class MediaPathCleaner:
         )
 
     def _filename_title_candidate(self, filename):
+        inline = self._extract_inline_chinese_season_episode(filename)
+        if inline:
+            return inline["title"]
+
         base_name = filename.rsplit('.', 1)[0]
         if re.fullmatch(r'\d{1,4}', base_name.strip()):
             return ""
@@ -268,11 +355,22 @@ class MediaPathCleaner:
         standard_filename = self._parse_standard_filename(filename)
         if standard_filename:
             return standard_filename
+        inline = self._extract_inline_chinese_season_episode(filename)
+        if inline:
+            return self._build_result(
+                inline["title"],
+                file_year,
+                inline["season"],
+                inline["episode"],
+                'standard',
+                'inline_chinese_season_episode',
+            )
 
         parent_is_season = self._is_season_folder(parent)
         grandparent_is_season = self._is_season_folder(grandparent)
 
         if parent_is_season:
+            episode = episode or self._extract_numeric_episode_filename(filename)
             title_candidate_folder = grandparent
             if grandparent_is_season or not title_candidate_folder:
                 title_candidate_folder = great_grandparent
@@ -282,26 +380,45 @@ class MediaPathCleaner:
             if self._is_garbage_title(title) or self._is_generic_folder(title):
                 title = self._filename_title_candidate(filename)
             if not self._is_garbage_title(title):
-                season_match = self.re_season_folder.match(parent)
-                season_num = 1
-                if season_match and season_match.group(1).isdigit():
-                    season_num = int(season_match.group(1))
-                final_season = season if season is not None else season_num
-                return self._build_result(title, year, final_season, episode, 'standard', 'nested_season')
+                season_num = self._season_number_from_match(self.re_season_folder.match(parent)) or 1
+                season_conflict = season is not None and season != season_num
+                return self._build_result(
+                    title,
+                    year,
+                    season_num,
+                    episode,
+                    'standard',
+                    'nested_season',
+                    needs_review=season_conflict,
+                )
 
         mixed_match = self.re_mixed_season_folder.match(parent)
         if mixed_match:
             title = self.clean_name(mixed_match.group(1))
             if not self._is_garbage_title(title):
-                season_part = mixed_match.group(2)
-                season_num = int(season_part) if season_part.isdigit() else 1
-                final_season = season if season is not None else season_num
+                season_num = self._season_number_from_match(mixed_match, 2) or 1
+                season_conflict = season is not None and season != season_num
                 year = self.extract_year(parent) or self.extract_year(grandparent)
-                return self._build_result(title, year, final_season, episode, 'standard', 'mixed_season_folder')
+                return self._build_result(
+                    title,
+                    year,
+                    season_num,
+                    episode,
+                    'standard',
+                    'mixed_season_folder',
+                    needs_review=season_conflict,
+                )
 
         if season is not None and episode is not None:
             clean_parent = re.sub(r'(?i)S(?:eason)?\s*\d+', '', parent).strip()
             clean_parent = self.clean_name(clean_parent)
+            title = self._filename_title_candidate(filename)
+            parent_looks_like_season_alias = bool(re.search(r'(?<!\d)\d{1,2}$', clean_parent or ''))
+            if (
+                parent_looks_like_season_alias
+                and not self._is_garbage_title(title)
+            ):
+                return self._build_result(title, file_year, season, episode, 'standard', 'flat_episode_filename')
             if not self._is_garbage_title(clean_parent) and not self._is_generic_folder(parent):
                 return self._build_result(
                     clean_parent,
@@ -312,9 +429,31 @@ class MediaPathCleaner:
                     'flat_episode',
                 )
 
-            title = self._filename_title_candidate(filename)
             if not self._is_garbage_title(title):
                 return self._build_result(title, file_year, season, episode, 'standard', 'flat_episode_filename')
+
+        if episode is not None:
+            title = self._filename_title_candidate(filename)
+            if not self._is_garbage_title(title):
+                return self._build_result(
+                    title,
+                    file_year,
+                    season,
+                    episode,
+                    'standard',
+                    'episode_only_filename',
+                )
+
+            clean_parent = self.clean_name(parent)
+            if not self._is_garbage_title(clean_parent) and not self._is_generic_folder(parent):
+                return self._build_result(
+                    clean_parent,
+                    self.extract_year(parent),
+                    season,
+                    episode,
+                    'standard',
+                    'episode_only_parent_folder',
+                )
 
         release_group_result = self._parse_release_group_filename(filename)
         if release_group_result:

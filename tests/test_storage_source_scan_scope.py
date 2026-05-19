@@ -66,6 +66,7 @@ class StorageSourceScanScopeTests(unittest.TestCase):
                     "root_path": "/电影/华语",
                     "content_type": "movie",
                     "scrape_enabled": False,
+                    "scraper_policy": {"provider_order": ["tmdb", "local"]},
                 },
             )
 
@@ -78,6 +79,7 @@ class StorageSourceScanScopeTests(unittest.TestCase):
             root_path="电影/华语",
             content_type="movie",
             scrape_enabled=False,
+            scraper_policy={"provider_order": ["tmdb", "local"]},
             lock_acquired=True,
         )
 
@@ -100,6 +102,7 @@ class StorageSourceScanScopeTests(unittest.TestCase):
             root_path="剧集/美剧",
             content_type=None,
             scrape_enabled=True,
+            scraper_policy={},
             lock_acquired=True,
         )
 
@@ -131,6 +134,7 @@ class StorageSourceScanScopeTests(unittest.TestCase):
                 root_path="电影/欧美",
                 content_type="movie",
                 scrape_enabled=False,
+                scraper_policy={"provider_order": ["tmdb", "local"]},
             )
 
         scan_source_mock.assert_called_once()
@@ -139,6 +143,7 @@ class StorageSourceScanScopeTests(unittest.TestCase):
         self.assertEqual("电影/欧美", kwargs["root_path"])
         self.assertEqual("movie", kwargs["content_type"])
         self.assertFalse(kwargs["scrape_enabled"])
+        self.assertEqual({"provider_order": ["tmdb", "local"]}, kwargs["scraper_policy"])
 
     def test_scanner_scan_does_not_run_when_lock_is_busy(self):
         scanner = CyberScanner()

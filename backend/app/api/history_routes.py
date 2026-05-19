@@ -13,6 +13,7 @@ from backend.app.services.audio_transcode import (
     parse_audio_transcode_session_id,
     record_audio_transcode_history_heartbeat,
 )
+from backend.app.services.user_access import can_current_user_access_resource_id, current_user_id_for_personal_data
 from backend.app.utils.response import api_error, api_response
 
 logger = logging.getLogger(__name__)
@@ -73,11 +74,18 @@ def _notify_audio_transcode_history_heartbeat(resource_id, payload):
         )
 
 
+def _scope_history_query(query):
+    user_id = current_user_id_for_personal_data()
+    if user_id is None:
+        return query.filter(History.user_id.is_(None))
+    return query.filter(History.user_id == user_id)
+
+
 @history_bp.route('/user/history', methods=['GET'])
 def get_history():
     try:
         page, page_size = _normalize_page_args()
-        query = History.query \
+        query = _scope_history_query(History.query) \
             .join(MediaResource, History.resource_id == MediaResource.id) \
             .join(Movie, MediaResource.movie_id == Movie.id) \
             .order_by(History.last_watched.desc(), History.id.desc())
@@ -110,6 +118,8 @@ def report_progress():
         resource = db.session.get(MediaResource, resource_id)
         if not resource:
             return api_error(code=40402, msg="Resource not found", http_status=404)
+        if not can_current_user_access_resource_id(resource_id):
+            return api_error(code=40321, msg="Resource is not visible for current user", http_status=403)
 
         try:
             position_sec = _coerce_non_negative_seconds(position_sec, 'position_sec')
@@ -122,7 +132,7 @@ def report_progress():
 
         device_id = _normalize_optional_text(device_id)
         device_name = _normalize_optional_text(device_name)
-        history_records = History.query.filter_by(resource_id=resource_id) \
+        history_records = _scope_history_query(History.query.filter_by(resource_id=resource_id)) \
             .order_by(History.last_watched.desc(), History.id.desc()).all()
         history = history_records[0] if history_records else None
 
@@ -136,6 +146,7 @@ def report_progress():
                 history.device_name = device_name
         else:
             history = History(
+                user_id=current_user_id_for_personal_data(),
                 resource_id=resource_id,
                 progress=position_sec,
                 duration=total_duration,
@@ -161,7 +172,7 @@ def report_progress():
 @history_bp.route('/user/history/<string:resource_id>', methods=['DELETE'])
 def delete_history_item(resource_id):
     try:
-        histories = History.query.filter_by(resource_id=resource_id).all()
+        histories = _scope_history_query(History.query.filter_by(resource_id=resource_id)).all()
         if not histories:
             return api_error(code=40401, msg="History not found", http_status=404)
         for history in histories:
@@ -177,7 +188,7 @@ def delete_history_item(resource_id):
 @history_bp.route('/user/history', methods=['DELETE'])
 def clear_all_history():
     try:
-        db.session.query(History).delete()
+        _scope_history_query(db.session.query(History)).delete(synchronize_session=False)
         db.session.commit()
         return api_response(msg="History cleared")
     except Exception as e:

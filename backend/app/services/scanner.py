@@ -303,6 +303,14 @@ class CyberScanner:
                                     new_future = executor.submit(provider.list_items, item['path'])
                                     futures[new_future] = item['path']
                             else:
+                                if ResourceValidator.is_probable_promotional_video(item.get('name'), item.get('size')):
+                                    logger.info(
+                                        "Scanner skipped promotional video name=%s size=%s path=%s",
+                                        item.get('name'),
+                                        item.get('size'),
+                                        item.get('path'),
+                                    )
+                                    continue
                                 if ResourceValidator.is_valid_video(item['name']) or item['name'].lower().endswith('.nfo'):
                                     all_files.append(item)
                                     self._increment_progress(discovered_files=1)
@@ -351,6 +359,9 @@ class CyberScanner:
 
             if file_item['name'].lower().endswith('.nfo'):
                 nfo_files[path] = file_item
+                continue
+
+            if ResourceValidator.is_probable_promotional_video(file_item.get('name'), file_item.get('size')):
                 continue
 
             if not ResourceValidator.is_valid_video(file_item['name']):
@@ -469,6 +480,59 @@ class CyberScanner:
             "scrape_reason": resolution.reason,
         }
         return specs
+
+    def _season_episode_counts(self, meta_data):
+        counts = {}
+        for item in meta_data.get('season_metadata') or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                season = int(item.get('season'))
+                episode_count = int(item.get('episode_count'))
+            except (TypeError, ValueError):
+                continue
+            if season > 0 and episode_count > 0:
+                counts[season] = episode_count
+        return counts
+
+    def _normalize_episode_for_season_metadata(self, season, episode, meta_data):
+        if season is None or episode is None:
+            return season, episode, None
+        try:
+            season = int(season)
+            episode = int(episode)
+        except (TypeError, ValueError):
+            return season, episode, None
+        if season <= 1 or episode <= 0:
+            return season, episode, None
+
+        season_counts = self._season_episode_counts(meta_data if isinstance(meta_data, dict) else {})
+        expected_count = season_counts.get(season)
+        if not expected_count or episode <= expected_count:
+            return season, episode, None
+
+        previous_total = sum(
+            count
+            for season_number, count in season_counts.items()
+            if season_number < season
+        )
+        fallback_offset = (season - 1) * expected_count
+        offset = previous_total if previous_total > 0 else fallback_offset
+        if offset <= 0:
+            return season, episode, None
+
+        normalized_episode = episode - offset
+        if not 1 <= normalized_episode <= expected_count:
+            return season, episode, None
+
+        return season, normalized_episode, {
+            "strategy": "absolute_episode_offset",
+            "original_episode": episode,
+            "normalized_episode": normalized_episode,
+            "season": season,
+            "offset": offset,
+            "expected_episode_count": expected_count,
+        }
 
     def _load_nfo_payloads(self, provider, entity_context):
         payloads = []
@@ -677,6 +741,7 @@ class CyberScanner:
             meta = file_item['_meta']
             s = meta['season']
             e = meta['episode']
+            s, e, episode_normalization = self._normalize_episode_for_season_metadata(s, e, meta_data)
 
             is_movie_resource = (media_type_hint or parsed_info.media_type_hint) == 'movie' and s is None and e is None
             specs = ResourceValidator.get_tech_specs(file_item['name'])
@@ -711,6 +776,7 @@ class CyberScanner:
                         "parse_mode": meta.get('parse_mode') or meta.get('parse_layer'),
                         "parse_strategy": meta.get('clean_parse_strategy') or meta.get('parse_strategy'),
                         "needs_review": bool(meta.get('needs_review')),
+                        "episode_normalization": episode_normalization,
                     },
                     "scraping": {
                         "provider": scrape_result.provider,
@@ -789,7 +855,15 @@ class CyberScanner:
         except Exception as e:
             logger.exception("Scan source failed name=%s root_path=%s error=%s", source_obj.name, root_path, e)
 
-    def scan(self, specific_source_id=None, root_path=None, content_type=None, scrape_enabled=True, lock_acquired=False):
+    def scan(
+        self,
+        specific_source_id=None,
+        root_path=None,
+        content_type=None,
+        scrape_enabled=True,
+        scraper_policy=None,
+        lock_acquired=False,
+    ):
         if not lock_acquired and not self.try_start_scan():
             logger.warning("Scanner is already running")
             return False
@@ -819,6 +893,7 @@ class CyberScanner:
                         root_path=root_path,
                         content_type=content_type,
                         scrape_enabled=scrape_enabled,
+                        scraper_policy=scraper_policy,
                     )
                 else:
                     self.scan_source(source, app_instance)

@@ -3,6 +3,7 @@ import os
 import logging
 from datetime import datetime
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from backend.app.extensions import db
 from backend.app.models import Movie, MediaResource, StorageSource, MovieSeasonMetadata
 
@@ -56,6 +57,30 @@ class MovieDatabaseAdapter:
             return {"tmdb_id": movie.tmdb_id, "id": movie.id}
         return None
 
+    def _apply_resource_fields(self, resource, movie, resource_info, rel_path, tech_specs):
+        resource.movie_id = movie.id
+        resource.path = rel_path
+        resource.filename = os.path.basename(rel_path)
+        resource.size = tech_specs.get('size', 0)
+        resource.tech_specs = tech_specs
+        resource.season = resource_info.get('season')
+        resource.episode = resource_info.get('episode')
+        resource.label = resource_info.get('label')
+
+    def _retry_upsert_existing_resource_after_integrity_error(self, meta_data, resource_info, source_id, rel_path):
+        movie = Movie.query.filter_by(tmdb_id=str(meta_data.get('tmdb_id'))).first()
+        resource = MediaResource.query.filter_by(source_id=source_id, path=rel_path).first()
+        if not movie or not resource:
+            return None
+
+        self._apply_movie_metadata(movie, meta_data, overwrite=False)
+        self.sync_movie_season_metadata(movie, meta_data.get('season_metadata'), prune_missing=True)
+        tech_specs = self._build_resource_tech_specs(resource_info)
+        self._apply_resource_fields(resource, movie, resource_info, rel_path, tech_specs)
+        db.session.commit()
+        logger.info("Recovered media resource upsert after duplicate race source_id=%s path=%s", source_id, rel_path)
+        return {"msg": "Saved", "title": movie.title, "deduped": True}
+
     def upsert_movie(self, meta_data, resource_info, source_id):
         """
         source_id: 必须指定该文件来自哪个存储源
@@ -84,31 +109,29 @@ class MovieDatabaseAdapter:
         tech_specs = self._build_resource_tech_specs(resource_info)
 
         if resource:
-            resource.tech_specs = tech_specs
-            resource.season = resource_info.get('season')
-            resource.episode = resource_info.get('episode')
-            resource.label = resource_info.get('label')
-            resource.filename = os.path.basename(rel_path)
-            resource.size = tech_specs.get('size', 0)
-            if resource.movie_id != movie.id:
-                resource.movie_id = movie.id
+            self._apply_resource_fields(resource, movie, resource_info, rel_path, tech_specs)
         else:
             resource = MediaResource(
                 movie_id=movie.id,
                 source_id=source_id,
                 path=rel_path,
-                filename=os.path.basename(rel_path),
-                size=tech_specs.get('size', 0),
-                tech_specs=tech_specs,
-                season=resource_info.get('season'),
-                episode=resource_info.get('episode'),
-                label=resource_info.get('label')
             )
+            self._apply_resource_fields(resource, movie, resource_info, rel_path, tech_specs)
             db.session.add(resource)
 
         try:
             db.session.commit()
             return {"msg": "Saved", "title": movie.title}
+        except IntegrityError as e:
+            db.session.rollback()
+            try:
+                recovered = self._retry_upsert_existing_resource_after_integrity_error(meta_data, resource_info, source_id, rel_path)
+                if recovered:
+                    return recovered
+            except Exception:
+                db.session.rollback()
+            logger.exception("Database upsert duplicate recovery failed source_id=%s path=%s error=%s", source_id, rel_path, e)
+            return {"msg": "Error"}
         except Exception as e:
             db.session.rollback()
             logger.exception("Database upsert failed source_id=%s path=%s error=%s", source_id, rel_path, e)

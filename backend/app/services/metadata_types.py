@@ -31,3 +31,9 @@ class ScrapeResult:
 class ProviderAttempt:
     result: ScrapeResult | None = None
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CandidateSearchResult:
+    items: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)

@@ -6,6 +6,9 @@ from backend.app.services.metadata_types import ProviderAttempt, ScrapeContext, 
 
 class LocalFallbackProvider(MetadataProviderBase):
     name = 'local'
+    display_name = 'Local Fallback'
+    authoritative = False
+    supports_search = False
 
     def _normalize_content_type_hint(self, content_type):
         content_type = (content_type or '').strip().lower()

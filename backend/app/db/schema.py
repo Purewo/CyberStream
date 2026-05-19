@@ -11,6 +11,21 @@ SQLITE_COLUMN_PATCHES = {
         "poster": "ALTER TABLE movie_season_metadata ADD COLUMN poster VARCHAR(500)",
         "episode_count": "ALTER TABLE movie_season_metadata ADD COLUMN episode_count INTEGER",
     },
+    "library_sources": {
+        "scraper_policy": "ALTER TABLE library_sources ADD COLUMN scraper_policy JSON",
+    },
+    "movies": {
+        "catalog_visibility_status": "ALTER TABLE movies ADD COLUMN catalog_visibility_status VARCHAR(20) NOT NULL DEFAULT 'auto'",
+        "catalog_visibility_note": "ALTER TABLE movies ADD COLUMN catalog_visibility_note TEXT",
+        "catalog_visibility_updated_at": "ALTER TABLE movies ADD COLUMN catalog_visibility_updated_at DATETIME",
+    },
+    "history": {
+        "user_id": "ALTER TABLE history ADD COLUMN user_id INTEGER",
+    },
+    "users": {
+        "password_changed_at": "ALTER TABLE users ADD COLUMN password_changed_at DATETIME",
+        "session_version": "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1",
+    },
 }
 
 SQLITE_DROP_COLUMNS = {
@@ -36,6 +51,30 @@ SQLITE_INDEX_PATCHES = {
                 HAVING COUNT(*) > 1
                 LIMIT 1
             """,
+        },
+    ],
+    "maintenance_jobs": [
+        {
+            "name": "ix_maintenance_jobs_type",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_maintenance_jobs_type ON maintenance_jobs (type)",
+        },
+        {
+            "name": "ix_maintenance_jobs_status",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_maintenance_jobs_status ON maintenance_jobs (status)",
+        },
+    ],
+    "audit_logs": [
+        {
+            "name": "ix_audit_logs_created_at",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs (created_at)",
+        },
+        {
+            "name": "ix_audit_logs_action",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_audit_logs_action ON audit_logs (action)",
+        },
+        {
+            "name": "ix_audit_logs_outcome",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_audit_logs_outcome ON audit_logs (outcome)",
         },
     ],
 }
@@ -81,6 +120,110 @@ SQLITE_TABLE_PATCHES = {
             updated_at DATETIME,
             PRIMARY KEY (movie_id, season),
             FOREIGN KEY(movie_id) REFERENCES movies (id)
+        )
+    """,
+    "maintenance_jobs": """
+        CREATE TABLE maintenance_jobs (
+            id VARCHAR(36) NOT NULL,
+            type VARCHAR(80) NOT NULL,
+            title VARCHAR(255),
+            status VARCHAR(30) NOT NULL,
+            created_at DATETIME NOT NULL,
+            started_at DATETIME,
+            finished_at DATETIME,
+            updated_at DATETIME NOT NULL,
+            request JSON,
+            progress JSON,
+            result JSON,
+            error JSON,
+            PRIMARY KEY (id)
+        )
+    """,
+    "resource_subtitle_settings": """
+        CREATE TABLE resource_subtitle_settings (
+            id INTEGER NOT NULL,
+            resource_id VARCHAR(36) NOT NULL,
+            zh_size INTEGER NOT NULL,
+            zh_color VARCHAR(16) NOT NULL,
+            en_size INTEGER NOT NULL,
+            en_color VARCHAR(16) NOT NULL,
+            gap INTEGER NOT NULL,
+            offset INTEGER NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_resource_subtitle_settings_resource UNIQUE (resource_id),
+            FOREIGN KEY(resource_id) REFERENCES media_resources (id)
+        )
+    """,
+    "users": """
+        CREATE TABLE users (
+            id INTEGER NOT NULL,
+            username VARCHAR(80) NOT NULL,
+            display_name VARCHAR(120),
+            password_hash VARCHAR(255) NOT NULL,
+            role VARCHAR(20) NOT NULL,
+            is_enabled BOOLEAN NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            last_login_at DATETIME,
+            password_changed_at DATETIME,
+            session_version INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (id),
+            UNIQUE (username)
+        )
+    """,
+    "audit_logs": """
+        CREATE TABLE audit_logs (
+            id INTEGER NOT NULL,
+            actor_user_id INTEGER,
+            actor_username VARCHAR(80),
+            actor_role VARCHAR(20),
+            auth_via VARCHAR(40),
+            action VARCHAR(80) NOT NULL,
+            target_type VARCHAR(40),
+            target_id VARCHAR(80),
+            target_username VARCHAR(80),
+            outcome VARCHAR(30) NOT NULL,
+            ip_address VARCHAR(64),
+            user_agent VARCHAR(255),
+            details JSON,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(actor_user_id) REFERENCES users (id)
+        )
+    """,
+    "user_library_rules": """
+        CREATE TABLE user_library_rules (
+            id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            library_id INTEGER NOT NULL,
+            mode VARCHAR(20) NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_user_library_rule UNIQUE (user_id, library_id),
+            FOREIGN KEY(user_id) REFERENCES users (id),
+            FOREIGN KEY(library_id) REFERENCES libraries (id)
+        )
+    """,
+    "user_subtitle_settings": """
+        CREATE TABLE user_subtitle_settings (
+            id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            resource_id VARCHAR(36) NOT NULL,
+            zh_size INTEGER NOT NULL,
+            zh_color VARCHAR(16) NOT NULL,
+            en_size INTEGER NOT NULL,
+            en_color VARCHAR(16) NOT NULL,
+            gap INTEGER NOT NULL,
+            offset INTEGER NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_user_subtitle_settings_user_resource UNIQUE (user_id, resource_id),
+            FOREIGN KEY(user_id) REFERENCES users (id),
+            FOREIGN KEY(resource_id) REFERENCES media_resources (id)
         )
     """,
 }

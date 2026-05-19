@@ -4,7 +4,13 @@ from datetime import datetime
 from sqlalchemy.dialects.sqlite import JSON
 from backend.app.extensions import db
 from backend.app.providers.factory import provider_factory
+from backend.app.services.episode_diagnostics import (
+    EPISODE_DIAGNOSTIC_ISSUES,
+    build_movie_episode_diagnostics,
+)
+from backend.app.services.image_assets import movie_image_asset_urls, movie_image_source_info
 from backend.app.services.playback import build_resource_playback
+from backend.app.services.subtitles import discover_resource_subtitles
 from backend.app.storage.source_registry import (
     build_source_display_root,
     get_source_capabilities,
@@ -218,6 +224,7 @@ class LibrarySource(db.Model):
     root_path = db.Column(db.String(500), default='/', nullable=False)
     content_type = db.Column(db.String(20))
     scrape_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    scraper_policy = db.Column(JSON, default=dict)
     scan_order = db.Column(db.Integer, default=0, nullable=False)
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -232,6 +239,7 @@ class LibrarySource(db.Model):
             "root_path": self.root_path,
             "content_type": self.content_type,
             "scrape_enabled": self.scrape_enabled,
+            "scraper_policy": self.scraper_policy or {},
             "scan_order": self.scan_order,
             "is_enabled": self.is_enabled,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -272,6 +280,137 @@ class LibraryMovieMembership(db.Model):
         return data
 
 
+class User(db.Model):
+    """Application user for optional multi-user mode."""
+    __tablename__ = 'users'
+    __table_args__ = {'extend_existing': True}
+
+    ROLE_ADMIN = 'admin'
+    ROLE_USER = 'user'
+    ROLES = {ROLE_ADMIN, ROLE_USER}
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), nullable=False, unique=True, index=True)
+    display_name = db.Column(db.String(120))
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default=ROLE_USER, index=True)
+    is_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_login_at = db.Column(db.DateTime)
+    password_changed_at = db.Column(db.DateTime)
+    session_version = db.Column(db.Integer, nullable=False, default=1)
+
+    library_rules = db.relationship('UserLibraryRule', backref='user', lazy='dynamic', cascade="all, delete-orphan")
+
+    @classmethod
+    def normalize_role(cls, value):
+        role = str(value or cls.ROLE_USER).strip().lower()
+        return role if role in cls.ROLES else None
+
+    def is_admin(self):
+        return self.role == self.ROLE_ADMIN
+
+    def to_dict(self, include_rules=False):
+        data = {
+            "id": self.id,
+            "username": self.username,
+            "display_name": self.display_name,
+            "role": self.role,
+            "is_enabled": bool(self.is_enabled),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+            "password_changed_at": self.password_changed_at.isoformat() if self.password_changed_at else None,
+            "session_version": int(self.session_version or 1),
+        }
+        if include_rules:
+            data["library_rules"] = [
+                rule.to_dict()
+                for rule in self.library_rules.order_by(UserLibraryRule.mode.asc(), UserLibraryRule.library_id.asc()).all()
+            ]
+        return data
+
+
+class UserLibraryRule(db.Model):
+    """Per-user library visibility allow/deny rule."""
+    __tablename__ = 'user_library_rules'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'library_id', name='uq_user_library_rule'),
+        {'extend_existing': True},
+    )
+
+    MODE_ALLOW = 'allow'
+    MODE_DENY = 'deny'
+    MODES = {MODE_ALLOW, MODE_DENY}
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    library_id = db.Column(db.Integer, db.ForeignKey('libraries.id'), nullable=False, index=True)
+    mode = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    library = db.relationship('Library')
+
+    @classmethod
+    def normalize_mode(cls, value):
+        mode = str(value or '').strip().lower()
+        return mode if mode in cls.MODES else None
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "library_id": self.library_id,
+            "mode": self.mode,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "library": self.library.to_dict() if self.library else None,
+        }
+
+
+class AuditLog(db.Model):
+    """Append-only audit record for authentication and user administration."""
+    __tablename__ = 'audit_logs'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(db.Integer, primary_key=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    actor_username = db.Column(db.String(80))
+    actor_role = db.Column(db.String(20))
+    auth_via = db.Column(db.String(40))
+    action = db.Column(db.String(80), nullable=False, index=True)
+    target_type = db.Column(db.String(40))
+    target_id = db.Column(db.String(80))
+    target_username = db.Column(db.String(80))
+    outcome = db.Column(db.String(30), nullable=False, default='success', index=True)
+    ip_address = db.Column(db.String(64))
+    user_agent = db.Column(db.String(255))
+    details = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    actor = db.relationship('User')
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "actor_user_id": self.actor_user_id,
+            "actor_username": self.actor_username,
+            "actor_role": self.actor_role,
+            "auth_via": self.auth_via,
+            "action": self.action,
+            "target_type": self.target_type,
+            "target_id": self.target_id,
+            "target_username": self.target_username,
+            "outcome": self.outcome,
+            "ip_address": self.ip_address,
+            "user_agent": self.user_agent,
+            "details": self.details or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class HomepageSetting(db.Model):
     """首页门户配置，当前按单例记录维护。"""
     __tablename__ = 'homepage_settings'
@@ -300,6 +439,23 @@ class Movie(db.Model):
     __tablename__ = 'movies'
     __table_args__ = {'extend_existing': True}
 
+    MANUAL_SOURCE_MOVIE = "LOCAL_MANUAL_MOVIE"
+    MANUAL_SOURCE_TV = "LOCAL_MANUAL_TV"
+    MANUAL_CONTENT_SOURCES = {MANUAL_SOURCE_MOVIE, MANUAL_SOURCE_TV}
+    MANUAL_SOURCE_MEDIA_TYPES = {
+        MANUAL_SOURCE_MOVIE: "movie",
+        MANUAL_SOURCE_TV: "tv",
+    }
+
+    CATALOG_VISIBILITY_AUTO = "auto"
+    CATALOG_VISIBILITY_PUBLISHED = "published"
+    CATALOG_VISIBILITY_HIDDEN = "hidden"
+    CATALOG_VISIBILITY_STATUSES = {
+        CATALOG_VISIBILITY_AUTO,
+        CATALOG_VISIBILITY_PUBLISHED,
+        CATALOG_VISIBILITY_HIDDEN,
+    }
+
     QUALITY_BADGE_REMUX = "Remux"
     QUALITY_BADGE_4K = "4K"
     QUALITY_BADGE_HD = "HD"
@@ -322,6 +478,9 @@ class Movie(db.Model):
 
     country = db.Column(db.String(50))
     scraper_source = db.Column(db.String(20))
+    catalog_visibility_status = db.Column(db.String(20), default=CATALOG_VISIBILITY_AUTO, nullable=False)
+    catalog_visibility_note = db.Column(db.Text)
+    catalog_visibility_updated_at = db.Column(db.DateTime)
 
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -511,16 +670,19 @@ class Movie(db.Model):
     @staticmethod
     def get_metadata_source_group_map():
         return {
+            "bangumi": ['BANGUMI'],
+            "tencent_video": ['TENCENT_VIDEO'],
             "tmdb": ['TMDB_STRICT', 'TMDB_FALLBACK', 'TMDB'],
             "nfo_tmdb": ['NFO_TMDB'],
             "nfo_local": ['NFO_LOCAL', 'NFO'],
             "local": ['LOCAL_FALLBACK', 'LOCAL_ORPHAN'],
+            "manual": ['LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'],
         }
 
     @staticmethod
     def get_metadata_review_priority_map():
         return {
-            "none": ['TMDB_STRICT', 'NFO_TMDB'],
+            "none": ['BANGUMI', 'TENCENT_VIDEO', 'TMDB_STRICT', 'NFO_TMDB', 'LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'],
             "low": ['TMDB'],
             "medium": ['TMDB_FALLBACK', 'NFO_LOCAL', 'NFO'],
             "high": ['LOCAL_FALLBACK', 'LOCAL_ORPHAN'],
@@ -528,7 +690,7 @@ class Movie(db.Model):
 
     @staticmethod
     def get_metadata_non_attention_sources():
-        return {'TMDB_STRICT', 'NFO_TMDB', 'TMDB'}
+        return {'BANGUMI', 'TENCENT_VIDEO', 'TMDB_STRICT', 'NFO_TMDB', 'TMDB', 'LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'}
 
     @staticmethod
     def get_metadata_placeholder_sources():
@@ -634,6 +796,42 @@ class Movie(db.Model):
                 "badge_tone": "brand",
                 "recommended_action": "refresh_metadata",
             })
+        elif source == 'BANGUMI':
+            state.update({
+                "source_group": "bangumi",
+                "source_label": "Bangumi",
+                "is_external_match": True,
+                "confidence": "high",
+                "needs_attention": False,
+                "review_priority": "none",
+                "badge_tone": "success",
+                "recommended_action": "refresh_metadata",
+            })
+        elif source == 'TENCENT_VIDEO':
+            state.update({
+                "source_group": "tencent_video",
+                "source_label": "Tencent Video",
+                "is_external_match": True,
+                "confidence": "medium",
+                "needs_attention": False,
+                "review_priority": "none",
+                "badge_tone": "success",
+                "recommended_action": "refresh_metadata",
+            })
+        elif source in {'LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'}:
+            media_type = Movie.MANUAL_SOURCE_MEDIA_TYPES.get(source)
+            state.update({
+                "source_group": "manual",
+                "source_label": "Manual TV" if media_type == "tv" else "Manual Movie",
+                "is_placeholder": False,
+                "is_local_only": False,
+                "is_external_match": False,
+                "confidence": "manual",
+                "needs_attention": False,
+                "review_priority": "none",
+                "badge_tone": "info",
+                "recommended_action": "none",
+            })
         elif source == 'NFO':
             state.update({
                 "source_group": "nfo_local",
@@ -655,9 +853,29 @@ class Movie(db.Model):
 
         return state
 
+    @classmethod
+    def manual_media_type_from_source(cls, scraper_source):
+        source = (scraper_source or '').strip().upper()
+        return cls.MANUAL_SOURCE_MEDIA_TYPES.get(source)
+
+    @classmethod
+    def is_manual_content_source(cls, scraper_source):
+        source = (scraper_source or '').strip().upper()
+        return source in cls.MANUAL_CONTENT_SOURCES
+
+    def is_manual_content(self):
+        return self.is_manual_content_source(self.scraper_source)
+
+    def get_manual_content_info(self):
+        return {
+            "is_manual": self.is_manual_content(),
+            "media_type": self.manual_media_type_from_source(self.scraper_source),
+            "scraper_source": self.scraper_source,
+        }
+
     def get_metadata_ui_state(self):
         state = self.build_metadata_ui_state(self.scraper_source)
-        if not self.cover:
+        if not self.cover and not self.is_manual_content():
             state.update({
                 "needs_attention": True,
                 "review_priority": "high",
@@ -698,6 +916,12 @@ class Movie(db.Model):
 
         metadata_lock = self.get_locked_fields()
         season_metadata_items = [item for item in self.season_metadata.all() if not item.is_empty()]
+        season_episode_counts = {
+            item.season: item.episode_count
+            for item in season_metadata_items
+            if item.episode_count
+        }
+        episode_diagnostics = build_movie_episode_diagnostics(resources, season_episode_counts)
 
         return {
             "resource_count": len(resources),
@@ -711,6 +935,7 @@ class Movie(db.Model):
             "has_locked_fields": bool(metadata_lock),
             "season_metadata_count": len(season_metadata_items),
             "has_season_metadata": bool(season_metadata_items),
+            "episode_diagnostics": episode_diagnostics["summary"],
         }
 
     def get_metadata_actions(self, state=None, diagnostics=None):
@@ -736,6 +961,7 @@ class Movie(db.Model):
     def get_metadata_issues(self, state=None, diagnostics=None):
         state = dict(state or self.get_metadata_ui_state())
         diagnostics = diagnostics or self.get_metadata_diagnostics()
+        is_manual_content = self.is_manual_content()
         issues = []
 
         def add_issue(code, label, severity, count=None):
@@ -760,14 +986,21 @@ class Movie(db.Model):
         if diagnostics["nfo_candidate_resource_count"] > 0:
             add_issue("nfo_candidates_available", "NFO Candidates Available", "low", diagnostics["nfo_candidate_resource_count"])
 
-        if not self.cover:
+        if not self.cover and not is_manual_content:
             add_issue("poster_missing", "Poster Missing", "high")
 
         if diagnostics["has_locked_fields"]:
             add_issue("locked_fields_present", "Locked Fields Present", "low", diagnostics["locked_field_count"])
 
-        if diagnostics["season_resource_count"] > 0 and not diagnostics["has_season_metadata"]:
+        if diagnostics["season_resource_count"] > 0 and not diagnostics["has_season_metadata"] and not is_manual_content:
             add_issue("season_metadata_missing", "Season Metadata Missing", "medium")
+
+        episode_diagnostics = diagnostics.get("episode_diagnostics") or {}
+        episode_issue_counts = episode_diagnostics.get("issue_code_counts") or {}
+        for code, meta in EPISODE_DIAGNOSTIC_ISSUES.items():
+            count = int(episode_issue_counts.get(code) or 0)
+            if count > 0:
+                add_issue(code, meta["label"], meta["severity"], count)
 
         if state["needs_attention"] and not issues:
             add_issue("manual_review_required", "Manual Review Required", state["review_priority"])
@@ -792,6 +1025,66 @@ class Movie(db.Model):
             "issues": issues,
         }
 
+    @classmethod
+    def normalize_catalog_visibility_status(cls, status):
+        status = (status or cls.CATALOG_VISIBILITY_AUTO).strip().lower() if isinstance(status, str) else cls.CATALOG_VISIBILITY_AUTO
+        return status if status in cls.CATALOG_VISIBILITY_STATUSES else None
+
+    def get_catalog_visibility_state(self):
+        status = self.normalize_catalog_visibility_status(self.catalog_visibility_status) or self.CATALOG_VISIBILITY_AUTO
+        source_state = self.build_metadata_ui_state(self.scraper_source)
+        title_ready = bool((self.title or "").strip())
+        poster_ready = bool((self.cover or "").strip())
+        metadata_ready = not source_state["needs_attention"]
+        poster_required = not self.is_manual_content()
+
+        blockers = []
+        warnings = []
+        if not title_ready:
+            blockers.append("title_missing")
+        if not metadata_ready:
+            blockers.append("metadata_needs_attention")
+        if poster_required and not poster_ready:
+            blockers.append("poster_missing")
+        if not (self.description or "").strip():
+            warnings.append("overview_missing")
+
+        auto_visible = title_ready and metadata_ready and (poster_ready or not poster_required)
+        if status == self.CATALOG_VISIBILITY_HIDDEN:
+            is_visible = False
+            effective_status = "hidden"
+            reason = "manual_hidden"
+        elif status == self.CATALOG_VISIBILITY_PUBLISHED:
+            is_visible = True
+            effective_status = "published"
+            reason = "manual_published"
+        elif auto_visible:
+            is_visible = True
+            effective_status = "published"
+            reason = "auto_public"
+        else:
+            is_visible = False
+            effective_status = "hidden"
+            reason = blockers[0] if blockers else "auto_hidden"
+
+        return {
+            "status": status,
+            "effective_status": effective_status,
+            "is_visible": is_visible,
+            "is_manual": status in {self.CATALOG_VISIBILITY_PUBLISHED, self.CATALOG_VISIBILITY_HIDDEN},
+            "auto_visible": auto_visible,
+            "reason": reason,
+            "blockers": blockers,
+            "warnings": warnings,
+            "can_publish": len(blockers) == 0,
+            "requires_force": len(blockers) > 0,
+            "note": self.catalog_visibility_note,
+            "updated_at": self.catalog_visibility_updated_at.isoformat() if self.catalog_visibility_updated_at else None,
+        }
+
+    def is_visible_in_catalog(self):
+        return self.get_catalog_visibility_state()["is_visible"]
+
     def to_metadata_work_item(self):
         snapshot = self.get_metadata_snapshot()
         return {
@@ -804,6 +1097,8 @@ class Movie(db.Model):
             "country": self.country,
             "scraper_source": self.scraper_source,
             "metadata_state": snapshot["state"],
+            "catalog_visibility": self.get_catalog_visibility_state(),
+            "manual_content": self.get_manual_content_info(),
             "metadata_actions": snapshot["actions"],
             "metadata_diagnostics": snapshot["diagnostics"],
             "metadata_issues": snapshot["issues"],
@@ -853,16 +1148,24 @@ class Movie(db.Model):
                 if field in user_history
             }
 
+        poster_asset_urls = movie_image_asset_urls(self, "poster")
+
         return {
             "id": self.id,
             "title": self.title,
             "poster_url": self.cover,
+            "poster_asset_url": poster_asset_urls["primary_url"],
+            "poster_asset_urls": poster_asset_urls,
+            "poster_asset_fallback_urls": poster_asset_urls["fallback_urls"],
+            "poster_source_info": movie_image_source_info(self, "poster"),
             "rating": self.rating,
             "year": self.year,
             "country": self.country,
             "quality_badge": self.get_quality_badge(resources=resources),
             "scraper_source": self.scraper_source,
             "metadata_state": snapshot["state"],
+            "catalog_visibility": self.get_catalog_visibility_state(),
+            "manual_content": self.get_manual_content_info(),
             "date_added": self.added_at.isoformat() if self.added_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "tags": public_categories,
@@ -876,10 +1179,15 @@ class Movie(db.Model):
     def to_detail_dict(self, user_history=None):
         simple = self.to_simple_dict(user_history=user_history)
         snapshot = self.get_metadata_snapshot()
+        backdrop_asset_urls = movie_image_asset_urls(self, "backdrop")
         detailed = {
             "original_title": self.original_title,
             "overview": self.description,
             "backdrop_url": self.background_cover,
+            "backdrop_asset_url": backdrop_asset_urls["primary_url"],
+            "backdrop_asset_urls": backdrop_asset_urls,
+            "backdrop_asset_fallback_urls": backdrop_asset_urls["fallback_urls"],
+            "backdrop_source_info": movie_image_source_info(self, "backdrop"),
             "director": self.director,
             "actors": [{"name": a, "role": "Actor", "avatar": ""} for a in (self.actors or [])],
             "metadata_locked_fields": self.get_locked_fields(),
@@ -895,6 +1203,7 @@ class History(db.Model):
     __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=True)
     file_path = db.Column(db.String(500))  # Legacy
     progress = db.Column(db.Integer, default=0)
@@ -903,6 +1212,47 @@ class History(db.Model):
     device_id = db.Column(db.String(50))
     device_name = db.Column(db.String(50))
     last_watched = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User')
+
+
+class MaintenanceJob(db.Model):
+    """Persistent audit record for in-process maintenance jobs."""
+    __tablename__ = 'maintenance_jobs'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(db.String(36), primary_key=True)
+    type = db.Column(db.String(80), nullable=False, index=True)
+    title = db.Column(db.String(255))
+    status = db.Column(db.String(30), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    started_at = db.Column(db.DateTime)
+    finished_at = db.Column(db.DateTime)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    request = db.Column(JSON, default=dict)
+    progress = db.Column(JSON, default=dict)
+    result = db.Column(JSON)
+    error = db.Column(JSON)
+
+    @staticmethod
+    def _dt(value):
+        return value.isoformat() if value else None
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "type": self.type,
+            "title": self.title,
+            "status": self.status,
+            "created_at": self._dt(self.created_at),
+            "started_at": self._dt(self.started_at),
+            "finished_at": self._dt(self.finished_at),
+            "request": self.request or {},
+            "progress": self.progress or {"current": 0, "total": 0, "message": None},
+            "result": self.result,
+            "error": self.error,
+            "persisted": True,
+        }
 
 
 class MovieMetadataLock(db.Model):
@@ -983,6 +1333,80 @@ class MovieSeasonMetadata(db.Model):
             "has_metadata": self.has_metadata(),
             "metadata_edited_at": self.metadata_edited_at.isoformat() if self.metadata_edited_at else None,
         }
+
+
+class ResourceSubtitle(db.Model):
+    """Manually confirmed subtitle bound to a media resource.
+
+    Bound subtitles are stored under the backend cache directory instead of
+    mutating the original media storage source.
+    """
+    __tablename__ = 'resource_subtitles'
+    __table_args__ = (
+        db.UniqueConstraint('resource_id', 'candidate_id', name='uq_resource_subtitle_candidate'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=False, index=True)
+    source = db.Column(db.String(50), nullable=False, default='online')
+    provider_id = db.Column(db.String(50))
+    provider_name = db.Column(db.String(100))
+    candidate_id = db.Column(db.String(255), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    storage_kind = db.Column(db.String(50), nullable=False, default='cache')
+    storage_path = db.Column(db.String(500), nullable=False)
+    format = db.Column(db.String(20), nullable=False)
+    mime_type = db.Column(db.String(120), nullable=False)
+    size = db.Column(db.Integer, default=0)
+    language = db.Column(JSON)
+    subtitle_metadata = db.Column(JSON)
+    is_default = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ResourceSubtitleSetting(db.Model):
+    """Per-resource subtitle display preferences for the web player."""
+    __tablename__ = 'resource_subtitle_settings'
+    __table_args__ = (
+        db.UniqueConstraint('resource_id', name='uq_resource_subtitle_settings_resource'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=False, index=True)
+    zh_size = db.Column(db.Integer, nullable=False, default=28)
+    zh_color = db.Column(db.String(16), nullable=False, default="#FFFFFF")
+    en_size = db.Column(db.Integer, nullable=False, default=22)
+    en_color = db.Column(db.String(16), nullable=False, default="#FFFFFF")
+    gap = db.Column(db.Integer, nullable=False, default=6)
+    offset = db.Column(db.Integer, nullable=False, default=72)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class UserSubtitleSetting(db.Model):
+    """Per-user subtitle display preferences for a media resource."""
+    __tablename__ = 'user_subtitle_settings'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'resource_id', name='uq_user_subtitle_settings_user_resource'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=False, index=True)
+    zh_size = db.Column(db.Integer, nullable=False, default=28)
+    zh_color = db.Column(db.String(16), nullable=False, default="#FFFFFF")
+    en_size = db.Column(db.Integer, nullable=False, default=22)
+    en_color = db.Column(db.String(16), nullable=False, default="#FFFFFF")
+    gap = db.Column(db.Integer, nullable=False, default=6)
+    offset = db.Column(db.Integer, nullable=False, default=72)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User')
+    resource = db.relationship('MediaResource')
 
 
 class MediaResource(db.Model):
@@ -1102,6 +1526,8 @@ class MediaResource(db.Model):
     # 新增: 关联存储源
     source_id = db.Column(db.Integer, db.ForeignKey('storage_sources.id'), nullable=True)
     source = db.relationship('StorageSource', backref='resources')
+    bound_subtitles = db.relationship('ResourceSubtitle', backref='resource', lazy='dynamic', cascade="all, delete-orphan")
+    subtitle_setting = db.relationship('ResourceSubtitleSetting', backref='resource', uselist=False, cascade="all, delete-orphan")
 
     # path 现在存储相对于 StorageSource 根目录的路径
     path = db.Column(db.String(500), nullable=False)
@@ -1559,7 +1985,7 @@ class MediaResource(db.Model):
             "technical": self._build_resource_technical_info(media_features, media_profile),
         }
 
-    def to_dict(self):
+    def to_dict(self, include_subtitle_discovery=False):
         """返回资源详情；只输出当前 API 结构，不再携带旧兼容字段。"""
         specs = self.tech_specs if self.tech_specs else {}
         metadata_trace = specs.get('metadata_trace', {}) if isinstance(specs, dict) else {}
@@ -1627,10 +2053,12 @@ class MediaResource(db.Model):
             "has_inferred_season": self.season is not None,
         }
 
+        subtitle_payload = discover_resource_subtitles(self) if include_subtitle_discovery else None
+
         return {
             "id": self.id,
             "resource_info": resource_info,
-            "playback": build_resource_playback(self, resource_info=resource_info),
+            "playback": build_resource_playback(self, resource_info=resource_info, subtitles=subtitle_payload),
             "metadata": {
                 "trace": metadata_trace,
                 "analysis": analysis,

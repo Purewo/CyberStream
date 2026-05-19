@@ -15,7 +15,14 @@ from backend.app.api.library_helpers import (
 )
 from backend.app.extensions import db
 from backend.app.models import Library, LibraryMovieMembership, LibrarySource, MediaResource, Movie, StorageSource
+from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
+from backend.app.services.user_access import (
+    apply_current_user_movie_visibility_filter,
+    clear_user_access_cache,
+    visible_library_ids_for_current_user,
+)
+from backend.app.security import is_admin_request
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
 
@@ -90,7 +97,16 @@ def _scan_library_background_task(app, library_id):
             for binding in bindings:
                 if not binding.source or not binding.is_enabled:
                     continue
-                scanner_engine.scan_source(binding.source, app_instance=app_instance, root_path=binding.root_path)
+                scanner_engine.scan_source(
+                    binding.source,
+                    app_instance=app_instance,
+                    root_path=binding.root_path,
+                    content_type=binding.content_type,
+                    scrape_enabled=binding.scrape_enabled,
+                    library_id=binding.library_id,
+                    library_source_id=binding.id,
+                    scraper_policy=binding.scraper_policy or {},
+                )
         except Exception as e:
             logger.exception('Library scan failed library_id=%s error=%s', library_id, e)
         finally:
@@ -138,6 +154,7 @@ def _build_library_movie_query(library):
         return None, context
 
     query = Movie.query.filter(Movie.id.in_(list(final_ids)))
+    query = apply_current_user_movie_visibility_filter(query)
     return query, context
 
 
@@ -196,7 +213,13 @@ def _normalize_membership_movie_ids(raw_movie_ids):
 
 @libraries_bp.route('/libraries', methods=['GET'])
 def list_libraries():
-    libraries = Library.query.order_by(Library.sort_order.asc(), Library.id.asc()).all()
+    query = Library.query
+    visible_ids = visible_library_ids_for_current_user()
+    if visible_ids is not None:
+        if not visible_ids:
+            return api_response(data=[])
+        query = query.filter(Library.id.in_(list(visible_ids)))
+    libraries = query.order_by(Library.sort_order.asc(), Library.id.asc()).all()
     return api_response(data=[library.to_dict() for library in libraries])
 
 
@@ -229,6 +252,7 @@ def create_library():
     )
     db.session.add(library)
     db.session.commit()
+    clear_user_access_cache()
     return api_response(data=library.to_dict(), msg='Library created', http_status=201)
 
 
@@ -237,7 +261,7 @@ def get_library(id):
     library, error_response = _get_library_or_404(id)
     if error_response:
         return error_response
-    return api_response(data=library.to_dict(include_sources=True))
+    return api_response(data=library.to_dict(include_sources=is_admin_request()))
 
 
 @libraries_bp.route('/libraries/<int:id>', methods=['PATCH'])
@@ -287,6 +311,7 @@ def update_library(id):
             library.settings = settings or {}
 
         db.session.commit()
+        clear_user_access_cache()
         return api_response(data=library.to_dict(), msg='Library updated')
     except Exception as e:
         db.session.rollback()
@@ -303,6 +328,7 @@ def delete_library(id):
     try:
         db.session.delete(library)
         db.session.commit()
+        clear_user_access_cache()
         return api_response(msg='Library deleted')
     except Exception as e:
         db.session.rollback()
@@ -339,6 +365,13 @@ def bind_library_source(id):
         return api_error(code=40402, msg='Source not found', http_status=404)
 
     root_path = _normalize_root_path(payload.get('root_path'))
+    try:
+        scraper_policy = normalize_scraper_policy_payload(
+            raw_policy=payload.get('scraper_policy'),
+            provider_order=payload.get('provider_order') or payload.get('providers'),
+        )
+    except ScraperPolicyError as e:
+        return api_error(code=e.code, msg=e.msg)
 
     exists = LibrarySource.query.filter_by(library_id=id, source_id=source_id, root_path=root_path).first()
     if exists:
@@ -350,11 +383,13 @@ def bind_library_source(id):
         root_path=root_path,
         content_type=payload.get('content_type'),
         scrape_enabled=payload.get('scrape_enabled', True),
+        scraper_policy=scraper_policy,
         scan_order=payload.get('scan_order', 0),
         is_enabled=payload.get('is_enabled', True),
     )
     db.session.add(binding)
     db.session.commit()
+    clear_user_access_cache()
     return api_response(data=binding.to_dict(), msg='Library source bound', http_status=201)
 
 
@@ -368,7 +403,7 @@ def update_library_source(id, binding_id):
     if not payload:
         return api_error(code=40000, msg='No input data')
 
-    allowed = {'root_path', 'content_type', 'scrape_enabled', 'scan_order', 'is_enabled'}
+    allowed = {'root_path', 'content_type', 'scrape_enabled', 'scraper_policy', 'provider_order', 'providers', 'scan_order', 'is_enabled'}
     unknown = sorted([k for k in payload.keys() if k not in allowed])
     if unknown:
         return api_error(code=40004, msg=f"Unsupported fields: {', '.join(unknown)}")
@@ -380,13 +415,22 @@ def update_library_source(id, binding_id):
             binding.content_type = payload.get('content_type')
         if 'scrape_enabled' in payload:
             binding.scrape_enabled = bool(payload.get('scrape_enabled'))
+        if 'scraper_policy' in payload or 'provider_order' in payload or 'providers' in payload:
+            binding.scraper_policy = normalize_scraper_policy_payload(
+                raw_policy=payload.get('scraper_policy'),
+                provider_order=payload.get('provider_order') or payload.get('providers'),
+            )
         if 'scan_order' in payload:
             binding.scan_order = int(payload.get('scan_order') or 0)
         if 'is_enabled' in payload:
             binding.is_enabled = bool(payload.get('is_enabled'))
 
         db.session.commit()
+        clear_user_access_cache()
         return api_response(data=binding.to_dict(), msg='Library source updated')
+    except ScraperPolicyError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.msg)
     except Exception as e:
         db.session.rollback()
         logger.exception('Update library source failed binding_id=%s error=%s', binding_id, e)
@@ -402,6 +446,7 @@ def delete_library_source(id, binding_id):
     try:
         db.session.delete(binding)
         db.session.commit()
+        clear_user_access_cache()
         return api_response(msg='Library source unbound')
     except Exception as e:
         db.session.rollback()
@@ -473,6 +518,7 @@ def upsert_library_movie_memberships(id):
         saved_rows.append(membership)
 
     db.session.commit()
+    clear_user_access_cache()
     return api_response(data=[membership.to_dict() for membership in saved_rows], msg='Library movie memberships saved')
 
 
@@ -495,6 +541,7 @@ def delete_library_movie_memberships(id):
         LibraryMovieMembership.movie_id.in_(movie_ids),
     ).delete(synchronize_session=False)
     db.session.commit()
+    clear_user_access_cache()
     return api_response(data={"deleted_count": deleted_count}, msg='Library movie memberships deleted')
 
 

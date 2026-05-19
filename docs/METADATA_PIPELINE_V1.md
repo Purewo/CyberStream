@@ -76,6 +76,7 @@
 - 识别出 `season/episode/SxxExx/第xx集` 的，优先标记 `media_type_hint=tv`
 - 明显电影目录或带年份单文件，优先标记 `media_type_hint=movie`
 - TMDB 查询会优先走对应 `/search/tv` 或 `/search/movie`，而不是一律 `search/multi`
+- 动漫库可通过 `provider_order: ["nfo", "bangumi", "tmdb", "local"]` 显式启用 Bangumi 优先；默认顺序仍为 `nfo -> tmdb -> local`
 
 ## 当前 NFO 状态
 
@@ -90,9 +91,14 @@
 
 ## 当前手动修复联动
 
-- `POST /api/v1/movies/{id}/metadata/match` 支持传入 `imdb/<id>`、`tvdb/<id>` 或原有 `movie/<id>`、`tv/<id>`
-- `POST /api/v1/movies/{id}/metadata/refresh` 在本地占位条目重匹配时支持 `media_type_hint`
-- `GET /api/v1/movies/{id}/metadata/search` 返回 `media_type_hint`，并可按 `media_type_hint=movie|tv` 过滤候选
+- `GET /api/v1/metadata/providers` 返回当前 provider 注册表、默认顺序、别名和能力；当前为 `nfo/tmdb/bangumi/local`
+- `GET /api/v1/movies/{id}/metadata/search` 支持 `providers` / `provider_order`，可按 `media_type_hint=movie|tv` 过滤候选
+- 搜索候选统一返回 `provider`、`source_key`、`candidate_id`、`external_id`；`tmdb_id` 继续作为兼容字段
+- Bangumi 候选 ID 为 `bangumi/<id>`，支持关键字、裸 subject ID、`bangumi/<id>` 和 `https://bgm.tv/subject/<id>` 定点搜索
+- 指定 `query` 但不指定 `year` 时，不再继承当前影片年份；响应会返回 `year_source`
+- `POST /api/v1/movies/{id}/metadata/match` 建议传 `candidate_id + provider`，同时兼容 `tmdb_id`、`imdb/<id>`、`tvdb/<id>`、`movie/<id>`、`tv/<id>` 和 `bangumi/<id>`；默认只返回 dry-run 预览，前端确认覆盖时需带 `apply=true`
+- `POST /api/v1/movies/{id}/metadata/match` 在候选和当前影片最终都没有海报时会拒绝直接应用，避免无海报项目在前端变成不可见幽灵数据；确需写入可显式传 `allow_missing_poster=true`
+- `POST /api/v1/movies/{id}/metadata/refresh` 支持 `candidate_id/external_id + provider`，也兼容旧 `tmdb_id`
 - 影片详情和列表现在会返回 `scraper_source`，便于前端识别 `TMDB_STRICT`、`NFO_TMDB`、`NFO_LOCAL` 等来源
 
 ## 当前原则

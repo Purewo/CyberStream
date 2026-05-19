@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.services.metadata_scraper import MetadataScraper
-from backend.app.services.metadata_types import ProviderAttempt, ScrapeContext, ScrapeResult
+from backend.app.services.metadata_types import CandidateSearchResult, ProviderAttempt, ScrapeContext, ScrapeResult
 
 
 class BrokenProvider:
@@ -47,6 +47,14 @@ class LocalProvider:
         )
 
 
+class SearchWarningProvider:
+    name = "bangumi"
+    supports_search = True
+
+    def search_candidates(self, query, *, year=None, limit=8, media_type_hint=None):
+        return CandidateSearchResult(warnings=["bangumi_search_failed"])
+
+
 class MetadataScraperProviderFailoverTests(unittest.TestCase):
     def test_provider_exception_falls_back_to_local(self):
         scraper = MetadataScraper()
@@ -70,6 +78,28 @@ class MetadataScraperProviderFailoverTests(unittest.TestCase):
             any(item.startswith("provider_error:tmdb:TypeError:boom") for item in result.warnings),
             msg=result.warnings,
         )
+
+    def test_search_warning_without_candidates_marks_attempt_failed(self):
+        scraper = MetadataScraper()
+        scraper.providers = {
+            "bangumi": SearchWarningProvider(),
+        }
+
+        result = scraper.search_candidates(
+            ScrapeContext(
+                title="葬送的芙莉莲",
+                year=None,
+                source_id=1,
+                scraper_policy={"provider_order": ["bangumi"]},
+            ),
+            "葬送的芙莉莲",
+            media_type_hint="tv",
+        )
+
+        attempts = result["providers"]["attempts"]
+        self.assertEqual("failed", attempts[0]["status"])
+        self.assertEqual(["bangumi:bangumi_search_failed"], attempts[0]["warnings"])
+        self.assertEqual([], result["items"])
 
 
 if __name__ == "__main__":

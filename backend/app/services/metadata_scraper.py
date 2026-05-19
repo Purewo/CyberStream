@@ -1,15 +1,25 @@
 import hashlib
+import re
 
 from backend.app.services.metadata_providers import build_default_metadata_providers
-from backend.app.services.metadata_types import ProviderAttempt, ScrapeContext, ScrapeResult
+from backend.app.services.metadata_types import CandidateSearchResult, ProviderAttempt, ScrapeContext, ScrapeResult
 
 DEFAULT_PROVIDER_ORDER = ['nfo', 'tmdb', 'local']
-AUTHORITATIVE_METADATA_PROVIDERS = {'nfo', 'tmdb'}
+AUTHORITATIVE_METADATA_PROVIDERS = {'nfo', 'tmdb', 'bangumi', 'tencent_video'}
 PROVIDER_ALIASES = {
     'nfo': 'nfo',
     'local_nfo': 'nfo',
     'tmdb': 'tmdb',
     'themoviedb': 'tmdb',
+    'bangumi': 'bangumi',
+    'bgm': 'bangumi',
+    'bangumi_tv': 'bangumi',
+    'tencent': 'tencent_video',
+    'tencent_video': 'tencent_video',
+    'qq': 'tencent_video',
+    'qq_video': 'tencent_video',
+    'vqq': 'tencent_video',
+    'v_qq': 'tencent_video',
     'local': 'local',
     'fallback': 'local',
     'local_fallback': 'local',
@@ -31,8 +41,8 @@ class MetadataScraper:
             return None
         return PROVIDER_ALIASES.get(value.strip().lower())
 
-    def _resolve_provider_order(self, context):
-        policy = context.scraper_policy if isinstance(context.scraper_policy, dict) else {}
+    def normalize_scraper_policy(self, policy):
+        policy = policy if isinstance(policy, dict) else {}
         raw_order = policy.get('provider_order') or policy.get('providers')
         warnings = []
 
@@ -56,6 +66,13 @@ class MetadataScraper:
         if not provider_order:
             provider_order = list(DEFAULT_PROVIDER_ORDER)
 
+        normalized = {"provider_order": provider_order}
+        return normalized, warnings
+
+    def _resolve_provider_order(self, context):
+        normalized_policy, warnings = self.normalize_scraper_policy(context.scraper_policy)
+        provider_order = list(normalized_policy["provider_order"])
+
         if not context.scrape_enabled and 'tmdb' in provider_order:
             provider_order = [item for item in provider_order if item != 'tmdb']
             warnings.append('tmdb_skipped_scrape_disabled')
@@ -64,6 +81,120 @@ class MetadataScraper:
             provider_order.append('local')
 
         return provider_order, warnings
+
+    def provider_catalog(self):
+        providers = []
+        for provider_name in DEFAULT_PROVIDER_ORDER:
+            provider = self.providers.get(provider_name)
+            if provider:
+                providers.append(provider.describe())
+
+        extra_names = sorted(name for name in self.providers.keys() if name not in DEFAULT_PROVIDER_ORDER)
+        for provider_name in extra_names:
+            provider = self.providers.get(provider_name)
+            if provider:
+                providers.append(provider.describe())
+
+        return {
+            "default_order": list(DEFAULT_PROVIDER_ORDER),
+            "aliases": dict(PROVIDER_ALIASES),
+            "providers": providers,
+        }
+
+    def search_candidates(
+        self,
+        context: ScrapeContext,
+        query: str,
+        *,
+        year: int | None = None,
+        limit: int = 8,
+        media_type_hint: str | None = None,
+    ):
+        provider_order, warnings = self._resolve_provider_order(context)
+        items = []
+        attempts = []
+        seen_candidate_keys = set()
+
+        for provider_name in provider_order:
+            provider = self.providers.get(provider_name)
+            if not provider:
+                attempts.append({"provider": provider_name, "status": "missing", "count": 0})
+                continue
+            if not getattr(provider, "supports_search", False):
+                attempts.append({"provider": provider_name, "status": "skipped", "reason": "search_not_supported", "count": 0})
+                continue
+
+            try:
+                result = provider.search_candidates(
+                    query,
+                    year=year,
+                    limit=limit,
+                    media_type_hint=media_type_hint,
+                )
+            except Exception as e:
+                warning = f'provider_search_error:{provider_name}:{type(e).__name__}:{e}'
+                warnings.append(warning)
+                attempts.append({"provider": provider_name, "status": "failed", "count": 0, "warnings": [warning]})
+                continue
+
+            if not isinstance(result, CandidateSearchResult):
+                result = CandidateSearchResult()
+            provider_warnings = [f'{provider_name}:{warning}' for warning in result.warnings]
+            warnings.extend(provider_warnings)
+
+            added_count = 0
+            for item in result.items:
+                candidate_id = item.get("candidate_id") or item.get("external_id") or item.get("tmdb_id")
+                candidate_key = (provider_name, candidate_id)
+                if not candidate_id or candidate_key in seen_candidate_keys:
+                    continue
+                seen_candidate_keys.add(candidate_key)
+                items.append(item)
+                added_count += 1
+
+            attempt_status = "failed" if provider_warnings and added_count == 0 else "ok"
+            attempts.append({
+                "provider": provider_name,
+                "status": attempt_status,
+                "count": added_count,
+                "warnings": provider_warnings,
+            })
+
+        return {
+            "items": items[:max(limit, 0)],
+            "providers": {
+                "order": provider_order,
+                "attempts": attempts,
+                "warnings": warnings,
+            },
+        }
+
+    def _provider_for_candidate(self, candidate_id, provider_name=None):
+        provider_name = self._normalize_provider_name(provider_name) if provider_name else None
+        if provider_name:
+            return provider_name
+
+        raw = str(candidate_id or "").strip().lower()
+        if raw.startswith("bangumi/") or raw.startswith("bgm/"):
+            return "bangumi"
+        if re.search(r'(?:bangumi\.tv|bgm\.tv)/subject/\d+\b', raw):
+            return "bangumi"
+        if raw.startswith("tencent_video/") or raw.startswith("qq/"):
+            return "tencent_video"
+        if re.search(r'v\.qq\.com/(?:x/cover|x/page)/', raw):
+            return "tencent_video"
+        if raw.startswith("movie/") or raw.startswith("tv/"):
+            return "tmdb"
+        return None
+
+    def get_candidate_metadata(self, candidate_id, *, provider_name=None, media_type_hint=None):
+        provider_key = self._provider_for_candidate(candidate_id, provider_name=provider_name)
+        if not provider_key:
+            return None
+        provider = self.providers.get(provider_key)
+        if not provider:
+            return None
+        return provider.get_details(candidate_id, media_type_hint=media_type_hint)
 
     def generate_stable_id(self, title, year, content_type=None):
         media_type = self._normalize_content_type_hint(content_type)

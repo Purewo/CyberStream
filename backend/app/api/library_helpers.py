@@ -6,6 +6,8 @@ from datetime import datetime
 
 from backend.app.extensions import db
 from backend.app.models import History, LibraryMovieMembership, LibrarySource, Movie, MediaResource
+from backend.app.services.user_access import apply_current_user_movie_visibility_filter
+from backend.app.services.user_access import current_user_id_for_personal_data
 from backend.app.utils.genres import get_genre_query_terms, normalize_genres
 
 RECOMMENDATION_STRATEGIES = {'default', 'latest', 'top_rated', 'surprise', 'continue_watching'}
@@ -83,11 +85,24 @@ def build_library_movie_id_context(library):
 
 
 def apply_public_movie_visibility_filter(query):
-    """普通影视库默认只展示无需人工处理的影片。"""
-    return query.filter(
+    """普通影视库展示自动达标或用户显式发布的影片。"""
+    visibility_status = db.func.coalesce(Movie.catalog_visibility_status, Movie.CATALOG_VISIBILITY_AUTO)
+    manual_auto_visible = db.func.upper(Movie.scraper_source).in_(list(Movie.MANUAL_CONTENT_SOURCES))
+    auto_visible = db.and_(
         db.func.upper(Movie.scraper_source).in_(list(Movie.get_metadata_non_attention_sources())),
-        Movie.cover.isnot(None),
-        Movie.cover != "",
+        db.or_(
+            db.and_(Movie.cover.isnot(None), Movie.cover != ""),
+            manual_auto_visible,
+        ),
+    )
+    return query.filter(
+        db.or_(
+            visibility_status == Movie.CATALOG_VISIBILITY_PUBLISHED,
+            db.and_(
+                visibility_status != Movie.CATALOG_VISIBILITY_HIDDEN,
+                auto_visible,
+            ),
+        )
     )
 
 
@@ -96,7 +111,9 @@ def get_filter_options(includes):
     data = {}
 
     if 'genres' in includes:
-        movies = apply_public_movie_visibility_filter(db.session.query(Movie.category)).all()
+        movies = apply_current_user_movie_visibility_filter(
+            apply_public_movie_visibility_filter(db.session.query(Movie.category))
+        ).all()
         counter = Counter()
         for movie in movies:
             categories = movie[0]
@@ -110,14 +127,18 @@ def get_filter_options(includes):
         ]
 
     if 'years' in includes:
-        query = apply_public_movie_visibility_filter(db.session.query(Movie.year, db.func.count(Movie.id))) \
+        query = apply_current_user_movie_visibility_filter(
+            apply_public_movie_visibility_filter(db.session.query(Movie.year, db.func.count(Movie.id)))
+        ) \
             .filter(Movie.year.isnot(None)) \
             .group_by(Movie.year) \
             .order_by(Movie.year.desc())
         data['years'] = [{"year": row[0], "count": row[1]} for row in query.all()]
 
     if 'countries' in includes:
-        query = apply_public_movie_visibility_filter(db.session.query(Movie.country, db.func.count(Movie.id))) \
+        query = apply_current_user_movie_visibility_filter(
+            apply_public_movie_visibility_filter(db.session.query(Movie.country, db.func.count(Movie.id)))
+        ) \
             .filter(Movie.country.isnot(None)) \
             .filter(Movie.country != "") \
             .group_by(Movie.country)
@@ -248,10 +269,11 @@ def get_featured_movies(limit=5, custom_hero_id=None):
 
     if custom_hero_id:
         hero_movie = db.session.get(Movie, custom_hero_id)
-        if hero_movie:
+        visible_ids = apply_current_user_movie_visibility_filter(Movie.query.filter_by(id=custom_hero_id)).with_entities(Movie.id).first()
+        if hero_movie and hero_movie.is_visible_in_catalog() and visible_ids:
             featured_movies.append(hero_movie)
 
-    base_query = apply_public_movie_visibility_filter(Movie.query).filter(
+    base_query = apply_current_user_movie_visibility_filter(apply_public_movie_visibility_filter(Movie.query)).filter(
         Movie.background_cover.isnot(None),
         Movie.background_cover != ""
     )
@@ -305,11 +327,17 @@ def _get_recent_history_by_movie(movie_ids):
     if not movie_ids:
         return {}
 
-    rows = db.session.query(History, MediaResource.movie_id) \
-        .join(MediaResource, History.resource_id == MediaResource.id) \
-        .filter(MediaResource.movie_id.in_(movie_ids)) \
-        .order_by(MediaResource.movie_id.asc(), History.last_watched.desc(), History.id.desc()) \
-        .all()
+    query = (
+        db.session.query(History, MediaResource.movie_id)
+        .join(MediaResource, History.resource_id == MediaResource.id)
+        .filter(MediaResource.movie_id.in_(movie_ids))
+    )
+    user_id = current_user_id_for_personal_data()
+    if user_id is None:
+        query = query.filter(History.user_id.is_(None))
+    else:
+        query = query.filter(History.user_id == user_id)
+    rows = query.order_by(MediaResource.movie_id.asc(), History.last_watched.desc(), History.id.desc()).all()
 
     history_map = {}
     for history_record, movie_id in rows:
@@ -543,10 +571,12 @@ def attach_recommendation_payload(movie_payload, recommendation_item, strategy, 
 
 def _base_context_candidate_query(anchor_movie):
     if movie_has_animation(anchor_movie):
-        return apply_movie_filters(apply_public_movie_visibility_filter(Movie.query), genre=ANIMATION_GENRE)
+        return apply_current_user_movie_visibility_filter(
+            apply_movie_filters(apply_public_movie_visibility_filter(Movie.query), genre=ANIMATION_GENRE)
+        )
 
     category_text = Movie.category.cast(db.String)
-    return apply_public_movie_visibility_filter(Movie.query).filter(
+    return apply_current_user_movie_visibility_filter(apply_public_movie_visibility_filter(Movie.query)).filter(
         db.or_(
             Movie.category.is_(None),
             db.and_(
@@ -764,13 +794,34 @@ def get_recommendation_items_from_query(query, limit=12, strategy='default'):
 
 def get_recommendation_items(limit, strategy):
     """获取全局推荐条目并附带推荐解释。"""
-    query = apply_public_movie_visibility_filter(Movie.query)
+    query = apply_current_user_movie_visibility_filter(apply_public_movie_visibility_filter(Movie.query))
     return get_recommendation_items_from_query(query, limit=limit, strategy=strategy)
 
 
 def get_recommendation_movies(limit, strategy):
     """按策略获取推荐电影列表。保留给旧调用方使用。"""
     return [item["movie"] for item in get_recommendation_items(limit, strategy)]
+
+
+def _filter_movies_by_metadata_issue_code(query, metadata_issue_code):
+    issue_code = (metadata_issue_code or '').strip()
+    if not issue_code:
+        return query
+
+    # Metadata issues are computed from movie state, resource traces, locks and
+    # season metadata. Keep this filter tied to the same model-level source of
+    # truth so the workbench filters match the issue chips returned to clients.
+    matched_ids = []
+    for movie in query.order_by(None).all():
+        issue_codes = {
+            issue.get("code")
+            for issue in movie.get_metadata_issues()
+            if isinstance(issue, dict)
+        }
+        if issue_code in issue_codes:
+            matched_ids.append(movie.id)
+
+    return Movie.query.filter(Movie.id.in_(matched_ids))
 
 
 def build_movie_list_query(
@@ -821,28 +872,19 @@ def build_movie_list_query(
                     Movie.scraper_source.is_(None),
                     Movie.scraper_source == "",
                     db.func.upper(Movie.scraper_source).notin_(list(Movie.get_metadata_non_attention_sources())),
-                    Movie.cover.is_(None),
-                    Movie.cover == "",
+                    db.and_(
+                        db.func.upper(Movie.scraper_source).notin_(list(Movie.MANUAL_CONTENT_SOURCES)),
+                        db.or_(Movie.cover.is_(None), Movie.cover == ""),
+                    ),
                 )
             )
         else:
             query = apply_public_movie_visibility_filter(query)
 
     if metadata_issue_code:
-        if metadata_issue_code == 'poster_missing':
-            return query.filter(db.or_(Movie.cover.is_(None), Movie.cover == ""))
+        query = _filter_movies_by_metadata_issue_code(query, metadata_issue_code)
 
-        issue_source_map = {
-            'placeholder_metadata': list(Movie.get_metadata_placeholder_sources()),
-            'local_only_metadata': list(Movie.get_metadata_local_only_sources()),
-            'fallback_pipeline_match': ['TMDB_FALLBACK', 'LOCAL_FALLBACK', 'LOCAL_ORPHAN', 'NFO_LOCAL', 'NFO'],
-            'nfo_candidates_available': ['NFO_TMDB', 'NFO_LOCAL', 'NFO'],
-        }
-        source_codes = issue_source_map.get(metadata_issue_code)
-        if source_codes:
-            query = query.filter(Movie.scraper_source.in_(source_codes))
-
-    return query
+    return apply_current_user_movie_visibility_filter(query)
 
 
 def build_review_queue_query(source_id=None, provider=None, parse_mode=None, keyword=None):

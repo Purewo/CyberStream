@@ -209,6 +209,12 @@ def check_ffmpeg():
 
 # --- 资源校验与工具类 ---
 class ResourceValidator:
+    PROMOTIONAL_VIDEO_MARKERS = (
+        '更多无水印',
+        'BBQDDQ.COM',
+    )
+    PROMOTIONAL_VIDEO_MAX_BYTES = 5 * 1024 * 1024
+
     @staticmethod
     def normalize_path(raw_path):
         try:
@@ -230,6 +236,23 @@ class ResourceValidator:
         if not u_name.endswith(config.VIDEO_EXTENSIONS): return False
         if any(k in u_name for k in config.IGNORE_FILES): return False
         return True
+
+    @staticmethod
+    def is_probable_promotional_video(filename, size=None):
+        if not ResourceValidator.is_valid_video(filename):
+            return False
+        try:
+            size_value = int(size) if size is not None else None
+        except (TypeError, ValueError):
+            size_value = None
+        if size_value is None or size_value > ResourceValidator.PROMOTIONAL_VIDEO_MAX_BYTES:
+            return False
+        raw_name = str(filename or '')
+        upper_name = raw_name.upper()
+        return any(
+            marker in raw_name or marker in upper_name
+            for marker in ResourceValidator.PROMOTIONAL_VIDEO_MARKERS
+        )
 
     @staticmethod
     def get_tech_specs(filename):

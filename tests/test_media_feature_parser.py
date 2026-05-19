@@ -61,6 +61,16 @@ class MediaFeatureParserTests(unittest.TestCase):
 
         self.assertEqual("SDR", specs["hdr_format"])
 
+    def test_marks_small_promotional_site_videos(self):
+        self.assertTrue(ResourceValidator.is_probable_promotional_video(
+            "【更多无水印高清电影请访问 www.BBQDDQ.com】【更多无水印高清电影请访问 www.BBQDDQ.com】.MKV",
+            636976,
+        ))
+        self.assertFalse(ResourceValidator.is_probable_promotional_video(
+            "落凡尘.Into.The.Mortal.World.2024.2160p.HQ.WEB-DL.DTS5.1.H264.60fps.2Audio-ParkHD.mkv",
+            24732970473,
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

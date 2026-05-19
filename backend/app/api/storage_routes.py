@@ -8,6 +8,7 @@ from backend.app.extensions import db
 from backend.app.models import StorageSource
 from backend.app.providers.base import StorageProviderError
 from backend.app.providers.factory import provider_factory
+from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
 from backend.app.storage.source_registry import (
     list_supported_source_types,
@@ -112,7 +113,7 @@ def _get_json_payload():
     return request.get_json(silent=True) or {}
 
 
-def _scan_background_task(app, source_id=None, root_path=None, content_type=None, scrape_enabled=True):
+def _scan_background_task(app, source_id=None, root_path=None, content_type=None, scrape_enabled=True, scraper_policy=None):
     with app.app_context():
         try:
             scanner_engine.scan(
@@ -120,6 +121,7 @@ def _scan_background_task(app, source_id=None, root_path=None, content_type=None
                 root_path=root_path,
                 content_type=content_type,
                 scrape_enabled=scrape_enabled,
+                scraper_policy=scraper_policy,
                 lock_acquired=True,
             )
         except Exception as e:
@@ -290,11 +292,19 @@ def scan_specific_source(id):
     if not ok:
         scanner_engine.finish_scan()
         return api_error(code=40041, msg="Invalid field value: scrape_enabled should be boolean")
+    try:
+        scraper_policy = normalize_scraper_policy_payload(
+            raw_policy=payload.get('scraper_policy'),
+            provider_order=payload.get('provider_order') or payload.get('providers'),
+        )
+    except ScraperPolicyError as e:
+        scanner_engine.finish_scan()
+        return api_error(code=e.code, msg=e.msg)
 
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_scan_background_task,
-        args=(app, id, root_path, content_type, scrape_enabled),
+        args=(app, id, root_path, content_type, scrape_enabled, scraper_policy),
     )
     thread.start()
     return api_response(
@@ -303,6 +313,7 @@ def scan_specific_source(id):
             "root_path": _display_relative_path(root_path),
             "content_type": content_type,
             "scrape_enabled": scrape_enabled,
+            "scraper_policy": scraper_policy,
         },
         msg="Scan started",
         http_status=202,

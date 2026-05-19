@@ -8,6 +8,10 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+.env
+.env.*
+!.env.example
+!.env.local.example
 
 *.db
 *.db-*
@@ -15,7 +19,10 @@ htmlcov/
 *.sqlite3
 *.bak
 *.log
+*.pid
 cache/
+backups/
+temp/
 
 .DS_Store
 Thumbs.db

@@ -9,6 +9,9 @@ from backend.app.utils.genres import normalize_genres
 
 class NfoMetadataProvider(MetadataProviderBase):
     name = 'nfo'
+    display_name = 'Sidecar NFO'
+    authoritative = True
+    supports_search = False
 
     def _normalize_content_type_hint(self, content_type):
         content_type = (content_type or '').strip().lower()

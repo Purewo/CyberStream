@@ -1,5 +1,268 @@
 # PROJECT_PROGRESS
 
+## 2026-05-03
+
+### 1.21.0 其他视频归档
+
+新增手工归档接口，用于自建课程、爬虫视频和其他不适合自动刮削的资源：
+
+- `GET /api/v1/other-videos`：返回待手工归档的其他视频队列。
+- `POST /api/v1/movies/manual`：新建手工电影/电视剧壳，默认隐藏，不影响普通影视库。
+- `POST /api/v1/movies/{movie_id}/resources/attach`：把已有 `MediaResource` 挂入指定影片，并可顺手更新季/集、标题和简介。
+
+手工内容会被识别为 `LOCAL_MANUAL_MOVIE` / `LOCAL_MANUAL_TV`，默认不进入 `needs_attention` 工作台，也不会再被当成刮削失败条目。
+
+### 审查工作台边界收口
+
+已完成后端审查工作台边界字典和前端对接说明：
+
+- 新增 `GET /api/v1/metadata/review-taxonomy`，返回普通影视库、元数据审查、剧集审查、资源治理和目录发布控制的固定分类。
+- `issue_code` 现在有统一字典，可映射到列表入口、详情入口、推荐动作和批量 dry-run 动作，前端不再需要按 `scraper_source` 自行推断。
+- 补齐 `BANGUMI` 元数据来源边界：`metadata_review_priority=none` 与 OpenAPI 枚举现在包含 `BANGUMI/bangumi`。
+- 新增 `docs/FRONTEND_REVIEW_WORKBENCH_INTEGRATION.md`，明确普通列表、审查工作台、资源治理和发布隐藏的使用边界。
+
+## 2026-05-02
+
+### 1.20.0 用户管理第一阶段
+
+已完成后端用户管理基础能力，默认关闭，不影响当前公网使用：
+
+- 新增 `admin/user` 两级角色和 Cookie 会话登录。
+- `CYBER_API_TOKEN` 保留为管理员后门。
+- 支持环境变量引导初始管理员。
+- 普通用户只能读取可见影视、播放、维护自己的观看历史和字幕样式。
+- 用户可见性通过资源库 allow/deny 规则控制，默认可见全部公开影视，deny 优先。
+- 开启用户管理后，列表、详情、资源、图片、播放流、字幕、推荐和历史都会校验当前用户可见性。
+- 补齐用户管理安全底座：最后一个启用管理员保护、密码/角色/启用状态变更后的 session 版本失效、登录失败限流、审计日志，以及普通用户自助资料/密码接口。
+- 新增 OpenAPI `1.20.0-beta`。
+
+### PC / 外部播放器播放契约第一阶段
+
+前端暂无阻塞后，继续推进播放体验中低风险的一环：不改视频主播放链路，只补外部播放器交接契约。
+
+已完成：
+
+- 新增 `GET /api/v1/resources/<id>/external-playback`，返回面向 PC/外部播放器的 handoff manifest。
+- manifest 包含绝对 `stream.url`、默认字幕 URL、`handoff.playlist_url`、`player_profiles` 和关键资源信息摘要。
+- `GET /api/v1/resources/<id>/external-playback?format=m3u` 返回 `audio/x-mpegurl` M3U 播放列表。
+- M3U 复用现有 `/stream` URL；有默认字幕时附带 `#EXTVLCOPT:sub-file=...`。
+- OpenAPI `1.19.0-beta`、API 文档和测试清单已同步。
+
+边界：
+
+- 不新增底层播放器进程管理。
+- 不改变 `/resources/<id>/stream` 的 200/206/302 行为。
+- 不自动替用户选择播放器或执行本机程序；PC 客户端或前端可基于 manifest 自行发起 handoff。
+
+### 运行加固与上线前 P0 收口
+
+在进入用户管理前，先补齐单机私有部署必须的基础保护与回滚能力。
+
+已完成：
+
+- 新增最小 API token 鉴权：设置 `CYBER_API_TOKEN` 后，管理类 API 要求 Bearer token 或 `X-Cyber-API-Token`。
+- 健康检查、媒体流和影片图片 GET 默认公开，避免浏览器播放器、图片和外部播放器读取链路被 header 限制挡住。
+- `TMDB_TOKEN` 和历史 WebDAV 凭证不再保留代码内明文默认值；未配置 TMDB token 时跳过 TMDB 请求并继续其他 provider fallback。
+- 新增 `scripts/db_backup.py`，支持 SQLite `backup`、`list`、`restore --yes`，恢复前会自动做一次安全备份。
+- `scripts/backend_service.sh` 默认 `auto` runner：优先 gunicorn，缺失时回退 Flask 内置服务器。
+- `.env.local.example`、运行手册、配置说明、测试清单和 OpenAPI 说明已同步。
+
+## 2026-04-30
+
+### Super CDN 国内全线路非视频资产接入
+
+CDN 已按国内主访问场景开始接入，范围刻意限制在非视频静态资产，视频主播放链路继续保持现有 302/proxy 行为。
+
+已完成：
+
+- 新增 Super CDN provider/client，默认桶 `cyberstream-cn-assets`，默认线路 `china_all`。
+- 首次上传前可自动创建 Super CDN 资产桶；默认允许类型为 `image,document`，不包含 `video`。
+- 图片缓存写入后可上传到 Super CDN，`poster_asset_url/backdrop_asset_url` 在已有上传记录时优先返回 CDN `/a/{bucket}/...` URL。
+- `GET /api/v1/movies/<id>/images/status` 和 `POST /api/v1/images/refresh` 返回 `cdn` 上传状态，维护页可看 `summary.cdn_status_counts`。
+- 在线绑定字幕和手动上传字幕会上传原始字幕；`srt/ass/ssa/vtt` 额外上传 WebVTT 版本，网页播放器优先使用 CDN `web_player.url`。
+- 配置默认关闭；未配置 Super CDN 时全部回退原后端图片/字幕 URL。
+
+本次定向验收：
+
+- 图片资产与在线/手动字幕专项测试通过：`43 tests OK`。
+- OpenAPI / 图片 / 在线字幕 / 字幕发现专项测试通过：`54 tests OK`。
+- 全量后端测试通过：`240 tests OK`。
+
+当前决策：
+
+- 赛博影视只先替换海报层，运行桶为公网已有图片桶 `hd-wallpapers`，图片加载链路为 CDN -> 后端本地图片入口 -> 原始元数据 URL。
+- 当前 Super CDN 的稳定 `/a/{bucket}/...` 公开 URL 实测返回 `200/206`，底层 `storage_url/cdn_url` 才会 302 到豆包/飞书下载流；后端继续只向前端暴露稳定 `public_url`，不直接暴露带签名的底层网盘直链。
+- 后续背景图、字幕等静态资源暂不继续迁移到 CDN；等待 Super CDN 开发侧明确并修复 asset bucket `/a/...` 的 redirect 策略后再推进。
+- 不阻塞主线开发，下一模块先转入“资料库质量 / 剧集识别复核”。
+
+### 剧集识别复核第一阶段
+
+CDN 后续迁移暂缓后，主线转入资料库质量模块。已完成：
+
+- 新增剧集完整性诊断 service，按季计算 `episode_diagnostics`。
+- `GET /api/v1/movies/<id>/resources` 与 `GET /api/v1/movies/<id>/seasons` 返回每季诊断：缺集、重复集号、资源缺集号、资源数与季元数据集数不一致。
+- `summary.episode_diagnostics` 汇总整部影片的剧集诊断状态和需要复核的季号。
+- 新增 `GET /api/v1/movies/<id>/episode-diagnostics`，返回只读 dry-run 修复建议、可确认后提交到批量资源编辑接口的 `apply_payload`，以及需要人工复核的重复/缺失剧集提示。
+- 元数据工作台问题列表接入剧集诊断 issue：`missing_episode_numbers`、`duplicate_episode_numbers`、`episode_number_missing`、`episode_count_mismatch`。
+- `/api/v1/metadata/work-items` 和 `/api/v1/movies` 的 `metadata_issue_code` 现在可直接筛选这些剧集问题，方便前端进入复核工作台。
+
+今晚收口清单已完成：
+
+1. 新增 `GET /api/v1/metadata/quality-summary`，聚合 issue 计数、样例影片和建议动作。
+2. 新增 `POST /api/v1/metadata/re-scrape/plan`，先覆盖 `fallback_pipeline_match`、`poster_missing`、`low_confidence_resources`，确认后再提交现有批量 re-scrape。
+3. 新增 `GET /api/v1/metadata/episode-review-items`，把缺集、重复集号、资源缺集号和季元数据缺失聚合成前端可直接处理的工作台列表。
+4. 新增轻量后台任务注册表，`POST /api/v1/metadata/re-scrape/jobs` 可后台执行批量重识别，`GET /api/v1/jobs` 与 `GET /api/v1/jobs/<job_id>` 可追踪进度和结果。
+
+### 扫描与资源治理第一阶段
+
+继续避开 CDN、安全权限和播放体验主链路，新增只读资源治理入口：
+
+- 新增 `GET /api/v1/resources/governance-summary`，返回孤儿资源、空壳影片、重复播放资源、失效路径检查和治理建议。
+- 新增 `GET /api/v1/resources/governance-items`，分页查看具体治理问题条目，支持 `issue_code` 过滤。
+- 默认不访问存储源，只做数据库层 dry-run 分析；传 `live_check=true` 时才按 `live_check_limit` 有界检查资源父目录，不删除、不改库、不触发扫描。
+- 失效路径检测使用父目录 `list_items()` 匹配文件名和大小，避免误用 provider 的目录型 `path_exists()` 判断视频文件。
+
+### 扫描与资源治理第二阶段
+
+在不触碰 CDN、用户管理和播放主链路的前提下，补上资源治理闭环：
+
+- 新增 `POST /api/v1/resources/governance/plan`，生成清理 dry-run 和可提交的 `apply_payload`。
+- 新增 `POST /api/v1/resources/governance/jobs`，接入轻量后台任务注册表执行确认后的清理计划。
+- 自动执行范围限定为重复资源副本、孤儿资源索引和 live check 后确认缺失的资源索引。
+- 安全保护覆盖播放历史、已绑定字幕、影片最后资源和重复主资源；执行前重新校验 issue，且只删除 `MediaResource` 索引，不删除实体文件。
+- 清理 job 的已删除项会返回 `restore_snapshot`，包含完整 `MediaResource` 字段，便于人工恢复资源索引。
+- `plan` 支持 `limit` 和 `page/page_size`，前端可按批次展示和提交真实库的大计划。
+- 新增 `POST /api/v1/resources/governance/live-check/jobs`，把较大批量路径检查放进后台任务，只读返回汇总和分页问题项。
+- 后台维护任务新增 `maintenance_jobs` 持久化记录，`/jobs` 和 `/jobs/<job_id>` 可在进程内存丢失后继续查询任务状态和结果。
+- 新增 `POST /api/v1/resources/governance/restore/plan` 与 `/restore/jobs`，可用 `restore_snapshot` 恢复误删的 `MediaResource` 索引；恢复不触碰实体文件、历史和字幕。
+- 维护任务持久化结果新增瘦身策略：按 `MAINTENANCE_JOB_RESULT_ITEM_LIMIT` 截断过长 `result.items`，避免 SQLite 长期膨胀。
+- 新增 `POST /api/v1/jobs/prune`，按 `MAINTENANCE_JOB_RETENTION_DAYS` 或请求参数清理过期 succeeded/failed 任务，支持 `dry_run`。
+
+### HTTPS 外部 URL 修复
+
+前端发现 `audio-transcode` 等后端生成链接返回 `http://pw.pioneer.fan:84/...`，但实际后端公网入口是 HTTPS。已完成：
+
+- Flask 应用启用 `ProxyFix`，默认信任一层反向代理的 `X-Forwarded-Proto`、`X-Forwarded-Host`、`X-Forwarded-Port` 和 `X-Forwarded-Prefix`。
+- 新增 `CYBER_BACKEND_PUBLIC_BASE_URL`，可在反代未正确传头时强制指定后端外部 base URL，例如 `https://pw.pioneer.fan:84`。
+- `playback.stream_url`、`audio.server_transcode.endpoint/url`、字幕原始 `url` 和 `web_player.url` 统一走外部 URL helper，避免同一响应中混入 HTTP 链接。
+- 新增代理头回归测试，覆盖 `https://pw.pioneer.fan:84` 下的播放、转码和字幕 URL。
+
+### CDN 对接前置边界
+
+本次完成：
+
+- 新增配置 `CYBER_IMAGE_ASSET_PUBLIC_BASE_URL`，用于让 `poster_asset_url/backdrop_asset_url` 和图片状态接口的 `asset_url` 返回 CDN/public base 下的绝对 URL。
+- 默认不配置时仍返回原有后端相对路径，前端字段名和语义保持兼容。
+- 真实图片读取、缓存、刷新、预热和清理仍走后端图片接口；当前适合先用 CDN 反向代理后端图片路由，后续再接对象存储上传与供应商 purge provider。
+- 新增 `POST /api/v1/images/refresh`，用于批量编排图片 CDN purge / 本地缓存清理 / 重新预热；当前 `noop` provider 只返回待 purge URL 清单，后续真实 CDN 接入时复用同一入口。
+- 新增图片来源追踪：列表/详情返回 `poster_source_info/backdrop_source_info`，状态接口返回当前 `source_info`，新缓存元数据写入 `cache.source_info` 来源快照。
+- 图片来源追踪第一阶段不改 schema，先基于 `scraper_source`、图片 URL host 和字段锁状态推断 TMDB、Bangumi、NFO、manual、external/local 等来源。
+
+### 字幕加载修复
+
+前端联调发现网页播放器加载字幕失败，后端排查后确认主因是浏览器 `<track>` 不能直接加载 ASS/SRT 原始字幕。已完成：
+
+- `playback.subtitles.items[].url` 继续保留原始字幕流，供外部播放器使用。
+- `playback.subtitles.items[].web_player.url` 改为网页播放器专用入口；`srt/ass/ssa` 会追加 `format=vtt`，由后端动态转换为 WebVTT。
+- `GET /api/v1/resources/<id>/stream?subtitle_id=<subtitle_id>&format=vtt` 返回 `text/vtt; charset=utf-8`，并标记原始字幕格式响应头。
+- `sub/sup` 当前仍不声明网页播放器支持，避免前端把位图字幕交给 HTML5 `<track>`。
+- OpenAPI `1.19.0-beta` 和播放链路测试清单已同步更新。
+
+随后继续排查在线字幕下载失败，确认前端搜索“阿凡达：水之道”后第一条候选为 SubHD 的 `SUP` 位图字幕，解包后的 `.sup` 超过后端单字幕大小限制。已继续完成：
+
+- 在线字幕搜索候选新增 `format_normalized` 与 `web_player` 兼容性提示。
+- 候选排序优先展示 `srt/ass/ssa/vtt` 文本字幕，再展示未知格式，最后展示 `sub/sup` 位图字幕，避免网页播放器优先选到不可加载的 SUP。
+- 字幕文件或嵌套压缩包超过大小限制时返回 HTTP `413`，不再伪装成远端下载 `502`。
+- SubHD 返回 RAR 压缩包时当前仍不解压，但错误语义已调整为 HTTP `415`，前端可提示用户更换候选；真实 RAR 解压需后续明确部署环境中的 `unar/7z/bsdtar` 等运行依赖后再接。
+
+本次验收：
+
+- 字幕发现、在线字幕和 OpenAPI 契约专项测试通过：`33 tests OK`。
+- 播放/字幕/代理 URL/OpenAPI 契约专项测试通过：`20 tests OK`。
+- 全量后端测试通过：`240 tests OK`。
+
+## 2026-04-29
+
+### 1.19.0 开发基线建立
+
+前端对 `1.18.0` 基本完成对接后，后端进入 `1.19.0` 小步迭代。本轮先沿“资料库质量 / 元数据复核工作台”推进，同时新建 OpenAPI `1.19.0-beta` 作为后续联调基线。
+
+本次完成：
+
+- 修正 `metadata_issue_code` 筛选语义：`GET /api/v1/metadata/work-items` 与 `GET /api/v1/movies` 现在按条目实际返回的 `metadata_issues[].code` 精确筛选。
+- 覆盖此前来源粗筛无法准确命中的复合问题类型，包括 `low_confidence_resources`、`locked_fields_present`、`season_metadata_missing`、`manual_review_required` 等。
+- 修正 `local_only_metadata` 可能误带 `LOCAL_FALLBACK/LOCAL_ORPHAN` 占位条目的问题；现在以模型实际 issue 列表为准。
+- 记录 CDN 前置准备项：图片缓存状态、批量预热、清理刷新策略和图片来源追踪。
+- 新增 `GET /api/v1/movies/<id>/images/status`，用于查看单片 `poster/backdrop` 图片源、源 URL 校验结果、本地缓存状态、缓存文件元数据和源 URL 是否变化。
+- 新增 `POST /api/v1/images/preload`，用于按 `movie_ids/kinds/refresh/limit` 小批量同步预热图片缓存，并返回逐项 `cached/stale/skipped/failed` 结果。
+- 新增 `DELETE /api/v1/movies/<id>/images/<kind>`，用于清理单片 `poster/backdrop` 的后端本地缓存文件和缓存元数据，不修改数据库图片源。
+- 新建 OpenAPI `1.19.0-beta` 目录，并同步更新运行版本、API 文档和 release notes。
+
+本次验收：
+
+- 工作台、图片缓存和公开列表相关专项测试通过。
+- OpenAPI JSON 可解析，OpenAPI 契约测试通过。
+- 全量后端测试通过：`232 tests OK`。
+- 本地后端已重启，`GET /` 健康检查返回 `1.19.0`。
+
+## 2026-04-28
+
+### 1.18.0 开发与当日收口
+
+今天按昨日计划先推进“字幕配置”第一阶段，范围控制在播放矩阵与安全字幕流，不改变视频主播放链路。
+
+### 本次完成
+
+- 新增同目录外挂字幕发现服务，当前支持 `srt`、`ass`、`ssa`、`vtt`。
+- `GET /api/v1/movies/<id>/resources` 返回的 `playback.subtitles.items` 已从占位升级为真实字幕列表。
+- 字幕匹配规则：只匹配当前视频同目录、同文件名前缀的字幕文件，避免误扫跨目录内容。
+- 字幕语言会根据文件名识别 `zh-Hans`、`zh-Hant`、`zh`、`en`、`ja`、`ko`，并支持 `default` / `默认` 标记作为默认字幕。
+- `playback.external_player.subtitle_urls` 会同步返回字幕 URL，便于 PotPlayer、IINA、VLC 等外部播放器接入。
+- 字幕流复用 `GET /api/v1/resources/<id>/stream?subtitle_id=...`，后端会校验 `subtitle_id` 必须来自当前资源已发现字幕，不开放任意路径下载。
+- 新增在线字幕搜索接口 `GET /api/v1/resources/<id>/subtitles/online/search`，启用来源为 `subhd` 与 `srtku`。
+- 新增在线字幕下载接口 `POST /api/v1/resources/<id>/subtitles/online/download`，按搜索结果 `candidate_id` 返回字幕文件流。
+- 新增在线字幕绑定接口 `POST /api/v1/resources/<id>/subtitles/online/bind`，必须传 `confirm: true`，只绑定用户手动确认的候选，并保存为后端缓存字幕。
+- 新增手动上传字幕接口 `POST /api/v1/resources/<id>/subtitles/upload`，支持直接字幕文件和 `zip/7z/tar/gzip` 压缩包提取，上传结果以 `source=manual_upload` 暴露。
+- 新增已绑定在线字幕管理接口：`DELETE /api/v1/resources/<id>/subtitles/<subtitle_id>` 移除缓存字幕，`POST /api/v1/resources/<id>/subtitles/<subtitle_id>/default` 持久化默认绑定字幕。
+- `opensubtitles` 因中文覆盖和免费下载限额问题暂不接入；前端传入该来源时后端只会记录到 `providers.ignored`。
+- 新增电影图片缓存接口 `GET /api/v1/movies/<id>/images/<kind>`，第一阶段支持 `poster/backdrop`。
+- 电影列表/详情保留原 `poster_url/backdrop_url`，新增 `poster_asset_url/backdrop_asset_url` 作为后端稳定图片资源入口。
+- 图片缓存落盘到 `CACHE_DIR/images/movies/<movie_id>/`；接口只按数据库中的 `cover/background_cover` 回源，不接受任意 URL，避免开放代理风险。
+- 支持 `refresh=true` 刷新远端图片；刷新失败且已有缓存时返回旧缓存并标记 `X-Cyber-Image-Cache=stale`。
+- 新增元数据 provider 能力接口 `GET /api/v1/metadata/providers`，当前注册 `nfo/tmdb/bangumi/local`。
+- `GET /api/v1/movies/<id>/metadata/search` 改为 provider 抽象候选搜索，候选新增 `provider/source_key/candidate_id/external_id`，并返回 `providers.attempts` 解释各来源状态；指定 `query` 但不指定 `year` 时不再继承当前影片年份。
+- 新增 Bangumi / 番组计划 provider，支持动画候选搜索、subject URL 定点查询、扫描刮削和手动匹配 `candidate_id + provider`；默认不自动启用，动漫库可显式配置 `provider_order: ["nfo", "bangumi", "tmdb", "local"]`。
+- 存储源扫描和资源库绑定新增 `scraper_policy.provider_order`，资源库扫描现在会实际使用绑定上的 `content_type/scrape_enabled/scraper_policy`。
+- 运行版本推进到 `1.18.0`，新增 OpenAPI `1.18.0-beta` 联调基线。
+- 新增总影视库显式发布控制：影片级 `catalog_visibility_status` 支持 `auto/published/hidden`，`PATCH /api/v1/movies/<id>/catalog-visibility` 必须由用户显式触发，强制发布需要 `force=true`。
+- 已确认 `SMB/FTP/AList/OpenList` 代码链路接入主流程：配置校验、provider 工厂、预览、已保存来源浏览、扫描、播放、OpenAPI 和文档均已覆盖；协议相关 53 个单元测试通过。
+- 已记录 Emby/Jellyfin 对标差距与长期超越路线，明确 PC 端播放优先、多用户后置、资料库长期打磨、未来接入 `skill` / agent 工作流。
+
+### 今日验收
+
+- 全量后端测试在总影视库显式发布控制完成后通过：`213 tests OK`。
+- OpenAPI JSON 可解析，运行时路由与 OpenAPI path/method 对齐。
+- 后端已在本地 `5004` 端口运行，`/api/v1/storage/provider-types` 与 `/api/v1/storage/capabilities` 可正常返回 `smb/ftp/alist/openlist`。
+- 协议专项测试通过：`tests.test_storage_protocol_support`、`tests.test_smb_ftp_providers`、`tests.test_alist_provider`、`tests.test_storage_preview_optimization`、`tests.test_storage_source_scan_scope`、`tests.test_playback_capabilities`，共 53 个测试。
+- 当前不再继续新增大功能，等待前端完成 `1.18.0` 对接和测试反馈。
+
+### 当前边界
+
+- 暂不做字幕转码、字幕烧录、跨目录递归查找、字幕内容解析或在线字幕自动落盘；在线字幕绑定必须由用户确认后触发；移除/默认设置只作用于后端缓存的 `online_bound/manual_upload` 字幕。
+- 图片缓存第一阶段暂不做对象存储/CDN 上传、裁剪转码、季级独立海报缓存或批量预热；当前是按需回源并落盘。CDN 切换层等待自建 CDN 完工后再继续。
+- 元数据 provider 第一阶段已接入 TMDB 与 Bangumi 在线候选搜索；新增来源暂缓，后续重点转向图片来源追踪和批量预热。
+- `SMB/FTP` 当前是 mock 单测覆盖，真实 NAS / FTP 环境尚未做完整端到端验证；AList/OpenList 已有 provider 级测试，但仍建议用真实服务做目录浏览、扫描和播放抽样。
+- 长期对标 Emby/Jellyfin 的差距和超越路线已记录到 `docs/MAINTENANCE_TODO.md`：当前仍以个人向私有媒体库为核心，多用户后置；播放体验后续优先进军 PC 端，借助开源播放器内核或原生 Windows 播放能力；资料库质量作为长期打磨主线；未来重点差异化是与 `skill`、OpenClaw 类 agent 集成，但关键动作必须保留用户显式确认。
+
+### 明日接手待办
+
+1. 先看前端联调反馈，不急着进新模块；如果有接口字段、OpenAPI 扁平度、响应结构或交互确认类问题，优先当天收敛。
+2. 针对字幕链路做前端联调回归：同目录字幕、在线搜索、候选下载、用户确认绑定、默认字幕、删除绑定字幕、手动上传字幕和压缩包提取。
+3. 针对元数据和总影视库发布做回归：Bangumi 手动匹配、`scraper_policy.provider_order`、`catalog_visibility` 展示、`published/hidden/auto` 切换和 `force=true` 确认逻辑。
+4. 抽样验证图片缓存：列表/详情中的 `poster_asset_url/backdrop_asset_url`、`refresh=true`、远端失败时旧缓存回退。
+5. 抽样验证存储协议运行态接口：`provider-types`、`capabilities`、`preview`、已保存来源 `browse`，有真实环境时再补 `SMB/FTP/AList/OpenList` 端到端联调记录。
+6. 如果前端没有后端阻塞，再进入下一个模块；优先从“资料库质量/剧集识别/复核工作台”或“PC 端播放契约”里选一个，不要同时改扫描、播放、存储三大核心链路。
+
 ## 2026-04-27
 
 ### 当前决策
@@ -23,7 +286,7 @@
 
 2. 静态资源优化存储
    - 为 `poster`、`background_cover` 设计更稳定的缓存与存储策略。
-   - 准备对接自建 CDN，避免长期直接依赖第三方图片地址。
+   - 自建 CDN 完工后再设计 CDN 切换层，当前先保持本地按需缓存。
 
 3. 多刮削器支持
    - 当前只有 TMDB，复杂影视数据覆盖不够。
@@ -188,13 +451,14 @@
   - 手动 PATCH 默认会锁定本次修改字段，后续扫描/刮削不再覆盖
   - 支持通过 `metadata_locked_fields` / `metadata_unlocked_fields` 显式控制锁定状态
 - 新增 `POST /api/v1/movies/<id>/metadata/refresh`：
-  - 只刷新单条影片的 TMDB 元数据
+  - 只刷新单条影片的外部元数据
   - 不触发全库扫描
   - 若影片当前是 `loc-*` 占位 ID，会先按标题/年份尝试搜索 TMDB
+  - 支持 `candidate_id/external_id + provider`，也兼容旧 `tmdb_id`
   - 已锁定字段默认不覆盖，可通过 `metadata_unlocked_fields` 定点解锁后再刷新
 - 新增手动匹配链路：
-  - `GET /api/v1/movies/<id>/metadata/search`：搜索单条影片的 TMDB 候选
-  - `POST /api/v1/movies/<id>/metadata/match`：将影片匹配到指定 `tmdb_id`
+  - `GET /api/v1/movies/<id>/metadata/search`：按 provider 搜索单条影片的元数据候选
+  - `POST /api/v1/movies/<id>/metadata/match`：将影片匹配到指定 `candidate_id + provider`
   - 全流程均不触发全库扫描，只操作当前影片
 - 新增季/集级资源编辑第一版：
   - `GET /api/v1/movies/<id>/resources`：返回影片资源列表、无季资源、按季分组资源

@@ -1,9 +1,17 @@
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource
+from backend.app.services.user_access import can_current_user_access_movie_id, current_user_id_for_personal_data
 
 
 def _history_ordering():
     return History.last_watched.desc(), History.id.desc()
+
+
+def _scope_history_query(query):
+    user_id = current_user_id_for_personal_data()
+    if user_id is None:
+        return query.filter(History.user_id.is_(None))
+    return query.filter(History.user_id == user_id)
 
 
 def _build_resource_artwork_context(resource):
@@ -56,7 +64,7 @@ def get_history_map(movie_ids):
     if not movie_ids:
         return {}
 
-    rows = db.session.query(History, MediaResource) \
+    rows = _scope_history_query(db.session.query(History, MediaResource)) \
         .join(MediaResource, History.resource_id == MediaResource.id) \
         .filter(MediaResource.movie_id.in_(movie_ids)) \
         .order_by(MediaResource.movie_id.asc(), *_history_ordering()) \
@@ -102,7 +110,7 @@ def get_resource_history_map(resource_ids):
     if not resource_ids:
         return {}
 
-    rows = db.session.query(History, MediaResource) \
+    rows = _scope_history_query(db.session.query(History, MediaResource)) \
         .join(MediaResource, History.resource_id == MediaResource.id) \
         .filter(MediaResource.id.in_(resource_ids)) \
         .order_by(MediaResource.id.asc(), *_history_ordering()) \
@@ -152,6 +160,8 @@ def build_history_item(history_record):
     """将 History 记录组装为接口返回项；无效关联返回 None。"""
     resource = db.session.get(MediaResource, history_record.resource_id) if history_record.resource_id else None
     if not resource or not resource.movie:
+        return None
+    if not can_current_user_access_movie_id(resource.movie_id):
         return None
 
     playback_payload = _history_playback_payload(history_record, resource)

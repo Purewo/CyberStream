@@ -168,6 +168,10 @@ class TMDBScraper:
         )
 
     def _get(self, url, params=None):
+        if not config.TMDB_TOKEN:
+            logger.warning("TMDB_TOKEN is not configured; skipping TMDB request url=%s", url)
+            return None
+
         for _ in range(3):
             try:
                 response = self.session.get(
@@ -317,6 +321,46 @@ class TMDBScraper:
             return None
         return f"{target['media_type']}/{target['id']}"
 
+    def _details_needs_language_fallback(self, data):
+        if not isinstance(data, dict):
+            return False
+        title = data.get('title') or data.get('name')
+        return not all([
+            title,
+            data.get('overview'),
+            data.get('poster_path'),
+            data.get('backdrop_path'),
+        ])
+
+    def _merge_missing_detail_fields(self, primary, fallback):
+        if not isinstance(primary, dict) or not isinstance(fallback, dict):
+            return primary
+
+        merged = dict(primary)
+        for field in (
+            'title',
+            'name',
+            'original_title',
+            'original_name',
+            'overview',
+            'poster_path',
+            'backdrop_path',
+            'release_date',
+            'first_air_date',
+        ):
+            if not merged.get(field) and fallback.get(field):
+                merged[field] = fallback.get(field)
+
+        if not merged.get('genres') and fallback.get('genres'):
+            merged['genres'] = fallback.get('genres')
+        if not merged.get('production_countries') and fallback.get('production_countries'):
+            merged['production_countries'] = fallback.get('production_countries')
+        if not merged.get('credits') and fallback.get('credits'):
+            merged['credits'] = fallback.get('credits')
+        if not merged.get('created_by') and fallback.get('created_by'):
+            merged['created_by'] = fallback.get('created_by')
+        return merged
+
     def get_movie_details(self, tmdb_combined_id):
         try:
             media_type, tmdb_id = tmdb_combined_id.split('/')
@@ -332,6 +376,12 @@ class TMDBScraper:
 
         data = self._get(url, params)
         if not data: return None
+        if self._details_needs_language_fallback(data):
+            fallback_data = self._get(url, {
+                "language": "en-US",
+                "append_to_response": "credits,videos"
+            })
+            data = self._merge_missing_detail_fields(data, fallback_data)
 
         title = data.get('title') or data.get('name')
         original_title = data.get('original_title') or data.get('original_name')
