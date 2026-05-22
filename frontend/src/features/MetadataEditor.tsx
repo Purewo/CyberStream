@@ -31,6 +31,44 @@ export const MetadataEditor: React.FC<MetadataEditorProps> = ({ movie, onClose, 
     };
   }, []);
 
+  // 列表卡片直接右键打开时，传进来的 movie 是简版（mapApiMovieToUi(ApiMovieSimple)）——
+  // backdrop_url / overview / original_title 这些只在 ApiMovieDetailed 才有的字段
+  // 全部缺失，右侧"实时全息预览"就空白。从详情页打开时已是 enriched，但同一组件
+  // 不应假设两条路径一致。这里 mount 后 fire-and-forget 拉一次 getDetail，把缺
+  // 的字段补回来；id 不变所以 setEditedMovie 的 spread 不会覆盖用户已经在编辑的
+  // 输入（除非他们刚打开还没改任何东西，此时 setEditedMovie 直接替换更准）。
+  useEffect(() => {
+    let alive = true;
+    movieService.getDetail(movie.id).then((detail) => {
+      if (!alive || !detail) return;
+      setEditedMovie((prev) => {
+        // 只在用户还没动过的情况下用详情整体替换；动过的话只补缺字段。
+        const hasUserEdits =
+          prev.title !== movie.title ||
+          (prev.tags || []).join(',') !== (movie.tags || []).join(',') ||
+          prev.cover_url !== movie.cover_url ||
+          prev.poster_url !== movie.poster_url ||
+          prev.backdrop_url !== movie.backdrop_url ||
+          prev.desc !== movie.desc ||
+          prev.overview !== movie.overview;
+        if (!hasUserEdits) {
+          return detail;
+        }
+        return {
+          ...prev,
+          backdrop_url: prev.backdrop_url || detail.backdrop_url,
+          backdrop_asset_url: prev.backdrop_asset_url || detail.backdrop_asset_url,
+          poster_asset_url: prev.poster_asset_url || detail.poster_asset_url,
+          original_title: prev.original_title || detail.original_title,
+          overview: prev.overview || detail.overview,
+          desc: prev.desc || detail.desc,
+        };
+      });
+    }).catch(() => { /* 后端瞬时不通就维持简版数据，不打 toast 干扰编辑 */ });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movie.id]);
+
   // Sync tagsInput when editedMovie.tags changes externally (e.g. from scraping)
   useEffect(() => {
     setTagsInput(prev => {
