@@ -31,6 +31,13 @@ class StorageProvider:
         self.list_items(path)
         return True
 
+    def refresh_directory(self, path):
+        """
+        刷新上游目录缓存并返回目录内容。
+        只有支持服务端目录缓存刷新的 provider 需要覆盖该方法。
+        """
+        raise StorageProviderError("Storage source does not support directory refresh", code=40042)
+
     def health_check(self, path=''):
         """
         检查存储源是否可用，并返回轻量状态信息。

@@ -62,8 +62,9 @@ CyberStream 是一套自托管的影视库系统：自己掌握的存储、自�
 
 ### 元数据刮削
 
-- 多 provider 抽象：`nfo` / `tmdb` / `bangumi` / `local` 同台竞争，按 `provider_order` 编排
-  - 动漫库可显式配置 `["nfo", "bangumi", "tmdb", "local"]`，让番剧识别走 Bangumi 而非 TMDB
+- 多 provider 抽象：`nfo` / `tmdb` / `anilist` / `bangumi` / `tencent_video` / `local` 同台竞争，按 `provider_order` 编排
+  - 动漫库可显式配置 `["nfo", "anilist", "bangumi", "tmdb", "local"]`，让番剧识别优先走 AniList / Bangumi 而非 TMDB
+  - Tencent Video 只作为手动匹配备用源，不进入全库自动刮削
   - 候选返回 `match_explanation` 与 `rank`，告诉你为什么命中、为什么排第一
 - 三层刮削管线：`strict`（规范命名直刮）→ `fallback`（经验兜底）→ `ai`（预留接入位）
 - 字段级锁定：手动 PATCH 改过的字段默认锁定，下次扫描不会被覆盖；可显式 `metadata_unlocked_fields` 解锁后再刷新
@@ -130,7 +131,6 @@ CyberStream/
 前端工作目录在 `frontend/`，独立 `package.json`，可以单独 `npm run dev`。后端契约通过 `frontend/openapi.json` 与 `frontend/openapi-1.21.0-beta/` 同步。
 
 ---
-
 ## 快速启动
 
 ### 后端
@@ -176,7 +176,7 @@ npm run lint         # 仅类型检查（无 ESLint）
 |---|---|
 | 后端框架 | Python 3.10 + Flask + Flask-SQLAlchemy + SQLite |
 | 后端服务 | gunicorn（生产）/ Flask（开发） |
-| 元数据 | TMDB / Bangumi / NFO / 本地 fallback |
+| 元数据 | TMDB / AniList / Bangumi / Tencent Video / NFO / 本地 fallback |
 | 字幕 | 同目录发现 / SubHD / 字幕库（srtku）/ 后端动态 SRT→WebVTT |
 | 前端框架 | React 19 + TypeScript + Vite 6 |
 | 前端样式 | Tailwind CSS（utility 优先）+ 主题 CSS 变量 |

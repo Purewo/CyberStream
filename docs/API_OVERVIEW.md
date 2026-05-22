@@ -69,6 +69,25 @@ X-Cyber-API-Token: <token>
 ### `GET /api/v1/docs/openapi.json`
 `/api/v1/openapi.json` 的文档命名空间别名，返回内容相同。
 
+### `GET /api/v1/openapi/modules`
+返回模块化 OpenAPI 索引。前端可先读取这个轻量索引，再按需加载某个领域的契约，避免一次性解析完整 OpenAPI。
+
+当前模块 key：
+
+- `docs`
+- `auth-users`
+- `catalog`
+- `libraries`
+- `metadata`
+- `playback`
+- `assets`
+- `storage-system`
+- `governance`
+- `jobs`
+
+### `GET /api/v1/openapi/modules/<module_key>.json`
+返回单个模块的 OpenAPI JSON 原文，不包标准 `ApiResponse` 外壳。模块文件只包含该模块 paths 和递归引用到的 components，适合前端文档面板按需加载。
+
 ### `GET /api/v1/docs/<doc_key>`
 按固定 key 返回 Markdown 文档原文。当前白名单：
 
@@ -162,7 +181,7 @@ X-Cyber-API-Token: <token>
 - `is_enabled`
 
 说明：
-- `provider_order` 当前支持 `nfo`、`tmdb`、`bangumi`、`local`
+- `provider_order` 当前支持 `nfo`、`tmdb`、`anilist`、`bangumi`、`local`
 - 默认顺序仍为 `nfo -> tmdb -> local`；动漫库可显式传 `nfo -> bangumi -> tmdb -> local`
 - 资源库扫描会按绑定上的 `content_type`、`scrape_enabled` 和 `scraper_policy` 执行
 
@@ -173,7 +192,7 @@ X-Cyber-API-Token: <token>
   "source_id": 1,
   "root_path": "/Anime",
   "content_type": "tv",
-  "provider_order": ["nfo", "bangumi", "tmdb", "local"]
+  "provider_order": ["nfo", "anilist", "bangumi", "tmdb", "local"]
 }
 ```
 
@@ -279,9 +298,9 @@ X-Cyber-API-Token: <token>
 - `is_supported`
 - `config_valid`
 - `config_error`
-- `capabilities`：当前来源是否支持 `preview`、`scan`、`stream`、`ffmpeg_input`
+- `capabilities`：当前来源是否支持 `preview`、`scan`、`refresh`、`stream`、`ffmpeg_input`
 - `config`：脱敏后的当前配置摘要
-- `actions`：前端可直接判断是否展示 `preview/scan/stream` 入口
+- `actions`：前端可直接判断是否展示 `preview/scan/refresh/stream` 入口
 - `usage`：当前来源被多少资源库绑定、已有多少资源引用
 - `guards`：当前来源是否允许改类型、是否允许直接删除
 
@@ -312,7 +331,7 @@ X-Cyber-API-Token: <token>
 - 当前稳定支持：`local`、`webdav`、`smb`、`ftp`、`alist`、`openlist`
 - 该接口应作为前端动态表单的首选来源，而不是硬编码协议类型
 - 后续新增来源时，优先扩展该接口和 provider 注册表，而不是散落到多个地方手写判断
-- 每个协议会返回 `capabilities`，用于前端决定是否展示扫描、播放、预览等入口
+- 每个协议会返回 `capabilities`，用于前端决定是否展示扫描、刷新、播放、预览等入口
 
 ### `GET /api/v1/storage/capabilities`
 返回目录选择器、资源库绑定和播放链路所需的协议能力矩阵。
@@ -372,8 +391,8 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 与全量扫描、资源库扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
-- `provider_order` 当前支持 `nfo`、`tmdb`、`bangumi`、`local`；未传时使用默认顺序
-- 动漫源建议显式传 `["nfo", "bangumi", "tmdb", "local"]`；后端不会自动替用户把普通影视库切到 Bangumi 优先
+- `provider_order` 当前支持 `nfo`、`tmdb`、`anilist`、`bangumi`、`local`；未传时使用默认顺序
+- 动漫源建议显式传 `["nfo", "anilist", "bangumi", "tmdb", "local"]`；后端不会自动替用户把普通影视库切到 AniList/Bangumi 优先
 
 ### `GET /api/v1/storage/sources/<id>/browse`
 浏览已保存存储源的目录。
@@ -383,6 +402,19 @@ X-Cyber-API-Token: <token>
 - 支持查询参数 `path` 和 `dirs_only`
 - 返回结构与 `POST /api/v1/storage/preview` 的目录列表一致，并额外带回 `source`
 - `path` 是相对于已保存 `config.root` 的浏览路径，不会修改来源配置
+
+### `POST /api/v1/storage/sources/<id>/refresh`
+刷新已保存存储源的指定目录缓存。
+
+请求体：
+- `path` / `target_path` / `root_path`：相对于已保存 `config.root` 的目录路径
+- `dirs_only`：可选，默认 `false`
+
+说明：
+- 当前用于 `alist/openlist`，底层调用上游 `/api/fs/list` 并传 `refresh=true`
+- 只刷新上游目录缓存并返回刷新后的目录列表，不触发扫描、不触发刮削、不写入媒体库
+- 返回结构与 `browse` 基本一致，额外带 `refreshed` 和 `refresh_path`
+- 不支持目录刷新的存储源返回 `40042`
 
 ### `POST /api/v1/storage/preview`
 测试某类存储配置并预览目录。
@@ -768,8 +800,9 @@ X-Cyber-API-Token: <token>
 - 返回分组索引 `groups.seasons`（按 `season` 分组后的资源，只包含 `resource_ids`，不重复嵌入资源对象）
 - 返回播放源分组索引 `groups.playback_sources`，用于详情页默认展示主播放源，并把同文件副本折叠为备用播放源
 - 返回 `summary`，包含总资源数、去重后播放源数、重复副本组数、备用资源数、季数、无季资源数、已手动编辑资源数
-- `summary` 额外包含 `season_metadata_count`
-- `items` 仍保留全量资源对象，不改变现有资源管理与排查入口；前端默认播放源列表应优先读取 `groups.playback_sources[].primary_resource_id`
+- `summary` 额外包含 `season_metadata_count`、`hydrated_item_count`、`selected_season` 和 `hydrated_playback_source_count`
+- 可选传 `season=<int>` 做按季 hydrate：不传时 `items` 仍保留全量资源对象；传入时 `items` 只包含该季资源和无季资源，`groups.seasons` 仍保留所有季的 `resource_ids`，`groups.standalone` 不受过滤影响，`groups.playback_sources` 只返回已 hydrate 范围内的播放源分组
+- 前端默认播放源列表应优先读取 `groups.playback_sources[].primary_resource_id`
 - 当前副本判定规则为同一影片内 `season/episode + filename + size_bytes` 一致；只有判定为副本的资源会出现在 `alternate_resource_ids`
 - 主播放源选择优先级：最近观看记录 > 质量层级 > 分辨率 > 文件大小 > 创建时间；这样用户从备用源看过后，默认续播会优先落到该资源
 - 每个资源只包含：
@@ -795,13 +828,13 @@ X-Cyber-API-Token: <token>
   - `extra_tags`：仅放结构化字段覆盖不了的额外标签，例如 `IMAX`
 - `playback.stream_url` 是后端播放入口；外部播放器也可以使用该地址，AList/OpenList 会继续由该入口 302 到上游 `/d/...` 直链
 - 后端生成的播放、音频转码和字幕绝对 URL 会信任反向代理 `X-Forwarded-Proto` / `X-Forwarded-Host`；HTTPS 部署若反代未传这些头，可设置 `CYBER_BACKEND_PUBLIC_BASE_URL=https://<domain>` 强制返回 HTTPS 地址
-- `playback.subtitles.items` 当前会发现与视频同目录、同文件名前缀的外挂字幕，也会包含用户确认后绑定的在线字幕缓存；支持 `srt/ass/ssa/vtt/sub/sup`，每个字幕项包含 `id`、`source`、`format`、`language`、`is_default`、`url` 和 `web_player` 等字段
+- `playback.subtitles.items` 当前会发现与视频同目录、同文件名前缀的外挂字幕，也会包含用户确认后绑定的在线字幕缓存；支持 `srt/ass/ssa/vtt/sub/sup`，每个字幕项包含 `id`、`source`、`filename`、`display_name`、`format`、`language`、`is_default`、`url` 和 `web_player` 等字段；前端展示字幕名称优先使用 `display_name`，`filename` 保留为实际文件名/缓存文件名
 - 字幕项的 `url` 保留原始字幕流，主要给外部播放器使用；网页播放器应优先读取 `web_player.url`。当原始字幕为 `srt/ass/ssa` 时，`web_player.url` 会自动追加 `format=vtt`，后端动态转成 HTML5 `<track>` 可加载的 WebVTT；启用 Super CDN 后，用户绑定的在线/手动字幕会优先返回 `china_all` 桶中的原始字幕和 WebVTT CDN URL；`sub/sup` 当前不支持浏览器字幕
 - `playback.subtitles.settings` 返回当前资源的字幕显示设置，统一字段为 `zhSize`、`zhColor`、`enSize`、`enColor`、`gap`、`offset`；前端打开播放页可直接使用该结构初始化播放器字幕样式
 - 字幕显示设置也可通过 `GET /api/v1/resources/<id>/subtitle-settings` 单独读取，并通过 `PUT` 或 `PATCH /api/v1/resources/<id>/subtitle-settings` 保存；请求体推荐 `{ "settings": { ... } }`，也兼容直接传顶层字段，当前按 Resource 维度保存
 - `playback.external_player.subtitle_urls` 会同步填充原始字幕 URL；字幕流复用 `GET /api/v1/resources/<id>/stream?subtitle_id=...`，只允许访问当前资源已发现的字幕
 - `GET /api/v1/resources/<id>/external-playback` 返回面向 PC/外部播放器的播放交接清单，包含绝对 `stream.url`、默认字幕 URL、`playlist_url` 和播放器 profile；传 `format=m3u` 会返回 M3U 文本，适合直接交给 VLC、mpv、IINA、PotPlayer 等播放器打开。该接口只包装现有 stream/subtitle URL，不改变视频流行为。
-- 在线字幕新增 `GET /api/v1/resources/<id>/subtitles/online/search`、`POST /api/v1/resources/<id>/subtitles/online/download` 和 `POST /api/v1/resources/<id>/subtitles/online/bind`；当前只接入 `subhd` 与 `srtku`，`opensubtitles` 因中文覆盖和下载限额问题会被忽略；前端可传 `keyword` 或 `keywords` 显式指定搜索关键字，旧 `query` 参数继续兼容；搜索响应候选数组在标准响应体的 `data.items`，每条候选提供扁平字段 `candidate_id` 和 `source_key`，下载/绑定优先使用 `items[].candidate_id`；搜索会在单来源无结果时回退到资源原名/标题/年份/季集号/文件名，电视剧结果优先按当前季集号排序，并会把 `srt/ass/ssa/vtt` 文本字幕排在未知格式和 `sub/sup` 位图字幕前；每条候选包含 `format_normalized` 与 `web_player`，前端可据此提示 `sub/sup` 不适合网页 `<track>`；`limit` 是每来源上限，`max_query_attempts` 控制每个来源最多尝试多少个关键字；下载接口会把 `zip/7z/tar/gzip` 内的真实字幕提取后返回，RAR 等后端不支持的媒体类型返回 `415`，超过后端大小限制返回 `413`，来源下载失败、压缩包无字幕或解析失败返回 `502`；绑定接口必须传 `candidate_id` 与 `confirm: true`，只绑定用户确认的候选，不会按排序自动选择；手动上传使用 `POST /api/v1/resources/<id>/subtitles/upload` 的 multipart `file` 字段，支持直接字幕和 `zip/7z/tar/gzip` 压缩包，上传后以 `source=manual_upload` 进入字幕列表；后端缓存字幕可用 `DELETE /api/v1/resources/<id>/subtitles/<subtitle_id>` 移除，用 `POST /api/v1/resources/<id>/subtitles/<subtitle_id>/default` 设为默认，这两个接口只作用于 `source=online_bound/manual_upload`，不会删除或修改同目录外挂字幕
+- 在线字幕新增 `GET /api/v1/resources/<id>/subtitles/online/search`、`POST /api/v1/resources/<id>/subtitles/online/download` 和 `POST /api/v1/resources/<id>/subtitles/online/bind`；当前只接入 `subhd` 与 `srtku`，默认搜索只跑 `subhd`，`srtku` 作为显式备用源使用，`opensubtitles` 因中文覆盖和下载限额问题会被忽略；前端可传 `keyword` 或 `keywords` 显式指定搜索关键字，旧 `query` 参数继续兼容；搜索响应候选数组在标准响应体的 `data.items`，每条候选提供扁平字段 `candidate_id` 和 `source_key`，下载/绑定优先使用 `items[].candidate_id`；搜索默认先尝试资源的展示标题，再尝试原名、年份、季集号和文件名，避免中文片名资源优先被英文文件名带偏；显式传入的 `srtku` 会继续尝试，但受独立超时控制；如果它超时，结果会记录在 `providers.errors` 并带 `reason=timeout`，前端可据此提示备用源超时；电视剧结果优先按当前季集号排序，并会把 `srt/ass/ssa/vtt` 文本字幕排在未知格式和 `sub/sup` 位图字幕前；每条候选包含 `format_normalized` 与 `web_player`，前端可据此提示 `sub/sup` 不适合网页 `<track>`；`limit` 是每来源上限，`max_query_attempts` 控制每个来源最多尝试多少个关键字；下载接口会把 `zip/7z/tar/gzip` 内的真实字幕提取后返回，RAR 等后端不支持的媒体类型返回 `415`，超过后端大小限制返回 `413`，来源下载失败、压缩包无字幕或解析失败返回 `502`；绑定接口必须传 `candidate_id` 与 `confirm: true`，只绑定用户确认的候选，不会按排序自动选择；手动上传使用 `POST /api/v1/resources/<id>/subtitles/upload` 的 multipart `file` 字段，支持直接字幕和 `zip/7z/tar/gzip` 压缩包，上传后以 `source=manual_upload` 进入字幕列表；后端缓存字幕可用 `DELETE /api/v1/resources/<id>/subtitles/<subtitle_id>` 移除，用 `POST /api/v1/resources/<id>/subtitles/<subtitle_id>/default` 设为默认，这两个接口只作用于 `source=online_bound/manual_upload`，不会删除或修改同目录外挂字幕
 - `playback.audio.web_decode_status` 会标记 DTS/AC3/E-AC3/TrueHD 等网页播放器常见无声风险；`server_transcode.available=true` 只表示后端音频转码能力可用，前端可让用户手动启用，`server_transcode.recommended=true` 表示后端建议优先使用转码音频
 - `GET /api/v1/resources/<id>/audio-transcode?start=0&audio_track=0&format=mp3` 返回独立实时音频流；前端 seek 后用新的 `start=video.currentTime` 重建 audio 流，与原始 video 流同步
 - 音频转码流采用 forward-only 策略：前端应优先使用当前 `audio.buffered` 完成缓冲区内 seek；只有目标时间超出音频缓冲区时才重建 `audio-transcode` 流
@@ -1087,8 +1120,9 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 返回 `default_order`、`aliases` 和 `providers`
-- 当前 provider 包含 `nfo`、`tmdb`、`bangumi`、`tencent_video`、`local`
-- `supports_search=true` 表示可用于候选搜索；当前 `tmdb`、`bangumi`、`tencent_video` 支持
+- 当前 provider 包含 `nfo`、`tmdb`、`anilist`、`bangumi`、`tencent_video`、`local`
+- `supports_search=true` 表示可用于候选搜索；当前 `tmdb`、`anilist`、`bangumi`、`tencent_video` 支持
+- `anilist` 使用 AniList 官方 GraphQL API，不需要密钥；不在默认扫描顺序内，手动搜索或动漫库显式 `provider_order` 才会使用
 - `tencent_video` 标记为 `manual_only=true`，只允许在单片手动搜索/匹配时显式选择，不进入全库扫描或自动 fallback
 
 ### `GET /api/v1/movies/<id>/metadata/search`
@@ -1099,12 +1133,12 @@ X-Cyber-API-Token: <token>
 - `year`
 - `limit`
 - `media_type_hint`
-- `providers` 或 `provider_order`，逗号分隔，例如 `bangumi,tmdb,local` 或手动搜索时的 `tencent_video`
+- `providers` 或 `provider_order`，逗号分隔，例如 `anilist,bangumi,tmdb,local` 或手动搜索时的 `tencent_video`
 
 说明：
 - 未传 `query` 时，默认使用当前影片的 `original_title` 或 `title`
 - 传了 `query` 但没传 `year` 时，不再默认复用当前影片年份，避免旧年份干扰用户关键字搜索；响应会返回 `year_source`
-- 返回候选列表，包含 `provider`、`source_key`、`candidate_id`、`tmdb_id`、标题、年份、简介、海报、背景图、评分等；Bangumi 候选的 `candidate_id/tmdb_id` 格式为 `bangumi/<id>`，腾讯视频候选格式为 `tencent_video/<cid>`，并额外带 `source_url`、`episode_count`
+- 返回候选列表，包含 `provider`、`source_key`、`candidate_id`、`tmdb_id`、标题、年份、简介、海报、背景图、评分等；AniList 候选的 `candidate_id/tmdb_id` 格式为 `anilist/<id>`，Bangumi 候选格式为 `bangumi/<id>`，腾讯视频候选格式为 `tencent_video/<cid>`，并额外带 `source_url`、`episode_count`
 - 每个候选会带 `rank` 和 `match_explanation`，说明标题、年份、媒体类型、海报/评分等命中信号，便于前端展示候选解释
 - 响应中的 `providers.attempts` 会说明哪些 provider 被跳过、成功或失败；当前 `nfo/local` 不支持在线候选搜索，会标记为 `skipped`
 
@@ -1120,6 +1154,12 @@ Bangumi subject URL 定点搜索示例：
 GET /api/v1/movies/<id>/metadata/search?query=https%3A%2F%2Fbgm.tv%2Fsubject%2F400602&providers=bangumi&media_type_hint=tv
 ```
 
+AniList 动漫候选搜索示例：
+
+```http
+GET /api/v1/movies/<id>/metadata/search?query=Frieren&providers=anilist&media_type_hint=tv&limit=5
+```
+
 腾讯视频手动候选搜索示例：
 
 ```http
@@ -1129,6 +1169,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 前端展示建议：
 - 按 `provider/source_key` 分组展示候选来源
 - 主提交字段使用 `candidate_id`，不要从 `tmdb_id` 反推来源
+- AniList 候选可展示 `source_url` 跳转来源页，`episode_count` 和 `format` 用于辅助区分 TV/OVA/剧场版
 - Bangumi 候选可展示 `source_url` 跳转来源页，`episode_count` 用于辅助区分 TV/特别篇/剧场版
 - 腾讯视频候选只在用户手动选择 provider 后展示，不要放进自动扫描配置；只使用元数据字段，不使用播放 URL
 - `providers.attempts[].status=failed` 且有 warnings 时，展示为该来源暂不可用，不要当成“没有这个作品”
@@ -1152,8 +1193,8 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - 用户确认“覆盖数据”后，再提交预览里返回的 `apply_payload`；该 payload 会带 `apply=true`
 - 如果候选和当前影片最终都没有海报，`apply=true` 会返回 `409`，避免无海报记录变成前端不可见的幽灵数据；确实要写入时需额外传 `allow_missing_poster=true`
 - 适用于手动选择搜索候选后的精准匹配
-- 新前端建议提交 `candidate_id + provider`，例如 `{"candidate_id": "361761", "provider": "bangumi"}` 或 `{"candidate_id": "tencent_video/mzc00200z195unq", "provider": "tencent_video"}`；`tmdb_id` 仅作为兼容字段保留
-- `candidate_id/tmdb_id` 支持 `movie/<id>`、`tv/<id>`、`bangumi/<id>`、Bangumi subject URL，也支持 `imdb/<id>`、`tvdb/<id>`
+- 新前端建议提交 `candidate_id + provider`，例如 `{"candidate_id": "anilist/154587", "provider": "anilist"}`、`{"candidate_id": "361761", "provider": "bangumi"}` 或 `{"candidate_id": "tencent_video/mzc00200z195unq", "provider": "tencent_video"}`；`tmdb_id` 仅作为兼容字段保留
+- `candidate_id/tmdb_id` 支持 `movie/<id>`、`tv/<id>`、`anilist/<id>`、AniList anime URL、`bangumi/<id>`、Bangumi subject URL，也支持 `imdb/<id>`、`tvdb/<id>`
 - 已锁定字段默认不覆盖；如需覆盖，可通过 `metadata_unlocked_fields` 定点解锁
 
 预览请求体：
@@ -1245,8 +1286,8 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - `/api/v1/movies` 默认按公开影视库返回，会隐藏 `needs_attention=true` 的 raw/占位/缺海报影片
 - `needs_attention=true` 适合做“待处理元数据”列表
 - `metadata_issue_code` 按条目实际返回的 `metadata_issues[].code` 精确筛选，覆盖 `placeholder_metadata`、`local_only_metadata`、`low_confidence_resources`、`fallback_pipeline_match`、`nfo_candidates_available`、`poster_missing`、`locked_fields_present`、`season_metadata_missing`、`missing_episode_numbers`、`duplicate_episode_numbers`、`episode_number_missing`、`episode_count_mismatch`、`manual_review_required` 等问题类型
-- `metadata_source_group` 包含 `bangumi/tmdb/nfo_tmdb/nfo_local/local/manual/unknown`
-- `metadata_review_priority=none` 包含 `BANGUMI/TMDB_STRICT/NFO_TMDB` 这类无需复核来源
+- `metadata_source_group` 包含 `anilist/bangumi/tmdb/nfo_tmdb/nfo_local/local/manual/unknown`
+- `metadata_review_priority=none` 包含 `ANILIST/BANGUMI/TMDB_STRICT/NFO_TMDB` 这类无需复核来源
 
 ### `GET /api/v1/metadata/review-taxonomy`
 返回审查工作台分类、问题码和动作字典，不触发扫描。
@@ -1255,7 +1296,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - 这是前端审查工作台的边界契约，避免前端按 `scraper_source` 自行推断
 - 返回 `buckets`：普通影视库、元数据审查、剧集审查、资源治理、目录发布控制
 - 返回 `issue_codes`：每个问题码所属分区、列表入口、详情入口、推荐动作和批量动作
-- 返回 `metadata_sources`：`BANGUMI/TMDB/NFO/LOCAL_*` 等来源的标准含义和默认目录可见规则
+- 返回 `metadata_sources`：`ANILIST/BANGUMI/TMDB/NFO/LOCAL_*` 等来源的标准含义和默认目录可见规则
 - 返回 `catalog_visibility`：`auto/published/hidden`、blocker 和 warning 的解释
 - 普通影视库、首页、推荐和资源库默认不要使用工作台筛选；元数据审查、剧集审查、资源治理应分 tab 或分页面处理
 

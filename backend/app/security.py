@@ -17,6 +17,7 @@ PUBLIC_GET_PATH_PATTERNS = (
 
 PUBLIC_DOCUMENTATION_GET_PATH_PATTERNS = (
     re.compile(r"^/api/v1/openapi\.json$"),
+    re.compile(r"^/api/v1/openapi/modules(?:/[^/]+\.json)?$"),
     re.compile(r"^/api/v1/docs(?:/[^/]+)?$"),
 )
 

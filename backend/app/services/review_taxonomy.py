@@ -440,6 +440,7 @@ def _resource_issue_entries():
 def _metadata_source_entries():
     public_sources = Movie.get_metadata_non_attention_sources()
     source_codes = [
+        "ANILIST",
         "BANGUMI",
         "TENCENT_VIDEO",
         "TMDB_STRICT",

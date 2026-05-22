@@ -64,6 +64,9 @@ class OpenApiContractTests(unittest.TestCase):
         )
         self.assertIn("candidate_id", candidate_schema["properties"])
         self.assertIn("source_key", candidate_schema["properties"])
+        self.assertIn("skipped", schemas["OnlineSubtitleProviderStatus"]["properties"])
+        provider_error = schemas["OnlineSubtitleProviderStatus"]["properties"]["errors"]["items"]
+        self.assertIn("reason", provider_error["properties"])
 
     def test_metadata_openapi_documents_provider_candidate_fields(self):
         openapi = self._load_openapi()
@@ -95,6 +98,17 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("manual", schemas["MetadataState"]["properties"]["confidence"]["enum"])
         self.assertIn("metadata_match_context", schemas["OtherVideoItem"]["properties"])
         self.assertIn("actions", schemas["OtherVideoItem"]["properties"])
+
+    def test_storage_refresh_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/sources/{id}/refresh", paths)
+        self.assertIn("StorageSourceRefreshRequest", schemas)
+        self.assertIn("StorageSourceRefreshResponse", schemas)
+        self.assertIn("refresh", schemas["StorageProviderCapabilities"]["properties"])
+        self.assertIn("can_refresh", schemas["StorageSourceActions"]["properties"])
 
     def test_catalog_visibility_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
@@ -134,6 +148,9 @@ class OpenApiContractTests(unittest.TestCase):
         schemas = openapi["components"]["schemas"]
         paths = openapi["paths"]
 
+        resource_parameters = paths["/api/v1/movies/{id}/resources"]["get"]["parameters"]
+        resource_parameter_names = {parameter["name"] for parameter in resource_parameters}
+        self.assertIn("season", resource_parameter_names)
         self.assertIn("/api/v1/movies/{id}/episode-diagnostics", paths)
         self.assertIn("SeasonEpisodeDiagnostics", schemas)
         self.assertIn("EpisodeDiagnosticsSummary", schemas)
@@ -147,6 +164,9 @@ class OpenApiContractTests(unittest.TestCase):
         metadata_diagnostics_properties = schemas["MetadataDiagnostics"]["properties"]
         self.assertIn("episode_diagnostics", season_group_properties)
         self.assertIn("episode_diagnostics", summary_properties)
+        self.assertIn("hydrated_item_count", summary_properties)
+        self.assertIn("selected_season", summary_properties)
+        self.assertIn("hydrated_playback_source_count", summary_properties)
         self.assertIn("episode_diagnostics", metadata_diagnostics_properties)
 
     def test_metadata_quality_workbench_openapi_documents_runtime_contract(self):

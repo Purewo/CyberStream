@@ -18,7 +18,7 @@
 
 - 新增 `GET /api/v1/metadata/review-taxonomy`，返回普通影视库、元数据审查、剧集审查、资源治理和目录发布控制的固定分类。
 - `issue_code` 现在有统一字典，可映射到列表入口、详情入口、推荐动作和批量 dry-run 动作，前端不再需要按 `scraper_source` 自行推断。
-- 补齐 `BANGUMI` 元数据来源边界：`metadata_review_priority=none` 与 OpenAPI 枚举现在包含 `BANGUMI/bangumi`。
+- 补齐 `ANILIST/BANGUMI` 元数据来源边界：`metadata_review_priority=none` 与 OpenAPI 枚举现在包含 `ANILIST/anilist`、`BANGUMI/bangumi`。
 - 新增 `docs/FRONTEND_REVIEW_WORKBENCH_INTEGRATION.md`，明确普通列表、审查工作台、资源治理和发布隐藏的使用边界。
 
 ## 2026-05-02
@@ -229,9 +229,10 @@ CDN 后续迁移暂缓后，主线转入资料库质量模块。已完成：
 - 电影列表/详情保留原 `poster_url/backdrop_url`，新增 `poster_asset_url/backdrop_asset_url` 作为后端稳定图片资源入口。
 - 图片缓存落盘到 `CACHE_DIR/images/movies/<movie_id>/`；接口只按数据库中的 `cover/background_cover` 回源，不接受任意 URL，避免开放代理风险。
 - 支持 `refresh=true` 刷新远端图片；刷新失败且已有缓存时返回旧缓存并标记 `X-Cyber-Image-Cache=stale`。
-- 新增元数据 provider 能力接口 `GET /api/v1/metadata/providers`，当前注册 `nfo/tmdb/bangumi/local`。
+- 新增元数据 provider 能力接口 `GET /api/v1/metadata/providers`，当前注册 `nfo/tmdb/anilist/bangumi/tencent_video/local`。
 - `GET /api/v1/movies/<id>/metadata/search` 改为 provider 抽象候选搜索，候选新增 `provider/source_key/candidate_id/external_id`，并返回 `providers.attempts` 解释各来源状态；指定 `query` 但不指定 `year` 时不再继承当前影片年份。
-- 新增 Bangumi / 番组计划 provider，支持动画候选搜索、subject URL 定点查询、扫描刮削和手动匹配 `candidate_id + provider`；默认不自动启用，动漫库可显式配置 `provider_order: ["nfo", "bangumi", "tmdb", "local"]`。
+- 新增 Bangumi / 番组计划 provider，支持动画候选搜索、subject URL 定点查询、扫描刮削和手动匹配 `candidate_id + provider`；默认不自动启用。
+- 新增 AniList provider，使用官方 GraphQL API，支持动漫候选搜索、AniList URL/ID 定点查询、扫描刮削和手动匹配；默认不自动启用，动漫库可显式配置 `provider_order: ["nfo", "anilist", "bangumi", "tmdb", "local"]`。
 - 存储源扫描和资源库绑定新增 `scraper_policy.provider_order`，资源库扫描现在会实际使用绑定上的 `content_type/scrape_enabled/scraper_policy`。
 - 运行版本推进到 `1.18.0`，新增 OpenAPI `1.18.0-beta` 联调基线。
 - 新增总影视库显式发布控制：影片级 `catalog_visibility_status` 支持 `auto/published/hidden`，`PATCH /api/v1/movies/<id>/catalog-visibility` 必须由用户显式触发，强制发布需要 `force=true`。

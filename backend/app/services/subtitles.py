@@ -269,6 +269,7 @@ def _build_subtitle_item(resource, directory, item):
         "source": "sidecar",
         "match": "same_directory_filename",
         "filename": name,
+        "display_name": name,
         "path": subtitle_path,
         "format": extension_info["format"],
         "mime_type": extension_info["mime_type"],
@@ -488,6 +489,25 @@ def _bound_subtitle_rows(resource):
     )
 
 
+def _bound_subtitle_display_name(filename, item_source, metadata):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    candidate = metadata.get("candidate") if isinstance(metadata.get("candidate"), dict) else {}
+    if item_source == "online_bound":
+        for key in ("title", "film_name"):
+            value = str(candidate.get(key) or "").strip()
+            if value:
+                return value
+        for key in ("download_filename", "original_filename", "archive_filename"):
+            value = str(metadata.get(key) or "").strip()
+            if value:
+                return _filename(value)
+    if item_source == "manual_upload":
+        value = str(metadata.get("uploaded_filename") or "").strip()
+        if value:
+            return _filename(value)
+    return filename
+
+
 def _build_bound_subtitle_item(resource, row):
     filename = getattr(row, "filename", None) or _filename(getattr(row, "storage_path", None))
     ext = _extension(filename)
@@ -520,6 +540,7 @@ def _build_bound_subtitle_item(resource, row):
         "source": item_source,
         "match": "manual_uploaded" if item_source == "manual_upload" else "manual_confirmed_online",
         "filename": filename,
+        "display_name": _bound_subtitle_display_name(filename, item_source, metadata),
         "path": getattr(row, "storage_path", None),
         "format": getattr(row, "format", None) or extension_info["format"],
         "mime_type": getattr(row, "mime_type", None) or extension_info["mime_type"],

@@ -234,6 +234,16 @@ class AListProviderTests(unittest.TestCase):
         self.assertEqual("电影", [item["path"] for item in items if item["name"] == "电影"][0])
         list_calls = [call for call in provider.session.calls if call[0] == "POST" and call[1].endswith('/api/fs/list')]
         self.assertEqual("/library", list_calls[-1][2]["path"])
+        self.assertFalse(list_calls[-1][2]["refresh"])
+
+    def test_refresh_directory_requests_fresh_alist_listing(self):
+        provider = self.create_provider()
+        items = provider.refresh_directory("电影")
+
+        self.assertEqual(["README.txt", "电影"], sorted(item["name"] for item in items))
+        list_calls = [call for call in provider.session.calls if call[0] == "POST" and call[1].endswith('/api/fs/list')]
+        self.assertEqual("/library/电影", list_calls[-1][2]["path"])
+        self.assertTrue(list_calls[-1][2]["refresh"])
 
     def test_list_items_prefixes_child_path_with_config_root(self):
         provider = self.create_provider()

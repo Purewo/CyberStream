@@ -180,6 +180,80 @@ class TVSeasonPosterTests(unittest.TestCase):
         self.assertEqual("needs_attention", seasons_payload["summary"]["episode_diagnostics"]["status"])
         self.assertEqual([1, 2], seasons_payload["summary"]["episode_diagnostics"]["seasons_needing_attention"])
 
+    def test_movie_resources_can_hydrate_single_season(self):
+        movie = Movie(
+            tmdb_id="tv/resources-season-filter",
+            title="多季番剧",
+            original_title="Multi Season",
+            year=2026,
+            cover="https://image.tmdb.org/t/p/w500/series.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        season_1_resource = MediaResource(
+            movie_id=movie.id,
+            path="anime/S01E01.mkv",
+            filename="S01E01.mkv",
+            season=1,
+            episode=1,
+        )
+        season_2_resource = MediaResource(
+            movie_id=movie.id,
+            path="anime/S02E01.mkv",
+            filename="S02E01.mkv",
+            season=2,
+            episode=1,
+        )
+        standalone_resource = MediaResource(
+            movie_id=movie.id,
+            path="anime/special.mkv",
+            filename="special.mkv",
+        )
+        db.session.add_all([
+            season_1_resource,
+            season_2_resource,
+            standalone_resource,
+        ])
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/resources?season=1")
+
+        self.assertEqual(200, response.status_code)
+        payload = response.get_json()["data"]
+        item_ids = {item["id"] for item in payload["items"]}
+        self.assertEqual({season_1_resource.id, standalone_resource.id}, item_ids)
+        self.assertEqual([1, 2], [item["season"] for item in payload["groups"]["seasons"]])
+        self.assertEqual([season_2_resource.id], payload["groups"]["seasons"][1]["resource_ids"])
+        self.assertEqual([standalone_resource.id], payload["groups"]["standalone"]["resource_ids"])
+        self.assertEqual(3, payload["summary"]["total_items"])
+        self.assertEqual(2, payload["summary"]["hydrated_item_count"])
+        self.assertEqual(1, payload["summary"]["selected_season"])
+        self.assertEqual(3, payload["summary"]["playback_source_count"])
+        self.assertEqual(2, payload["summary"]["hydrated_playback_source_count"])
+        playback_resource_ids = {
+            resource_id
+            for group in payload["groups"]["playback_sources"]
+            for resource_id in group["resource_ids"]
+        }
+        self.assertEqual({season_1_resource.id, standalone_resource.id}, playback_resource_ids)
+
+    def test_movie_resources_reject_invalid_season_filter(self):
+        movie = Movie(
+            tmdb_id="tv/resources-season-filter-invalid",
+            title="多季番剧",
+            original_title="Multi Season",
+            year=2026,
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/resources?season=abc")
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(40019, response.get_json()["code"])
+
     def test_seasons_endpoint_reports_episode_diagnostics(self):
         movie = Movie(
             tmdb_id="tv/diagnostics",

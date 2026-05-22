@@ -91,6 +91,7 @@ class StorageSource(db.Model):
             "can_preview": supported and config_valid and capabilities.get("preview", False),
             "can_scan": supported and config_valid and capabilities.get("scan", False),
             "can_stream": supported and config_valid and capabilities.get("stream", False),
+            "can_refresh": supported and config_valid and capabilities.get("refresh", False),
         }
 
         return {
@@ -670,6 +671,7 @@ class Movie(db.Model):
     @staticmethod
     def get_metadata_source_group_map():
         return {
+            "anilist": ['ANILIST'],
             "bangumi": ['BANGUMI'],
             "tencent_video": ['TENCENT_VIDEO'],
             "tmdb": ['TMDB_STRICT', 'TMDB_FALLBACK', 'TMDB'],
@@ -682,7 +684,7 @@ class Movie(db.Model):
     @staticmethod
     def get_metadata_review_priority_map():
         return {
-            "none": ['BANGUMI', 'TENCENT_VIDEO', 'TMDB_STRICT', 'NFO_TMDB', 'LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'],
+            "none": ['ANILIST', 'BANGUMI', 'TENCENT_VIDEO', 'TMDB_STRICT', 'NFO_TMDB', 'LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'],
             "low": ['TMDB'],
             "medium": ['TMDB_FALLBACK', 'NFO_LOCAL', 'NFO'],
             "high": ['LOCAL_FALLBACK', 'LOCAL_ORPHAN'],
@@ -690,7 +692,7 @@ class Movie(db.Model):
 
     @staticmethod
     def get_metadata_non_attention_sources():
-        return {'BANGUMI', 'TENCENT_VIDEO', 'TMDB_STRICT', 'NFO_TMDB', 'TMDB', 'LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'}
+        return {'ANILIST', 'BANGUMI', 'TENCENT_VIDEO', 'TMDB_STRICT', 'NFO_TMDB', 'TMDB', 'LOCAL_MANUAL_MOVIE', 'LOCAL_MANUAL_TV'}
 
     @staticmethod
     def get_metadata_placeholder_sources():
@@ -800,6 +802,17 @@ class Movie(db.Model):
             state.update({
                 "source_group": "bangumi",
                 "source_label": "Bangumi",
+                "is_external_match": True,
+                "confidence": "high",
+                "needs_attention": False,
+                "review_priority": "none",
+                "badge_tone": "success",
+                "recommended_action": "refresh_metadata",
+            })
+        elif source == 'ANILIST':
+            state.update({
+                "source_group": "anilist",
+                "source_label": "AniList",
                 "is_external_match": True,
                 "confidence": "high",
                 "needs_attention": False,

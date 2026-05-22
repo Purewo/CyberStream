@@ -347,6 +347,38 @@ def browse_storage_source(id):
         return api_error(code=50002, msg=f"Browse failed: {err_msg}", http_status=500)
 
 
+@storage_bp.route('/storage/sources/<int:id>/refresh', methods=['POST'])
+def refresh_storage_source_directory(id):
+    """刷新支持目录缓存的已保存存储源目录，不触发扫描或刮削。"""
+    source = db.session.get(StorageSource, id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+
+    payload = _get_json_payload()
+    target_path = _normalize_relative_path(
+        payload.get('path') or payload.get('target_path') or payload.get('root_path')
+    )
+    dirs_only, ok = _coerce_bool(payload.get('dirs_only'), default=False)
+    if not ok:
+        return api_error(code=40041, msg="Invalid field value: dirs_only should be boolean")
+
+    try:
+        provider = provider_factory.get_provider(source)
+        items = provider.refresh_directory(target_path)
+        return api_response(data={
+            "source": source.to_dict(),
+            "refreshed": True,
+            "refresh_path": _display_relative_path(target_path),
+            **_build_browse_payload(items, target_path, dirs_only=dirs_only),
+        })
+    except StorageProviderError as e:
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        err_msg = str(e)
+        logger.exception("Refresh storage source failed source_id=%s path=%s error=%s", id, target_path, e)
+        return api_error(code=50015, msg=f"Refresh failed: {err_msg}", http_status=500)
+
+
 @storage_bp.route('/storage/preview', methods=['POST'])
 def preview_storage():
     """无需保存即可预览目录结构。"""

@@ -65,7 +65,22 @@ Bangumi API 请求超时时间，默认 `10` 秒。
 
 ---
 
-### 2.4 扫描规则配置
+### 2.4 AniList 配置
+
+AniList 作为动漫类补充元数据来源接入，使用官方 GraphQL API，不需要 API key。它不在默认全库扫描顺序内，只有前端手动搜索传 `providers=anilist`，或资源库/扫描策略显式配置 `provider_order` 包含 `anilist` 时才会使用。
+
+#### `ANILIST_API_URL`
+AniList GraphQL API 地址，默认 `https://graphql.anilist.co`。
+
+#### `ANILIST_USER_AGENT`
+AniList 请求使用的 User-Agent，默认 `Purewo/CyberStream/1.21.0 metadata matcher`。
+
+#### `ANILIST_TIMEOUT_SECONDS`
+AniList API 请求超时时间，默认 `10` 秒。
+
+---
+
+### 2.5 扫描规则配置
 
 以下配置在扫描逻辑或通用工具中仍被使用：
 
@@ -83,7 +98,7 @@ Bangumi API 请求超时时间，默认 `10` 秒。
 
 ---
 
-### 2.5 FFmpeg 实时转码配置
+### 2.6 FFmpeg 实时转码配置
 
 #### `FFMPEG_BIN`
 指定 ffmpeg 可执行文件路径。未设置时后端会自动查找 `ffmpeg`、`~/.local/bin/ffmpeg`、`/usr/local/bin/ffmpeg`、`/usr/bin/ffmpeg`。
@@ -123,7 +138,7 @@ ffmpeg 原生 `-re` 输入限速开关，默认 `true`。优先保护原始视�
 #### `FFMPEG_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS`
 实时音频转码 history watchdog 超时时间，默认 `180` 秒。超过该时间未收到对应资源的 `POST /api/v1/user/history` 播放进度提交时，后端会主动停止 ffmpeg。
 
-### 2.6 图片静态资源缓存配置
+### 2.7 图片静态资源缓存配置
 
 #### `CYBER_IMAGE_ASSET_MAX_BYTES`
 单张海报/背景图允许缓存的最大字节数，默认 `20971520` 字节（20MB）。超过限制会返回上游图片过大错误；如果已有旧缓存，刷新失败时会回退旧缓存。
@@ -150,7 +165,7 @@ ffmpeg 原生 `-re` 输入限速开关，默认 `true`。优先保护原始视�
 - `manual` 表示由运维或外部脚本手动处理 purge，接口仍返回 URL 清单
 - Super CDN 资产上传已走独立配置，不依赖该 purge provider；图片使用内容 hash 路径，通常不需要 purge 旧 URL
 
-### 2.7 Super CDN 国内静态资产配置
+### 2.8 Super CDN 国内静态资产配置
 
 Super CDN 接入只处理非视频静态资产：海报、背景图、用户绑定字幕原文和网页播放器用 WebVTT 字幕。视频主播放链路仍走当前 StorageSource / `/resources/<id>/stream`，不会上传到 CDN。
 
@@ -207,7 +222,7 @@ CYBER_SUPERCDN_SERVE_ASSET_URLS=true
 #### `CYBER_SUPERCDN_TIMEOUT_SECONDS` / `CYBER_SUPERCDN_MAX_FILE_SIZE_BYTES`
 Super CDN API 超时默认 `20` 秒；非视频资产单文件上限默认 `104857600` 字节（100MB）。
 
-### 2.8 反向代理与外部 URL 配置
+### 2.9 反向代理与外部 URL 配置
 
 #### `CYBER_TRUST_PROXY_HEADERS`
 是否信任反向代理传入的 `X-Forwarded-*` 请求头，默认 `true`。启用后，后端生成的 `playback.stream_url`、`audio.server_transcode.url`、字幕 URL 等绝对地址会根据 `X-Forwarded-Proto` / `X-Forwarded-Host` 使用公网 HTTPS 地址。
@@ -228,7 +243,7 @@ CYBER_BACKEND_PUBLIC_BASE_URL=https://pw.pioneer.fan:84
 
 设置后，资源播放、音频转码和字幕等后端生成 URL 会返回 `https://pw.pioneer.fan:84/api/v1/...`。
 
-### 2.9 最小 API 鉴权配置
+### 2.10 最小 API 鉴权配置
 
 #### `CYBER_API_TOKEN`
 单机私有部署的最低保护 token。设置后，后端会要求管理类 API 携带：
@@ -259,7 +274,15 @@ X-Cyber-API-Token: <token>
 
 管理、扫描、元数据修改、字幕绑定、资源治理 job 等接口仍会要求 token。
 
-### 2.10 用户管理配置
+### 2.11 在线字幕配置
+
+#### `CYBER_ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS`
+SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源。
+
+#### `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS`
+SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用源；如果网络侧访问 `srtku.com` 不稳定，后端会在超时后返回 `providers.errors`，其中 `reason=timeout`，避免前端把慢源超时误判成整体故障。
+
+### 2.12 用户管理配置
 
 #### `CYBER_USER_MANAGEMENT_ENABLED`
 用户管理总开关，默认 `false`。关闭时不改变现有业务行为；开启后网页端通过 Cookie 会话登录，`CYBER_API_TOKEN` 仍保留为管理员后门。
@@ -279,7 +302,7 @@ X-Cyber-API-Token: <token>
 #### `CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` / `CYBER_LOGIN_RATE_LIMIT_WINDOW_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_LOCK_SECONDS`
 登录限流参数，默认 5 分钟内失败 `5` 次后锁定 `900` 秒。限流按客户端 IP + 用户名在当前后端进程内记录。
 
-### 2.11 维护任务持久化配置
+### 2.13 维护任务持久化配置
 
 #### `CYBER_MAINTENANCE_JOB_RESULT_ITEM_LIMIT`
 维护任务写入 `maintenance_jobs` 时，`result.items` 最多保留的条数，默认 `20`。内存中的刚执行结果仍保持完整；持久化结果会附加 `result_truncated`、`result_item_count` 和 `persisted_item_limit`。

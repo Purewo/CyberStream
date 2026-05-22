@@ -237,14 +237,15 @@ Super CDN 已按国内主访问场景接入第一阶段，以下缓存治理能�
 
 状态：
 - 已有 provider 注册表和能力接口 `GET /api/v1/metadata/providers`
-- 当前 provider 为 `nfo/tmdb/bangumi/local`，默认顺序为 `nfo -> tmdb -> local`
+- 当前 provider 为 `nfo/tmdb/anilist/bangumi/tencent_video/local`，默认顺序为 `nfo -> tmdb -> local`
 - 元数据候选搜索已改为 provider 抽象结构，候选返回 `provider/source_key/candidate_id/external_id`，并带 `providers.attempts/warnings`
 - `bangumi` 已作为动漫友好 provider 接入，支持关键字搜索、subject URL 定点查询、扫描刮削和手动匹配 `candidate_id + provider`；默认不自动启用
+- `anilist` 已作为官方 GraphQL 动漫补充 provider 接入，支持关键字搜索、AniList URL/ID 定点查询、扫描刮削和手动匹配；默认不自动启用
 - 存储源扫描和资源库绑定支持 `scraper_policy.provider_order`
 - 资源库扫描已使用绑定上的 `content_type/scrape_enabled/scraper_policy`
 
 建议：
-- 新增在线元数据来源暂缓；当前 `TMDB + Bangumi + NFO + local` 已够前端联调和第一阶段使用
+- 新增在线元数据来源继续按显式启用原则推进；当前 `TMDB + AniList + Bangumi + Tencent Video + NFO + local` 已够前端联调和第一阶段使用
 - 后续如果确实需要再评估 IMDb/TVDB，继续复用当前 provider 结构；豆瓣因没有稳定公开 API 暂不接
 - 返回结果继续补字段级来源追踪，方便解释某个字段来自 TMDB、NFO 还是本地兜底
 - 多刮削器与静态资源缓存继续一起设计，避免后续图片来源与元数据来源割裂

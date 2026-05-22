@@ -98,6 +98,13 @@ BANGUMI_API_BASE = _env('BANGUMI_API_BASE', 'https://api.bgm.tv')
 BANGUMI_USER_AGENT = _env('BANGUMI_USER_AGENT', 'Purewo/CyberStream/1.21.0 (https://github.com/Purewo/CyberStream)')
 BANGUMI_TIMEOUT_SECONDS = _env_float('BANGUMI_TIMEOUT_SECONDS', 10)
 
+# --- AniList metadata provider ---
+# Official no-auth GraphQL API. Not part of the default scan order; use
+# provider_order/anilist explicitly for anime-focused libraries or manual match.
+ANILIST_API_URL = _env('ANILIST_API_URL', 'https://graphql.anilist.co')
+ANILIST_USER_AGENT = _env('ANILIST_USER_AGENT', 'Purewo/CyberStream/1.21.0 metadata matcher')
+ANILIST_TIMEOUT_SECONDS = _env_float('ANILIST_TIMEOUT_SECONDS', 10)
+
 # --- Tencent Video metadata manual matcher ---
 # Manual-only fallback source for explicit metadata matching. It is intentionally
 # not part of the default scan provider order.
@@ -184,6 +191,8 @@ GET_SUBTITLES_SKILL_DIR = _env(
     'GET_SUBTITLES_SKILL_DIR',
     os.path.join(os.path.expanduser("~"), ".codex", "skills", "get_subtitles"),
 )
+ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS = _env_float('CYBER_ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS', 8.0)
+ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS = _env_float('CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS', 5.0)
 
 # --- FFmpeg 实时转码 ---
 FFMPEG_BIN = _env('CYBER_FFMPEG_BIN', _env('FFMPEG_BIN', None))

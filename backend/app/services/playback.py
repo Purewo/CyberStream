@@ -321,6 +321,7 @@ def _subtitle_external_items(subtitles):
             "id": item.get("id"),
             "source": item.get("source"),
             "filename": item.get("filename"),
+            "display_name": item.get("display_name"),
             "format": item.get("format"),
             "mime_type": item.get("mime_type"),
             "language": item.get("language"),

@@ -101,6 +101,28 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         db.session.commit()
         return resource
 
+    def _localized_movie_resource(self):
+        movie = Movie(
+            title="冰雪奇缘2",
+            original_title="Frozen II",
+            year=2019,
+            cover="https://img.example/frozen2.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        resource = MediaResource(
+            movie_id=movie.id,
+            source_id=self.source.id,
+            path="Movies/Frozen.II.2019.2160p.BluRay.REMUX.mkv",
+            filename="Frozen.II.2019.2160p.BluRay.REMUX.mkv",
+            size=1000,
+        )
+        db.session.add(resource)
+        db.session.commit()
+        return resource
+
     def _subtitle_zip(self):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
@@ -255,6 +277,100 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual("srtku:srt987", data["items"][1]["id"])
         self.assertEqual("srtku:srt987", data["items"][1]["candidate_id"])
         self.assertEqual("srt987", data["items"][1]["source_key"])
+
+    def test_online_search_defaults_to_subhd_primary_provider(self):
+        resource = self._resource()
+
+        with patch(
+            "backend.app.services.online_subtitles._load_skill_module",
+            side_effect=self._fake_skill_module,
+        ):
+            response = self.client.get(
+                f"/api/v1/resources/{resource.id}/subtitles/online/search"
+                "?query=Online%20Subtitle%20Movie"
+            )
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertEqual(["subhd"], data["providers"]["default"])
+        self.assertEqual(["subhd"], data["providers"]["used"])
+        self.assertEqual({"subhd": 1}, data["count_by_provider"])
+        self.assertEqual("subhd:abc123", data["items"][0]["candidate_id"])
+
+    def test_online_search_prefers_localized_title_before_original_title(self):
+        resource = self._localized_movie_resource()
+
+        def fake_skill_module(module_name):
+            module = types.SimpleNamespace()
+            module.make_session = lambda: object()
+            if module_name == "subhd_core":
+                module.search_subtitle = lambda query, session=None: (
+                    [
+                        {
+                            "hash": "frozen2-cn",
+                            "film_name": "冰雪奇缘2",
+                            "title": "Frozen.II.2019.2160p.BluRay.REMUX",
+                            "download_number": "10",
+                        }
+                    ]
+                    if query == "冰雪奇缘2"
+                    else []
+                )
+                return module
+            raise AssertionError(module_name)
+
+        with patch(
+            "backend.app.services.online_subtitles._load_skill_module",
+            side_effect=fake_skill_module,
+        ):
+            response = self.client.get(
+                f"/api/v1/resources/{resource.id}/subtitles/online/search"
+                "?providers=subhd"
+            )
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertEqual("冰雪奇缘2", data["query_candidates"][0])
+        self.assertEqual("冰雪奇缘2", data["providers"]["query_used"]["subhd"])
+        self.assertEqual("subhd:frozen2-cn", data["items"][0]["candidate_id"])
+
+    def test_online_search_reports_srtku_timeout_without_dropping_primary_results(self):
+        resource = self._resource()
+
+        def fake_skill_module(module_name):
+            module = types.SimpleNamespace()
+            module.make_session = lambda: object()
+            if module_name == "subhd_core":
+                module.search_subtitle = lambda query, session=None: [
+                    {"hash": "primary-1", "title": "Primary 1", "download_number": "3"},
+                    {"hash": "primary-2", "title": "Primary 2", "download_number": "2"},
+                    {"hash": "primary-3", "title": "Primary 3", "download_number": "1"},
+                ]
+                return module
+            if module_name == "srtku_core":
+                module.search_film = lambda query, page=1, session=None: (_ for _ in ()).throw(
+                    TimeoutError("srtku timed out")
+                )
+                module.search_subtitle = lambda list_url, session=None: []
+                return module
+            raise AssertionError(f"unexpected fallback provider call: {module_name}")
+
+        with patch(
+            "backend.app.services.online_subtitles._load_skill_module",
+            side_effect=fake_skill_module,
+        ):
+            response = self.client.get(
+                f"/api/v1/resources/{resource.id}/subtitles/online/search"
+                "?providers=subhd,srtku&limit=3"
+            )
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertEqual({"subhd": 3}, data["count_by_provider"])
+        self.assertEqual([], data["providers"]["skipped"])
+        self.assertIn("srtku", data["providers"]["query_attempts"])
+        self.assertEqual("timeout", data["providers"]["errors"][0]["reason"])
+        self.assertEqual("srtku", data["providers"]["errors"][0]["provider_id"])
 
     def test_online_search_falls_back_to_resource_title_when_override_has_no_hits(self):
         resource = self._resource()
@@ -663,10 +779,24 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual("manual_confirmed_online", subtitle["match"])
         self.assertEqual("subhd:abc123", subtitle["online"]["candidate_id"])
         self.assertTrue(subtitle["online"]["confirmed"])
+        self.assertEqual("Online Subtitle Movie 简英双语", subtitle["display_name"])
+        self.assertEqual(
+            {
+                "code": "zh-Hans",
+                "label": "Chinese Simplified + English",
+                "source": "online_candidate",
+            },
+            subtitle["language"],
+        )
+        self.assertEqual("Chinese Simplified + English SRT (SubHD)", subtitle["label"])
+        self.assertEqual(["双语", "简体"], subtitle["online"]["meta"]["candidate"]["language"])
+        self.assertEqual("Online Subtitle Movie 简英双语", subtitle["online"]["meta"]["candidate"]["title"])
         self.assertEqual(subtitle["id"], data["playback"]["subtitles"]["default_subtitle_id"])
         self.assertTrue(subtitle["web_player"]["supported"])
         self.assertTrue(subtitle["web_player"]["requires_conversion"])
         self.assertEqual("vtt", subtitle["web_player"]["format"])
+        row = db.session.get(ResourceSubtitle, subtitle["id"])
+        self.assertEqual(subtitle["language"], row.language)
 
         subtitle_url = subtitle["url"]
         stream_path = urlparse(subtitle_url).path + "?" + urlparse(subtitle_url).query

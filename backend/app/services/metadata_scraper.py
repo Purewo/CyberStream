@@ -5,12 +5,15 @@ from backend.app.services.metadata_providers import build_default_metadata_provi
 from backend.app.services.metadata_types import CandidateSearchResult, ProviderAttempt, ScrapeContext, ScrapeResult
 
 DEFAULT_PROVIDER_ORDER = ['nfo', 'tmdb', 'local']
-AUTHORITATIVE_METADATA_PROVIDERS = {'nfo', 'tmdb', 'bangumi', 'tencent_video'}
+AUTHORITATIVE_METADATA_PROVIDERS = {'nfo', 'tmdb', 'anilist', 'bangumi', 'tencent_video'}
 PROVIDER_ALIASES = {
     'nfo': 'nfo',
     'local_nfo': 'nfo',
     'tmdb': 'tmdb',
     'themoviedb': 'tmdb',
+    'anilist': 'anilist',
+    'ani': 'anilist',
+    'anilist_co': 'anilist',
     'bangumi': 'bangumi',
     'bgm': 'bangumi',
     'bangumi_tv': 'bangumi',
@@ -179,6 +182,10 @@ class MetadataScraper:
             return "bangumi"
         if re.search(r'(?:bangumi\.tv|bgm\.tv)/subject/\d+\b', raw):
             return "bangumi"
+        if raw.startswith("anilist/") or raw.startswith("ani/"):
+            return "anilist"
+        if re.search(r'anilist\.co/anime/\d+\b', raw):
+            return "anilist"
         if raw.startswith("tencent_video/") or raw.startswith("qq/"):
             return "tencent_video"
         if re.search(r'v\.qq\.com/(?:x/cover|x/page)/', raw):

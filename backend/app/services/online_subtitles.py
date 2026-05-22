@@ -5,6 +5,7 @@ import os
 import re
 import tarfile
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from backend import config
 
 
 SUPPORTED_ONLINE_SUBTITLE_PROVIDERS = ("subhd", "srtku")
+DEFAULT_ONLINE_SUBTITLE_PROVIDERS = ("subhd",)
 IGNORED_ONLINE_SUBTITLE_PROVIDERS = {
     "opensubtitles": "disabled_low_quality_source",
 }
@@ -40,6 +42,15 @@ CHINESE_NUMBERS = {
     9: "九",
     10: "十",
 }
+ONLINE_LANGUAGE_LABELS = {
+    "zh-Hans": "Chinese Simplified",
+    "zh-Hant": "Chinese Traditional",
+    "zh": "Chinese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
+ONLINE_LANGUAGE_PRIORITY = ("zh-Hans", "zh-Hant", "zh", "en", "ja", "ko")
 
 
 class OnlineSubtitleError(ValueError):
@@ -85,7 +96,7 @@ def _parse_positive_int(value, default, max_value):
 
 def _normalize_provider_list(raw):
     if not raw:
-        requested = list(SUPPORTED_ONLINE_SUBTITLE_PROVIDERS)
+        requested = list(DEFAULT_ONLINE_SUBTITLE_PROVIDERS)
     elif isinstance(raw, str):
         requested = [item.strip().lower() for item in raw.split(",") if item.strip()]
     else:
@@ -108,6 +119,63 @@ def _normalize_provider_list(raw):
             providers.append(provider)
 
     return providers, ignored, unsupported
+
+
+def _config_float(name, default):
+    value = current_app.config.get(name, default) if has_app_context() else getattr(config, name, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _clamp_timeout_value(value, cap):
+    try:
+        cap = float(cap)
+    except (TypeError, ValueError):
+        return value
+    if cap <= 0:
+        return value
+    if value is None:
+        return cap
+    if isinstance(value, tuple):
+        clamped = []
+        for item in value:
+            try:
+                clamped.append(min(float(item), cap))
+            except (TypeError, ValueError):
+                clamped.append(cap)
+        return tuple(clamped)
+    try:
+        return min(float(value), cap)
+    except (TypeError, ValueError):
+        return cap
+
+
+def _cap_session_timeout(session, timeout_seconds, deadline=None):
+    if session is None or not hasattr(session, "get"):
+        return session
+    try:
+        cap = float(timeout_seconds)
+    except (TypeError, ValueError):
+        return session
+    if cap <= 0:
+        return session
+
+    original_get = session.get
+
+    def get_with_timeout_cap(url, **kwargs):
+        timeout_cap = cap
+        if deadline is not None:
+            remaining = float(deadline) - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Subtitle provider search timed out")
+            timeout_cap = min(cap, remaining)
+        kwargs["timeout"] = _clamp_timeout_value(kwargs.get("timeout"), timeout_cap)
+        return original_get(url, **kwargs)
+
+    session.get = get_with_timeout_cap
+    return session
 
 
 def _resource_search_query(resource, override=None):
@@ -203,7 +271,7 @@ def _resource_search_queries(resource, override=None):
     titles = []
     year = None
     if movie:
-        titles.extend([movie.original_title, movie.title])
+        titles.extend([movie.title, movie.original_title])
         year = movie.year
     season = getattr(resource, "season", None)
     episode = getattr(resource, "episode", None)
@@ -240,6 +308,118 @@ def _normalize_languages(value):
         return [str(item).strip() for item in value if str(item).strip()]
     raw = str(value or "").strip()
     return [raw] if raw else []
+
+
+def _language_codes_from_text(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    lower = raw.lower()
+    compact = re.sub(r"[\s._\-\[\]\(\)/\\]+", "", lower)
+    codes = []
+
+    def add(code):
+        if code not in codes:
+            codes.append(code)
+
+    if any(token in raw for token in ("简英", "中英")) or "chseng" in compact:
+        if any(token in raw for token in ("简", "中")) or "chs" in compact:
+            add("zh-Hans")
+        add("en")
+    if "繁英" in raw or "chteng" in compact:
+        add("zh-Hant")
+        add("en")
+    if any(token in raw for token in ("简繁", "繁简")):
+        add("zh-Hans")
+        add("zh-Hant")
+    if (
+        "简体" in raw
+        or "简中" in raw
+        or "简体中文" in raw
+        or "zh-hans" in lower
+        or re.search(r"(^|[^a-z0-9])(chs|sc|gb|gb2312|simplified)([^a-z0-9]|$)", lower)
+    ):
+        add("zh-Hans")
+    if (
+        "繁体" in raw
+        or "繁中" in raw
+        or "繁体中文" in raw
+        or "zh-hant" in lower
+        or re.search(r"(^|[^a-z0-9])(cht|tc|big5|traditional)([^a-z0-9]|$)", lower)
+    ):
+        add("zh-Hant")
+    if (
+        "中文" in raw
+        or "国语" in raw
+        or re.search(r"(^|[^a-z0-9])(zh|chi|zho|cn|chinese)([^a-z0-9]|$)", lower)
+    ):
+        add("zh")
+    if (
+        "英语" in raw
+        or "英文" in raw
+        or re.search(r"(^|[^a-z0-9])(en|eng|english)([^a-z0-9]|$)", lower)
+    ):
+        add("en")
+    if "日语" in raw or "日文" in raw or re.search(r"(^|[^a-z0-9])(ja|jp|jpn|japanese)([^a-z0-9]|$)", lower):
+        add("ja")
+    if "韩语" in raw or "韩文" in raw or re.search(r"(^|[^a-z0-9])(ko|kr|kor|korean)([^a-z0-9]|$)", lower):
+        add("ko")
+
+    return codes
+
+
+def _candidate_language(candidate):
+    if not isinstance(candidate, dict):
+        return None
+
+    codes = []
+    for value in _normalize_languages(candidate.get("language")):
+        for code in _language_codes_from_text(value):
+            if code not in codes:
+                codes.append(code)
+    for value in (candidate.get("title"), candidate.get("film_name")):
+        for code in _language_codes_from_text(value):
+            if code not in codes:
+                codes.append(code)
+
+    if "zh-Hans" in codes and "zh" in codes:
+        codes.remove("zh")
+    if "zh-Hant" in codes and "zh" in codes:
+        codes.remove("zh")
+    if not codes:
+        return None
+
+    codes = sorted(codes, key=lambda code: ONLINE_LANGUAGE_PRIORITY.index(code) if code in ONLINE_LANGUAGE_PRIORITY else 99)
+    primary_code = codes[0]
+    labels = [ONLINE_LANGUAGE_LABELS.get(code, code) for code in codes]
+    return {
+        "code": primary_code,
+        "label": " + ".join(labels),
+        "source": "online_candidate",
+    }
+
+
+def _candidate_metadata(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    keys = (
+        "id",
+        "candidate_id",
+        "provider_id",
+        "provider_name",
+        "source_key",
+        "title",
+        "film_name",
+        "quality",
+        "download_count",
+        "download_number",
+        "update_time",
+        "language",
+        "format",
+        "file_size",
+        "uploader",
+    )
+    return {key: candidate.get(key) for key in keys if candidate.get(key) not in (None, "", [])}
 
 
 def _candidate_episode_text(item):
@@ -440,7 +620,10 @@ def _normalize_srtku_item(item, film_title=None):
 
 def _search_subhd(query, limit):
     module = _load_skill_module("subhd_core")
-    session = module.make_session()
+    session = _cap_session_timeout(
+        module.make_session(),
+        _config_float("ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS", 8.0),
+    )
     rows = module.search_subtitle(query, session=session)
     items = []
     for row in rows or []:
@@ -454,7 +637,13 @@ def _search_subhd(query, limit):
 
 def _search_srtku(query, limit):
     module = _load_skill_module("srtku_core")
-    session = module.make_session()
+    timeout_seconds = _config_float("ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS", 5.0)
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
+    session = _cap_session_timeout(
+        module.make_session(),
+        timeout_seconds,
+        deadline=deadline,
+    )
     film_payload = module.search_film(query, page=1, session=session)
     titles = film_payload.get("titles") or []
     list_urls = film_payload.get("list_urls") or []
@@ -470,6 +659,14 @@ def _search_srtku(query, limit):
             if len(items) >= limit:
                 return items
     return items
+
+
+def _provider_error_reason(exc):
+    exc_name = exc.__class__.__name__.lower()
+    message = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timeout" in exc_name or "timeout" in message or "timed out" in message:
+        return "timeout"
+    return "error"
 
 
 def search_online_subtitles(resource, query=None, providers=None, limit=50, max_query_attempts=None):
@@ -488,6 +685,7 @@ def search_online_subtitles(resource, query=None, providers=None, limit=50, max_
     provider_errors = []
     provider_query_used = {}
     provider_query_attempts = {}
+    provider_skipped = []
     items = []
 
     for provider_id in provider_ids:
@@ -511,6 +709,7 @@ def search_online_subtitles(resource, query=None, providers=None, limit=50, max_
                 provider_errors.append({
                     "provider_id": provider_id,
                     "query": search_query,
+                    "reason": _provider_error_reason(e),
                     "message": str(e),
                 })
                 break
@@ -542,10 +741,12 @@ def search_online_subtitles(resource, query=None, providers=None, limit=50, max_
         "movie_id": getattr(resource, "movie_id", None),
         "providers": {
             "enabled": list(SUPPORTED_ONLINE_SUBTITLE_PROVIDERS),
+            "default": list(DEFAULT_ONLINE_SUBTITLE_PROVIDERS),
             "used": provider_ids,
             "query_used": provider_query_used,
             "query_attempts": provider_query_attempts,
             "ignored": ignored,
+            "skipped": provider_skipped,
             "unsupported": unsupported,
             "errors": provider_errors,
         },
@@ -554,6 +755,23 @@ def search_online_subtitles(resource, query=None, providers=None, limit=50, max_
         "count_by_provider": count_by_provider,
         "limit_per_provider": limit,
     }
+
+
+def _find_online_subtitle_candidate(resource, normalized_candidate_id, provider_id):
+    try:
+        payload = search_online_subtitles(
+            resource,
+            providers=[provider_id],
+            limit=50,
+            max_query_attempts=MAX_QUERY_ATTEMPT_LIMIT,
+        )
+    except Exception:
+        return None
+
+    for item in payload.get("items") or []:
+        if item.get("candidate_id") == normalized_candidate_id or item.get("id") == normalized_candidate_id:
+            return item
+    return None
 
 
 def _parse_candidate_id(candidate_id):
@@ -1083,6 +1301,10 @@ def bind_online_subtitle(resource, candidate_id, download_index=0, confirm=False
             http_status=409,
         )
 
+    candidate = _find_online_subtitle_candidate(resource, normalized_candidate_id, provider_id)
+    candidate_language = _candidate_language(candidate)
+    candidate_meta = _candidate_metadata(candidate)
+
     result = download_online_subtitle(
         resource,
         candidate_id=normalized_candidate_id,
@@ -1098,6 +1320,8 @@ def bind_online_subtitle(resource, candidate_id, download_index=0, confirm=False
         "download_filename": result.get("filename"),
         "manual_confirmed": True,
     })
+    if candidate_meta:
+        metadata["candidate"] = candidate_meta
     row = ResourceSubtitle(
         resource_id=getattr(resource, "id", None),
         source="online",
@@ -1110,7 +1334,7 @@ def bind_online_subtitle(resource, candidate_id, download_index=0, confirm=False
         format=Path(filename).suffix.lower().lstrip(".") or "srt",
         mime_type=result["mime_type"],
         size=len(result["content"]),
-        language=None,
+        language=candidate_language,
         subtitle_metadata=metadata,
         is_default=False,
     )

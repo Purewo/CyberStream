@@ -197,7 +197,7 @@ curl -s http://127.0.0.1:5004/api/v1/homepage/config
 - 默认分类包含 `科幻` / `动作` / `剧情` / `动画`
 - 分类区块之间不重复影片
 
-### 3.9 元数据 provider 与 Bangumi 候选搜索
+### 3.9 元数据 provider 与动漫候选搜索
 
 以下在修改元数据 provider、OpenAPI、手动匹配或前端联调字段后执行。
 
@@ -206,10 +206,22 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 ```
 
 预期：
-- 返回 `nfo`、`tmdb`、`bangumi`、`tencent_video`、`local`
-- `tmdb`、`bangumi` 与 `tencent_video` 的 `supports_search=true`
+- 返回 `nfo`、`tmdb`、`anilist`、`bangumi`、`tencent_video`、`local`
+- `tmdb`、`anilist`、`bangumi` 与 `tencent_video` 的 `supports_search=true`
+- `anilist.default_enabled=false`，不进入默认全库扫描顺序
 - `tencent_video.manual_only=true` 且 `supports_scrape=false`
 - 默认顺序仍为 `nfo -> tmdb -> local`
+
+AniList 动漫候选搜索：
+
+```bash
+curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=Frieren&providers=anilist&media_type_hint=tv&limit=1"
+```
+
+预期：
+- 返回标准 JSON，`data.items[0].provider = anilist`
+- 返回 `candidate_id = anilist/<id>`、`source_url`、`episode_count`、`format`
+- 未显式传 `year` 时，`data.year_source = none`
 
 使用一个已存在的 movie id 做 Bangumi 搜索：
 

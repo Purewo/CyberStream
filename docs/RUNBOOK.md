@@ -158,11 +158,12 @@ python -m backend.run
 curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 ```
 
-预期包含 `bangumi`，且 `supports_search=true`。`tencent_video` 只用于手动候选搜索，预期 `manual_only=true`、`supports_scrape=false`，不要加入扫描配置。
+预期包含 `anilist`、`bangumi`，且 `supports_search=true`。`tencent_video` 只用于手动候选搜索，预期 `manual_only=true`、`supports_scrape=false`，不要加入扫描配置。
 
 2. 动漫搜索建议显式指定 provider 和媒体类型：
 
 ```bash
+curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=Frieren&providers=anilist&media_type_hint=tv"
 curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=葬送的芙莉莲&providers=bangumi&media_type_hint=tv"
 ```
 
@@ -172,7 +173,7 @@ curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=葬送�
 curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=https%3A%2F%2Fbgm.tv%2Fsubject%2F400602&providers=bangumi&media_type_hint=tv"
 ```
 
-4. 若 `providers.attempts[].status=failed` 且 warnings 包含 `bangumi_search_failed`，优先检查网络、`BANGUMI_API_BASE`、`BANGUMI_USER_AGENT` 和上游限流，不要按“作品不存在”处理。
+4. 若 `providers.attempts[].status=failed` 且 warnings 包含 `anilist_search_failed` 或 `bangumi_search_failed`，优先检查网络、`ANILIST_API_URL`、`BANGUMI_API_BASE`、对应 User-Agent 和上游限流，不要按“作品不存在”处理。
 
 5. 腾讯视频备用源只在用户显式选择时使用：
 
@@ -186,8 +187,8 @@ curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=诛仙3&
 
 ```json
 {
-  "candidate_id": "bangumi/400602",
-  "provider": "bangumi",
+  "candidate_id": "anilist/154587",
+  "provider": "anilist",
   "media_type_hint": "tv"
 }
 ```

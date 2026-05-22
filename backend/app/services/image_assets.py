@@ -44,6 +44,7 @@ IMAGE_SOURCE_FIELDS = {
     "backdrop": ("background_cover", "backdrop_url"),
 }
 SCRAPER_SOURCE_GROUPS = {
+    "ANILIST": ("anilist", "AniList"),
     "BANGUMI": ("bangumi", "Bangumi"),
     "TENCENT_VIDEO": ("tencent_video", "Tencent Video"),
     "TMDB": ("tmdb", "TMDB"),
@@ -278,6 +279,8 @@ def _provider_from_image_url(source_url: str | None) -> tuple[str | None, str | 
         return "tmdb", "TMDB"
     if host.endswith("bgm.tv") or host.endswith("bangumi.tv") or "bangumi" in host:
         return "bangumi", "Bangumi"
+    if host.endswith("anilist.co") or host.endswith("anilistcdn.com") or "anilist" in host:
+        return "anilist", "AniList"
     if host.endswith("v.qq.com") or host.endswith("qpic.cn") or host.endswith("puui.qpic.cn"):
         return "tencent_video", "Tencent Video"
     if parsed.scheme in {"http", "https"}:

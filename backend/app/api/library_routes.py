@@ -1088,6 +1088,8 @@ def _infer_metadata_media_type(tmdb_id, fallback=None):
         media_type = tmdb_id.split('/', 1)[0].strip().lower()
         if media_type in TMDB_SEARCH_SOURCE_HINTS:
             return media_type
+        if media_type == 'anilist':
+            return fallback if fallback in TMDB_SEARCH_SOURCE_HINTS else 'tv'
         if media_type == 'bangumi':
             return fallback if fallback in TMDB_SEARCH_SOURCE_HINTS else 'tv'
         if media_type == 'tencent_video':
@@ -1100,7 +1102,7 @@ def _infer_metadata_media_type(tmdb_id, fallback=None):
 
 
 def _is_external_metadata_id(tmdb_id):
-    if isinstance(tmdb_id, str) and tmdb_id.strip().lower().startswith('bangumi/'):
+    if isinstance(tmdb_id, str) and tmdb_id.strip().lower().startswith(('anilist/', 'bangumi/')):
         return True
     return _infer_metadata_media_type(tmdb_id) in TMDB_SEARCH_SOURCE_HINTS
 
@@ -1432,6 +1434,62 @@ def _resource_quality_sort_value(resource, resource_item, user_history):
     )
 
 
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _resource_quality_sort_value_light(resource, user_history):
+    specs = resource.tech_specs if isinstance(resource.tech_specs, dict) else {}
+    tier_key = MediaResource._normalize_media_value(specs.get("quality_tier"))
+    tier_profile = MediaResource.QUALITY_TIER_PROFILES.get(tier_key) or {}
+    last_played = (user_history or {}).get("last_played_at") or ""
+    return (
+        1 if user_history else 0,
+        last_played,
+        _safe_int(specs.get("quality_rank") or tier_profile.get("rank")),
+        _safe_int(specs.get("resolution_rank")),
+        int(resource.size or 0),
+        resource.created_at or datetime.min,
+        resource.id,
+    )
+
+
+def _build_playback_source_stats(resources, resource_history_map):
+    grouped = {}
+    for resource in resources:
+        grouped.setdefault(_build_playback_source_key(resource), []).append(resource)
+
+    primary_resource_ids = set()
+    alternate_resource_ids = set()
+    duplicate_group_count = 0
+    for group_resources in grouped.values():
+        ordered_resources = sorted(
+            group_resources,
+            key=lambda resource: _resource_quality_sort_value_light(
+                resource,
+                resource_history_map.get(resource.id),
+            ),
+            reverse=True,
+        )
+        if not ordered_resources:
+            continue
+        primary_resource_ids.add(ordered_resources[0].id)
+        alternates = ordered_resources[1:]
+        if alternates:
+            duplicate_group_count += 1
+            alternate_resource_ids.update(resource.id for resource in alternates)
+
+    return {
+        "playback_source_count": len(grouped),
+        "duplicate_group_count": duplicate_group_count,
+        "primary_resource_ids": primary_resource_ids,
+        "alternate_resource_ids": alternate_resource_ids,
+    }
+
+
 def _build_playback_source_groups(resources, resource_item_map, resource_history_map):
     grouped = {}
     for resource in resources:
@@ -1514,7 +1572,15 @@ def _build_playback_source_groups(resources, resource_item_map, resource_history
     return playback_sources
 
 
-def _build_movie_resource_groups(movie):
+def _should_hydrate_movie_resource(resource, season_filter):
+    return (
+        season_filter is None
+        or resource.season is None
+        or resource.season == season_filter
+    )
+
+
+def _build_movie_resource_groups(movie, season_filter=None):
     resources = movie.resources.all()
     resource_map = {resource.id: resource for resource in resources}
     resource_history_map = get_resource_history_map([resource.id for resource in resources])
@@ -1534,14 +1600,22 @@ def _build_movie_resource_groups(movie):
     edited_items = 0
     resource_items = []
     resource_item_map = {}
+    hydrated_resources = []
 
     for resource in resources:
-        resource_dict = resource.to_dict(include_subtitle_discovery=True)
         resource_user_history = resource_history_map.get(resource.id)
-        resource_dict["user_data"] = resource_user_history
-        resource_items.append(resource_dict)
-        resource_item_map[resource.id] = resource_dict
-        display = resource_dict.get("resource_info", {}).get("display", {})
+        should_hydrate = _should_hydrate_movie_resource(resource, season_filter)
+        display = {
+            "has_manual_metadata": resource.has_manual_metadata(),
+            "episode": resource.episode,
+        }
+        if should_hydrate:
+            resource_dict = resource.to_dict(include_subtitle_discovery=True)
+            resource_dict["user_data"] = resource_user_history
+            resource_items.append(resource_dict)
+            resource_item_map[resource.id] = resource_dict
+            hydrated_resources.append(resource)
+            display = resource_dict.get("resource_info", {}).get("display", {})
         if display.get("has_manual_metadata"):
             edited_items += 1
         if resource.season is None:
@@ -1607,13 +1681,23 @@ def _build_movie_resource_groups(movie):
     season_groups.sort(key=lambda item: item["season"])
 
     metadata_state = movie.get_metadata_ui_state()
-    playback_sources = _build_playback_source_groups(resources, resource_item_map, resource_history_map)
-    primary_resource_ids = {item["primary_resource_id"] for item in playback_sources}
-    alternate_resource_ids = {
-        resource_id
-        for item in playback_sources
-        for resource_id in item["alternate_resource_ids"]
-    }
+    playback_sources = _build_playback_source_groups(hydrated_resources, resource_item_map, resource_history_map)
+    if season_filter is None:
+        playback_stats = {
+            "playback_source_count": len(playback_sources),
+            "duplicate_group_count": sum(1 for item in playback_sources if item["is_duplicate_group"]),
+            "primary_resource_ids": {item["primary_resource_id"] for item in playback_sources},
+            "alternate_resource_ids": {
+                resource_id
+                for item in playback_sources
+                for resource_id in item["alternate_resource_ids"]
+            },
+        }
+    else:
+        playback_stats = _build_playback_source_stats(resources, resource_history_map)
+
+    primary_resource_ids = playback_stats["primary_resource_ids"]
+    alternate_resource_ids = playback_stats["alternate_resource_ids"]
 
     standalone_primary_resource_ids = [
         resource_id for resource_id in standalone_resource_ids
@@ -1666,8 +1750,11 @@ def _build_movie_resource_groups(movie):
         },
         "summary": {
             "total_items": len(resources),
-            "playback_source_count": len(playback_sources),
-            "duplicate_group_count": sum(1 for item in playback_sources if item["is_duplicate_group"]),
+            "hydrated_item_count": len(resource_items),
+            "selected_season": season_filter,
+            "playback_source_count": playback_stats["playback_source_count"],
+            "hydrated_playback_source_count": len(playback_sources),
+            "duplicate_group_count": playback_stats["duplicate_group_count"],
             "alternate_resource_count": len(alternate_resource_ids),
             "season_count": len(season_groups),
             "standalone_count": len(standalone_resource_ids),
@@ -3969,7 +4056,12 @@ def get_movie_resources(id):
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
-    return api_response(data=_build_movie_resource_groups(movie))
+    try:
+        season_filter = _normalize_positive_int_field("season", request.args.get("season"), allow_none=True)
+    except MetadataValidationError as e:
+        return api_error(code=e.code, msg=e.msg, http_status=400)
+
+    return api_response(data=_build_movie_resource_groups(movie, season_filter=season_filter))
 
 
 @library_bp.route('/movies/<uuid:id>/resources/attach', methods=['POST'])

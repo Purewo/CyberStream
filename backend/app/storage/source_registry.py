@@ -250,6 +250,7 @@ SOURCE_TYPE_DEFINITIONS = {
         'capabilities': {
             'preview': True,
             'scan': True,
+            'refresh': True,
             'stream': True,
             'ffmpeg_input': True,
             'health_check': True,
@@ -357,6 +358,7 @@ SOURCE_TYPE_DEFINITIONS = {
         'capabilities': {
             'preview': True,
             'scan': True,
+            'refresh': True,
             'stream': True,
             'ffmpeg_input': True,
             'health_check': True,

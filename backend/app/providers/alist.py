@@ -353,7 +353,7 @@ class AListProvider(StorageProvider):
             },
         )
 
-    def list_items(self, relative_path):
+    def _list_items(self, relative_path, refresh=False):
         data = self._api_post(
             '/api/fs/list',
             {
@@ -361,7 +361,7 @@ class AListProvider(StorageProvider):
                 'password': self.path_password,
                 'page': 1,
                 'per_page': 0,
-                'refresh': False,
+                'refresh': bool(refresh),
             },
         )
 
@@ -379,6 +379,12 @@ class AListProvider(StorageProvider):
                 'size': 0 if is_dir else int(entry.get('size') or 0),
             })
         return items
+
+    def list_items(self, relative_path):
+        return self._list_items(relative_path, refresh=False)
+
+    def refresh_directory(self, relative_path):
+        return self._list_items(relative_path, refresh=True)
 
     def path_exists(self, relative_path):
         try:

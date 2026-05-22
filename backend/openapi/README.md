@@ -42,6 +42,8 @@ backend/openapi/openapi-1.21.0-beta/
 - `GET /api/v1/docs`：文档索引
 - `GET /api/v1/openapi.json`：当前 OpenAPI JSON 原文
 - `GET /api/v1/docs/openapi.json`：OpenAPI JSON 别名
+- `GET /api/v1/openapi/modules`：模块化 OpenAPI 索引
+- `GET /api/v1/openapi/modules/<module_key>.json`：单个模块 OpenAPI JSON 原文
 - `GET /api/v1/docs/<doc_key>`：白名单 Markdown 文档原文
 
 这些接口返回的是固定文档文件，不支持任意路径读取。

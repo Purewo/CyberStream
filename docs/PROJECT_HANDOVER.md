@@ -68,7 +68,7 @@
 - 同目录外挂字幕发现与字幕流入口
 - 在线字幕搜索/下载/绑定和手动上传字幕，当前接入 `subhd` 与 `srtku`
 - 图片按需缓存、状态、来源追踪、预热和单片清理接口，电影列表/详情返回 `poster_asset_url/backdrop_asset_url` 与 `poster_source_info/backdrop_source_info`
-- 元数据 provider 抽象，当前注册 `nfo/tmdb/bangumi/local`；Bangumi 支持动画候选搜索、扫描刮削和手动匹配
+- 元数据 provider 抽象，当前注册 `nfo/tmdb/anilist/bangumi/tencent_video/local`；AniList/Bangumi 支持动漫候选搜索、扫描刮削和手动匹配，Tencent Video 仅手动匹配
 - 推荐观看接口，包含全局推荐、库级推荐和单片上下文推荐理由
 - 元数据工作台解释型字段、失败分类、批量重识别反馈和 `metadata_issue_code` 精确筛选
 - 其他视频归档接口，可手工新建电影/电视剧并把待整理资源挂入资源库
@@ -83,14 +83,14 @@
 当前状态：
 
 - `1.18.0` 已进入前端联调等待阶段，今天不再继续新增大功能。
-- 后端主线已完成字幕、图片缓存、多刮削器/Bangumi、总影视库显式发布控制和存储协议接入确认。
+- 后端主线已完成字幕、图片缓存、多刮削器 AniList/Bangumi/Tencent Video、总影视库显式发布控制和存储协议接入确认。
 - 前端正在对接字幕、元数据、总影视库发布等接口；明天第一优先级是看前端测试反馈并收敛阻塞问题。
 
 今日关键完成项：
 
 - 字幕链路：同目录字幕、在线字幕搜索/下载/用户确认绑定、删除、设默认、手动上传和压缩包提取。
 - 图片资源：`poster/backdrop` 后端缓存入口，列表/详情返回 `poster_asset_url/backdrop_asset_url`。
-- 元数据：provider 抽象已稳定，当前支持 `nfo/tmdb/bangumi/local`，Bangumi 默认不自动启用，由资源库或扫描策略显式配置。
+- 元数据：provider 抽象已稳定，当前支持 `nfo/tmdb/anilist/bangumi/tencent_video/local`，AniList/Bangumi 默认不自动启用，由资源库或扫描策略显式配置；Tencent Video 只给手动匹配使用。
 - 总影视库发布：`catalog_visibility_status=auto/published/hidden`，强制发布需用户确认后传 `force=true`。
 - 存储协议：`SMB/FTP/AList/OpenList` 已确认接入配置校验、provider 工厂、预览、浏览、扫描、播放、OpenAPI 和文档。
 

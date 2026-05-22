@@ -1,3 +1,4 @@
+from backend.app.services.metadata_providers.anilist import AniListMetadataProvider
 from backend.app.services.metadata_providers.bangumi import BangumiMetadataProvider
 from backend.app.services.metadata_providers.local import LocalFallbackProvider
 from backend.app.services.metadata_providers.nfo import NfoMetadataProvider
@@ -9,6 +10,7 @@ def build_default_metadata_providers():
     providers = [
         NfoMetadataProvider(),
         TmdbMetadataProvider(),
+        AniListMetadataProvider(),
         BangumiMetadataProvider(),
         TencentVideoMetadataProvider(),
         LocalFallbackProvider(),

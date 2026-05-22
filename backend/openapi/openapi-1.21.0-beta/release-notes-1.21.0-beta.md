@@ -23,6 +23,13 @@
 - 手工来源为 `LOCAL_MANUAL_MOVIE` / `LOCAL_MANUAL_TV`，默认不进入 `needs_attention` 元数据工作台。
 - 接口只修改数据库索引和资源元数据，不移动、不删除实体视频文件。
 
+## 电视剧资源按季 hydrate
+
+- `GET /api/v1/movies/{id}/resources` 新增可选 `season` query。
+- 不传 `season` 时保持旧行为，仍返回全量 `items` 和全量分组索引。
+- 传 `season=N` 时，`items` 只返回该季资源和无季资源，`groups.seasons` 仍保留完整季索引。
+- 响应 `summary` 额外暴露 `selected_season`、`hydrated_item_count` 和 `hydrated_playback_source_count`，方便前端识别局部 hydrate。
+
 ## 契约变化
 
 - `MovieSimple`、`MovieDetailed` 和 `MetadataWorkItem` 增加 `manual_content`。
@@ -42,6 +49,8 @@
 - `GET /api/v1/docs`：返回当前 OpenAPI 和 Markdown 文档索引。
 - `GET /api/v1/openapi.json`：返回当前 OpenAPI JSON 原文，不包标准响应壳。
 - `GET /api/v1/docs/openapi.json`：OpenAPI JSON 的文档命名空间别名。
+- `GET /api/v1/openapi/modules`：返回模块化 OpenAPI 索引，供前端按领域懒加载契约。
+- `GET /api/v1/openapi/modules/{module_key}.json`：返回单个模块 OpenAPI JSON 原文，只包含该模块 paths 和递归引用到的 components。
 - `GET /api/v1/docs/{doc_key}`：返回白名单 Markdown 文档原文。
 
 当前白名单 key：
@@ -55,9 +64,34 @@
 - `runbook`
 - `test-checklist`
 
+## 存储源目录刷新
+
+新增 `POST /api/v1/storage/sources/{id}/refresh`，用于手动刷新已保存存储源的指定目录缓存。
+
+说明：
+
+- 当前仅 `alist/openlist` 支持，底层调用上游 `fs/list` 并带 `refresh=true`
+- 该接口只刷新目录缓存并返回刷新后的列表，不触发扫描、不触发刮削
+- `StorageSource.actions` 现在会额外暴露 `can_refresh`
+
+## 在线字幕搜索稳定性
+
+- 默认在线字幕搜索继续只跑 `subhd`，`srtku` 保持显式慢备用源。
+- 搜索关键字默认先使用资源展示标题，再使用原名和文件名，避免中文片名资源优先被英文文件名带偏。
+- 显式传入 `srtku` 时后端会实际尝试该备用源，但受独立超时预算限制；超时会记录到 `providers.errors`，并返回 `reason=timeout`。
+- `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS` 默认改为 `5` 秒。
+
 ## 手动元数据匹配防幽灵数据
 
 - `POST /api/v1/movies/{id}/metadata/match` 默认改为 dry-run 预览，不再因为前端点击候选就直接写库。
 - 前端确认覆盖时需提交预览返回的 `apply_payload`，其中包含 `apply=true`。
 - 预览响应新增 `current`、`preview`、`identity`、`diff`、`warnings`、`apply_method`、`apply_endpoint`、`apply_payload`。
 - 当候选和当前影片最终都没有海报时，`apply=true` 会返回 `409`，防止无海报影片被前端过滤成不可见幽灵数据；确需写入时传 `allow_missing_poster=true`。
+
+## AniList 元数据来源
+
+- 新增 `anilist` provider，使用 AniList 官方 GraphQL API，不需要密钥。
+- `GET /api/v1/metadata/providers` 会返回 `anilist`，支持候选搜索和显式扫描刮削，但不进入默认 provider 顺序。
+- `GET /api/v1/movies/{id}/metadata/search?providers=anilist` 可返回 `candidate_id=anilist/<id>`、`source_url`、`episode_count`、`format`、海报和评分。
+- `POST /api/v1/movies/{id}/metadata/match` 支持 `candidate_id=anilist/<id>` 或 AniList anime URL。
+- `ANILIST` 入库后归为 `metadata_source_group=anilist`，默认无需进入元数据审查队列。
