@@ -1,6 +1,6 @@
 [package]
 name = "cyberstream-pc"
-version = "1.21.0"
+version = "1.21.1"
 description = "CyberStream PC desktop client"
 authors = ["Purewo"]
 license = "Proprietary"
@@ -25,6 +25,35 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
+egui = "0.32"
+egui_glow = { version = "0.32", default-features = false }
+# 心跳上报：blocking client 跑在独立线程，避免阻塞 GL/tokio runtime。
+# rustls-tls 不依赖系统 schannel/openssl，部署更简单。
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
+] }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+# Pin windows + windows-core to match what tauri-plugin-shell pulls in;
+# version mismatches give "multiple windows_core in graph" trait errors.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_OpenGL",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.61"
+# OpenGL function loader. `glow` is the Rust idiomatic GL bindings layer used
+# by egui_glow; M3.1 only needs raw GL through windows::OpenGL + manual
+# wglGetProcAddress for the libmpv get_proc_address callback. We pull glow in
+# now so M3.2 can drop egui_glow on top without churn.
+glow = "0.16"
 
 [profile.release]
 panic = "abort"

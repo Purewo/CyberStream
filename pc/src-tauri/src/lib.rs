@@ -1,8 +1,13 @@
 // CyberStream PC · library entry
 //
-// Wires the Tauri shell, plugins, and the mpv embedding bridge.
+// v3 architecture: webview shell handles every page except the player.
+// When the user picks "play", the webview invokes `open_pc_player` and
+// the Rust side spins up a native Win32 window with libmpv + egui HUD
+// (see `native_player/`). Everything from v0~v2.1 (mpv.exe + IPC, child
+// HWND embedding) was removed in M3.4 because it's permanently dead
+// code.
 
-mod mpv;
+mod native_player;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,16 +16,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(mpv::MpvManager::new())
         .invoke_handler(tauri::generate_handler![
             ping,
-            mpv::mpv_start,
-            mpv::mpv_stop,
-            mpv::mpv_command,
-            mpv::mpv_load_file,
-            mpv::mpv_set_property,
-            mpv::mpv_get_property,
-            mpv::mpv_observe_property,
+            native_player::open_pc_player,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

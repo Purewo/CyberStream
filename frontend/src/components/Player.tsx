@@ -3,9 +3,9 @@ import { motion } from 'motion/react';
 import { ChevronLeft, Play, Pause, Volume2, VolumeX, Lock, Maximize, BoxSelect, Scan, Activity, LayoutGrid, Server, HardDrive, MessageSquare, Settings, Trash2, Star, Upload, ExternalLink } from 'lucide-react';
 import { Movie, PlayOptions, Episode } from '../types';
 import { movieService, userService, resourceService } from '../api';
+import { getApiBase } from '../platform';
 import { formatDuration } from '../utils';
 import { SciFiProgressRing, EcgLoading } from './ui/CyberComponents';
-import { getApiBase } from '../platform';
 
 interface PlayerProps {
   movie: Movie;
@@ -38,6 +38,12 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   const [progress, setProgress] = useState(0); 
   const [seekOnLoad, setSeekOnLoad] = useState<number | null>(null); 
   const [playbackMode, setPlaybackMode] = useState<'direct' | 'proxy' | 'audio_transcode'>('direct');
+
+  // v3 起 PC 模式直接走原生窗口（src-tauri/native_player），React Player
+  // 只在 web 模式被渲染，所以 isPcRuntime 永远为 false。保留这个常量是
+  // 为了下面所有 `isPcRuntime ? ... : ...` 三元的 web 分支自然生效，
+  // 避免大面积重写读路径。
+  const isPcRuntime = false;
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [isHoveringBottom, setIsHoveringBottom] = useState(false);
@@ -483,7 +489,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   
   // const needsAudioTranscode = currentEpisode?.playback?.web_player?.needs_server_audio_transcode === true;
   const audioServerTranscode = currentEpisode?.playback?.audio?.server_transcode;
-  const isAudioTranscodeActive = playbackMode === 'audio_transcode' && audioServerTranscode?.available === true && !!currentEpisode?.id;
+  const isAudioTranscodeActive = !isPcRuntime && playbackMode === 'audio_transcode' && audioServerTranscode?.available === true && !!currentEpisode?.id;
 
   useEffect(() => {
     sessionIdRef.current = crypto.randomUUID();
@@ -857,9 +863,9 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   const handleSeekEnd = () => {
     isDraggingSeekRef.current = false;
     setIsDraggingSeek(false);
-    if (videoRef.current) { 
-        videoRef.current.currentTime = dragSeekTime; 
-        setCurrentTime(dragSeekTime); 
+    if (videoRef.current) {
+        videoRef.current.currentTime = dragSeekTime;
+        setCurrentTime(dragSeekTime);
         if (isAudioTranscodeActive) {
             setIsAudioLoading(true);
             videoRef.current.pause();
@@ -868,8 +874,8 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
             videoRef.current.play().catch(console.warn);
         }
         draggedPlayStateRef.current = null;
-    } 
-  }; 
+    }
+  };
 
   const changePlaybackRate = () => { 
       const rates = [1, 1.5, 2]; 
@@ -1254,9 +1260,10 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
         <div className="text-right pointer-events-auto"><h2 className="text-xl font-['Orbitron'] font-bold text-white text-shadow-neon">{movie.title}</h2></div> 
     </div> 
     <div className="flex flex-col lg:flex-row h-full overflow-hidden"> 
-        <div 
+        <div
             ref={videoContainerRef}
-            className={`flex-grow relative bg-black flex items-center justify-center group min-w-0 min-h-0 ${isIdle ? 'cursor-none' : ''}`}
+            className={`flex-grow relative ${isPcRuntime ? '' : 'bg-black'} flex items-center justify-center group min-w-0 min-h-0 ${isIdle ? 'cursor-none' : ''}`}
+            style={isPcRuntime ? { backgroundColor: 'transparent' } : undefined}
             onMouseMove={isLocked ? undefined : resetIdleTimer}
             onDoubleClick={isLocked ? resetIdleTimer : undefined}
         > 
@@ -1282,7 +1289,25 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                         background: none !important;
                     }
                 `}</style>
-                <video ref={videoRef} src={videoUrl} referrerPolicy="no-referrer" className={`w-full h-full object-${aspectRatio}`} onTimeUpdate={handleTimeUpdate} onPlay={onVideoPlay} onPause={onVideoPause} onWaiting={onVideoWaiting} onPlaying={onVideoPlaying} onEnded={handleVideoEnded} onLoadedMetadata={handleLoadedMetadata} onSeeked={handleSeeked} onClick={handleVideoClick} onError={handleVideoError} autoPlay muted={isAudioTranscodeActive}>
+                <video
+                  ref={videoRef}
+                  src={isPcRuntime ? undefined : videoUrl}
+                  referrerPolicy="no-referrer"
+                  className={`w-full h-full object-${aspectRatio}`}
+                  style={isPcRuntime ? { display: 'none' } : undefined}
+                  onTimeUpdate={isPcRuntime ? undefined : handleTimeUpdate}
+                  onPlay={isPcRuntime ? undefined : onVideoPlay}
+                  onPause={isPcRuntime ? undefined : onVideoPause}
+                  onWaiting={isPcRuntime ? undefined : onVideoWaiting}
+                  onPlaying={isPcRuntime ? undefined : onVideoPlaying}
+                  onEnded={isPcRuntime ? undefined : handleVideoEnded}
+                  onLoadedMetadata={isPcRuntime ? undefined : handleLoadedMetadata}
+                  onSeeked={isPcRuntime ? undefined : handleSeeked}
+                  onClick={handleVideoClick}
+                  onError={isPcRuntime ? undefined : handleVideoError}
+                  autoPlay={!isPcRuntime}
+                  muted={isAudioTranscodeActive}
+                >
                    {previewSubtitleBlobUrl ? (
                        <track
                            key="preview-sub"

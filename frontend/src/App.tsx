@@ -12,10 +12,12 @@ import { ContextMenu } from './components/ui/ContextMenu';
 import { ScanProgressBar } from './components/ui/ScanProgressBar';
 import { Toaster } from './components/ui/Toaster';
 import { movieService, libraryService, userService } from './api';
-import { getPublicUrlBase, writeClipboard } from './platform';
+import { getDeviceId } from './api/core';
+import { getPublicUrlBase, writeClipboard, platform, getApiBase } from './platform';
+import { launchNativePlayer } from './platform/nativePlayer';
 import { getStyles, toast } from './utils';
 import { useGlobalHotkeys } from './hooks/useGlobalHotkeys';
-import { Movie, ViewState } from './types';
+import { Movie, ViewState, PlayOptions } from './types';
 import { useThemeSettings } from './hooks/useThemeSettings';
 import { useUserData } from './hooks/useUserData';
 import { useAppRouting } from './hooks/useAppRouting';
@@ -48,7 +50,23 @@ const App = () => {
     addToLibraryMovie, setAddToLibraryMovie,
     navigateTo, closeOverlay, openMovie: handleMovieSelect, openPlayer
   } = useAppRouting();
-  
+
+
+  // Apply user-preferred default landing on first mount.
+  // settings.homepage.defaultLanding 形如 'home' | 'library' | 'library:42'。
+  // 只在首次挂载（currentView === 'home'）时跳，避免覆盖用户已经在浏览的视图。
+  useEffect(() => {
+    const landing = settings.homepage?.defaultLanding;
+    if (!landing || landing === 'home') return;
+    if (landing === 'library') {
+      navigateTo('library', { libraryId: null });
+    } else if (landing.startsWith('library:')) {
+      const id = parseInt(landing.split(':')[1] || '', 10);
+      if (!isNaN(id)) navigateTo('library', { libraryId: id });
+    }
+    // 只在首次挂载执行；不依赖 settings/navigateTo 后续变化（避免设置改了又把用户拽回去）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   // Global Context Menu Event Listener
@@ -155,9 +173,200 @@ const App = () => {
     }
   };
 
+  // v3：PC 模式下播放页改成 Rust 原生窗口（src-tauri/native_player）。
+  // 用户在详情页点「播放」时，前端不再切换到 player overlay；而是
+  // 解析出 stream URL + startTime 直接 invoke open_pc_player，原生窗口
+  // 关闭后回到详情页并刷新历史。Web 模式仍然用 React Player overlay。
+  const isPcRuntime = platform().kind === 'pc';
+
+  const handlePlay = async (movie: Movie, options: PlayOptions = {}) => {
+    if (!isPcRuntime) {
+      setPlayOptions(options);
+      setOverlayView('player');
+      return;
+    }
+    // PC：单独走 getResources 接口拿到所有可播放资源（movie.resources
+    // 在某些列表场景下没有，详情页加载后才有 — 走 API 更稳）。然后把
+    // 所有 resource 拍扁成 NativeResourceMeta + 当前 id 一起送给 Rust。
+    let resources: import('./types').Resource[] = [];
+    let seasonsMeta: { season: number; displayTitle: string; resourceIds: string[] }[] = [];
+    try {
+      const groups = await movieService.getResources(String(movie.id));
+      resources = (groups?.items || []) as import('./types').Resource[];
+      // groups.groups.seasons[] 是后端给的"分季索引"。转成 NativeSeasonMeta
+      // 形态：每个 season 含 season 编号 / display_title / resource_ids。
+      // Rust 拿到后渲染顶部 「第 1 季 / 第 2 季」 tab，并按 resourceIds 过滤
+      // 集数网格。空数组就走单季 fallback。
+      const rawSeasons = groups?.groups?.seasons || [];
+      seasonsMeta = rawSeasons
+        .filter(sg => sg.resource_ids && sg.resource_ids.length > 0)
+        .map(sg => ({
+          season: sg.season,
+          displayTitle: sg.display_title || `第 ${sg.season} 季`,
+          resourceIds: sg.resource_ids,
+        }));
+    } catch {
+      resources = [];
+    }
+    if (resources.length === 0) {
+      // 兜底：detail 页可能已经把 resources 塞 movie 上
+      resources = ((movie.resources || []) as unknown as import('./types').Resource[]);
+    }
+    if (resources.length === 0) {
+      toast.error('该影片没有可播放的资源');
+      return;
+    }
+    const currentResourceId = options.resourceId
+      ?? resources[0]?.id
+      ?? String(movie.id);
+    const startTime = Number(options.startTime) || 0;
+    const url = movieService.getStreamUrl(currentResourceId);
+
+    // 把每条 resource 拍扁成 NativeResourceMeta：附带直链、画质标签、
+    // 大小、画质 badge。badge 由 media_info / resource_info.technical
+    // 拼接 — 命中其中之一即填，避免空标签干扰视觉。
+    //
+    // episode 抽取顺序（与 web Player.tsx 405–435 行一致）：
+    //   1. resource_info.display.episode（后端解析好的优先）
+    //   2. r.episode 顶层
+    //   3. filename 正则（S01E02 / 第X话 / EpXX / 末尾数字）
+    const extractEpisode = (r: import('./types').Resource): string | undefined => {
+      const info = (r as any).resource_info || {};
+      let n: number | string | undefined =
+        info?.display?.episode ?? r.episode;
+      if (n != null && n !== '') return String(n);
+      const fn: string = info?.file?.filename || r.filename || '';
+      const reSxE = fn.match(/[Ss](\d+)[Ee](\d+)/);
+      if (reSxE) return reSxE[2];
+      const reSeasonEp = fn.match(/Season\s*\d+\s*Episode\s*(\d+)/i);
+      if (reSeasonEp) return reSeasonEp[1];
+      const reZh = fn.match(/第\s*(\d+)\s*[集话]/);
+      if (reZh) return reZh[1];
+      const reEp = fn.match(/(?:^|[^\w])(?:EP|Ep|ep|E|e)(?:\s*[-.]*\s*)?(\d+)/);
+      if (reEp) return reEp[1];
+      const reBare = fn.match(/(?:^|\s|-|\[)\s*(\d{1,3})(?:\s|-|\.|\]|$)/);
+      if (reBare) return reBare[1];
+      return undefined;
+    };
+    const nativeResources = resources.map(r => {
+      const tech = (r as any).resource_info?.technical || {};
+      const info: any = (r as any).resource_info || {};
+      // displayLabel 优先级和 web Player 行 1936 保持一致：
+      //   resource_info.display.title → resource_info.file.filename → r.filename
+      // r.display_label / r.filename 后端有时给空字符串，要 .filter(!empty)。
+      const displayLabel: string | undefined =
+        (info?.display?.title && String(info.display.title).trim()) ||
+        (info?.file?.filename && String(info.file.filename).trim()) ||
+        (r.display_label && String(r.display_label).trim()) ||
+        (r.filename && String(r.filename).trim()) ||
+        undefined;
+      // storage_source.name → "bilibili" / "115 网盘" 这种 badge，渲染成
+      // 大色块和源 badge 区分开（web 行 1931-1933）。
+      const storageSource: string | undefined =
+        info?.file?.storage_source?.name || undefined;
+      // 文件大小：r.size_bytes 顶层 / resource_info.file.size_bytes 都可能填。
+      const sizeBytes: number | undefined =
+        r.size_bytes || info?.file?.size_bytes || undefined;
+      const badges: string[] = [];
+      const push = (v?: string | null) => {
+        if (v && v.toUpperCase() !== 'UNKNOWN') badges.push(v);
+      };
+      push(tech.video_resolution_badge_label || r.media_info?.resolution);
+      push(tech.video_dynamic_range_label);
+      push(tech.video_codec_label || r.media_info?.video_codec);
+      push(tech.audio_summary_label || tech.audio_codec_label || r.media_info?.audio_codec);
+      push(tech.source_label);
+      // 字幕：后端 resource_info.playback.subtitles 形态多变——
+      //   - 老接口偶尔是 { items: [...] } 包裹
+      //   - 新接口直接 array
+      //   - 没字幕时可能是 null / undefined / {}
+      // 统一拍成 array 再 map，否则 .map() 在对象上会 throw。
+      const rawCandidate: any =
+        info?.playback?.subtitles
+        ?? (r as any).playback?.subtitles
+        ?? (r as any).subtitles
+        ?? [];
+      const subtitlesRaw: any[] = Array.isArray(rawCandidate)
+        ? rawCandidate
+        : Array.isArray(rawCandidate?.items)
+        ? rawCandidate.items
+        : [];
+      // mpv 在 native 进程里 sub-add 必须能直接 GET 到字幕文件，
+      // 后端给的 stream_url 通常是 `/api/v1/resources/.../stream?...`
+      // 这种相对路径——webview 里浏览器自己拼 origin 没问题，丢给 Rust
+      // 后 mpv 会因为不带 host 直接拒绝。这里统一拼成 `${apiBaseHost}/api/v1/...`：
+      // - http(s) 开头：直通
+      // - /api/* → 去掉 /api 前缀后接到 apiBase 上（apiBase 末尾就是 /api）
+      // - /v1/*  → 直接接到 apiBase 上
+      // 注意走 getApiBase()，让用户在「系统配置 → 后端服务器」改的 URL 立即生效
+      // （走 platform.getApiBase()，PC 端会读 localStorage 里的 cyber_pc_api_base）。
+      const apiBaseHost = getApiBase().replace(/\/api\/?$/, '');
+      const resolveSubUrl = (u: string): string => {
+        if (!u) return '';
+        if (/^https?:\/\//i.test(u)) return u;
+        if (u.startsWith('/api/')) return `${apiBaseHost}${u.substring(4)}`;
+        if (u.startsWith('/v1/')) return `${apiBaseHost}${u}`;
+        if (u.startsWith('/')) return `${apiBaseHost}${u}`;
+        return u;
+      };
+      const subtitles = subtitlesRaw
+        .map((s: any) => ({
+          id: String(s.id ?? s.subtitle_id ?? ''),
+          url: resolveSubUrl(String(s.url ?? s.stream_url ?? '')),
+          label: s.label || s.match || s.filename || undefined,
+          displayName: s.display_name || undefined,
+          format: s.format || undefined,
+          isDefault: !!s.is_default,
+        }))
+        .filter((s) => s.id && s.url);
+      return {
+        id: r.id,
+        url: movieService.getStreamUrl(r.id),
+        filename: r.filename,
+        displayLabel,
+        qualityLabel: r.quality_label,
+        sizeBytes,
+        storageSource,
+        episode: extractEpisode(r),
+        season: r.season,
+        badges,
+        subtitles,
+      };
+    });
+
+    launchNativePlayer({
+      url,
+      startTime,
+      currentResourceId,
+      // device_id + api_base 给 Rust 心跳线程发 /v1/user/history 用。
+      // api_base 去掉末尾 `/api`，让 Rust 端按 `/api/v1/...` 拼接。
+      // sessionId 前缀 `pc-` 方便后端日志区分 PC 与 web 来源。
+      deviceId: getDeviceId(),
+      apiBase: getApiBase().replace(/\/api\/?$/, ''),
+      sessionId: `pc-${(crypto as any)?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,
+      movie: {
+        id: String(movie.id),
+        title: movie.title || '',
+        originalTitle: (movie as any).original_title,
+        year: typeof movie.year === 'number' ? movie.year : undefined,
+        overview: (movie as any).overview,
+        resources: nativeResources,
+        seasons: seasonsMeta.length > 0 ? seasonsMeta : undefined,
+      },
+    })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(`原生播放器启动失败: ${msg}`);
+      })
+      .finally(() => {
+        // 不论成功与否，原生窗口关闭后刷新一次历史（M3.5 加上结束态心跳后才完整）
+        refreshHistory();
+      });
+  };
+
   return (
-    <div className="min-h-screen font-sans selection:bg-secondary selection:text-white relative bg-[#050505] text-white flex overflow-hidden" style={{ backgroundColor: currentTheme.bg }}> 
-      <style>{getStyles(settings, currentTheme)}</style> 
+    <div className="min-h-screen font-sans selection:bg-secondary selection:text-white relative text-white flex overflow-hidden" style={{ backgroundColor: currentTheme.bg }}>
+      <style>{getStyles(settings, currentTheme)}</style>
       <div className="scanlines pointer-events-none z-[100]"></div> 
       <div className="perspective-grid"></div> 
 
@@ -169,7 +378,7 @@ const App = () => {
         <main className={`flex-1 flex flex-col w-full`}>
           <div style={{ display: overlayView === 'none' ? 'block' : 'none', flex: 1, minHeight: 0 }}>
             {currentView === 'home' && (<Home onMovieSelect={handleMovieSelect} onViewMore={handleViewCategory} />)} 
-            {currentView === 'library' && (<Library onMovieSelect={handleMovieSelect} initialType={libraryInitialType} activeLibraryId={activeLibraryId} onRequestBind={() => { setProfileInitialTab('LIBRARIES'); setCurrentView('profile'); setOverlayView('none'); }} />)} 
+            {currentView === 'library' && (<Library onMovieSelect={handleMovieSelect} initialType={settings.homepage?.libraryDefaults?.type || libraryInitialType} initialSort={settings.homepage?.libraryDefaults?.sort || 'update_time'} activeLibraryId={activeLibraryId} onRequestBind={() => { setProfileInitialTab('LIBRARIES'); setCurrentView('profile'); setOverlayView('none'); }} />)}
             {currentView === 'libraries' && (<LibrariesList libraries={libraries} onSelectLibrary={(id) => { setActiveLibraryId(id); setCurrentView('library'); }} onAddLibrary={() => setCurrentView('add_library')} />)}
             {currentView === 'add_library' && (<AddLibraryWizard onCancel={() => setCurrentView('libraries')} onSuccess={() => {
               refreshLibraries();
@@ -188,7 +397,7 @@ const App = () => {
               setOverlayView('none');
               setTimeout(() => { if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = savedScroll; }, 0);
             }} 
-              onPlay={(options = {}) => { setPlayOptions(options); setOverlayView('player'); }} 
+              onPlay={(options = {}) => handlePlay(selectedMovie, options)}
               onMovieSelect={handleMovieSelect} 
               isFavorite={favorites.some(f => f.id === selectedMovie.id)} 
               onToggleFavorite={handleToggleFavorite} 
@@ -198,12 +407,12 @@ const App = () => {
             />
           )} 
           
-          {overlayView === 'player' && selectedMovie && (
+          {overlayView === 'player' && selectedMovie && !isPcRuntime && (
             <Player movie={selectedMovie} initialOptions={playOptions} onBack={() => {
                 setOverlayView('detail');
                 refreshHistory();
             }} />
-          )} 
+          )}
           
           {overlayView !== 'player' && <Footer />} 
         </main>
