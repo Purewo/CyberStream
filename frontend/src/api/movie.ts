@@ -430,12 +430,17 @@ export const movieService = {
   },
 
   // 获取影片资源与季集分组
-  getResources: async (id: string): Promise<import('../types/index').MovieResourceGroups | null> => {
+  // 后端 1.21+：传 season 时只 hydrate 该季 + 无季资源，groups.seasons 仍含全量索引（resource_ids 为空表未 hydrate 的季）。
+  // 不传 season 时维持旧行为，全量返回。
+  getResources: async (id: string, season?: number): Promise<import('../types/index').MovieResourceGroups | null> => {
     let queryId = String(id);
     if (queryId.includes('-S')) {
       queryId = queryId.split('-S')[0];
     }
-    const resData = await fetchApi<import('../types/index').MovieResourceGroups>(`/v1/movies/${queryId}/resources`);
+    const url = season !== undefined && season !== null
+      ? `/v1/movies/${queryId}/resources?season=${encodeURIComponent(String(season))}`
+      : `/v1/movies/${queryId}/resources`;
+    const resData = await fetchApi<import('../types/index').MovieResourceGroups>(url);
     if (resData) {
         if (resData.items) {
           resData.items = resData.items.filter(item => {
@@ -446,7 +451,9 @@ export const movieService = {
             return true;
           });
         }
-        if (resData.groups?.seasons) {
+        // 仅在全量请求下做季 prune（旧行为）；按季 hydrate 时其他季的 resource_ids 故意不在 items 里，
+        // 这种情况下不能误删——MovieDetail 会按需再拉一次该季。
+        if (season === undefined && resData.groups?.seasons) {
            resData.groups.seasons.forEach(season => {
                season.resource_ids = season.resource_ids.filter(id => resData.items?.some(i => i.id === id));
            });

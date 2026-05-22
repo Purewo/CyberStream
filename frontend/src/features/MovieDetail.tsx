@@ -14,12 +14,15 @@ import nplayerIcon from '../icons/players/nplayer.png';
 import mxplayerIcon from '../icons/players/mxplayer.png';
 import mxplayerProIcon from '../icons/players/mxplayer_pro.png';
 import infuseIcon from '../icons/players/infuse.png';
+import { toast } from '../utils';
 
 const ExternalPlayerButton: React.FC<{ title: string; icon: string; url: string }> = ({ title, icon, url }) => {
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     shellOpen(url).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[external-player] ${title} failed:`, err);
+      toast.error(`${title} 无法启动: ${msg}`);
     });
   };
   return (
@@ -45,15 +48,18 @@ interface MovieDetailProps {
   onUpdateMovie?: (m: Movie) => void;
 }
 
-export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack, onPlay, onMovieSelect, isFavorite, onToggleFavorite, onUpdateMovie }) => { 
+export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack, onPlay, onMovieSelect, isFavorite, onToggleFavorite, onUpdateMovie }) => {
   const [currentPropMovie, setCurrentPropMovie] = useState(movie);
   const [fullMovieData, setFullMovieData] = useState<Movie>(movie);
   const [resourceGroups, setResourceGroups] = useState<import('../types').MovieResourceGroups | null>(null);
   const [loading, setLoading] = useState(false);
+  const [seasonLoading, setSeasonLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [recommendations, setRecommendations] = useState<Movie[]>([]);
   const [activeSeason, setActiveSeason] = useState<number | null>(movie.target_season ?? null);
   const [isManagingSubtitles, setIsManagingSubtitles] = useState(false);
+  // 已 hydrate 过的季号，避免重复拉取。null 表示「无季的独立资源已加载」
+  const loadedSeasonsRef = useRef<Set<number | null>>(new Set());
 
   // Sync state instantly when the movie prop changes (e.g. clicking a recommendation)
   if (movie.id !== currentPropMovie.id || movie.target_season !== currentPropMovie.target_season) {
@@ -63,6 +69,7 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
       setRecommendations([]);
       setActiveSeason(movie.target_season ?? null);
       setLoading(true);
+      loadedSeasonsRef.current = new Set();
       // Let the useEffect handle the actual fetching below based on new movie.id
   }
 
@@ -113,20 +120,22 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     } 
   };
 
-  // Fetch detailed info (resources) & Recommendations when movie changes
+  // 初次进入：并行拉详情、推荐、首季资源（target_season 优先；否则不传 season —— 后端会回 hydrated_items 第一季）
   useEffect(() => {
+    let cancelled = false;
     const loadData = async () => {
       setLoading(true);
-      
-      // Parallel fetch for speed
+
+      const initialSeason = movie.target_season ?? undefined;
       const [detail, resData, recs] = await Promise.all([
         movieService.getDetail(movie.id),
-        movieService.getResources(movie.id),
+        movieService.getResources(movie.id, initialSeason),
         movieService.getContextRecommendations(String(movie.id), 8, movie.type === 'tv' || movie.type === 'series' || !!movie.season ? 'tv' : 'movie')
       ]);
 
+      if (cancelled) return;
+
       if (detail) {
-        // preserve season-level overrides from the pseudo-movie
         setFullMovieData({
           ...detail,
           title: movie.title || detail.title,
@@ -139,10 +148,25 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
       }
       if (resData) {
         setResourceGroups(resData);
-        if (movie.target_season !== undefined) {
-            setActiveSeason(movie.target_season);
+        // 标记已加载：standalone 永远跟着每次响应回来；当前 hydrate 季是 initialSeason 或后端默认季
+        loadedSeasonsRef.current.add(null);
+        const hydratedSeason = (resData as any).summary?.selected_season;
+        if (typeof hydratedSeason === 'number') {
+          loadedSeasonsRef.current.add(hydratedSeason);
+        } else if (initialSeason !== undefined) {
+          loadedSeasonsRef.current.add(initialSeason);
         } else if (resData.groups?.seasons && resData.groups.seasons.length > 0) {
-            setActiveSeason(resData.groups.seasons[0].season);
+          // 不带 season 请求 + 后端没回 selected_season（旧行为）→ 全量已 hydrate
+          resData.groups.seasons.forEach(s => loadedSeasonsRef.current.add(s.season));
+        }
+
+        if (movie.target_season !== undefined && movie.target_season !== null) {
+          setActiveSeason(movie.target_season);
+        } else if (resData.groups?.seasons && resData.groups.seasons.length > 0) {
+          // 选第一个有内容的季作为默认。按季 hydrate 时其他季的 resource_ids 在拍扁前长度 > 0，
+          // 这里继续选第一个，让用户看到的就是后端 hydrate 的那一季。
+          const firstHydrated = resData.groups.seasons.find(s => (s.resource_ids?.length || 0) > 0);
+          setActiveSeason((firstHydrated || resData.groups.seasons[0]).season);
         }
       }
       if (recs) {
@@ -153,7 +177,66 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     };
 
     loadData();
+    return () => { cancelled = true; };
   }, [movie.id]);
+
+  // 切季时按需 hydrate 缺失的季并合并到 resourceGroups.items
+  useEffect(() => {
+    if (activeSeason === null || activeSeason === undefined) return;
+    if (loadedSeasonsRef.current.has(activeSeason)) return;
+    if (!resourceGroups) return;
+
+    let cancelled = false;
+    const fetchSeason = async () => {
+      setSeasonLoading(true);
+      try {
+        const fresh = await movieService.getResources(movie.id, activeSeason);
+        if (cancelled || !fresh) return;
+
+        // 合并：以新返回的 items 覆盖同 id 的旧条目（带最新 user_data / playback 等）
+        setResourceGroups(prev => {
+          if (!prev) return fresh;
+          const byId = new Map<string, import('../types').Resource>();
+          (prev.items || []).forEach(r => byId.set(r.id, r));
+          (fresh.items || []).forEach(r => byId.set(r.id, r));
+          const mergedItems = Array.from(byId.values());
+
+          // 用新 groups.seasons 中该季的 resource_ids 替换旧的（其他季保持原状）
+          const prevSeasons = prev.groups?.seasons || [];
+          const freshSeasons = fresh.groups?.seasons || [];
+          const mergedSeasons = prevSeasons.map(ps => {
+            const updated = freshSeasons.find(fs => fs.season === ps.season);
+            if (updated && (updated.resource_ids?.length || 0) > 0) {
+              return { ...ps, ...updated };
+            }
+            return ps;
+          });
+          // 兜底：若新返回里有旧 prev 不存在的季，也并进来
+          freshSeasons.forEach(fs => {
+            if (!mergedSeasons.some(ms => ms.season === fs.season)) {
+              mergedSeasons.push(fs);
+            }
+          });
+
+          return {
+            ...prev,
+            items: mergedItems,
+            groups: {
+              ...prev.groups,
+              seasons: mergedSeasons,
+              standalone: fresh.groups?.standalone ?? prev.groups?.standalone,
+            } as any,
+            summary: fresh.summary ?? prev.summary,
+          };
+        });
+        loadedSeasonsRef.current.add(activeSeason);
+      } finally {
+        if (!cancelled) setSeasonLoading(false);
+      }
+    };
+    fetchSeason();
+    return () => { cancelled = true; };
+  }, [activeSeason, movie.id]);
 
   const safeId = String(fullMovieData.id || 'def');
   const hue = parseInt(safeId.split('-').pop() || '0') * 40; 
@@ -196,6 +279,8 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
   // Calculate Resume Record
   const resumeRecord = useMemo(() => {
     if (!resourceGroups?.items) return null;
+    // 系列剧但当前季尚未确定/未 hydrate 时，索性不显示 resume —— 宁可漏，不能跨季误显。
+    if (isSeries && !currentSeasonGroup) return null;
 
     // First check user_data from the current active season
     let targetUserData = currentSeasonGroup?.user_data;
@@ -211,19 +296,30 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     // Validate that targetUserData belongs to the current active season if it's a series
     let validResource = null;
     if (targetUserData && targetUserData.resource_id) {
-        validResource = resourceGroups.items.find(r => r.id === targetUserData!.resource_id);
-        if (validResource && isSeries && currentSeasonGroup) {
-            // If we are looking at a specific season, ensure the resource belongs to it
-            // By checking if the ID exists in current season resources
-            if (!currentSeasonGroup.resource_ids.includes(validResource.id)) {
-                validResource = null;
+        // 先用 currentSeasonGroup.resource_ids 直接判断 resource_id 归属，不依赖 items 是否已 hydrate。
+        if (isSeries && currentSeasonGroup) {
+            if (!currentSeasonGroup.resource_ids.includes(targetUserData.resource_id)) {
                 targetUserData = undefined;
             }
         }
+        if (targetUserData) {
+            validResource = resourceGroups.items.find(r => r.id === targetUserData!.resource_id);
+        }
     }
+
+    // 用 resource 自己的 season 字段做最后一道闸 —— 防止后端把跨季 user_data 渗进来。
+    const matchesActiveSeason = (res: import('../types').Resource | undefined | null, ud?: { season?: number | null }) => {
+      if (!isSeries) return true;
+      const candidateSeason = ud?.season
+        ?? res?.resource_info?.display?.season
+        ?? res?.season;
+      if (candidateSeason === undefined || candidateSeason === null) return true; // 拿不到就不卡
+      return candidateSeason === activeSeason;
+    };
 
     // Attempt to construct resume record from user_data
     if (validResource && targetUserData && targetUserData.progress > 5 && targetUserData.duration > 0 && (targetUserData.progress / targetUserData.duration) < 0.95) {
+      if (!matchesActiveSeason(validResource, targetUserData)) return null;
       return {
           resourceId: targetUserData.resource_id,
           progress: targetUserData.progress,
@@ -246,13 +342,14 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
           resourceIdsToMatch = resourceGroups.items.map(r => r.id);
       }
       const movieResourceIds = new Set(resourceIdsToMatch);
-      
+
       if (movieResourceIds.size > 0) {
           // Find the first history item that exists in this season's resources
           const match = history.find(h => movieResourceIds.has(h.resourceId));
-          
+
           if (match && match.progress > 5 && match.duration > 0 && (match.progress / match.duration) < 0.95) {
               const resourceDetail = resourceGroups.items.find(r => r.id === match.resourceId);
+              if (!matchesActiveSeason(resourceDetail)) return null;
               return {
                   resourceId: match.resourceId,
                   progress: match.progress,
@@ -266,7 +363,7 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     }
 
     return null;
-  }, [history, resourceGroups, currentSeasonGroup, isSeries, fullMovieData.user_data]);
+  }, [history, resourceGroups, currentSeasonGroup, isSeries, fullMovieData.user_data, activeSeason]);
 
   const defaultPlayResource = useMemo(() => {
     let playResource = primaryResource;
@@ -283,13 +380,10 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     || (targetPlayResource ? movieService.getStreamUrl(targetPlayResource.id) : "");
 
   const handlePlay = () => {
-    if (resumeRecord) {
-        onPlay({ resourceId: resumeRecord.resourceId });
-        return;
-    }
-
+    // 「从头播放」语义：忽略 resumeRecord，回到当前季第一集（或唯一资源）从 0 秒起。
+    // 显式带 startTime: 0 是为了把 Player 里读到的 user_data 进度盖掉。
     if (defaultPlayResource) {
-      onPlay({ resourceId: defaultPlayResource.id });
+      onPlay({ resourceId: defaultPlayResource.id, startTime: 0 });
     }
   };
 
