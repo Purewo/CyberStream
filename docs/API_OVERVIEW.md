@@ -435,6 +435,8 @@ X-Cyber-API-Token: <token>
 说明：
 - `phase` 会在 `preparing/indexing/grouping/optimizing/processing/idle` 之间变化
 - `indexing` 阶段不提前计算总文件数，`discovered_files`、`total_files`、`indexed_dirs` 会随遍历实时增长
+- `skipped_dirs` 表示索引阶段已跳过的不可读取目录数；单个目录失败不会中断整轮扫描
+- `recent_errors` 保留最近的非致命扫描错误，包含 `phase/path/message`，用于提示哪些目录被跳过
 - `total_items_known=false` 表示当前阶段总数还不可确定，前端应展示不定长进度或“已发现 N 个文件”
 - `processing` 阶段表示正在刮削/入库，`current_item`、`current_file`、`processed_items`、`total_items`、`processed_files` 可用于显示刮削进度
 - `active_items` 表示当前并发处理中的条目，前端可展示“正在刮削”的文件/影片列表

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class CyberScanner:
     STATUS_PUBLISH_INTERVAL = 0.35
+    MAX_RECENT_SCAN_ERRORS = 10
 
     def __init__(self):
         self.is_scanning = False
@@ -65,6 +66,8 @@ class CyberScanner:
             "total_files_known": False,
             "processed_files": 0,
             "indexed_dirs": 0,
+            "skipped_dirs": 0,
+            "recent_errors": [],
             "active_items": {},
             "started_at": None,
             "updated_at": None,
@@ -92,6 +95,15 @@ class CyberScanner:
             "total_files_known": state["total_files_known"],
             "processed_files": state["processed_files"],
             "indexed_dirs": state["indexed_dirs"],
+            "skipped_dirs": state.get("skipped_dirs", 0),
+            "recent_errors": [
+                {
+                    "phase": item.get("phase", ""),
+                    "path": item.get("path", ""),
+                    "message": item.get("message", ""),
+                }
+                for item in state.get("recent_errors", [])
+            ],
             "active_items": [
                 {
                     "label": item["label"],
@@ -172,8 +184,12 @@ class CyberScanner:
     def _finish_scan_session(self):
         with self._status_lock:
             started_at = self._progress_state.get("started_at")
+            skipped_dirs = self._progress_state.get("skipped_dirs", 0)
+            recent_errors = list(self._progress_state.get("recent_errors", []))
             self._progress_state = self._build_progress_state()
             self._progress_state["started_at"] = started_at
+            self._progress_state["skipped_dirs"] = skipped_dirs
+            self._progress_state["recent_errors"] = recent_errors
             self._touch_progress_locked()
             self.scan_status = self._snapshot_progress_state(self._progress_state)
         self._stop_status_reporter()
@@ -193,6 +209,8 @@ class CyberScanner:
             total_files_known=False,
             processed_files=0,
             indexed_dirs=0,
+            skipped_dirs=0,
+            recent_errors=[],
             active_items={},
         )
 
@@ -260,6 +278,26 @@ class CyberScanner:
             return content_type
         return None
 
+    def _format_scan_error_message(self, error):
+        message = str(error).strip() or error.__class__.__name__
+        message = " ".join(message.split())
+        if len(message) > 500:
+            return f"{message[:497]}..."
+        return message
+
+    def _record_indexing_directory_skip(self, dir_path, error):
+        error_item = {
+            "phase": "indexing",
+            "path": self._display_progress_path(dir_path),
+            "message": self._format_scan_error_message(error),
+        }
+        with self._status_lock:
+            recent_errors = list(self._progress_state.get("recent_errors", []))
+            recent_errors.append(error_item)
+            self._progress_state["recent_errors"] = recent_errors[-self.MAX_RECENT_SCAN_ERRORS:]
+            self._progress_state["skipped_dirs"] = self._progress_state.get("skipped_dirs", 0) + 1
+            self._touch_progress_locked()
+
     def parse_path_metadata(self, file_path):
         """测试和扫描入口统一使用新的脏数据清洗器。"""
         return self.cleaner.parse_path_metadata(file_path).to_dict()
@@ -318,7 +356,12 @@ class CyberScanner:
                                         self._increment_progress(total_files=1)
 
                     except Exception as e:
-                        logger.exception("Scan indexing failed dir_path=%s error=%s", dir_path, e)
+                        self._record_indexing_directory_skip(dir_path, e)
+                        logger.warning(
+                            "Scan indexing skipped directory dir_path=%s error=%s",
+                            dir_path or '/',
+                            e,
+                        )
 
         duration = time.time() - start_time
         video_count = sum(1 for item in all_files if ResourceValidator.is_valid_video(item.get('name', '')))

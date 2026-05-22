@@ -7686,6 +7686,31 @@
             "type": "integer",
             "description": "索引阶段已遍历目录数"
           },
+          "skipped_dirs": {
+            "type": "integer",
+            "description": "索引阶段已跳过的不可读取目录数；单个目录失败不会中断整轮扫描"
+          },
+          "recent_errors": {
+            "type": "array",
+            "description": "最近的非致命扫描错误；用于提示哪些目录被跳过",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "example": "indexing"
+                },
+                "path": {
+                  "type": "string",
+                  "example": "/电影/坏目录"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "upstream blocked this directory"
+                }
+              }
+            }
+          },
           "active_items": {
             "type": "array",
             "items": {

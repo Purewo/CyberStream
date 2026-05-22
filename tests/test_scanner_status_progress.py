@@ -12,7 +12,55 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app.services.scanner import CyberScanner
 
 
+class _DirectorySkippingProvider:
+    config = {}
+
+    def list_items(self, path):
+        if path == "":
+            return [
+                {"name": "good", "path": "good", "isdir": True, "size": 0},
+                {"name": "bad", "path": "bad", "isdir": True, "size": 0},
+            ]
+        if path == "good":
+            return [
+                {
+                    "name": "Movie.2024.1080p.mkv",
+                    "path": "good/Movie.2024.1080p.mkv",
+                    "isdir": False,
+                    "size": 1024,
+                }
+            ]
+        if path == "bad":
+            raise RuntimeError("upstream blocked this directory")
+        return []
+
+
 class ScannerStatusProgressTests(unittest.TestCase):
+    def test_indexing_skips_failed_directory_and_continues(self):
+        scanner = CyberScanner()
+        scanner._begin_scan_session(current_source="Test Source")
+        try:
+            with self.assertLogs("backend.app.services.scanner", level="WARNING") as logs:
+                files = scanner._phase_1_index(_DirectorySkippingProvider())
+
+            self.assertEqual(["good/Movie.2024.1080p.mkv"], [item["path"] for item in files])
+            self.assertTrue(any("skipped directory" in line for line in logs.output))
+
+            scanner._publish_status_snapshot()
+            status = scanner.get_status()
+            self.assertEqual(1, status["skipped_dirs"])
+            self.assertEqual(1, len(status["recent_errors"]))
+            self.assertEqual("/bad", status["recent_errors"][0]["path"])
+            self.assertIn("upstream blocked", status["recent_errors"][0]["message"])
+
+            scanner._finish_scan_session()
+            status = scanner.get_status()
+            self.assertEqual("idle", status["status"])
+            self.assertEqual(1, status["skipped_dirs"])
+            self.assertEqual("/bad", status["recent_errors"][0]["path"])
+        finally:
+            scanner._finish_scan_session()
+
     def test_group_and_process_progress_fields_are_exposed(self):
         scanner = CyberScanner()
         scanner._begin_scan_session(current_source="Test Source")
