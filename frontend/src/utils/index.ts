@@ -44,7 +44,10 @@ export const getStyles = (settings: UserSettings, currentTheme: ThemeConfig) => 
   @keyframes grid-move { 0% { transform: perspective(500px) rotateX(60deg) translateY(0); } 100% { transform: perspective(500px) rotateX(60deg) translateY(50px); } } 
   .no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; } 
   .tech-border { position: relative; } .tech-border::before { content: ''; position: absolute; top: 0; left: 0; width: 10px; height: 10px; border-top: 2px solid var(--color-primary); border-left: 2px solid var(--color-primary); } .tech-border::after { content: ''; position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; border-bottom: 2px solid var(--color-primary); border-right: 2px solid var(--color-primary); } 
-  .text-shadow-neon { text-shadow: 0 0 10px var(--color-primary); } .box-shadow-neon { box-shadow: 0 0 15px var(--color-primary); } .clip-corner { clip-path: polygon(0 0, 100% 0, 100% 85%, 95% 100%, 0 100%); } 
+  .text-shadow-neon { text-shadow: 0 0 10px var(--color-primary); } .box-shadow-neon { box-shadow: 0 0 15px var(--color-primary); } .clip-corner { clip-path: polygon(0 0, 100% 0, 100% 85%, 95% 100%, 0 100%); }
+  @keyframes cyberToastCountdown { from { width: 100%; } to { width: 0%; } }
+  @keyframes cyberToastIn { 0% { opacity: 0; transform: translateX(40px) skewX(-6deg); } 60% { opacity: 1; transform: translateX(-4px) skewX(0); } 100% { opacity: 1; transform: translateX(0) skewX(0); } }
+  .cyber-toast-enter { animation: cyberToastIn 320ms cubic-bezier(0.16, 1, 0.3, 1); }
 `;
 
 

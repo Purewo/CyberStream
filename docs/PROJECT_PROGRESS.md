@@ -1,5 +1,42 @@
 # PROJECT_PROGRESS
 
+## 2026-05-23
+
+### 1.21.1 PC 客户端 M3.6 → M5.1 收口
+
+PC 端这一周内把原生播放器从骨架推到能内测、把外部播放器从 URL scheme 升级
+到本地 `.exe` 直拉，并按 1.21 后端契约对前端做了同步：
+
+- **原生播放器（M3.6 → M3.9.x）**：Win32 + libmpv + egui_glow HUD。
+  4K HEVC / Dolby Vision / TrueHD 直通；按季 ComboBox 切换；右侧详情面板
+  在窗口模式常驻、全屏下完全砍掉避免遮字幕；底栏完整 9 控件（上下集/暂停/
+  音量/字幕/音轨/倍速/全屏/退出/进度条）；字幕子系统支持已绑定/内嵌/临时
+  预览三段式；启动时自动选默认（已绑定 > 内嵌）；Rust 侧每 10s 直接 POST
+  `/api/v1/user/history`，跟 webview 同协议同 device_id，不需要 webview
+  在场。
+- **外部播放器升级（M5.1）**：PotPlayer / VLC 改为本地 `.exe` 直接 spawn
+  + CLI 参数。Windows 端走注册表（`HKLM\SOFTWARE\DAUM\PotPlayer64`、
+  Uninstall 子键 DisplayName 扫描）+ Program Files 兜底定位。字幕先下载
+  到 `%TEMP%\cyberstream_sub_<hash>.<ext>` 再以本地路径喂给播放器，因为
+  PotPlayer 的 `/sub=` 和 VLC `:sub-file=` 对 HTTP URL 都有兼容问题。
+  PotPlayer 必须带 `/current` 复用窗口，否则会 spawn 第二个进程跟现有
+  窗口同时抢 GL/音频设备 → 黑屏。VLC 用 MRL 选项 `:sub-file=`、`:start-time=`，
+  避开 3.x 系列对全局 `--sub-file=` 的 HTTP URL bug。找不到 .exe 时返回
+  `fallback_required` 让前端走旧的 URL scheme 兜底。
+- **首页深度定制（M4.1）**：服务端 hero/sections 配置编辑器 + 拖拽排序 +
+  本地化默认落地视图。`Profile` 拆出 APPEARANCE 标签页承载主页设置 / 视觉
+  特效 / 主题，SYSTEM 收敛到只剩后端服务器卡片。
+- **详情页按季 hydrate（M4.2）**：`getResources(id, season?)` 对接后端 1.21
+  新加的 `season` 查询参数。7 季的剧从 1.86s / 1.18MB 缩到 ~300ms / ~360KB。
+  附带修了「继续播放」跨季泄漏和「从头播放」误 resume 两个老 bug。
+- **赛博风 toast**：`Toaster.tsx` 重写。原版用 Tailwind 默认 green-500 /
+  red-500 看着像 Bootstrap，新版改成主青色 / 玫红 / 霓虹黄系统色，黑底
+  玻璃 + 双色描边 + 顶部 [ACK]/[ERR] 类型 tag + 底部倒计时进度条 + 切角
+  装饰，跟详情页 tech-badge 一脉相承。
+
+详细变更见 `pc/RELEASE_NOTES_1.21.1.md`，CLI 排错过程见
+`pc/src-tauri/src/external_player.rs` 注释。
+
 ## 2026-05-03
 
 ### 1.21.0 其他视频归档
