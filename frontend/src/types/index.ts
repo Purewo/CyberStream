@@ -374,6 +374,39 @@ export interface MetadataOverview {
 export interface UserSettings {
   scanlines: boolean;
   glitch: boolean;
+  /** 个人偏好 — 主页/库默认行为，本地 localStorage 持久化（区别于服务端的 hero/sections）。 */
+  homepage?: HomepageUserPrefs;
+}
+
+/** 个人偏好（本地）。和服务端 HomepageConfig 是两件事——前者是"我打开应用想直接看到啥"，
+ *  后者是"首页 hero + 分类区块全用户共享配置"。 */
+export interface HomepageUserPrefs {
+  /** 启动后默认打开的视图。`library:<id>` 表示直接进某个具体片库。 */
+  defaultLanding?: 'home' | 'library' | `library:${number}`;
+  /** 进 library 视图时的初始筛选。 */
+  libraryDefaults?: {
+    type?: string;       // genre 名（"全部类型"含义见 Library.tsx）
+    sort?: string;       // FILTERS 里的 sort id
+  };
+}
+
+/** 服务端 /api/v1/homepage/config 的 schema 镜像。 */
+export interface HomepageSectionConfig {
+  key: string;
+  title: string;
+  genre?: string;
+  mode: 'latest' | 'custom';
+  limit: number;            // 1-20
+  movie_ids?: string[];
+  enabled: boolean;
+  sort_order: number;
+}
+
+export interface HomepageConfig {
+  hero_movie_id: string | null;
+  sections: HomepageSectionConfig[];
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export type ViewState = 'home' | 'library' | 'leaderboard' | 'history' | 'profile' | 'detail' | 'player' | 'search' | 'review' | 'libraries' | 'add_library';

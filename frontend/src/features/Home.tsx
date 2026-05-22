@@ -61,14 +61,12 @@ export const Home = ({ onMovieSelect, onViewMore }: { onMovieSelect: (m: Movie) 
   const [sections, setSections] = useState<any[]>(cachedHomepageData?.sections || []);
 
   useEffect(() => {
-    if (cachedHomepageData) return;
-
     const fetchHomepageData = async () => {
       try {
         const data = await homeService.getHomepage();
         if (data) {
           const hero = data.hero?.movie ? movieService.flattenMovies([data.hero.movie])[0] : FEATURED_MOVIE;
-          
+
           const mappedSections = (data.sections || []).map(sec => ({
             ...sec,
             items: movieService.flattenMovies(sec.items || [])
@@ -86,7 +84,19 @@ export const Home = ({ onMovieSelect, onViewMore }: { onMovieSelect: (m: Movie) 
         console.error("Home initialization failed", err);
       }
     };
-    fetchHomepageData();
+
+    if (!cachedHomepageData) {
+      fetchHomepageData();
+    }
+
+    // 「主页设置」保存后会派发这个事件 —— 失效模块缓存并重新拉一次。
+    // 不重启首页组件就能立刻看到改后的 hero / sections。
+    const onConfigUpdated = () => {
+      cachedHomepageData = null;
+      fetchHomepageData();
+    };
+    window.addEventListener('homepage-config-updated', onConfigUpdated);
+    return () => window.removeEventListener('homepage-config-updated', onConfigUpdated);
   }, []);
 
   return (

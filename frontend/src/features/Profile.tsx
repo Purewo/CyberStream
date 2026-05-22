@@ -13,10 +13,11 @@ import {
   Check,
   Trash2,
   Save,
+  Compass,
 } from "lucide-react";
 import { MovieCard } from "../components/movies/Cards";
-import { Movie, UserSettings, Achievement } from "../types";
-import { THEMES, API_BASE } from "../constants";
+import { Movie, UserSettings, Achievement, HomepageUserPrefs, Library } from "../types";
+import { THEMES, API_BASE, FILTERS } from "../constants";
 import { formatBytes, toast } from "../utils";
 import { platform } from "../platform";
 
@@ -25,6 +26,7 @@ import { Leaderboard } from "./Leaderboard";
 import { ReviewWorkbench } from "./ReviewWorkbench";
 import { ScanSourceModal } from "./ScanSourceModal";
 import { AddStorageSourceModal } from "./AddStorageSourceModal";
+import { HomepageEditor } from "./HomepageEditor";
 
 const ACHIEVEMENTS: Achievement[] = [
   {
@@ -132,8 +134,6 @@ const BackendServerCard: React.FC = () => {
   const isPc = platform().kind === 'pc';
   const [value, setValue] = useState<string>(() => platform().getApiBase());
   const [saving, setSaving] = useState(false);
-  const [mpvProbing, setMpvProbing] = useState(false);
-  const [mpvStatus, setMpvStatus] = useState<string | null>(null);
   // The Web build's API_BASE is baked in at build time, so editing is meaningless;
   // we still render the card read-only so users know which host they're hitting.
   const persist = async (next: string) => {
@@ -147,7 +147,13 @@ const BackendServerCard: React.FC = () => {
     try {
       const mod = await import('../platform/pc');
       mod.setApiBase(cleaned);
-      toast.success('已保存。下次刷新或重启窗口后生效。');
+      toast.success('已保存。即将刷新窗口…');
+      // 改后端地址需要刷整个 SPA：home / library / 当前打开的播放器都缓存了
+      // 旧 API_BASE 派生的 URL（封面、字幕、stream），就地刷新最干净。
+      // 留 600ms 让 toast 显示完。
+      setTimeout(() => {
+        try { window.location.reload(); } catch { /* noop */ }
+      }, 600);
     } catch (e) {
       console.error(e);
       toast.error('保存失败');
@@ -155,29 +161,7 @@ const BackendServerCard: React.FC = () => {
       setSaving(false);
     }
   };
-  const probeMpv = async () => {
-    if (!isPc) return;
-    setMpvProbing(true);
-    setMpvStatus(null);
-    try {
-      const { getMpvBridge } = await import('../platform/mpv');
-      const bridge = await getMpvBridge();
-      // Non-embedded probe: spawn mpv in its own window so we can see it
-      // without coordinating with the React layer yet (M3.2 will embed).
-      const pipeName = await bridge.start();
-      const version = await bridge.getProperty<string>('mpv-version');
-      const hwdec = await bridge.getProperty<string | null>('hwdec-current').catch(() => null);
-      await bridge.stop();
-      setMpvStatus(`OK · ${version} · pipe=${pipeName.split('\\').pop()} · hwdec=${hwdec ?? 'idle'}`);
-      toast.success('libmpv 检测通过');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setMpvStatus(`FAIL · ${msg}`);
-      toast.error('libmpv 检测失败：' + msg);
-    } finally {
-      setMpvProbing(false);
-    }
-  };
+
   return (
     <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
       <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-2">
@@ -185,7 +169,7 @@ const BackendServerCard: React.FC = () => {
       </h3>
       <p className="text-xs text-gray-500 font-['Rajdhani'] mb-5 leading-relaxed">
         {isPc
-          ? 'PC 客户端连接的后端 API 地址。修改后下次刷新生效。例：https://nas.local:5004/api'
+          ? 'PC 客户端连接的后端 API 地址。保存后窗口会自动刷新。例：https://nas.local:5004/api'
           : `当前 Web 构建固定连接：${API_BASE}（如需切换请在构建时修改 API_BASE）。`}
       </p>
       <div className="flex gap-2">
@@ -209,31 +193,91 @@ const BackendServerCard: React.FC = () => {
           </button>
         )}
       </div>
-      {isPc && (
-        <div className="mt-5 pt-5 border-t border-white/5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm text-gray-300 font-['Rajdhani']">libmpv 桥接自检</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">
-                启动 mpv 子进程、IPC 握手、读取版本和硬解能力，然后退出。
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={probeMpv}
-              disabled={mpvProbing}
-              className="px-3 py-1.5 text-xs font-bold border border-white/20 text-gray-200 hover:border-primary hover:text-primary transition-colors disabled:opacity-40"
-            >
-              {mpvProbing ? '检测中…' : '运行检测'}
-            </button>
-          </div>
-          {mpvStatus && (
-            <div className="mt-3 px-3 py-2 bg-black/40 border border-white/5 text-[11px] font-mono text-gray-400 break-all">
-              {mpvStatus}
-            </div>
-          )}
-        </div>
-      )}
+    </div>
+  );
+};
+
+/** 「个人偏好」卡片：默认进入页 + 库默认筛选。本地 settings 持久化，
+ *   不影响其它访问者；和服务端 hero/sections 是两个层面。 */
+const PersonalPreferencesCard: React.FC<{
+  settings: UserSettings;
+  setSettings: (s: UserSettings) => void;
+  libraries: Library[];
+}> = ({ settings, setSettings, libraries }) => {
+  const prefs: HomepageUserPrefs = settings.homepage || {};
+  const update = (patch: Partial<HomepageUserPrefs>) => {
+    setSettings({ ...settings, homepage: { ...prefs, ...patch } });
+  };
+  const updateLibraryDefaults = (
+    patch: Partial<NonNullable<HomepageUserPrefs['libraryDefaults']>>
+  ) => {
+    update({ libraryDefaults: { ...(prefs.libraryDefaults || {}), ...patch } });
+  };
+
+  // 启动入口下拉值。`library:<id>` 字符串编码到 select.value 里。
+  const landingValue: string = prefs.defaultLanding || 'home';
+
+  return (
+    <div className="bg-[#0a0a12]/80 border border-white/10 p-6 space-y-5">
+      <h3 className="text-lg font-['Orbitron'] font-bold text-white flex items-center gap-2">
+        <Compass size={18} /> 个人偏好
+      </h3>
+      <p className="text-xs text-gray-500 leading-relaxed">
+        仅影响本机本人。和上方"首屏大海报 / 首页分类"那两个全局配置是两件事。
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        {/* 启动默认进入 */}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-gray-400">启动默认进入</span>
+          <select
+            value={landingValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === 'home' || v === 'library') {
+                update({ defaultLanding: v });
+              } else if (v.startsWith('library:')) {
+                update({ defaultLanding: v as `library:${number}` });
+              }
+            }}
+            className="bg-black/40 border border-white/10 px-2 py-1.5 text-white outline-none"
+          >
+            <option value="home">首页</option>
+            <option value="library">媒体库（全部）</option>
+            {libraries.map((lib) => (
+              <option key={lib.id} value={`library:${lib.id}`}>
+                库 · {lib.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* 库默认类型 */}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-gray-400">库默认类型</span>
+          <input
+            type="text"
+            value={prefs.libraryDefaults?.type || ''}
+            onChange={(e) => updateLibraryDefaults({ type: e.target.value })}
+            placeholder="留空=全部类型"
+            className="bg-black/40 border border-white/10 px-2 py-1.5 text-white outline-none"
+          />
+        </label>
+
+        {/* 库默认排序 */}
+        <label className="flex flex-col gap-1.5">
+          <span className="text-gray-400">库默认排序</span>
+          <select
+            value={prefs.libraryDefaults?.sort || 'update_time'}
+            onChange={(e) => updateLibraryDefaults({ sort: e.target.value })}
+            className="bg-black/40 border border-white/10 px-2 py-1.5 text-white outline-none"
+          >
+            {FILTERS.sorts.map((s: { id: string; label: string }) => (
+              <option key={s.id} value={s.id}>{s.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
     </div>
   );
 };
@@ -1118,10 +1162,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
           </div>
         );
-      case "SYSTEM":
+      case "APPEARANCE":
         return (
-          <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 max-w-2xl">
-            <BackendServerCard />
+          <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 max-w-3xl">
+            <HomepageEditor />
+            <PersonalPreferencesCard
+              settings={settings}
+              setSettings={setSettings}
+              libraries={libraries}
+            />
             <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
               <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-6 flex items-center gap-2">
                 <Settings2 size={18} /> 视觉特效
@@ -1197,6 +1246,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 ))}
               </div>
             </div>
+          </div>
+        );
+      case "SYSTEM":
+        return (
+          <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 max-w-2xl">
+            <BackendServerCard />
           </div>
         );
       case "LIBRARIES":
@@ -1316,6 +1371,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   return (
     <div className="min-h-screen w-full pt-24 px-4 md:px-12 pb-12">
+      <div className="max-w-7xl mx-auto">
       <div className="flex items-center gap-4 mb-8">
         <div className="p-2 border border-primary text-primary shadow-[0_0_10px_var(--color-primary)]">
           <User className="w-6 h-6" />
@@ -1329,6 +1385,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="w-full md:w-64 flex flex-col gap-2 shrink-0">
           {" "}
           {[
+            { id: "APPEARANCE", icon: <Palette size={18} />, label: "主页设置" },
             { id: "IDENTITY", icon: <User size={18} />, label: "身份信息" },
             { id: "HISTORY", icon: <Clock size={18} />, label: "播放历史" },
             { id: "VAULT", icon: <Shield size={18} />, label: "数据保险库" },
@@ -1362,6 +1419,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           ))}{" "}
         </div>
         <div className="flex-1 min-w-0"> {renderContent()} </div>
+      </div>
       </div>
 
       {confirmAction && (

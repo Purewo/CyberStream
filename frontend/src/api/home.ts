@@ -1,26 +1,31 @@
 import { getApiBase } from '../platform';
 import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
-import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
+import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries, HomepageConfig, HomepageSectionConfig } from '../types/index';
 
 export const homeService = {
   getHomepage: async (): Promise<{ hero: any, sections: any[] } | null> => {
     const data = await fetchApi<{ hero: any, sections: any[] }>('/v1/homepage');
     return data || null;
   },
-  getHomepageConfig: async (): Promise<any | null> => {
-    return await fetchApi<any>('/v1/homepage/config');
+  getHomepageConfig: async (): Promise<HomepageConfig | null> => {
+    return await fetchApi<HomepageConfig>('/v1/homepage/config');
   },
-  updateHomepageConfig: async (config: any): Promise<boolean> => {
+  updateHomepageConfig: async (
+    patch: { hero_movie_id?: string | null; sections?: HomepageSectionConfig[] }
+  ): Promise<HomepageConfig | null> => {
     try {
       const res = await fetch(`${getApiBase()}/v1/homepage/config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+        body: JSON.stringify(patch),
       });
-      return res.ok;
+      if (!res.ok) return null;
+      const json = await res.json().catch(() => null);
+      // 后端 envelope: { code, msg, data: HomepageConfig }
+      return (json && (json.data || json)) as HomepageConfig;
     } catch {
-      return false;
+      return null;
     }
-  }
+  },
 };
 

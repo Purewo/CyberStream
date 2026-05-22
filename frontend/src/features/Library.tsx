@@ -38,9 +38,9 @@ const GENRE_DISPLAY_MAP: Record<string, string> = {
   "Local": "本地"
 };
 
-export const Library = ({ onMovieSelect, initialType = "全部类型", activeLibraryId, onRequestBind }: { onMovieSelect: (m: Movie) => void; initialType?: string; activeLibraryId?: number | null; onRequestBind?: () => void }) => { 
-  // Initial sort set to 'update_time' to match FILTERS constant ID
-  const [filters, setFilters] = useState({ type: initialType, region: "全部地区", year: "全部年份", sort: "update_time" }); 
+export const Library = ({ onMovieSelect, initialType = "全部类型", initialSort = "update_time", activeLibraryId, onRequestBind }: { onMovieSelect: (m: Movie) => void; initialType?: string; initialSort?: string; activeLibraryId?: number | null; onRequestBind?: () => void }) => {
+  // Initial sort comes from user prefs (defaults to 'update_time' to match FILTERS).
+  const [filters, setFilters] = useState({ type: initialType, region: "全部地区", year: "全部年份", sort: initialSort });
   const [libraryMovies, setLibraryMovies] = useState<Movie[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(0);
