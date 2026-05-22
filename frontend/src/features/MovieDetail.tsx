@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText } from 'lucide-react';
 import { Movie, PlayOptions, HistoryItem } from '../types';
 import { movieService } from '../api';
-import { shellOpen } from '../platform';
+import { shellOpen, platform } from '../platform';
+import { launchExternalPlayerNative } from '../platform/nativePlayer';
 import { formatBytes, formatDuration } from '../utils';
 import { MovieCard } from '../components/movies/Cards';
 import { TechBadge } from '../components/ui/CyberComponents';
@@ -16,9 +17,40 @@ import mxplayerProIcon from '../icons/players/mxplayer_pro.png';
 import infuseIcon from '../icons/players/infuse.png';
 import { toast } from '../utils';
 
-const ExternalPlayerButton: React.FC<{ title: string; icon: string; url: string }> = ({ title, icon, url }) => {
-  const handleClick = (e: React.MouseEvent) => {
+const ExternalPlayerButton: React.FC<{
+  title: string;
+  icon: string;
+  /** 兜底 URL scheme（web 端唯一通路；PC 端 Rust 找不到 .exe 时也回退到这里） */
+  url: string;
+  /** PC 端走 Rust 命令直接 spawn .exe 时需要的元信息。给了就启用。 */
+  pcLaunch?: {
+    player: 'potplayer' | 'vlc';
+    streamUrl: string;
+    subtitleUrl?: string;
+  };
+}> = ({ title, icon, url, pcLaunch }) => {
+  const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
+    const isPc = platform().kind === 'pc';
+    // PC + Rust 支持的播放器 → 走 launch_external_player，能带字幕。
+    if (isPc && pcLaunch) {
+      try {
+        const res = await launchExternalPlayerNative(pcLaunch);
+        if (res.launched) {
+          if (pcLaunch.subtitleUrl) {
+            toast.success(`${title} 已启动（已加载默认字幕）`);
+          }
+          return;
+        }
+        // 找不到 .exe：fallback 到 URL scheme，提示用户字幕可能不会自动加载。
+        if (res.method === 'fallback_required') {
+          console.warn(`[external-player] ${title} exe not found, falling back`, res.message);
+        }
+      } catch (err) {
+        console.warn(`[external-player] ${title} native launch failed, falling back:`, err);
+      }
+    }
+    // Web 模式 / PC fallback：URL scheme。
     shellOpen(url).catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[external-player] ${title} failed:`, err);
@@ -379,6 +411,28 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     || (targetPlayResource as any)?.playback?.stream_url
     || (targetPlayResource ? movieService.getStreamUrl(targetPlayResource.id) : "");
 
+  // PC 端外部播放器要预加载的默认字幕 URL。优先级：
+  //   1. playback.subtitles.items 里 id == default_subtitle_id 的那条（最权威）
+  //   2. playback.external_player.subtitle_urls[0]（后端拍平后的兜底）
+  // web 端用不到（URL scheme 没法带字幕参数）；只 PC 通过 launch_external_player 透给 .exe。
+  const externalSubtitleUrl: string | undefined = useMemo(() => {
+    const pb: any = (targetPlayResource as any)?.playback;
+    if (!pb) return undefined;
+    const subs = pb.subtitles;
+    if (subs?.items?.length) {
+      const defId = subs.default_subtitle_id;
+      const def = defId ? subs.items.find((s: any) => s.id === defId) : null;
+      const fallback = subs.items.find((s: any) => s.is_default) || subs.items[0];
+      const picked = def || fallback;
+      if (picked?.url) return String(picked.url);
+    }
+    const arr = pb.external_player?.subtitle_urls;
+    if (Array.isArray(arr) && arr.length > 0) {
+      return String(arr[0]);
+    }
+    return undefined;
+  }, [targetPlayResource]);
+
   const handlePlay = () => {
     // 「从头播放」语义：忽略 resumeRecord，回到当前季第一集（或唯一资源）从 0 秒起。
     // 显式带 startTime: 0 是为了把 Player 里读到的 user_data 进度盖掉。
@@ -704,9 +758,19 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                             <span className="w-8 h-[1px] bg-gray-600 block"></span>
                         </div>
                         <div className="flex flex-wrap gap-2 text-primary-50">
-                            <ExternalPlayerButton title="PotPlayer" icon={potplayerIcon} url={`potplayer://${externalVideoUrl}`} />
+                            <ExternalPlayerButton
+                              title="PotPlayer"
+                              icon={potplayerIcon}
+                              url={`potplayer://${externalVideoUrl}`}
+                              pcLaunch={{ player: 'potplayer', streamUrl: externalVideoUrl, subtitleUrl: externalSubtitleUrl }}
+                            />
                             <ExternalPlayerButton title="IINA" icon={iinaIcon} url={`iina://weblink?url=${externalVideoUrl}`} />
-                            <ExternalPlayerButton title="VLC" icon={vlcIcon} url={`vlc://${externalVideoUrl}`} />
+                            <ExternalPlayerButton
+                              title="VLC"
+                              icon={vlcIcon}
+                              url={`vlc://${externalVideoUrl}`}
+                              pcLaunch={{ player: 'vlc', streamUrl: externalVideoUrl, subtitleUrl: externalSubtitleUrl }}
+                            />
                             <ExternalPlayerButton title="nPlayer" icon={nplayerIcon} url={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} />
                             <ExternalPlayerButton title="MX Player" icon={mxplayerIcon} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end`} />
                             <ExternalPlayerButton title="MX Player Pro" icon={mxplayerProIcon} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.pro;type=video/*;end`} />

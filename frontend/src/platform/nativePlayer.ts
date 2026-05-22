@@ -125,3 +125,39 @@ export async function launchNativePlayer(opts: NativePlayerOptions): Promise<voi
     },
   });
 }
+
+// ─────────────────────── 外部播放器拉起 ───────────────────────
+
+export interface ExternalPlayerLaunchOptions {
+  /** "potplayer" | "vlc"。其他值（IINA、nPlayer、MX、Infuse 等）现阶段没接 */
+  player: 'potplayer' | 'vlc';
+  streamUrl: string;
+  /** 默认绑定字幕 URL（绝对地址）。可空。 */
+  subtitleUrl?: string;
+  /** 起始秒数（resume）。可空。 */
+  startTime?: number;
+}
+
+export interface ExternalPlayerLaunchResult {
+  launched: boolean;
+  /** "exe" = 直接启动了本地可执行文件；"fallback_required" = 没找到，前端走
+   *  URL scheme 兜底；"url_scheme" = Rust 直接走了 scheme。 */
+  method: 'exe' | 'fallback_required' | 'url_scheme';
+  message?: string | null;
+  exePath?: string | null;
+}
+
+/** 调用 Rust 端 launch_external_player 命令。失败时 throw —— 调用方 catch 后
+ *  通常应退回到 shellOpen(URL_scheme) 兜底。 */
+export async function launchExternalPlayerNative(
+  opts: ExternalPlayerLaunchOptions,
+): Promise<ExternalPlayerLaunchResult> {
+  return await invoke<ExternalPlayerLaunchResult>('launch_external_player', {
+    req: {
+      player: opts.player,
+      streamUrl: opts.streamUrl,
+      subtitleUrl: opts.subtitleUrl ?? null,
+      startTime: opts.startTime ?? null,
+    },
+  });
+}

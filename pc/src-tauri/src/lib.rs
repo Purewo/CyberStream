@@ -7,6 +7,7 @@
 // HWND embedding) was removed in M3.4 because it's permanently dead
 // code.
 
+mod external_player;
 mod native_player;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,6 +20,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping,
             native_player::open_pc_player,
+            external_player::launch_external_player,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
