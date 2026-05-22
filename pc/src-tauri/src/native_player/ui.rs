@@ -41,12 +41,11 @@ mod icons {
     pub const PAUSE: &str = "\u{E769}";      // Pause
     pub const VOLUME: &str = "\u{E767}";     // Volume
     pub const MUTE: &str = "\u{E74F}";       // Mute
-    pub const FULLSCREEN: &str = "\u{E740}"; // FullScreen
+    pub const FULLSCREEN: &str = "\u{E78C}"; // FullScreen（四方括号样式，避免 ↗ 误读）
     pub const BACK_TO_WINDOW: &str = "\u{E73F}"; // BackToWindow
     pub const SUBTITLE: &str = "\u{ED1E}";   // ClosedCaption
     pub const AUDIO: &str = "\u{E8D6}";      // Audio
     pub const SPEED: &str = "\u{EC4A}";      // Speed (FastForward 兜底备选)
-    pub const CHEVRON_DOWN: &str = "\u{E70D}"; // ChevronDown
     pub const DELETE: &str = "\u{E74D}";     // Delete (垃圾桶)
 }
 
@@ -728,7 +727,8 @@ fn draw_progress_bar(
     }
 }
 
-/// 圆形 ghost 按钮：透明底 + hover 浅青描边 + hover 时辉光晕。给上下集 / 静音用。
+/// 圆形 ghost 按钮：透明底，靠 1.5px 青色描边定型，hover/按下用颜色变化做反馈。
+/// 给上下集 / 静音用。
 fn draw_ghost_circle(
     ui: &mut egui::Ui,
     glyph: &str,
@@ -737,12 +737,6 @@ fn draw_ghost_circle(
     cyan: Color32,
     on_click: impl FnOnce(),
 ) {
-    // 圆本身 34×34，但 allocate 一个 34×46 的槽位 —— 跟同行 draw_primary_circle
-    // 高度对齐，圆在槽位中心绘制。原因：horizontal 行的高度由首个 widget 决定，
-    // 后面的 widget 才按 Align::Center 居中；如果 ghost 用 34 高度先 allocate、
-    // primary 再用 46 把行撑高，那"上一集"会贴行顶（首 widget 不会回头重对齐），
-    // 而"下一集"已经按 46 居中——视觉上就是「左高右低」。统一槽位高度后所有
-    // 控件都按 46 居中，没有时序问题。
     let circle_d = 34.0_f32;
     let row_h = 46.0_f32;
     let size = egui::vec2(circle_d, row_h);
@@ -756,33 +750,46 @@ fn draw_ghost_circle(
     );
     let resp = resp.on_hover_text(tooltip);
     let hovered = enabled && resp.hovered();
+    let pressed = enabled && resp.is_pointer_button_down_on();
     let painter = ui.painter();
-    // 圆心固定在槽位的几何中心；半径按 34 圆算。
     let center = rect.center();
     let r = circle_d / 2.0 - 1.0;
-    if hovered {
-        // 辉光晕：外圈半透明青色光圈。
+
+    // 落地阴影：固定一层，offset 1。
+    painter.circle_filled(
+        egui::pos2(center.x, center.y + 1.0),
+        r,
+        Color32::from_rgba_unmultiplied(0, 0, 0, 60),
+    );
+
+    // 按下时按钮"陷下去"：填淡青底；hover 时填更淡的青；idle 透明。
+    if pressed {
         painter.circle_filled(
             center,
-            r + 4.0,
-            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 40),
+            r,
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 80),
+        );
+    } else if hovered {
+        painter.circle_filled(
+            center,
+            r,
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 30),
         );
     }
-    let stroke_alpha = if hovered { 200 } else { 80 };
+
+    let stroke_alpha: u8 = if !enabled { 60 } else if hovered || pressed { 230 } else { 130 };
     painter.circle_stroke(
         center,
         r,
-        egui::Stroke::new(
-            1.2,
-            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, stroke_alpha),
-        ),
+        egui::Stroke::new(1.5, Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, stroke_alpha)),
     );
+
     let glyph_color = if !enabled {
         Color32::from_gray(85)
-    } else if hovered {
+    } else if hovered || pressed {
         cyan
     } else {
-        Color32::from_gray(225)
+        Color32::from_gray(220)
     };
     painter.text(
         center,
@@ -796,7 +803,8 @@ fn draw_ghost_circle(
     }
 }
 
-/// 主按钮：实心青色大圆，带辉光晕，play/pause 中心焦点。
+/// 主按钮：纯色青色大圆 + 落地阴影 + 1px 顶部高光弧；点按时整体下沉 + 颜色变深。
+/// 简单干净，没有手画渐变（避免条带感）。
 fn draw_primary_circle(
     ui: &mut egui::Ui,
     glyph: &str,
@@ -809,29 +817,57 @@ fn draw_primary_circle(
     let r = size.x.min(size.y) / 2.0 - 1.0;
     let painter = ui.painter();
     let hovered = resp.hovered();
+    let pressed = resp.is_pointer_button_down_on();
 
-    // 外圈辉光：两层模糊光圈
-    for (mul, alpha) in [(1.45_f32, if hovered { 90_u8 } else { 50 }),
-                         (1.18_f32, if hovered { 140_u8 } else { 90 })] {
-        painter.circle_filled(
-            center,
-            r * mul,
-            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, alpha),
-        );
-    }
-    // 主体：青色实心 + 1px 白色高光环
-    painter.circle_filled(center, r, cyan);
-    painter.circle_stroke(
-        center,
-        r - 1.0,
-        egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 200)),
+    // ── 阴影 ──
+    // 按下时阴影变小且更近（按钮"压"在底栏上的感觉）；idle 时离按钮远一点。
+    let shadow_dy = if pressed { 1.0_f32 } else { 3.0 };
+    let shadow_alpha: u8 = if pressed { 110 } else { 140 };
+    painter.circle_filled(
+        egui::pos2(center.x, center.y + shadow_dy),
+        r,
+        Color32::from_rgba_unmultiplied(0, 0, 0, shadow_alpha),
     );
+
+    // ── 主体 ──
+    // 三态纯色：press 较深，hover 略亮，idle 标准 cyan。
+    // 按下时圆心同时下移 1px，强化下沉反馈。
+    let (fill_color, body_dy) = if pressed {
+        (lerp_color(cyan, Color32::BLACK, 0.18), 1.0)
+    } else if hovered {
+        (lerp_color(cyan, Color32::WHITE, 0.10), 0.0)
+    } else {
+        (cyan, 0.0)
+    };
+    let body_center = egui::pos2(center.x, center.y + body_dy);
+    painter.circle_filled(body_center, r, fill_color);
+
+    // ── 顶部高光弧 ──
+    // 沿按钮顶部（210°~330°）画一段淡白弧，宽度 1.2px。pressed 时高光弱一档。
+    paint_arc_stroke(
+        painter,
+        body_center,
+        r - 2.5,
+        std::f32::consts::PI * 1.17,
+        std::f32::consts::PI * 1.83,
+        1.2,
+        Color32::from_rgba_unmultiplied(255, 255, 255, if pressed { 60 } else { 120 }),
+    );
+
+    // ── 边沿 ──
+    // 1px 深色内描边切清边界，避免和底栏融在一起。
+    painter.circle_stroke(
+        body_center,
+        r,
+        egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 0, 0, 70)),
+    );
+
     painter.text(
-        center,
+        body_center,
         egui::Align2::CENTER_CENTER,
         glyph,
         egui::FontId::proportional(18.0),
-        Color32::from_rgb(8, 14, 20),
+        Color32::from_rgb(6, 12, 18),
     );
 
     if resp.clicked() {
@@ -839,7 +875,70 @@ fn draw_primary_circle(
     }
 }
 
-/// 「芯片」按钮 — 矩形小标签，带斜切角和细描边，赛博 chip。
+/// 圆弧描边（part of circle）：从 a0 到 a1，按 32 段折线绘制。a 是弧度，0=右、π/2=下（屏幕坐标）。
+fn paint_arc_stroke(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    r: f32,
+    a0: f32,
+    a1: f32,
+    width: f32,
+    color: Color32,
+) {
+    let segs = 32_i32;
+    let step = (a1 - a0) / segs as f32;
+    let mut prev = egui::pos2(center.x + r * a0.cos(), center.y + r * a0.sin());
+    for i in 1..=segs {
+        let a = a0 + step * (i as f32);
+        let p = egui::pos2(center.x + r * a.cos(), center.y + r * a.sin());
+        painter.line_segment([prev, p], egui::Stroke::new(width, color));
+        prev = p;
+    }
+}
+
+/// 用水平条纹近似矩形的垂直渐变。
+fn paint_gradient_rect(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    top: Color32,
+    bot: Color32,
+    corner: u8,
+) {
+    let steps = 14;
+    let h = rect.height();
+    for i in 0..steps {
+        let t0 = i as f32 / steps as f32;
+        let t1 = (i + 1) as f32 / steps as f32;
+        let y0 = rect.top() + h * t0;
+        let y1 = rect.top() + h * t1;
+        let t = (t0 + t1) * 0.5;
+        let min = egui::pos2(rect.left(), y0);
+        let max = egui::pos2(rect.right(), y1);
+        painter.rect_filled(
+            egui::Rect::from_min_max(min, max),
+            if i == 0 || i == steps - 1 {
+                egui::CornerRadius::same(corner)
+            } else {
+                egui::CornerRadius::ZERO
+            },
+            lerp_color(top, bot, t),
+        );
+    }
+}
+
+/// 颜色按 t∈[0,1] 线性插值。
+fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| ((x as f32) * (1.0 - t) + (y as f32) * t).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        lerp(a.r(), b.r()),
+        lerp(a.g(), b.g()),
+        lerp(a.b(), b.b()),
+        lerp(a.a(), b.a()),
+    )
+}
+
+/// 「芯片」按钮 — 矩形小标签，带垂直渐变和细描边，赛博 chip。
 /// `active=true` 用青色实心填充（区别于普通态的透明 + 描边）。
 fn draw_chip_button(
     ui: &mut egui::Ui,
@@ -860,29 +959,79 @@ fn draw_chip_button(
     let hovered = resp.hovered();
     let painter = ui.painter();
 
-    let (fill, stroke_color, text_color) = if active {
-        (cyan, cyan, Color32::from_rgb(8, 14, 20))
+    // 1) 落地阴影（active 时更明显）
+    let shadow_alpha = if active { 100 } else { 50 };
+    let shadow_rect = rect.translate(egui::vec2(0.0, 1.5));
+    painter.rect_filled(
+        shadow_rect.expand(0.5),
+        egui::CornerRadius::same(4),
+        Color32::from_rgba_unmultiplied(0, 0, 0, shadow_alpha),
+    );
+
+    // 2) 背景：active 用青色渐变填充；hover 用淡青；idle 透明（靠描边定型）
+    let (top, bot, stroke_color, text_color, fill_idle) = if active {
+        (
+            lerp_color(cyan, Color32::WHITE, 0.30),
+            lerp_color(cyan, Color32::BLACK, 0.20),
+            cyan,
+            Color32::from_rgb(6, 12, 18),
+            false,
+        )
     } else if hovered {
         (
-            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 30),
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 55),
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 22),
             cyan,
             cyan,
+            true,
         )
     } else {
+        // idle：透明底，只靠双色描边给体积感
         (
             Color32::TRANSPARENT,
-            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 90),
+            Color32::TRANSPARENT,
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 110),
             Color32::from_gray(225),
+            false,
         )
     };
+    if active || fill_idle {
+        paint_gradient_rect(painter, rect, top, bot, 4);
+    }
 
-    painter.rect_filled(rect, egui::CornerRadius::same(4), fill);
-    painter.rect_stroke(
-        rect,
-        egui::CornerRadius::same(4),
-        egui::Stroke::new(1.0, stroke_color),
-        egui::StrokeKind::Inside,
-    );
+    // 3) 顶部 1px 白高光（active 时）
+    if active {
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 2.0, rect.top() + 1.0),
+                egui::pos2(rect.right() - 2.0, rect.top() + 1.0),
+            ],
+            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 130)),
+        );
+    }
+
+    // 4) 主描边 —— idle 时也走双色（顶亮底暗）让矩形也有体积感
+    if active {
+        painter.rect_stroke(
+            rect,
+            egui::CornerRadius::same(4),
+            egui::Stroke::new(1.0, stroke_color),
+            egui::StrokeKind::Inside,
+        );
+    } else {
+        // 双色描边：顶部 + 底部分别更亮 / 更暗
+        let top_a = if hovered { 230 } else { 160 };
+        let bot_a = if hovered { 110 } else { 60 };
+        paint_two_tone_rect_stroke(
+            painter,
+            rect,
+            1.0,
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, top_a),
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, bot_a),
+            4,
+        );
+    }
+
     painter.text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -893,6 +1042,31 @@ fn draw_chip_button(
     if resp.clicked() {
         on_click();
     }
+}
+
+/// 圆角矩形的双色描边：上边 + 左/右上半段 用 top 颜色；下边 + 左/右下半段 用 bot 颜色。
+/// 角处用 line_segment 拼，不画严格圆角弧（视觉上 4px 的角看不出差别）。
+fn paint_two_tone_rect_stroke(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    width: f32,
+    top: Color32,
+    bot: Color32,
+    _corner: u8,
+) {
+    let l = rect.left();
+    let r = rect.right();
+    let t = rect.top();
+    let b = rect.bottom();
+    let my = rect.center().y;
+    // 顶边 + 左右上半段
+    painter.line_segment([egui::pos2(l, t), egui::pos2(r, t)], egui::Stroke::new(width, top));
+    painter.line_segment([egui::pos2(l, t), egui::pos2(l, my)], egui::Stroke::new(width, top));
+    painter.line_segment([egui::pos2(r, t), egui::pos2(r, my)], egui::Stroke::new(width, top));
+    // 底边 + 左右下半段
+    painter.line_segment([egui::pos2(l, b), egui::pos2(r, b)], egui::Stroke::new(width, bot));
+    painter.line_segment([egui::pos2(l, my), egui::pos2(l, b)], egui::Stroke::new(width, bot));
+    painter.line_segment([egui::pos2(r, my), egui::pos2(r, b)], egui::Stroke::new(width, bot));
 }
 
 /// 在线字幕搜索 / 预览 / 绑定面板。
@@ -1502,9 +1676,9 @@ fn subtitle_button_label(state: &PlayerState) -> String {
     let preview_count = state.preview_subtitles.len();
     let total = bound_count + int_count + preview_count;
     if total > 0 {
-        format!("{} ({total}) {}", icons::SUBTITLE, icons::CHEVRON_DOWN)
+        format!("{} ({total})", icons::SUBTITLE)
     } else {
-        format!("{} {}", icons::SUBTITLE, icons::CHEVRON_DOWN)
+        format!("{}", icons::SUBTITLE)
     }
 }
 
@@ -1548,7 +1722,21 @@ fn draw_audio_menu(
 fn audio_button_label(_state: &PlayerState) -> String {
     // 同 subtitle —— 只留图标 + 箭头。具体在哪条轨上从下拉菜单里看，按钮
     // 上不挂文本（"音轨·en" 这种短码看着像 chip 上贴胶布）。
-    format!("{} {}", icons::AUDIO, icons::CHEVRON_DOWN)
+    format!("{}", icons::AUDIO)
+}
+
+/// 倍速文本：保留必要小数位，去掉尾随的 0 —— `1.0` → `1`，`1.25` → `1.25`，`1.5` → `1.5`。
+fn format_speed(s: f64) -> String {
+    let mut t = format!("{:.2}", s);
+    if t.contains('.') {
+        while t.ends_with('0') {
+            t.pop();
+        }
+        if t.ends_with('.') {
+            t.pop();
+        }
+    }
+    t
 }
 
 /// 倍速下拉：固定 5 档（0.5/1.0/1.25/1.5/2.0），选中时加 ✓ 标记。
@@ -1559,14 +1747,14 @@ fn draw_speed_menu(
     cyan: Color32,
 ) {
     use egui::menu;
-    let label = format!("{:.2}x {}", state.speed.max(0.01), icons::CHEVRON_DOWN);
+    let label = format!("{}x", format_speed(state.speed.max(0.01)));
     ui.scope(|ui| {
         install_chip_style(ui, cyan);
         let _ = menu::menu_button(ui, pill_text(&label, cyan, false), |ui| {
         ui.set_min_width(140.0);
         for s in [0.5, 1.0, 1.25, 1.5, 2.0] {
             let active = (state.speed - s).abs() < 0.01;
-            let row_label = format!("{:.2}x", s);
+            let row_label = format!("{}x", format_speed(s));
             if menu_row(ui, &row_label, active, cyan).clicked() {
                 actions.push(Action::SetSpeed(s));
                 ui.close();
