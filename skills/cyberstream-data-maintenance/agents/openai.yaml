@@ -1,0 +1,4 @@
+interface:
+  display_name: "CyberStream Maintenance"
+  short_description: "Maintain CyberStream backend data and contracts"
+  default_prompt: "Use $cyberstream-data-maintenance to audit CyberStream backend data, contracts, and safe maintenance actions."
