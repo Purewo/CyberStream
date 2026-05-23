@@ -134,8 +134,8 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 普通资源库来自数据库 `libraries`
-- 默认单用户模式或已登录管理员至少收藏 1 部影视后，列表会额外返回一个虚拟资源库：`id="favorites"`、`slug="favorites"`、`is_virtual=true`；读取内容前仍需解锁保险库 PIN
-- 收藏虚拟库没有存储源、没有来源绑定、没有整库扫描动作；前端应根据 `actions.can_scan=false` 隐藏扫描按钮
+- 保险库/收藏虚拟库不再出现在该列表中，避免片库导航泄露保险库存在性
+- 前端需要保险库入口时应使用固定入口，并通过 `/api/v1/user/vault/status` 判断配置、解锁和锁定状态
 
 ### `POST /api/v1/libraries`
 创建逻辑资源库。
@@ -1557,7 +1557,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 说明：
 - 幂等；重复收藏仍返回 `200`，`data.newly_added=false`
-- 第一次收藏后，在当前管理员已解锁保险库的会话里，`GET /api/v1/libraries` 会出现 `favorites` 虚拟资源库
+- 收藏不会让 `GET /api/v1/libraries` 出现 `favorites`；保险库只通过专用入口和 `/api/v1/libraries/favorites*` 访问
 - 启用用户系统时只允许收藏当前用户可访问的影视
 
 ### `DELETE /api/v1/user/favorites/<movie_id>`
@@ -1565,7 +1565,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 说明：
 - 幂等；未收藏时删除仍返回 `200`
-- 移除最后一条收藏后，`favorites` 虚拟资源库从资源库列表消失
+- 移除最后一条收藏后，`/api/v1/libraries/favorites*` 返回 `404`
 
 ### `GET /api/v1/user/achievements`
 获取当前用户的成就定义和解锁状态。

@@ -136,10 +136,6 @@ def is_vault_unlocked():
     return _unlocked_with_secret(secret, scope_key, now)
 
 
-def is_vault_admin_session():
-    return _current_admin_context() is not None
-
-
 def require_vault_unlocked():
     scope_key, _actor = _require_admin_context()
     now = datetime.utcnow()

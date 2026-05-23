@@ -9,7 +9,7 @@ from backend.app.services.user_access import (
     can_current_user_access_movie_id,
     current_user_id_for_personal_data,
 )
-from backend.app.services.vault import is_vault_admin_session, require_vault_unlocked
+from backend.app.services.vault import require_vault_unlocked
 
 
 FAVORITES_LIBRARY_ID = "favorites"
@@ -50,13 +50,6 @@ def favorite_count():
     return favorite_movie_query().count()
 
 
-def visible_vault_favorite_count():
-    if not is_vault_admin_session():
-        return 0
-    scope_key, _user_id = favorite_scope_context()
-    return UserFavorite.query.filter_by(scope_key=scope_key).count()
-
-
 def favorite_created_at_map(movie_ids):
     if not movie_ids:
         return {}
@@ -72,8 +65,8 @@ def favorite_membership_map(movie_ids):
     return {movie_id: "favorite" for movie_id in (movie_ids or [])}
 
 
-def build_favorites_library_payload(require_access=True):
-    count = favorite_count() if require_access else visible_vault_favorite_count()
+def build_favorites_library_payload():
+    count = favorite_count()
     return {
         "id": FAVORITES_LIBRARY_ID,
         "name": "我的收藏",

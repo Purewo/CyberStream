@@ -91,7 +91,7 @@ class FavoritesLibraryTests(unittest.TestCase):
         db.session.commit()
         return movie
 
-    def test_favorites_library_appears_after_first_favorite_and_disappears_after_last_remove(self):
+    def test_favorites_library_is_accessible_directly_but_never_listed_as_media_library(self):
         movie = self._movie("Favorite")
 
         libraries = self.client.get("/api/v1/libraries").get_json()["data"]
@@ -109,8 +109,7 @@ class FavoritesLibraryTests(unittest.TestCase):
         self.assertFalse(add_data["library"]["actions"]["can_scan"])
 
         libraries = self.client.get("/api/v1/libraries").get_json()["data"]
-        self.assertEqual("favorites", libraries[0]["id"])
-        self.assertEqual("我的收藏", libraries[0]["name"])
+        self.assertNotIn("favorites", [item["id"] for item in libraries])
 
         movies_response = self.client.get("/api/v1/libraries/favorites/movies")
         self.assertEqual(200, movies_response.status_code)
@@ -152,7 +151,6 @@ class FavoritesLibraryTests(unittest.TestCase):
 
         lock_response = self.client.post("/api/v1/user/vault/lock")
         locked_list = self.client.get("/api/v1/user/favorites")
-        locked_libraries = self.client.get("/api/v1/libraries")
         wrong_unlock = self.client.post("/api/v1/user/vault/unlock", json={"pin": "654321"})
         unlock_response = self.client.post("/api/v1/user/vault/unlock", json={"pin": "123456"})
         unlocked_list = self.client.get("/api/v1/user/favorites")
@@ -160,7 +158,6 @@ class FavoritesLibraryTests(unittest.TestCase):
         self.assertEqual(200, lock_response.status_code)
         self.assertFalse(lock_response.get_json()["data"]["unlocked"])
         self.assertEqual(403, locked_list.status_code)
-        self.assertIn("favorites", [item["id"] for item in locked_libraries.get_json()["data"]])
         self.assertEqual(403, wrong_unlock.status_code)
         self.assertEqual(200, unlock_response.status_code)
         self.assertTrue(unlock_response.get_json()["data"]["unlocked"])
@@ -232,6 +229,7 @@ class DefaultAdminVaultModeTests(unittest.TestCase):
         setup = self.client.post("/api/v1/user/vault/password", json={"pin": "123456"})
         saved = self.client.post(f"/api/v1/user/favorites/{movie.id}")
         listed = self.client.get("/api/v1/user/favorites")
+        libraries = self.client.get("/api/v1/libraries")
 
         self.assertEqual(200, status.status_code)
         self.assertFalse(status.get_json()["data"]["configured"])
@@ -239,6 +237,7 @@ class DefaultAdminVaultModeTests(unittest.TestCase):
         self.assertEqual(200, setup.status_code)
         self.assertEqual(200, saved.status_code)
         self.assertEqual([movie.id], listed.get_json()["data"]["movie_ids"])
+        self.assertNotIn("favorites", [item["id"] for item in libraries.get_json()["data"]])
         secret = UserVaultSecret.query.one()
         self.assertEqual("default", secret.scope_key)
         self.assertIsNone(secret.user_id)
@@ -314,7 +313,7 @@ class FavoritesUserIsolationTests(unittest.TestCase):
         self._login("admin")
         self.assertEqual(200, self.client.post("/api/v1/user/vault/password", json={"pin": "123456"}).status_code)
         self.assertEqual(200, self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code)
-        self.assertEqual(["favorites"], [
+        self.assertEqual([], [
             item["id"]
             for item in self.client.get("/api/v1/libraries").get_json()["data"]
             if item["id"] == "favorites"

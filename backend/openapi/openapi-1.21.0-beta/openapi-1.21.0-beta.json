@@ -447,7 +447,7 @@
     "/api/v1/libraries": {
       "get": {
         "summary": "✅ [验证通过] 获取资源库列表",
-        "description": "列出所有逻辑资源库。",
+        "description": "列出所有真实逻辑资源库。保险库/收藏虚拟库不会出现在该列表中，前端应使用固定保险库入口并通过 /api/v1/user/vault/status 判断状态。",
         "operationId": "listLibraries",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -5663,7 +5663,7 @@
       },
       "post": {
         "summary": "🔵 [新增] 收藏影视",
-        "description": "默认单用户模式或已登录管理员在保险库 PIN 解锁后可用。幂等收藏指定影视。首次收藏会令 favorites 虚拟资源库出现在 GET /api/v1/libraries 结果中。",
+        "description": "默认单用户模式或已登录管理员在保险库 PIN 解锁后可用。幂等收藏指定影视。收藏不会让 favorites 出现在 GET /api/v1/libraries 中；保险库只通过专用入口和 /api/v1/libraries/favorites* 访问。",
         "operationId": "addUserFavorite",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -5692,7 +5692,7 @@
             }
           },
           "403": {
-            "description": "当前用户不可访问此影视"
+          "description": "保险库未解锁、未配置、非管理员访问，或当前用户不可访问此影视"
           },
           "404": {
             "description": "影视不存在"
@@ -5704,7 +5704,7 @@
       },
       "delete": {
         "summary": "🔵 [新增] 移除收藏",
-        "description": "默认单用户模式或已登录管理员在保险库 PIN 解锁后可用。幂等移除指定影视收藏。移除最后一条收藏后 favorites 虚拟资源库从资源库列表消失。",
+        "description": "默认单用户模式或已登录管理员在保险库 PIN 解锁后可用。幂等移除指定影视收藏。移除最后一条收藏后 /api/v1/libraries/favorites* 返回 404。",
         "operationId": "deleteUserFavorite",
         "x-lifecycle-status": "beta",
         "tags": [

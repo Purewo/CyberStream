@@ -21,7 +21,6 @@ from backend.app.services.favorites import (
     favorite_count,
     favorite_membership_map,
     favorite_movie_query,
-    visible_vault_favorite_count,
 )
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
@@ -30,7 +29,7 @@ from backend.app.services.user_access import (
     clear_user_access_cache,
     visible_library_ids_for_current_user,
 )
-from backend.app.services.vault import VaultAccessError, is_vault_admin_session, require_vault_unlocked
+from backend.app.services.vault import VaultAccessError, require_vault_unlocked
 from backend.app.security import is_admin_request
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
@@ -243,10 +242,7 @@ def list_libraries():
     if visible_ids is not None:
         query = query.filter(Library.id.in_(list(visible_ids))) if visible_ids else query.filter(db.false())
     libraries = query.order_by(Library.sort_order.asc(), Library.id.asc()).all()
-    items = [library.to_dict() for library in libraries]
-    if is_vault_admin_session() and visible_vault_favorite_count() > 0:
-        items.insert(0, build_favorites_library_payload(require_access=False))
-    return api_response(data=items)
+    return api_response(data=[library.to_dict() for library in libraries])
 
 
 @libraries_bp.route('/libraries', methods=['POST'])
