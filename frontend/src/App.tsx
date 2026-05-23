@@ -26,11 +26,12 @@ import { TMDBMatchModal } from './features/TMDBMatchModal';
 const App = () => { 
   const { settings, setSettings, themeName, setThemeName, currentTheme } = useThemeSettings();
   useGlobalHotkeys();
-  const { 
-    favorites, handleToggleFavorite, 
+  const {
+    favorites, handleToggleFavorite, refreshFavorites,
     history, setHistory, handleClearHistory, handleDeleteHistoryItem, refreshHistory,
-    notifications, 
-    libraries, setLibraries, refreshLibraries 
+    notifications,
+    libraries, setLibraries, refreshLibraries,
+    vaultState, refreshVaultStatus,
   } = useUserData();
 
   const {
@@ -77,6 +78,19 @@ const App = () => {
     window.addEventListener('show-movie-context-menu', handleContextMenuEvent as EventListener);
     return () => window.removeEventListener('show-movie-context-menu', handleContextMenuEvent as EventListener);
   }, []);
+
+  // 扫描结束后：把当前页面的数据刷新一遍，免得用户手动 F5。
+  // ScanProgressBar 完成时派发 cyber:scan:completed；这里转成 library-list-dirty
+  // 让 Library 列表重新拉一次，并 refreshLibraries 同步左侧虚拟库列表，
+  // 同时让 Home 重新拉首页（监听器在 Home 自己里）。
+  useEffect(() => {
+    const handleScanCompleted = () => {
+      window.dispatchEvent(new CustomEvent('library-list-dirty'));
+      refreshLibraries();
+    };
+    window.addEventListener('cyber:scan:completed', handleScanCompleted);
+    return () => window.removeEventListener('cyber:scan:completed', handleScanCompleted);
+  }, [refreshLibraries]);
   
 
   const handleSearch = async (query: string) => { 
@@ -135,6 +149,20 @@ const App = () => {
        case 'scrape':
          setMatchMovie(movie);
          break;
+       case 'sync_resources': {
+         toast.info(`正在同步《${movie.title}》的资源...`);
+         const result = await movieService.syncResources(movie.id);
+         if (result.ok) {
+           toast.success(`《${movie.title}》资源同步任务已下发，可在扫描进度处查看。`);
+         } else if (result.status === 429) {
+           toast.error('扫描器正忙，请等当前任务结束后重试。');
+         } else if (result.status === 400) {
+           toast.error(result.msg || '该影片没有可同步的资源路径。');
+         } else {
+           toast.error(result.msg || '资源同步任务下发失败。');
+         }
+         break;
+       }
        case 'edit':
          setMetadataMovie(movie);
          break;
@@ -154,7 +182,18 @@ const App = () => {
        case 'watched':
          // Simulate marking as watched locally + report to API if possible
          await userService.reportHistory(String(movie.id), Number(movie.duration) || 3600, Number(movie.duration) || 3600);
-         setHistory(prev => [{ ...movie, resourceId: String(movie.id), progress: 1, duration: 1, updated_at: new Date().toISOString() }, ...prev]);
+         {
+           const now = new Date();
+           setHistory(prev => [{
+             ...movie,
+             resourceId: String(movie.id),
+             progress: 1,
+             duration: 1,
+             time_str: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+             date: now.toLocaleDateString(),
+             updated_at: now.toISOString(),
+           }, ...prev]);
+         }
          break;
        case 'delete':
          // Removed window.confirm because it is blocked in iframe environment
@@ -273,7 +312,8 @@ const App = () => {
       };
       push(tech.video_resolution_badge_label || r.media_info?.resolution);
       push(tech.video_dynamic_range_label);
-      push(tech.video_codec_label || r.media_info?.video_codec);
+      // 视频编码（HEVC/AVC）对用户决策无价值，原生播放器 badge 不再展示，
+      // 与详情页顶部技术规格行保持一致。
       push(tech.audio_summary_label || tech.audio_codec_label || r.media_info?.audio_codec);
       push(tech.source_label);
       // 字幕：后端 resource_info.playback.subtitles 形态多变——
@@ -386,7 +426,7 @@ const App = () => {
             }} />)}
             {currentView === 'leaderboard' && (<Leaderboard onMovieSelect={handleMovieSelect} />)} 
             {currentView === 'history' && (<HistoryPage history={history} onMovieSelect={handleMovieSelect} onClearHistory={handleClearHistory} onDeleteHistoryItem={handleDeleteHistoryItem} />)} 
-            {currentView === 'profile' && (<ProfilePage initialTab={profileInitialTab} settings={settings} setSettings={setSettings} favorites={favorites} onToggleFavorite={handleToggleFavorite} onMovieSelect={handleMovieSelect} currentTheme={themeName} setTheme={setThemeName} libraries={libraries} history={history} onClearHistory={handleClearHistory} onDeleteHistoryItem={handleDeleteHistoryItem} onRefreshLibraries={refreshLibraries} />)} 
+            {currentView === 'profile' && (<ProfilePage initialTab={profileInitialTab} settings={settings} setSettings={setSettings} favorites={favorites} onToggleFavorite={handleToggleFavorite} onMovieSelect={handleMovieSelect} currentTheme={themeName} setTheme={setThemeName} libraries={libraries} onRefreshLibraries={refreshLibraries} vaultState={vaultState} onRefreshVaultStatus={refreshVaultStatus} onRefreshFavorites={refreshFavorites} />)}
             {currentView === 'search' && (<SearchResults query={searchQuery} results={searchResults} onMovieSelect={handleMovieSelect} />)} 
             {currentView === 'review' && (<ReviewWorkbench />)}
           </div>

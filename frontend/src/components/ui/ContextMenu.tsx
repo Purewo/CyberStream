@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 // ContextMenu UI Component
 import { Movie } from '../../types';
-import { Edit3, Share2, Heart, CheckCircle2, Trash2, X, RefreshCw, FolderPlus, FolderMinus } from 'lucide-react';
+import { Edit3, Share2, Heart, CheckCircle2, Trash2, X, RefreshCw, FolderPlus, FolderMinus, FolderSync } from 'lucide-react';
 
 interface ContextMenuProps {
   visible: boolean;
@@ -58,11 +58,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ visible, x, y, movie, 
 
     const menuItems = [
     { id: 'scrape', icon: <RefreshCw size={15} />, label: '全网检索匹配', color: 'hover:text-purple-400' },
+    { id: 'sync_resources', icon: <FolderSync size={15} />, label: '同步资源', color: 'hover:text-cyan-400' },
     { id: 'edit', icon: <Edit3 size={15} />, label: '编辑元数据', color: 'hover:text-amber-400' },
     { id: 'add_to_library', icon: <FolderPlus size={15} />, label: '添加到片库...', color: 'hover:text-teal-400' },
     ...(activeLibraryId ? [{ id: 'remove_from_library', icon: <FolderMinus size={15} />, label: '从当前片库移除', color: 'hover:text-red-400' }] : []),
     { id: 'share', icon: <Share2 size={15} />, label: '协议分享', color: 'hover:text-blue-400' },
-    { id: 'favorite', icon: <Heart size={15} className={isFavorite ? 'fill-red-500 text-red-500' : ''} />, label: isFavorite ? '取消保险库' : '存入保险库', color: isFavorite ? 'hover:text-red-400' : 'hover:text-pink-400' },
+    { id: 'favorite', icon: <Heart size={15} className={isFavorite ? 'fill-red-500 text-red-500' : ''} />, label: isFavorite ? '取消收藏' : '加入收藏', color: isFavorite ? 'hover:text-red-400' : 'hover:text-pink-400' },
     { id: 'watched', icon: <CheckCircle2 size={15} />, label: '标记已看', color: 'hover:text-green-400' },
     { id: 'delete', icon: <Trash2 size={15} />, label: '覆写销毁', color: 'hover:text-red-500 hover:bg-red-500/10' },
   ];

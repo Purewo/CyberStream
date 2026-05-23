@@ -1549,6 +1549,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "anilist",
                 "bangumi",
                 "tencent_video",
                 "tmdb",
@@ -1703,6 +1704,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "anilist",
                 "bangumi",
                 "tencent_video",
                 "tmdb",
@@ -2213,7 +2215,7 @@
     "/api/v1/movies/{id}/metadata/match": {
       "post": {
         "summary": "✅ [验证通过] 预览或应用手动匹配影片元数据",
-        "description": "默认仅预览当前影片匹配到指定元数据候选后的差异，不写库；前端确认覆盖时传 apply=true 才应用，并尊重已锁字段，不触发扫描。优先使用 provider/candidate_id；兼容 tmdb_id、imdb/tvdb 外部 ID、bangumi/<id> 和 tencent_video/<cid>。无海报候选会在最终仍无海报时拒绝直接应用，避免幽灵数据。",
+        "description": "默认仅预览当前影片匹配到指定元数据候选后的差异，不写库；前端确认覆盖时传 apply=true 才应用，并尊重已锁字段，不触发扫描。优先使用 provider/candidate_id；兼容 tmdb_id、imdb/tvdb 外部 ID、anilist/<id>、bangumi/<id> 和 tencent_video/<cid>。无海报候选会在最终仍无海报时拒绝直接应用，避免幽灵数据。",
         "operationId": "matchMovieMetadata",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -2417,7 +2419,7 @@
     "/api/v1/movies/{id}/metadata/search": {
       "get": {
         "summary": "✅ [验证通过] 搜索影片元数据候选",
-        "description": "基于当前影片标题或指定 query 搜索元数据候选，不触发扫描。当前可搜索 provider 为 TMDB、Bangumi 和手动专用 Tencent Video，响应带 provider/source_key/candidate_id。传 query 但不传 year 时，不会默认复用当前影片年份。",
+        "description": "基于当前影片标题或指定 query 搜索元数据候选，不触发扫描。当前可搜索 provider 为 TMDB、AniList、Bangumi 和手动专用 Tencent Video，响应带 provider/source_key/candidate_id。传 query 但不传 year 时，不会默认复用当前影片年份。",
         "operationId": "searchMovieMetadataCandidates",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -2471,7 +2473,7 @@
           {
             "name": "providers",
             "in": "query",
-            "description": "可选 provider 顺序，逗号分隔，例如 bangumi,tmdb,local；腾讯视频手动搜索可传 tencent_video。旧别名 provider_order 也兼容。",
+            "description": "可选 provider 顺序，逗号分隔，例如 anilist,bangumi,tmdb,local；腾讯视频手动搜索可传 tencent_video。旧别名 provider_order 也兼容。",
             "schema": {
               "type": "string"
             }
@@ -2497,7 +2499,7 @@
     "/api/v1/movies/{id}/resources": {
       "get": {
         "summary": "✅ [验证通过] 获取影片资源与季集分组",
-        "description": "返回单片资源列表、无季资源、季分组结果以及季级手动元数据。",
+        "description": "返回单片资源列表、无季资源、季分组结果以及季级手动元数据。可传 season 只 hydrate 指定季和无季资源，groups.seasons 仍保留完整季索引。",
         "operationId": "getMovieResources",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -2511,6 +2513,16 @@
             "description": "电影 UUID",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "description": "可选季号。传入后 items 只返回该季资源和无季资源；groups.seasons 仍返回所有季的 resource_ids。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -2527,6 +2539,59 @@
           },
           "404": {
             "description": "电影不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/movies/{id}/resources/sync": {
+      "post": {
+        "summary": "🔵 [新增] 针对单片触发资源同步",
+        "description": "从当前影片已有资源路径推导最小扫描目录，先按需刷新 AList/OpenList 目录缓存，再复用现有扫描刮削链路补齐新增资源。该接口不强制挂载任意新文件；新资源是否进入当前影片仍由现有解析和元数据匹配规则决定。任务异步执行，前端通过 GET /api/v1/scan 轮询进度。",
+        "operationId": "syncMovieResources",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "电影 UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MovieResourceSyncRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "单片资源同步任务已接受",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovieResourceSyncResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "无可同步资源或请求字段非法"
+          },
+          "404": {
+            "description": "电影不存在"
+          },
+          "429": {
+            "description": "扫描器已有任务运行中"
           }
         }
       }
@@ -3042,7 +3107,7 @@
     "/api/v1/resources/{id}/subtitles/online/search": {
       "get": {
         "summary": "搜索在线字幕候选",
-        "description": "基于当前资源搜索在线字幕。当前只启用 SubHD 与 SrtKu；OpenSubtitles 因中文覆盖和下载限额问题被忽略。电视剧资源会优先按当前季集号排序，避免宽关键词命中其他季/集。候选排序会优先展示网页播放器可用的文本字幕格式 srt/ass/ssa/vtt，再展示未知格式，最后展示 sub/sup 位图字幕。",
+        "description": "基于当前资源搜索在线字幕。当前支持 SubHD 与 SrtKu，默认只请求 SubHD；SrtKu 作为显式备用源，前端需要时传 providers=srtku 或 providers=subhd,srtku。OpenSubtitles 因中文覆盖和下载限额问题被忽略。电视剧资源会优先按当前季集号排序，避免宽关键词命中其他季/集。候选排序会优先展示网页播放器可用的文本字幕格式 srt/ass/ssa/vtt，再展示未知格式，最后展示 sub/sup 位图字幕。SrtKu 会受独立超时控制，超时会在响应的 providers.errors 中标记为 timeout。",
         "operationId": "searchResourceOnlineSubtitles",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3062,7 +3127,7 @@
             "name": "query",
             "in": "query",
             "required": false,
-            "description": "兼容旧参数。可选搜索关键词；优先级低于 keyword/keywords。若某个来源无结果，后端会继续尝试当前资源的影片原名、标题、年份和文件名，提升中英文标题命中率。",
+            "description": "兼容旧参数。可选搜索关键词；优先级低于 keyword/keywords。若某个来源无结果，后端会继续尝试当前资源的展示标题、原名、年份和文件名，提升中英文标题命中率。",
             "schema": {
               "type": "string"
             }
@@ -3091,7 +3156,7 @@
             "name": "providers",
             "in": "query",
             "required": false,
-            "description": "逗号分隔的字幕源。支持 subhd,srtku；opensubtitles 会被记录为 ignored，不会实际请求。",
+            "description": "逗号分隔的字幕源。默认 subhd；支持显式传 subhd,srtku 或 srtku。srtku 是显式备用源，后端会实际请求并在独立超时后通过 providers.errors 暴露 timeout。opensubtitles 会被记录为 ignored，不会实际请求。",
             "schema": {
               "type": "string",
               "example": "subhd,srtku"
@@ -4719,6 +4784,70 @@
         }
       }
     },
+    "/api/v1/storage/sources/{id}/refresh": {
+      "post": {
+        "summary": "刷新已保存存储源目录缓存",
+        "description": "刷新指定存储源的上游目录缓存并返回刷新后的目录列表。当前用于 AList/OpenList，底层调用上游 fs/list 并传 refresh=true；该接口不触发扫描、不触发刮削、不写入媒体库。",
+        "operationId": "refreshStorageSourceDirectory",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Storage"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "存储源 ID",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageSourceRefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "目录刷新结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSourceRefreshResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "刷新失败、参数错误或当前存储源不支持目录刷新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/storage/sources/{id}/health": {
       "get": {
         "summary": "✅ [验证通过] 获取单个存储源健康状态",
@@ -5671,7 +5800,7 @@
     "/api/v1/other-videos": {
       "get": {
         "summary": "✅ [验证通过] 获取其他视频归档队列",
-        "description": "返回适合手工归档的其他视频资源，前端可直接从这里进入新建电影/电视剧和资源挂载流程。",
+        "description": "返回适合手工归档的其他视频资源，默认只包含未带季集号的未归档资源；带 season 的剧集资源走 /api/v1/metadata/episode-review-items。每条 item 同时返回 metadata_match_context 与 actions.match_metadata，前端可让真实影视资源走搜索候选 -> 预览匹配 -> 确认覆盖，确认是自建/零散视频时再进入新建电影/电视剧和资源挂载流程。",
         "operationId": "listOtherVideos",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -5825,6 +5954,87 @@
             "description": "影片、资源或资源库不存在"
           }
         }
+      }
+    },
+    "/api/v1/openapi/modules": {
+      "get": {
+        "summary": "🔵 [新增] 获取模块化 OpenAPI 索引",
+        "description": "返回当前 OpenAPI 按领域拆分后的模块列表。前端可先读取该轻量索引，再按需获取某个模块的 OpenAPI JSON，避免一次性加载完整契约。",
+        "operationId": "listOpenApiModules",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 模块索引",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenApiModulesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/v1/openapi/modules/{module_key}.json": {
+      "get": {
+        "summary": "🔵 [新增] 获取单个模块 OpenAPI JSON",
+        "description": "返回指定领域的 OpenAPI 子集，保持 OpenAPI 原始结构但只包含该模块 paths 与递归引用到的 components。该响应不包标准 ApiResponse 外壳，可直接交给文档 UI 或类型生成工具处理。",
+        "operationId": "getOpenApiModuleJson",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "System"
+        ],
+        "parameters": [
+          {
+            "name": "module_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "docs",
+                "auth-users",
+                "catalog",
+                "libraries",
+                "metadata",
+                "playback",
+                "assets",
+                "storage-system",
+                "governance",
+                "jobs"
+              ]
+            },
+            "description": "OpenAPI module key returned by /api/v1/openapi/modules."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI module JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "OpenAPI module not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
       }
     }
   },
@@ -7003,6 +7213,16 @@
               ]
             }
           },
+          "default": {
+            "type": "array",
+            "description": "未传 providers 时默认请求的字幕源。",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "subhd"
+            ]
+          },
           "used": {
             "type": "array",
             "items": {
@@ -7050,6 +7270,23 @@
               }
             }
           },
+          "skipped": {
+            "type": "array",
+            "description": "保留字段，用于记录本次没有请求的来源；当前版本不再因为 SubHD 命中而主动跳过 SrtKu。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "example": "srtku"
+                },
+                "reason": {
+                  "type": "string",
+                  "example": "timeout"
+                }
+              }
+            }
+          },
           "unsupported": {
             "type": "array",
             "items": {
@@ -7058,7 +7295,7 @@
           },
           "errors": {
             "type": "array",
-            "description": "来源请求异常。无结果不是 error，会表现为 items 为空。",
+            "description": "来源请求异常。无结果不是 error，会表现为 items 为空；超时会在 reason 中标记 timeout。",
             "items": {
               "type": "object",
               "properties": {
@@ -7069,6 +7306,10 @@
                 "query": {
                   "type": "string",
                   "example": "力量之戒"
+                },
+                "reason": {
+                  "type": "string",
+                  "example": "timeout"
                 },
                 "message": {
                   "type": "string"
@@ -7234,6 +7475,11 @@
           "filename": {
             "type": "string",
             "example": "Movie.2026.online.subhd.abc123.srt"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "前端展示用字幕名。online_bound 优先使用搜索候选 title/film_name；filename 保留为实际缓存文件名。",
+            "example": "阿凡达：火与烬.Avatar.Fire.and.Ash.2025.2160p.WEB-DL"
           },
           "path": {
             "type": "string",
@@ -7492,6 +7738,31 @@
           "indexed_dirs": {
             "type": "integer",
             "description": "索引阶段已遍历目录数"
+          },
+          "skipped_dirs": {
+            "type": "integer",
+            "description": "索引阶段已跳过的不可读取目录数；单个目录失败不会中断整轮扫描"
+          },
+          "recent_errors": {
+            "type": "array",
+            "description": "最近的非致命扫描错误；用于提示哪些目录被跳过",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "example": "indexing"
+                },
+                "path": {
+                  "type": "string",
+                  "example": "/电影/坏目录"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "upstream blocked this directory"
+                }
+              }
+            }
           },
           "active_items": {
             "type": "array",
@@ -8293,7 +8564,7 @@
           },
           "provider": {
             "type": "string",
-            "description": "推断出的来源 provider，例如 tmdb、bangumi、nfo、manual、external、none。"
+            "description": "推断出的来源 provider，例如 tmdb、anilist、bangumi、nfo、manual、external、none。"
           },
           "provider_label": {
             "type": "string"
@@ -9213,7 +9484,7 @@
         "properties": {
           "provider_order": {
             "type": "array",
-            "description": "元数据 provider 顺序。当前常用值：nfo、tmdb、bangumi、local。默认顺序仍为 nfo、tmdb、local；Bangumi 需显式加入。tencent_video 仅用于手动候选搜索，不应加入扫描配置。",
+            "description": "元数据 provider 顺序。当前常用值：nfo、tmdb、anilist、bangumi、local。默认顺序仍为 nfo、tmdb、local；AniList/Bangumi 需显式加入。tencent_video 仅用于手动候选搜索，不应加入扫描配置。",
             "items": {
               "type": "string"
             }
@@ -9815,6 +10086,11 @@
                 "filename": {
                   "type": "string",
                   "example": "Movie.2026.zh-Hans.default.srt"
+                },
+                "display_name": {
+                  "type": "string",
+                  "description": "前端展示用字幕名。online_bound 优先使用搜索候选 title/film_name；filename 保留为实际缓存文件名。",
+                  "example": "阿凡达：火与烬.Avatar.Fire.and.Ash.2025.2160p.WEB-DL"
                 },
                 "path": {
                   "type": "string",
@@ -11226,9 +11502,22 @@
           "total_items": {
             "type": "integer"
           },
+          "hydrated_item_count": {
+            "type": "integer",
+            "description": "本次响应 items 中实际 hydrate 的资源对象数量；未传 season 时等于 total_items。"
+          },
+          "selected_season": {
+            "type": "integer",
+            "nullable": true,
+            "description": "本次应用的 season 过滤值；未传 season 时为 null。"
+          },
           "playback_source_count": {
             "type": "integer",
             "description": "去重后的播放源分组数量。"
+          },
+          "hydrated_playback_source_count": {
+            "type": "integer",
+            "description": "本次 groups.playback_sources 中实际返回的播放源分组数量；传 season 时只统计已 hydrate 范围。"
           },
           "duplicate_group_count": {
             "type": "integer",
@@ -11257,6 +11546,7 @@
             "type": "string",
             "enum": [
               "tmdb",
+              "anilist",
               "bangumi",
               "tencent_video",
               "nfo_tmdb",
@@ -11364,6 +11654,214 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/MovieResourceGroups"
+              }
+            }
+          }
+        ]
+      },
+      "MovieResourceSyncRequest": {
+        "type": "object",
+        "description": "单片资源同步请求。默认由后端从已有资源路径推导扫描目录；传 root_path/root_paths 时覆盖推导结果。",
+        "properties": {
+          "refresh": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否在扫描前刷新支持该能力的上游目录缓存。当前仅 alist/openlist 支持。"
+          },
+          "scrape_enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否启用元数据刮削。"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv"
+            ],
+            "description": "扫描媒体类型提示；不传时后端按影片与资源推断。"
+          },
+          "media_type_hint": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv"
+            ],
+            "description": "content_type 的兼容别名。"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "显式扫描目录，相对存储源根路径；/ 表示根目录。"
+          },
+          "target_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "root_paths": {
+            "type": "array",
+            "description": "显式扫描目录列表；传入后覆盖自动推导。多存储源影片如需精确控制，建议同时传 source_ids。",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_ids": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "可选存储源过滤，支持数组、单个整数或逗号分隔字符串。"
+          },
+          "allow_source_root": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否允许自动推导结果扩大到存储源根目录。默认 false，避免单片同步误扫整盘。"
+          },
+          "scraper_policy": {
+            "type": "object",
+            "description": "复用扫描刮削策略，例如 provider_order。"
+          },
+          "provider_order": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "刮削 provider 顺序，兼容现有扫描接口。"
+          },
+          "providers": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "provider_order 的兼容别名。"
+          }
+        }
+      },
+      "MovieResourceSyncTarget": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "integer"
+          },
+          "source_name": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "root_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "本次实际扫描目录，相对存储源根路径；空字符串表示根目录。"
+          },
+          "display_root_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "用于前端展示的扫描目录；根目录显示为 /。"
+          },
+          "resource_count": {
+            "type": "integer",
+            "description": "参与该目标目录推导的当前影片资源数量。"
+          },
+          "refresh_supported": {
+            "type": "boolean",
+            "description": "该存储源是否支持扫描前目录刷新。"
+          }
+        }
+      },
+      "MovieResourceSyncPoll": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "example": "GET"
+          },
+          "endpoint": {
+            "type": "string",
+            "example": "/api/v1/scan"
+          }
+        }
+      },
+      "MovieResourceSyncData": {
+        "type": "object",
+        "properties": {
+          "movie_id": {
+            "type": "string"
+          },
+          "accepted": {
+            "type": "boolean"
+          },
+          "refresh": {
+            "type": "boolean"
+          },
+          "scrape_enabled": {
+            "type": "boolean"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv"
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MovieResourceSyncTarget"
+            }
+          },
+          "skipped_resource_ids": {
+            "type": "array",
+            "description": "因缺少存储源或 source_id 被过滤而未参与同步推导的资源 ID。",
+            "items": {
+              "type": "string"
+            }
+          },
+          "poll": {
+            "$ref": "#/components/schemas/MovieResourceSyncPoll"
+          }
+        }
+      },
+      "MovieResourceSyncResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/MovieResourceSyncData"
               }
             }
           }
@@ -11503,7 +12001,7 @@
         "properties": {
           "provider": {
             "type": "string",
-            "description": "候选来源 provider key，例如 tmdb、bangumi 或 tencent_video。"
+            "description": "候选来源 provider key，例如 tmdb、anilist、bangumi 或 tencent_video。"
           },
           "provider_name": {
             "type": "string",
@@ -11515,7 +12013,7 @@
           },
           "candidate_id": {
             "type": "string",
-            "description": "候选稳定 ID。TMDB 为 movie/<id> 或 tv/<id>；Bangumi 为 bangumi/<id>；腾讯视频为 tencent_video/<cid>。"
+            "description": "候选稳定 ID。TMDB 为 movie/<id> 或 tv/<id>；AniList 为 anilist/<id>；Bangumi 为 bangumi/<id>；腾讯视频为 tencent_video/<cid>。"
           },
           "external_id": {
             "type": "string",
@@ -11523,12 +12021,22 @@
           },
           "tmdb_id": {
             "type": "string",
-            "description": "兼容字段。TMDB 候选为 movie/<id> 或 tv/<id>；Bangumi 候选为 bangumi/<id>；腾讯视频候选为 tencent_video/<cid>。"
+            "description": "兼容字段。TMDB 候选为 movie/<id> 或 tv/<id>；AniList 候选为 anilist/<id>；Bangumi 候选为 bangumi/<id>；腾讯视频候选为 tencent_video/<cid>。"
           },
           "source_url": {
             "type": "string",
             "nullable": true,
-            "description": "候选来源页面 URL。Bangumi 候选通常为 https://bgm.tv/subject/<id>，腾讯视频候选通常为 https://v.qq.com/x/cover/<cid>.html。"
+            "description": "候选来源页面 URL。AniList 候选通常为 https://anilist.co/anime/<id>，Bangumi 候选通常为 https://bgm.tv/subject/<id>，腾讯视频候选通常为 https://v.qq.com/x/cover/<cid>.html。"
+          },
+          "anilist_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "AniList 候选 ID，格式为 anilist/<id>。"
+          },
+          "mal_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "AniList 返回的 MyAnimeList ID。"
           },
           "subject_type": {
             "type": "integer",
@@ -11579,6 +12087,11 @@
           },
           "match_explanation": {
             "$ref": "#/components/schemas/MovieMatchSearchExplanation"
+          },
+          "format": {
+            "type": "string",
+            "nullable": true,
+            "description": "来源侧格式，例如 AniList 的 TV/MOVIE/ONA。"
           }
         }
       },
@@ -11693,7 +12206,7 @@
         "properties": {
           "candidate_id": {
             "type": "string",
-            "description": "元数据候选 ID，优先字段。支持 movie/<id>、tv/<id>、bangumi/<id>、tencent_video/<cid>、Bangumi subject URL 和腾讯视频 cover URL；搭配 provider 可传裸 ID。"
+            "description": "元数据候选 ID，优先字段。支持 movie/<id>、tv/<id>、anilist/<id>、bangumi/<id>、tencent_video/<cid>、AniList anime URL、Bangumi subject URL 和腾讯视频 cover URL；搭配 provider 可传裸 ID。"
           },
           "external_id": {
             "type": "string",
@@ -11701,7 +12214,7 @@
           },
           "provider": {
             "type": "string",
-            "description": "候选 provider key，例如 tmdb、bangumi 或 tencent_video。用于解析裸 ID。"
+            "description": "候选 provider key，例如 tmdb、anilist、bangumi 或 tencent_video。用于解析裸 ID。"
           },
           "source_key": {
             "type": "string",
@@ -11709,7 +12222,7 @@
           },
           "tmdb_id": {
             "type": "string",
-            "description": "兼容字段。支持 movie/<id>、tv/<id>、bangumi/<id>、tencent_video/<cid>，也兼容 imdb/<id>、tvdb/<id> 先解析到 TMDB。"
+            "description": "兼容字段。支持 movie/<id>、tv/<id>、anilist/<id>、bangumi/<id>、tencent_video/<cid>，也兼容 imdb/<id>、tvdb/<id> 先解析到 TMDB。"
           },
           "metadata_unlocked_fields": {
             "type": "array",
@@ -11733,7 +12246,7 @@
         "properties": {
           "candidate_id": {
             "type": "string",
-            "description": "元数据候选 ID，优先字段。支持 movie/<id>、tv/<id>、bangumi/<id>、tencent_video/<cid>、Bangumi subject URL 和腾讯视频 cover URL；搭配 provider 可传裸 ID。"
+            "description": "元数据候选 ID，优先字段。支持 movie/<id>、tv/<id>、anilist/<id>、bangumi/<id>、tencent_video/<cid>、AniList anime URL、Bangumi subject URL 和腾讯视频 cover URL；搭配 provider 可传裸 ID。"
           },
           "external_id": {
             "type": "string",
@@ -11741,7 +12254,7 @@
           },
           "provider": {
             "type": "string",
-            "description": "候选 provider key，例如 tmdb、bangumi 或 tencent_video。用于解析裸 ID。"
+            "description": "候选 provider key，例如 tmdb、anilist、bangumi 或 tencent_video。用于解析裸 ID。"
           },
           "source_key": {
             "type": "string",
@@ -11749,7 +12262,7 @@
           },
           "tmdb_id": {
             "type": "string",
-            "description": "兼容字段。支持 movie/<id>、tv/<id>、bangumi/<id>、tencent_video/<cid>，也兼容 imdb/<id>、tvdb/<id> 先解析到 TMDB。"
+            "description": "兼容字段。支持 movie/<id>、tv/<id>、anilist/<id>、bangumi/<id>、tencent_video/<cid>，也兼容 imdb/<id>、tvdb/<id> 先解析到 TMDB。"
           },
           "metadata_unlocked_fields": {
             "type": "array",
@@ -11957,6 +12470,31 @@
           }
         }
       },
+      "StorageSourceRefreshRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "相对已保存存储源根目录的目标目录。",
+            "example": "电影/剑来2"
+          },
+          "target_path": {
+            "type": "string",
+            "description": "path 的兼容别名；path、target_path、root_path 同时存在时优先使用 path。",
+            "example": "/电影/剑来2"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "path 的兼容别名，便于和扫描入口复用同一份前端状态。",
+            "example": "电影/剑来2"
+          },
+          "dirs_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否只返回目录项。"
+          }
+        }
+      },
       "StorageConfigField": {
         "type": "object",
         "properties": {
@@ -12021,6 +12559,10 @@
           "scan": {
             "type": "boolean"
           },
+          "refresh": {
+            "type": "boolean",
+            "description": "是否支持主动刷新上游目录缓存"
+          },
           "stream": {
             "type": "boolean"
           },
@@ -12050,6 +12592,9 @@
             "type": "boolean"
           },
           "can_scan": {
+            "type": "boolean"
+          },
+          "can_refresh": {
             "type": "boolean"
           },
           "can_stream": {
@@ -12122,6 +12667,7 @@
             "type": "string",
             "enum": [
               "tmdb",
+              "anilist",
               "bangumi",
               "tencent_video",
               "nfo_tmdb",
@@ -14320,6 +14866,52 @@
           }
         ]
       },
+      "StorageSourceRefreshData": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          },
+          "refreshed": {
+            "type": "boolean",
+            "example": true
+          },
+          "refresh_path": {
+            "type": "string",
+            "example": "电影/剑来2"
+          },
+          "current_path": {
+            "type": "string",
+            "example": "电影/剑来2"
+          },
+          "parent_path": {
+            "type": "string",
+            "nullable": true,
+            "example": "电影"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StorageBrowseItem"
+            }
+          }
+        }
+      },
+      "StorageSourceRefreshResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/StorageSourceRefreshData"
+              }
+            }
+          }
+        ]
+      },
       "PathCleaningAnalysis": {
         "type": "object",
         "additionalProperties": true,
@@ -15248,6 +15840,11 @@
             "type": "string",
             "nullable": true
           },
+          "display_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "前端展示用字幕名；在线绑定字幕优先来自搜索候选标题。"
+          },
           "format": {
             "type": "string",
             "nullable": true
@@ -16057,6 +16654,58 @@
           }
         ]
       },
+      "OtherVideoMetadataMatchContext": {
+        "type": "object",
+        "description": "其他视频项的手动刮削默认上下文。前端可把 suggested_* 作为默认值展示给用户编辑。",
+        "properties": {
+          "suggested_query": {
+            "type": "string",
+            "nullable": true
+          },
+          "suggested_year": {
+            "type": "integer",
+            "nullable": true
+          },
+          "suggested_media_type_hint": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "tv"
+            ]
+          },
+          "source_media_type_hint": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv"
+            ]
+          },
+          "media_type_options": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "movie",
+                "tv"
+              ]
+            }
+          },
+          "title_hint_source": {
+            "type": "string",
+            "enum": [
+              "path_cleaning",
+              "movie",
+              "filename"
+            ]
+          }
+        }
+      },
+      "OtherVideoActions": {
+        "type": "object",
+        "description": "其他视频项可执行动作。match_metadata.search 用于搜索候选，match_metadata.preview 默认 dry-run，确认覆盖时提交 preview 返回的 apply_payload；create_manual_movie 仅用于确认非影视内容的手工归档。",
+        "additionalProperties": true
+      },
       "OtherVideoItem": {
         "type": "object",
         "properties": {
@@ -16105,6 +16754,19 @@
           },
           "metadata_actions": {
             "$ref": "#/components/schemas/MetadataActions"
+          },
+          "metadata_match_context": {
+            "$ref": "#/components/schemas/OtherVideoMetadataMatchContext"
+          },
+          "recommended_resolution": {
+            "type": "string",
+            "enum": [
+              "match_metadata",
+              "manual_content"
+            ]
+          },
+          "actions": {
+            "$ref": "#/components/schemas/OtherVideoActions"
           }
         }
       },
@@ -16195,6 +16857,11 @@
           },
           "available": {
             "type": "boolean"
+          },
+          "modules_url": {
+            "type": "string",
+            "example": "/api/v1/openapi/modules",
+            "description": "OpenAPI module index endpoint for loading smaller domain contracts on demand."
           }
         }
       },
@@ -16230,6 +16897,75 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/DocumentationIndexData"
+              }
+            }
+          }
+        ]
+      },
+      "OpenApiModuleEntry": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "catalog"
+          },
+          "title": {
+            "type": "string",
+            "example": "Catalog"
+          },
+          "description": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "example": "/api/v1/openapi/modules/catalog.json"
+          },
+          "content_type": {
+            "type": "string",
+            "example": "application/json"
+          },
+          "path_count": {
+            "type": "integer",
+            "example": 18
+          },
+          "available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OpenApiModulesData": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "example": "1.21.0"
+          },
+          "openapi_version": {
+            "type": "string",
+            "example": "1.21.0-beta"
+          },
+          "full_url": {
+            "type": "string",
+            "example": "/api/v1/openapi.json"
+          },
+          "modules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpenApiModuleEntry"
+            }
+          }
+        }
+      },
+      "OpenApiModulesResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/OpenApiModulesData"
               }
             }
           }

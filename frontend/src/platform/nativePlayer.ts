@@ -124,6 +124,10 @@ export async function launchNativePlayer(opts: NativePlayerOptions): Promise<voi
       sessionId: opts.sessionId ?? null,
     },
   });
+  // 桌面入侵：用过一次 PC 原生播放器即解锁（成就后端幂等，重复无副作用）
+  import('../api/user').then((m) =>
+    m.unlockBehaviorAchievement('desktop_invasion', { silent: false }),
+  ).catch(() => {});
 }
 
 // ─────────────────────── 外部播放器拉起 ───────────────────────
@@ -152,7 +156,7 @@ export interface ExternalPlayerLaunchResult {
 export async function launchExternalPlayerNative(
   opts: ExternalPlayerLaunchOptions,
 ): Promise<ExternalPlayerLaunchResult> {
-  return await invoke<ExternalPlayerLaunchResult>('launch_external_player', {
+  const result = await invoke<ExternalPlayerLaunchResult>('launch_external_player', {
     req: {
       player: opts.player,
       streamUrl: opts.streamUrl,
@@ -160,4 +164,13 @@ export async function launchExternalPlayerNative(
       startTime: opts.startTime ?? null,
     },
   });
+  // 影院模式：用过一次外部播放器即解锁。即使 fallback_required 用户后面也会
+  // 走 URL scheme 兜底，但 cinema_mode 的语义是「调用过」，这里成功 invoke
+  // 就算数（fallback 路径是 shellOpen，不经这里，所以那条路另算）
+  if (result.launched) {
+    import('../api/user').then((m) =>
+      m.unlockBehaviorAchievement('cinema_mode', { silent: false }),
+    ).catch(() => {});
+  }
+  return result;
 }

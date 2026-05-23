@@ -282,8 +282,24 @@ export interface Achievement {
   id: string;
   title: string;
   desc: string;
-  icon: ReactNode;
+  icon: string; // lucide-react 图标名字符串，UI 层映射成组件
+  category: 'behavior' | 'milestone';
+  trigger?: {
+    metric: string;
+    op: '>=' | '==';
+    value: number;
+  };
   unlocked: boolean;
+  unlockedAt: string | null;
+  progress: number; // 0..1，未解锁的 milestone 进度；behavior 已解锁固定为 1
+}
+
+export interface AchievementSummary {
+  total: number;
+  unlocked: number;
+  milestones: number;
+  behaviors: number;
+  newlyUnlockedIds: string[];
 }
 
 export interface Episode {

@@ -109,10 +109,18 @@ export const libraryService = {
     return data.map(mapApiMovieToUi);
   },
 
-  scanLibrary: async (libraryId: number): Promise<boolean> => {
+  scanLibrary: async (libraryId: number, opts?: { refresh?: boolean }): Promise<boolean> => {
     try {
+      const headers: Record<string, string> = {};
+      let body: BodyInit | undefined;
+      if (opts && opts.refresh === false) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify({ refresh: false });
+      }
       const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/scan`, {
-        method: 'POST'
+        method: 'POST',
+        headers,
+        body,
       });
       return res.ok || res.status === 202;
     } catch {

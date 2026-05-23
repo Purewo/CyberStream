@@ -115,6 +115,13 @@ export const MetadataEditor: React.FC<MetadataEditorProps> = ({ movie, onClose, 
       if (updatedMovie) {
         toast.success(`[${updatedMovie.title}] 档案更新已同步至主节点`);
         onSave(updatedMovie);
+        // 海报审美成就：本次保存改动了 poster_url 或 backdrop_url。
+        const posterChanged = (editedMovie.poster_url || '') !== (movie.poster_url || '');
+        const backdropChanged = (editedMovie.backdrop_url || '') !== (movie.backdrop_url || '');
+        if (posterChanged || backdropChanged) {
+          const { unlockBehaviorAchievement } = await import('../api');
+          unlockBehaviorAchievement('poster_aesthete');
+        }
       } else {
         toast.error("网络连接异常：物理层数据存档失败");
       }

@@ -14,64 +14,34 @@ import {
   Trash2,
   Save,
   Compass,
+  Info,
+  Github,
+  ExternalLink,
 } from "lucide-react";
 import { MovieCard } from "../components/movies/Cards";
-import { Movie, UserSettings, Achievement, HomepageUserPrefs, Library } from "../types";
+import { Movie, UserSettings, Achievement, AchievementSummary, HomepageUserPrefs, Library } from "../types";
 import { THEMES, API_BASE, FILTERS } from "../constants";
 import { formatBytes, toast } from "../utils";
 import { platform } from "../platform";
 
-import { HistoryPage } from "./History";
-import { Leaderboard } from "./Leaderboard";
 import { ReviewWorkbench } from "./ReviewWorkbench";
 import { ScanSourceModal } from "./ScanSourceModal";
 import { AddStorageSourceModal } from "./AddStorageSourceModal";
 import { HomepageEditor } from "./HomepageEditor";
 
-const ACHIEVEMENTS: Achievement[] = [
-  {
-    id: "a1",
-    title: "夜行者",
-    desc: "在 02:00 - 05:00 之间观看内容",
-    icon: <Clock size={24} />,
-    unlocked: true,
-  },
-  {
-    id: "a2",
-    title: "数据矿工",
-    desc: "浏览片库超过 2 小时",
-    icon: <Database size={24} />,
-    unlocked: true,
-  },
-  {
-    id: "a3",
-    title: "网络传奇",
-    desc: "看完 100 部影片",
-    icon: <Trophy size={24} />,
-    unlocked: false,
-  },
-  {
-    id: "a4",
-    title: "幽灵",
-    desc: "清除观看历史",
-    icon: <User size={24} />,
-    unlocked: false,
-  },
-  {
-    id: "a5",
-    title: "收藏家",
-    desc: "保存 50 个项目到保险库",
-    icon: <Shield size={24} />,
-    unlocked: true,
-  },
-  {
-    id: "a6",
-    title: "超频",
-    desc: "以 2.0 倍速观看",
-    icon: <Zap size={24} />,
-    unlocked: false,
-  },
-];
+const ACHIEVEMENT_ICONS: Record<string, LucideIcon> = {
+  Trophy, User, Shield, Lock, Zap, Clock, Database,
+  Moon, Eraser, Bookmark, Gauge, Waves, Brain, Infinity: InfinityIcon, Timer, Coffee,
+  Library: LibraryIcon, Clapperboard, PartyPopper, Repeat2, Search,
+  SkipForward, Captions, Languages, SlidersHorizontal,
+  HardDrive, Sparkles, Image: ImageIcon, ClipboardCheck, Monitor, Film, Network,
+  Pickaxe, MonitorPlay, Eye, Volume2, Laptop,
+};
+
+// 后端 icon 是 lucide 图标名字符串（如 "Trophy"）。映射不到时回落到通用图标。
+function resolveAchievementIcon(name: string): LucideIcon {
+  return ACHIEVEMENT_ICONS[name] || Trophy;
+}
 
 // Helper icons needed for above constant if not imported:
 import {
@@ -95,7 +65,37 @@ import {
   ChevronLeft,
   Loader2,
   AlertTriangle,
+  ScanLine,
+  RefreshCw,
+  // 成就图标专用——lucide 里 Infinity 是关键字、Image 跟 DOM 全局重名，所以用别名导入
+  Moon,
+  Eraser,
+  Bookmark,
+  Gauge,
+  Waves,
+  Brain,
+  Infinity as InfinityIcon,
+  Timer,
+  Coffee,
+  Library as LibraryIcon,
+  Clapperboard,
+  PartyPopper,
+  Repeat2,
+  Search,
+  SkipForward,
+  Captions,
+  Languages,
+  SlidersHorizontal,
+  Sparkles,
+  Image as ImageIcon,
+  ClipboardCheck,
+  Film,
+  Pickaxe,
+  MonitorPlay,
+  Volume2,
+  Laptop,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 const PROTOCOLS = [
   {
@@ -197,8 +197,629 @@ const BackendServerCard: React.FC = () => {
   );
 };
 
-/** 「个人偏好」卡片：默认进入页 + 库默认筛选。本地 settings 持久化，
- *   不影响其它访问者；和服务端 hero/sections 是两个层面。 */
+const ProxySettingsCard: React.FC = () => {
+  const isPc = platform().kind === 'pc';
+  // 加载状态：null = 还没拉到；ProxyConfig = 已就绪。两类代理的初始 mode
+  // 由 URL 是否非空推导（有值即视为开启自定义）。
+  const [appProxyEnabled, setAppProxyEnabled] = useState(false);
+  const [appProxyUrl, setAppProxyUrl] = useState('');
+  const [videoProxyEnabled, setVideoProxyEnabled] = useState(false);
+  const [videoProxyUrl, setVideoProxyUrl] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // 记下进入面板时的 app_proxy，保存时跟新值比对——只在它真变了的时候
+  // 才提示重启。video_proxy 改完不用重启（mpv 下次开播自然取新值）。
+  const [originalAppProxy, setOriginalAppProxy] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isPc) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import('../platform/pc');
+        const cfg = await mod.getProxyConfig();
+        if (cancelled) return;
+        setAppProxyEnabled(!!cfg.app_proxy);
+        setAppProxyUrl(cfg.app_proxy || '');
+        setVideoProxyEnabled(!!cfg.video_proxy);
+        setVideoProxyUrl(cfg.video_proxy || '');
+        setOriginalAppProxy(cfg.app_proxy);
+        setLoaded(true);
+      } catch (e) {
+        console.error('读取代理配置失败', e);
+        setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isPc]);
+
+  if (!isPc) return null;
+
+  const validateUrl = (s: string): boolean => /^(https?|socks5):\/\/.+/i.test(s.trim());
+
+  const persist = async () => {
+    const nextApp = appProxyEnabled ? appProxyUrl.trim() : '';
+    const nextVideo = videoProxyEnabled ? videoProxyUrl.trim() : '';
+    if (appProxyEnabled && !validateUrl(nextApp)) {
+      toast.error('应用代理地址格式不对（http://、https:// 或 socks5://）');
+      return;
+    }
+    if (videoProxyEnabled && !validateUrl(nextVideo)) {
+      toast.error('视频流代理地址格式不对（http://、https:// 或 socks5://）');
+      return;
+    }
+    setSaving(true);
+    try {
+      const mod = await import('../platform/pc');
+      const saved = await mod.setProxyConfig({
+        app_proxy: nextApp || null,
+        video_proxy: nextVideo || null,
+      });
+      const appProxyChanged = (saved.app_proxy || null) !== (originalAppProxy || null);
+      if (appProxyChanged) {
+        toast.success('代理设置已保存。应用代理改动需要重启客户端才能生效');
+      } else {
+        toast.success('代理设置已保存');
+      }
+      setOriginalAppProxy(saved.app_proxy || null);
+      // 暗网客成就：配置过任意一档自定义代理（应用代理或视频流代理）即解锁。
+      if (saved.app_proxy || saved.video_proxy) {
+        const { unlockBehaviorAchievement } = await import('../api');
+        unlockBehaviorAchievement('dark_web');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 子卡片：一个独立代理项（开关 + URL 输入）。
+  const renderProxyBlock = (
+    title: string,
+    desc: string,
+    enabled: boolean,
+    setEnabled: (v: boolean) => void,
+    url: string,
+    setUrl: (v: string) => void,
+    placeholder: string,
+  ) => (
+    <div className="border border-white/5 bg-black/30 p-4 rounded">
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-['Orbitron'] text-white tracking-wider">{title}</div>
+          <div className="text-[11px] text-gray-500 font-['Rajdhani'] mt-1 leading-relaxed">{desc}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setEnabled(!enabled)}
+          className={`shrink-0 w-10 h-5 rounded-full relative transition-colors ${enabled ? 'bg-primary' : 'bg-gray-700'}`}
+        >
+          <div className={`absolute top-1 w-3 h-3 bg-black rounded-full transition-all ${enabled ? 'left-6' : 'left-1'}`}></div>
+        </button>
+      </div>
+      {enabled && (
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder={placeholder}
+          spellCheck={false}
+          autoComplete="off"
+          className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white focus:border-primary outline-none"
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
+      <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-2">
+        <Globe size={18} /> 代理设置
+      </h3>
+      <p className="text-xs text-gray-500 font-['Rajdhani'] mb-5 leading-relaxed">
+        应用代理与视频流代理独立配置。改完后保存，应用代理变更需重启客户端才能生效；视频流代理下一次播放自动应用。
+      </p>
+      {!loaded ? (
+        <div className="text-xs text-gray-500 font-['Rajdhani']">加载中…</div>
+      ) : (
+        <div className="space-y-3">
+          {renderProxyBlock(
+            '应用代理 · API 与静态资源',
+            '电影列表、播放历史、封面图、字幕等所有 API 与图片请求。改动需重启客户端。',
+            appProxyEnabled,
+            setAppProxyEnabled,
+            appProxyUrl,
+            setAppProxyUrl,
+            'http://127.0.0.1:7890',
+          )}
+          {renderProxyBlock(
+            '视频流代理 · 内置播放器',
+            '原生播放器拉流时使用。下次开始播放即生效。多数局域网/直连场景无需开启。',
+            videoProxyEnabled,
+            setVideoProxyEnabled,
+            videoProxyUrl,
+            setVideoProxyUrl,
+            'socks5://127.0.0.1:1080',
+          )}
+        </div>
+      )}
+      <div className="mt-5">
+        <button
+          type="button"
+          onClick={persist}
+          disabled={saving || !loaded}
+          className="px-4 py-2 text-sm font-bold border border-primary text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? '保存中…' : '保存'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// 前端发布版本：跟 frontend/package.json 的 version 字段保持一致。后端无对应
+// 构建注入字段，所以这里硬编码；下次发版时一并更新。
+const FRONTEND_VERSION = '1.21.1';
+const REPO_URL = 'https://github.com/Purewo/CyberStream';
+const RELEASES_URL = 'https://github.com/Purewo/CyberStream/releases';
+const ISSUES_URL = 'https://github.com/Purewo/CyberStream/issues';
+
+const AboutCard: React.FC = () => {
+  const [backendVersion, setBackendVersion] = useState<string | null>(null);
+  const [openapiVersion, setOpenapiVersion] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchBackend = async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      const { systemService } = await import('../api');
+      const info = await systemService.getDocsInfo();
+      if (info && info.version) {
+        setBackendVersion(info.version);
+        setOpenapiVersion(info.openapi_version || null);
+      } else {
+        setError('未能获取后端版本');
+      }
+    } catch (e) {
+      console.error(e);
+      setError('网络异常，无法连接后端');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBackend();
+  }, []);
+
+  // 简单语义化对比：相同视为同步；不同就提示。后端没有官方"latest"端点，所以
+  // "检查更新"只能告诉你"前端 vs 当前连接的后端"是否一致，不是和上游 GitHub 比。
+  const inSync = backendVersion !== null && backendVersion === FRONTEND_VERSION;
+
+  const openExternal = async (url: string) => {
+    try {
+      const { platform } = await import('../platform');
+      if (platform().kind === 'pc') {
+        const mod = await import('@tauri-apps/plugin-shell');
+        await mod.open(url);
+        return;
+      }
+    } catch (e) {
+      // fallthrough to window.open
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
+      <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-2">
+        <Info size={18} /> 关于 CyberStream
+      </h3>
+      <p className="text-xs text-gray-500 font-['Rajdhani'] mb-5 leading-relaxed">
+        个人媒体库系统，开源协议见仓库。GitHub 在国内访问可能不稳定，建议自备代理。
+      </p>
+
+      {/* 版本信息 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+        <div className="border border-white/5 bg-black/30 px-4 py-3 rounded">
+          <div className="text-[10px] text-gray-500 font-['Orbitron'] tracking-widest mb-1">前端版本</div>
+          <div className="font-mono text-base text-white">{FRONTEND_VERSION}</div>
+        </div>
+        <div className="border border-white/5 bg-black/30 px-4 py-3 rounded">
+          <div className="text-[10px] text-gray-500 font-['Orbitron'] tracking-widest mb-1 flex items-center justify-between">
+            <span>后端版本</span>
+            {openapiVersion && (
+              <span className="text-[9px] text-gray-600 font-['Rajdhani']">OpenAPI {openapiVersion}</span>
+            )}
+          </div>
+          <div className="font-mono text-base text-white">
+            {checking && backendVersion === null ? (
+              <span className="text-gray-500 text-sm">检测中…</span>
+            ) : backendVersion ? (
+              backendVersion
+            ) : (
+              <span className="text-red-400 text-sm">未连接</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 同步状态横幅 */}
+      <div
+        className={`text-xs px-3 py-2 rounded mb-4 border flex items-center gap-2 ${
+          backendVersion === null
+            ? 'border-white/10 bg-black/30 text-gray-400'
+            : inSync
+              ? 'border-green-500/30 bg-green-500/5 text-green-400'
+              : 'border-amber-500/30 bg-amber-500/5 text-amber-400'
+        }`}
+      >
+        {backendVersion === null ? (
+          error || '正在检测后端连接…'
+        ) : inSync ? (
+          <>
+            <Check size={14} /> 前后端版本一致，运行环境同步
+          </>
+        ) : (
+          <>
+            <Info size={14} />
+            前端 {FRONTEND_VERSION} ≠ 后端 {backendVersion}，建议升级到一致版本
+          </>
+        )}
+      </div>
+
+      {/* 操作按钮 */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        <button
+          type="button"
+          onClick={fetchBackend}
+          disabled={checking}
+          className="px-4 py-2 text-xs font-bold border border-primary/50 text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+          {checking ? '检测中…' : '检查更新'}
+        </button>
+        <button
+          type="button"
+          onClick={() => openExternal(RELEASES_URL)}
+          className="px-4 py-2 text-xs font-bold border border-white/10 text-gray-300 hover:bg-white/10 transition-colors flex items-center gap-2"
+        >
+          <ExternalLink size={14} /> 发布列表
+        </button>
+        <button
+          type="button"
+          onClick={() => openExternal(REPO_URL)}
+          className="px-4 py-2 text-xs font-bold border border-white/10 text-gray-300 hover:bg-white/10 transition-colors flex items-center gap-2"
+        >
+          <Github size={14} /> 开源仓库
+        </button>
+        <button
+          type="button"
+          onClick={() => openExternal(ISSUES_URL)}
+          className="px-4 py-2 text-xs font-bold border border-white/10 text-gray-300 hover:bg-white/10 transition-colors flex items-center gap-2"
+        >
+          <ExternalLink size={14} /> 问题反馈
+        </button>
+      </div>
+
+
+      <div className="mt-5 pt-4 border-t border-white/5 text-[11px] text-gray-500 font-['Rajdhani'] leading-relaxed">
+          当前没有官方升级 CDN，也没有内置一键更新（GitHub 在国内访问受限）。
+          新版本发布后请到「发布列表」手动下载替换，或自行从仓库拉取构建。
+      </div>
+    </div>
+  );
+};
+
+// ─── 保险库面板 ───
+//
+// 后端把"收藏 = 保险库"，访问受 PIN 保护：
+//   1. configured=false  → 必须先设置 6 位 PIN
+//   2. configured=true && unlocked=false → 用 PIN 解锁
+//   3. unlocked=true     → 显示真实收藏列表
+//   4. locked=true       → 24h 改 PIN 限额耗尽，整个保险库被锁
+//
+// 状态由 useUserData.vaultState 提供；本组件负责 PIN 输入 / 调接口 /
+// 解锁后拉真实 favorites。
+interface VaultPanelProps {
+  favorites: Movie[];
+  onMovieSelect: (m: Movie) => void;
+  onToggleFavorite: (m: Movie) => void;
+  vaultState: import('../api/user').VaultAccessState | null;
+  onRefreshVaultStatus: () => Promise<import('../api/user').VaultAccessState | null>;
+  onRefreshFavorites: () => Promise<void>;
+}
+
+const VaultPanel: React.FC<VaultPanelProps> = ({
+  favorites,
+  onMovieSelect,
+  onToggleFavorite,
+  vaultState,
+  onRefreshVaultStatus,
+  onRefreshFavorites,
+}) => {
+  // PIN 输入态：setup（首次/重设）/ unlock（已配置则解锁）。
+  const [pin, setPin] = useState('');
+  const [pin2, setPin2] = useState('');
+  const [currentPin, setCurrentPin] = useState('');
+  const [busy, setBusy] = useState(false);
+  // 用户主动点了「修改 PIN」时切到 setup 流程（已 unlocked 状态下）
+  const [changing, setChanging] = useState(false);
+
+  if (!vaultState) {
+    // 没权限（普通用户）或还没拉到——给个无干扰提示
+    return (
+      <div className="animate-in slide-in-from-right-4 fade-in duration-300">
+        <div className="h-64 border border-white/10 bg-[#0a0a12]/40 flex flex-col items-center justify-center text-gray-600 gap-4">
+          <Shield size={48} className="opacity-20" />
+          <span className="font-['Orbitron'] tracking-widest">数据保险库不可用</span>
+          <span className="text-xs text-gray-500">请使用管理员账户登录后访问</span>
+        </div>
+      </div>
+    );
+  }
+
+  const validPin = (s: string) => /^\d{6}$/.test(s);
+
+  const submitSetup = async () => {
+    if (!validPin(pin)) {
+      toast.error('PIN 必须是 6 位数字');
+      return;
+    }
+    if (pin !== pin2) {
+      toast.error('两次输入的 PIN 不一致');
+      return;
+    }
+    if (changing && !validPin(currentPin)) {
+      toast.error('请输入当前 PIN');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { userService } = await import('../api');
+      await userService.setVaultPin({
+        newPin: pin,
+        currentPin: changing ? currentPin : undefined,
+      });
+      toast.success(changing ? '已更新 PIN，保险库已解锁' : '已设置 PIN，保险库已解锁');
+      setPin(''); setPin2(''); setCurrentPin(''); setChanging(false);
+      await onRefreshVaultStatus();
+      await onRefreshFavorites();
+    } catch (e: any) {
+      // 后端 400/403/423 都用同一文案场景区分
+      const http = e?.http;
+      const msg: string = e?.message || '';
+      if (http === 423) {
+        toast.error('保险库已锁定，请稍后再试');
+      } else if (http === 400 && /password|登录密码/i.test(msg)) {
+        toast.error('PIN 不能与登录密码相同');
+      } else if (http === 400 && /current/i.test(msg)) {
+        toast.error('当前 PIN 不正确');
+      } else {
+        toast.error(msg || '设置 PIN 失败');
+      }
+      // 限额计数可能因失败也走了一次，刷一下
+      onRefreshVaultStatus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitUnlock = async () => {
+    if (!validPin(pin)) {
+      toast.error('PIN 必须是 6 位数字');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { userService } = await import('../api');
+      await userService.unlockVault(pin);
+      toast.success('保险库已解锁');
+      setPin('');
+      await onRefreshVaultStatus();
+      await onRefreshFavorites();
+    } catch (e: any) {
+      if (e?.http === 423) toast.error('保险库已锁定，请稍后再试');
+      else toast.error('PIN 不正确');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lockNow = async () => {
+    setBusy(true);
+    try {
+      const { userService } = await import('../api');
+      await userService.lockVault();
+      toast.success('保险库已锁定');
+      await onRefreshVaultStatus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ─── 渲染 ───
+  return (
+    <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300">
+      <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
+        <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-2">
+          <Shield size={18} /> 数据保险库
+        </h3>
+        <p className="text-xs text-gray-500 font-['Rajdhani'] mb-5 leading-relaxed">
+          收藏夹由 6 位数字 PIN 保护。每 24 小时最多修改 {vaultState.pin_change_limit_per_day} 次 PIN，
+          超限将临时锁定。
+        </p>
+
+        {vaultState.locked ? (
+          <div className="border border-red-500/30 bg-red-500/5 p-4 rounded text-sm text-red-300">
+            保险库已被锁定（PIN 修改超限）。
+            {vaultState.locked_until && (
+              <> 解锁时间：{new Date(vaultState.locked_until).toLocaleString()}</>
+            )}
+          </div>
+        ) : !vaultState.configured ? (
+          // 首次设置 PIN
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">首次使用，请设置 6 位数字 PIN：</p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="6 位数字 PIN"
+              className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white tracking-[0.5em] focus:border-primary outline-none"
+            />
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin2}
+              onChange={(e) => setPin2(e.target.value.replace(/\D/g, ''))}
+              placeholder="再输一次 PIN 确认"
+              className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white tracking-[0.5em] focus:border-primary outline-none"
+            />
+            <button
+              onClick={submitSetup}
+              disabled={busy}
+              className="px-4 py-2 text-sm font-bold border border-primary text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-40"
+            >
+              {busy ? '设置中…' : '设置 PIN'}
+            </button>
+          </div>
+        ) : !vaultState.unlocked ? (
+          // 已配置但未解锁
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">输入 6 位数字 PIN 解锁：</p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitUnlock(); }}
+              placeholder="PIN"
+              className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white tracking-[0.5em] focus:border-primary outline-none"
+            />
+            <button
+              onClick={submitUnlock}
+              disabled={busy}
+              className="px-4 py-2 text-sm font-bold border border-primary text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-40"
+            >
+              {busy ? '解锁中…' : '解锁'}
+            </button>
+          </div>
+        ) : changing ? (
+          // 已解锁，正在改 PIN
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">
+              修改 PIN（今日剩余 {vaultState.pin_changes_remaining_today} 次）：
+            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={currentPin}
+              onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="当前 PIN"
+              className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white tracking-[0.5em] focus:border-primary outline-none"
+            />
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="新 PIN"
+              className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white tracking-[0.5em] focus:border-primary outline-none"
+            />
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin2}
+              onChange={(e) => setPin2(e.target.value.replace(/\D/g, ''))}
+              placeholder="再输一次确认"
+              className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white tracking-[0.5em] focus:border-primary outline-none"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={submitSetup}
+                disabled={busy}
+                className="px-4 py-2 text-sm font-bold border border-primary text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-40"
+              >
+                {busy ? '保存中…' : '保存新 PIN'}
+              </button>
+              <button
+                onClick={() => { setChanging(false); setPin(''); setPin2(''); setCurrentPin(''); }}
+                className="px-4 py-2 text-sm border border-white/10 text-gray-400 hover:bg-white/5"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          // 已解锁
+          <div className="flex items-center gap-3 text-sm">
+            <div className="px-2 py-0.5 border border-green-500/30 bg-green-500/10 text-green-400 text-xs font-mono">
+              已解锁
+            </div>
+            <button
+              onClick={() => setChanging(true)}
+              className="px-3 py-1.5 text-xs border border-white/10 text-gray-300 hover:bg-white/5"
+            >
+              修改 PIN
+            </button>
+            <button
+              onClick={lockNow}
+              disabled={busy}
+              className="px-3 py-1.5 text-xs border border-white/10 text-gray-300 hover:bg-white/5 disabled:opacity-40"
+            >
+              立即锁定
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 解锁后展示真实收藏列表 */}
+      {vaultState.unlocked && !changing && (
+        favorites.length === 0 ? (
+          <div className="h-64 border border-white/10 bg-[#0a0a12]/40 flex flex-col items-center justify-center text-gray-600 gap-4">
+            <Shield size={48} className="opacity-20" />
+            <span className="font-['Orbitron'] tracking-widest">还没有收藏</span>
+            <span className="text-xs text-gray-500">在影片详情页点击红心即可收藏</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 md:gap-6 justify-center">
+            {favorites.map((movie) => (
+              <div key={movie.id} className="relative group">
+                <MovieCard
+                  movie={movie}
+                  category={{ colorClass: "border-white/20" }}
+                  onClick={onMovieSelect}
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite(movie);
+                  }}
+                  className="absolute top-2 right-2 p-2 bg-black/80 border border-red-500 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-30 hover:bg-red-500 hover:text-black"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+};
+
 const PersonalPreferencesCard: React.FC<{
   settings: UserSettings;
   setSettings: (s: UserSettings) => void;
@@ -291,11 +912,12 @@ interface ProfilePageProps {
   currentTheme: string;
   setTheme: (t: string) => void;
   libraries?: import("../types").Library[];
-  history?: any[];
-  onClearHistory?: () => void;
-  onDeleteHistoryItem?: (id: string) => void;
   onRefreshLibraries?: () => Promise<void>;
   initialTab?: string;
+  // 保险库会话态。整个 app 共享，从 useUserData 透传过来
+  vaultState?: import('../api/user').VaultAccessState | null;
+  onRefreshVaultStatus?: () => Promise<import('../api/user').VaultAccessState | null>;
+  onRefreshFavorites?: () => Promise<void>;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -307,11 +929,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   currentTheme,
   setTheme,
   libraries = [],
-  history = [],
-  onClearHistory = () => {},
-  onDeleteHistoryItem = () => {},
   onRefreshLibraries = async () => {},
   initialTab = "IDENTITY",
+  vaultState = null,
+  onRefreshVaultStatus = async () => null,
+  onRefreshFavorites = async () => {},
 }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -320,6 +942,28 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   }, [initialTab]);
 
   const [scanningSource, setScanningSource] = useState<{ id: number; name: string } | null>(null);
+
+  // 成就：进 MEDALS tab 时按需加载，POST /unlock 后 dirty 标记触发刷新
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [achievementSummary, setAchievementSummary] = useState<AchievementSummary | null>(null);
+  const [achievementsLoading, setAchievementsLoading] = useState(false);
+  useEffect(() => {
+    if (activeTab !== 'MEDALS') return;
+    let cancelled = false;
+    (async () => {
+      setAchievementsLoading(true);
+      try {
+        const { userService } = await import('../api');
+        const { items, summary } = await userService.getAchievements();
+        if (cancelled) return;
+        setAchievements(items);
+        setAchievementSummary(summary);
+      } finally {
+        if (!cancelled) setAchievementsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const [confirmAction, setConfirmAction] = useState<{
     message: string;
@@ -551,6 +1195,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     );
     if (success) {
       await loadResources();
+      // 存储建筑师：接入 ≥3 种不同协议时解锁。loadResources 已刷过 storageSources。
+      const { unlockBehaviorAchievement } = await import('../api');
+      const protocols = new Set(storageSources.map(s => (s.type || '').toLowerCase()).filter(Boolean));
+      protocols.add(selectedProtocol.type.toLowerCase());
+      if (protocols.size >= 3) {
+        unlockBehaviorAchievement('storage_architect');
+      }
       closeAddModal();
     } else {
       toast.error("添加存储源失败");
@@ -581,6 +1232,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       toast.success("全维度光学扫描已启动");
     } else {
       toast.error("触发扫描失败。");
+    }
+  };
+
+  const handleScanLibrary = async (libraryId: number, libraryName: string) => {
+    const { libraryService } = await import("../api");
+    const success = await libraryService.scanLibrary(libraryId);
+    if (success) {
+      window.dispatchEvent(new CustomEvent("cyber:scan:started"));
+      toast.success(`《${libraryName}》刮削任务已下发`);
+    } else {
+      toast.error("扫描启动失败");
     }
   };
 
@@ -657,6 +1319,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setNewLibraryName("");
       setNewLibraryDescription("");
       await onRefreshLibraries();
+      // 图书管理员：累计创建 ≥3 个媒体库。libraries 在 onRefreshLibraries 后由父
+      // 组件刷新，但本地 prop 还是旧值；这里 +1 估算（包含刚创建的）。
+      if (libraries.length + 1 >= 3) {
+        const { unlockBehaviorAchievement } = await import("../api");
+        unlockBehaviorAchievement('librarian');
+      }
     } else {
       toast.error("创建失败，请检查填写信息与服务端状态。");
     }
@@ -861,23 +1529,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
           </div>
         );
-      case "HISTORY":
-        return (
-          <div className="animate-in slide-in-from-right-4 fade-in duration-300 -mt-24 -mx-4 md:-mx-12">
-            <HistoryPage
-              history={history}
-              onMovieSelect={onMovieSelect}
-              onClearHistory={onClearHistory}
-              onDeleteHistoryItem={onDeleteHistoryItem}
-            />
-          </div>
-        );
-      case "LEADERBOARD":
-        return (
-          <div className="animate-in slide-in-from-right-4 fade-in duration-300 -mt-24 -mx-4 md:-mx-12">
-            <Leaderboard onMovieSelect={onMovieSelect} />
-          </div>
-        );
       case "REVIEW":
         return (
           <div className="animate-in slide-in-from-right-4 fade-in duration-300 -mt-24 -mx-4 md:-mx-12">
@@ -886,71 +1537,137 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         );
       case "VAULT":
         return (
-          <div className="animate-in slide-in-from-right-4 fade-in duration-300">
-            {favorites.length === 0 ? (
-              <div className="h-64 border border-white/10 bg-[#0a0a12]/40 flex flex-col items-center justify-center text-gray-600 gap-4">
-                {" "}
-                <Shield size={48} className="opacity-20" />{" "}
-                <span className="font-['Orbitron'] tracking-widest">
-                  保险库为空
-                </span>{" "}
+          <VaultPanel
+            favorites={favorites}
+            onMovieSelect={onMovieSelect}
+            onToggleFavorite={onToggleFavorite}
+            vaultState={vaultState}
+            onRefreshVaultStatus={onRefreshVaultStatus}
+            onRefreshFavorites={onRefreshFavorites}
+          />
+        );
+      case "MEDALS": {
+        const milestones = achievements.filter((a) => a.category === 'milestone');
+        const behaviors = achievements.filter((a) => a.category === 'behavior');
+        const unlockedCount = achievementSummary?.unlocked ?? achievements.filter((a) => a.unlocked).length;
+        const total = achievementSummary?.total ?? achievements.length;
+        const renderCard = (ach: Achievement) => {
+          const Icon = resolveAchievementIcon(ach.icon);
+          // milestone 未解锁但有进度 → 展示进度条；behavior 仅展示锁/解锁两态
+          const showProgress = ach.category === 'milestone' && !ach.unlocked && ach.progress > 0;
+          const targetValue = ach.trigger?.value;
+          const currentValue = typeof targetValue === 'number'
+            ? Math.min(targetValue, Math.round(ach.progress * targetValue))
+            : null;
+          return (
+            <div
+              key={ach.id}
+              className={`border p-4 flex items-start gap-4 transition-colors ${
+                ach.unlocked
+                  ? 'border-accent bg-accent/5'
+                  : 'border-white/10 bg-black/40 opacity-60'
+              }`}
+            >
+              <div
+                className={`p-3 rounded-full border-2 shrink-0 ${
+                  ach.unlocked ? 'border-accent text-accent' : 'border-gray-600 text-gray-600'
+                }`}
+              >
+                {ach.unlocked ? <Icon size={24} /> : <Lock size={24} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4
+                    className={`font-['Orbitron'] font-bold text-sm ${
+                      ach.unlocked ? 'text-white' : 'text-gray-500'
+                    }`}
+                  >
+                    {ach.title}
+                  </h4>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 border ${
+                      ach.category === 'milestone'
+                        ? 'border-cyan-500/40 text-cyan-400/80'
+                        : 'border-white/10 text-gray-500'
+                    }`}
+                  >
+                    {ach.category === 'milestone' ? '里程碑' : '行为'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 font-sans mt-1">{ach.desc}</p>
+                {showProgress && (
+                  <div className="mt-2">
+                    <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-500/60"
+                        style={{ width: `${Math.round(ach.progress * 100)}%` }}
+                      />
+                    </div>
+                    <div className="text-[10px] text-gray-500 mt-1 font-mono">
+                      {currentValue !== null
+                        ? `${currentValue} / ${targetValue}`
+                        : `${Math.round(ach.progress * 100)}%`}
+                    </div>
+                  </div>
+                )}
+                {ach.unlocked && ach.unlockedAt && (
+                  <div className="text-[10px] text-accent/70 mt-1 font-mono">
+                    解锁于 {new Date(ach.unlockedAt).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        };
+        return (
+          <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300">
+            <div className="bg-[#0a0a12]/80 border border-white/10 p-5 flex items-center gap-4">
+              <div className="p-3 rounded-full border-2 border-accent text-accent">
+                <Trophy size={20} />
+              </div>
+              <div className="flex-1">
+                <div className="text-xs text-gray-500 font-['Orbitron'] tracking-widest">解锁进度</div>
+                <div className="text-xl font-['Rajdhani'] font-bold text-white">
+                  {unlockedCount} <span className="text-gray-500 text-sm">/ {total}</span>
+                </div>
+              </div>
+              {total > 0 && (
+                <div className="w-32 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-accent to-cyan-500"
+                    style={{ width: `${Math.round((unlockedCount / total) * 100)}%` }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {achievementsLoading && achievements.length === 0 ? (
+              <div className="h-32 flex items-center justify-center text-gray-500 font-['Orbitron'] tracking-widest">
+                <Loader2 size={20} className="animate-spin mr-2" /> LOADING...
               </div>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 md:gap-6 justify-center">
-                {" "}
-                {favorites.map((movie) => (
-                  <div key={movie.id} className="relative group">
-                    {" "}
-                    <MovieCard
-                      movie={movie}
-                      category={{ colorClass: "border-white/20" }}
-                      onClick={onMovieSelect}
-                    />{" "}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleFavorite(movie);
-                      }}
-                      className="absolute top-2 right-2 p-2 bg-black/80 border border-red-500 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-30 hover:bg-red-500 hover:text-black"
-                    >
-                      <Trash2 size={14} />
-                    </button>{" "}
+              <>
+                {milestones.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-['Orbitron'] text-gray-500 tracking-widest mb-3">里程碑</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {milestones.map(renderCard)}
+                    </div>
                   </div>
-                ))}{" "}
-              </div>
+                )}
+                {behaviors.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-['Orbitron'] text-gray-500 tracking-widest mb-3">行为成就</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {behaviors.map(renderCard)}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         );
-      case "MEDALS":
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-right-4 fade-in duration-300">
-            {ACHIEVEMENTS.map((ach) => (
-              <div
-                key={ach.id}
-                className={`border p-4 flex items-center gap-4 ${ach.unlocked ? "border-accent bg-accent/5" : "border-white/10 bg-black/40 opacity-50 grayscale"}`}
-              >
-                {" "}
-                <div
-                  className={`p-3 rounded-full border-2 ${ach.unlocked ? "border-accent text-accent" : "border-gray-600 text-gray-600"}`}
-                >
-                  {" "}
-                  {ach.unlocked ? ach.icon : <Lock size={24} />}{" "}
-                </div>{" "}
-                <div>
-                  {" "}
-                  <h4
-                    className={`font-['Orbitron'] font-bold text-sm ${ach.unlocked ? "text-white" : "text-gray-500"}`}
-                  >
-                    {ach.title}
-                  </h4>{" "}
-                  <p className="text-xs text-gray-400 font-sans mt-1">
-                    {ach.desc}
-                  </p>{" "}
-                </div>{" "}
-              </div>
-            ))}
-          </div>
-        );
+      }
       case "RESOURCES":
         return (
           <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300">
@@ -1017,8 +1734,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     </div>
                     <div className="flex-1 min-w-0 pr-10 text-left">
                       <h4 className="font-['Orbitron'] text-white font-bold tracking-widest mb-0.5 text-xs truncate flex items-center gap-1">
-                        <span className="truncate">
-                          {res.display_name || res.name}
+                        <span className="truncate" title={res.name || res.display_name}>
+                          {res.name || res.display_name}
                         </span>
                         <div className="flex items-center gap-1 shrink-0 ml-1">
                           {res.capabilities?.direct_stream && (
@@ -1252,6 +1969,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         return (
           <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 max-w-2xl">
             <BackendServerCard />
+            <ProxySettingsCard />
+          </div>
+        );
+      case "ABOUT":
+        return (
+          <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 max-w-2xl">
+            <AboutCard />
           </div>
         );
       case "LIBRARIES":
@@ -1304,6 +2028,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         className="text-xs bg-primary/20 border border-primary/30 hover:bg-primary/40 px-3 py-1.5 rounded transition-colors text-primary font-['Rajdhani']"
                       >
                         绑定目录
+                      </button>
+                      <button
+                        onClick={() => handleScanLibrary(lib.id, lib.name)}
+                        className="text-xs bg-secondary/15 border border-secondary/40 hover:bg-secondary/30 px-3 py-1.5 rounded transition-colors text-secondary font-['Rajdhani'] flex items-center gap-1"
+                        title="扫描并刮削该媒体库已绑定的所有目录"
+                      >
+                        <ScanLine size={12} /> 扫描刮削
                       </button>
                     </div>
                     {libraryBindings[lib.id] &&
@@ -1387,13 +2118,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           {[
             { id: "APPEARANCE", icon: <Palette size={18} />, label: "主页设置" },
             { id: "IDENTITY", icon: <User size={18} />, label: "身份信息" },
-            { id: "HISTORY", icon: <Clock size={18} />, label: "播放历史" },
             { id: "VAULT", icon: <Shield size={18} />, label: "数据保险库" },
-            {
-              id: "LEADERBOARD",
-              icon: <Trophy size={18} />,
-              label: "综合排行榜",
-            },
             { id: "MEDALS", icon: <Trophy size={18} />, label: "成就奖章" },
             {
               id: "LIBRARIES",
@@ -1407,6 +2132,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             },
             { id: "REVIEW", icon: <Check size={18} />, label: "审查工作台" },
             { id: "SYSTEM", icon: <Settings2 size={18} />, label: "系统配置" },
+            { id: "ABOUT", icon: <Info size={18} />, label: "关于" },
           ].map((item) => (
             <button
               key={item.id}

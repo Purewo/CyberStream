@@ -21,9 +21,9 @@ export function useAppRouting() {
   const [addToLibraryMovie, setAddToLibraryMovie] = useState<Movie | null>(null);
 
   const navigateTo = (view: ViewState, options?: { libraryId?: number | null, libraryInitialType?: string }) => {
-    if (view === 'library') { 
-      setActiveLibraryId(options?.libraryId || null);
-      setLibraryInitialType(options?.libraryInitialType || "全部类型"); 
+    if (view === 'library') {
+      setActiveLibraryId(options?.libraryId ?? null);
+      setLibraryInitialType(options?.libraryInitialType || "全部类型");
     }
     setCurrentView(view);
     setOverlayView('none');

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText } from 'lucide-react';
+import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText, FolderSync } from 'lucide-react';
 import { Movie, PlayOptions, HistoryItem } from '../types';
 import { movieService } from '../api';
 import { shellOpen, platform } from '../platform';
@@ -28,7 +28,10 @@ const ExternalPlayerButton: React.FC<{
     streamUrl: string;
     subtitleUrl?: string;
   };
-}> = ({ title, icon, url, pcLaunch }) => {
+  /** 启动成功后强制再 toast 一条警告（如「VLC 不支持 PGS 字幕，已丢弃」），便于让
+   *  用户知道为何加载不到字幕。 */
+  subtitleNotice?: string;
+}> = ({ title, icon, url, pcLaunch, subtitleNotice }) => {
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     const isPc = platform().kind === 'pc';
@@ -39,6 +42,9 @@ const ExternalPlayerButton: React.FC<{
         if (res.launched) {
           if (pcLaunch.subtitleUrl) {
             toast.success(`${title} 已启动（已加载默认字幕）`);
+          } else if (subtitleNotice) {
+            // 没字幕 + 有提醒 = 字幕被刻意丢弃（如 sup 给 VLC）
+            toast.warning(`${title} 已启动。${subtitleNotice}`);
           }
           return;
         }
@@ -87,6 +93,7 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
   const [loading, setLoading] = useState(false);
   const [seasonLoading, setSeasonLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncingResources, setIsSyncingResources] = useState(false);
   const [recommendations, setRecommendations] = useState<Movie[]>([]);
   const [activeSeason, setActiveSeason] = useState<number | null>(movie.target_season ?? null);
   const [isManagingSubtitles, setIsManagingSubtitles] = useState(false);
@@ -139,6 +146,26 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
       console.warn("Refresh failed", e);
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleSyncResources = async () => {
+    if (isSyncingResources) return;
+    setIsSyncingResources(true);
+    try {
+      toast.info(`正在同步《${movie.title}》的资源...`);
+      const result = await movieService.syncResources(movie.id);
+      if (result.ok) {
+        toast.success(`资源同步任务已下发，可在扫描进度处查看。`);
+      } else if (result.status === 429) {
+        toast.error('扫描器正忙，请等当前任务结束后重试。');
+      } else if (result.status === 400) {
+        toast.error(result.msg || '该影片没有可同步的资源路径。');
+      } else {
+        toast.error(result.msg || '资源同步任务下发失败。');
+      }
+    } finally {
+      setIsSyncingResources(false);
     }
   };
   
@@ -415,23 +442,31 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
   //   1. playback.subtitles.items 里 id == default_subtitle_id 的那条（最权威）
   //   2. playback.external_player.subtitle_urls[0]（后端拍平后的兜底）
   // web 端用不到（URL scheme 没法带字幕参数）；只 PC 通过 launch_external_player 透给 .exe。
-  const externalSubtitleUrl: string | undefined = useMemo(() => {
+  const externalSubtitle = useMemo<{ url?: string; format?: string }>(() => {
     const pb: any = (targetPlayResource as any)?.playback;
-    if (!pb) return undefined;
+    if (!pb) return {};
     const subs = pb.subtitles;
     if (subs?.items?.length) {
       const defId = subs.default_subtitle_id;
       const def = defId ? subs.items.find((s: any) => s.id === defId) : null;
       const fallback = subs.items.find((s: any) => s.is_default) || subs.items[0];
       const picked = def || fallback;
-      if (picked?.url) return String(picked.url);
+      if (picked?.url) {
+        return { url: String(picked.url), format: picked.format ? String(picked.format).toLowerCase() : undefined };
+      }
     }
     const arr = pb.external_player?.subtitle_urls;
     if (Array.isArray(arr) && arr.length > 0) {
-      return String(arr[0]);
+      return { url: String(arr[0]) };
     }
-    return undefined;
+    return {};
   }, [targetPlayResource]);
+  const externalSubtitleUrl = externalSubtitle.url;
+  // VLC 的 :sub-file= 只识别文本字幕（srt/ass/ssa/vtt/sub/idx）。PGS 位图字幕（.sup）
+  // VLC 会忽略，而且没任何提示。这里不下发 sup URL，避免用户以为加载了——播放页
+  // 那个按钮本身会把这个标记透给前端 toast。PotPlayer / mpv 都能解 sup，不受影响。
+  const subtitleUrlForVlc = externalSubtitle.format === 'sup' ? undefined : externalSubtitleUrl;
+  const subtitleSkippedForVlc = externalSubtitle.format === 'sup';
 
   const handlePlay = () => {
     // 「从头播放」语义：忽略 resumeRecord，回到当前季第一集（或唯一资源）从 0 秒起。
@@ -733,11 +768,14 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                         <span>{loading ? '加载中...' : hasResources ? (resumeRecord ? '从头播放' : '播放') : '暂无资源'}</span> 
                     </button> 
                     
-                    <button onClick={() => onToggleFavorite(fullMovieData)} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border shadow-lg ${isFavorite ? 'border-accent text-accent bg-accent/10' : 'border-white/30 text-white hover:bg-white/10'} rounded-sm flex items-center justify-center transition-all`} title={isFavorite ? 'Remove from Vault' : 'Add to Vault'}> 
-                        <Star className={`w-5 h-5 ${isFavorite ? 'fill-accent' : ''} transition-transform`} /> 
-                    </button> 
-                    <button onClick={handleRefreshMovie} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border border-white/30 text-white hover:bg-white/10 hover:text-primary shadow-lg rounded-sm flex items-center justify-center transition-all`} title="轻量级同步信息"> 
-                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin text-primary' : ''}`} /> 
+                    <button onClick={() => onToggleFavorite(fullMovieData)} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border shadow-lg ${isFavorite ? 'border-red-500 text-red-500 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-white/30 text-white hover:bg-white/10'} rounded-sm flex items-center justify-center transition-all`} title={isFavorite ? '取消收藏' : '加入收藏'}>
+                        <Star className={`w-5 h-5 ${isFavorite ? 'fill-red-500' : ''} transition-transform`} />
+                    </button>
+                    <button onClick={handleRefreshMovie} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border border-white/30 text-white hover:bg-white/10 hover:text-primary shadow-lg rounded-sm flex items-center justify-center transition-all`} title="轻量级同步信息">
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin text-primary' : ''}`} />
+                    </button>
+                    <button onClick={handleSyncResources} disabled={isSyncingResources} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border border-white/30 text-white hover:bg-white/10 hover:text-primary shadow-lg rounded-sm flex items-center justify-center transition-all disabled:opacity-50`} title="同步资源（扫描补齐新增集 / 重新入库）">
+                        <FolderSync className={`w-5 h-5 ${isSyncingResources ? 'animate-spin text-primary' : ''}`} />
                     </button>
                     {hasResources && (
                       <button 
@@ -769,7 +807,8 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                               title="VLC"
                               icon={vlcIcon}
                               url={`vlc://${externalVideoUrl}`}
-                              pcLaunch={{ player: 'vlc', streamUrl: externalVideoUrl, subtitleUrl: externalSubtitleUrl }}
+                              pcLaunch={{ player: 'vlc', streamUrl: externalVideoUrl, subtitleUrl: subtitleUrlForVlc }}
+                              subtitleNotice={subtitleSkippedForVlc ? 'VLC 不支持 PGS（.sup）位图字幕，已自动跳过；如需字幕请使用 PotPlayer 或内置播放器。' : undefined}
                             />
                             <ExternalPlayerButton title="nPlayer" icon={nplayerIcon} url={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} />
                             <ExternalPlayerButton title="MX Player" icon={mxplayerIcon} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end`} />

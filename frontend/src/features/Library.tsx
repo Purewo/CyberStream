@@ -56,6 +56,41 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
     window.addEventListener('library-list-dirty', handleRefresh as EventListener);
     return () => window.removeEventListener('library-list-dirty', handleRefresh as EventListener);
   }, []);
+
+  // 数据矿工成就：累计在媒体库页面浏览 ≥2 小时（7200s）即解锁。
+  // 用 localStorage 跨会话累计；mount 时记 startTs，unmount/可见性切换时把
+  // 间隔加进来。后端幂等，达到阈值即调一次。
+  useEffect(() => {
+    const KEY = 'cyber_data_miner_seconds';
+    const FLAG = 'cyber_data_miner_done';
+    if (localStorage.getItem(FLAG) === '1') return;
+    let startTs = Date.now();
+    let done = false;
+    const flush = () => {
+      if (done) return;
+      const delta = Math.max(0, Math.floor((Date.now() - startTs) / 1000));
+      startTs = Date.now();
+      const prev = Number(localStorage.getItem(KEY) || '0');
+      const total = prev + delta;
+      localStorage.setItem(KEY, String(total));
+      if (total >= 7200) {
+        done = true;
+        localStorage.setItem(FLAG, '1');
+        import('../api').then(({ unlockBehaviorAchievement }) =>
+          unlockBehaviorAchievement('data_miner')
+        ).catch(() => {});
+      }
+    };
+    const onVisChange = () => {
+      if (document.hidden) flush();
+      else startTs = Date.now();
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisChange);
+      flush();
+    };
+  }, []);
   
   // Dynamic filter options fetched from backend
   const [filterOptions, setFilterOptions] = useState({
@@ -246,14 +281,14 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
 
   return (
     <div className="min-h-screen w-full pt-24 px-4 md:px-12 pb-12"> 
-      <div className="flex items-center gap-4 mb-8"> 
-        <div className="p-2 border border-primary text-primary shadow-[0_0_10px_var(--color-primary)]"> <Filter className="w-6 h-6" /> </div> 
-        <h1 className="text-3xl font-['Orbitron'] font-bold text-white tracking-widest flex items-center gap-4"> 
-           <span>DATABASE <span className="text-primary">ARCHIVES</span></span>
-        </h1> 
-        <div className="flex-[0.1] h-[1px] bg-gradient-to-r from-primary/50 to-transparent"></div> 
+      <div className="flex items-center gap-4 mb-8">
+        <div className="p-2 border border-primary text-primary shadow-[0_0_10px_var(--color-primary)]"> <Filter className="w-6 h-6" /> </div>
+        <h1 className="text-3xl font-['Orbitron'] font-bold text-white tracking-widest flex items-center gap-4">
+           <span>资源数据库 <span className="text-primary">// 影视档案</span></span>
+        </h1>
+        <div className="flex-grow h-[1px] bg-gradient-to-r from-primary/50 to-transparent"></div>
         {activeLibraryId && activeLibraryId !== -1 && (
-          <button 
+          <button
             onClick={async () => {
               const res = await libraryService.scanLibrary(activeLibraryId);
               if (res) {
@@ -267,8 +302,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
              <ScanLine size={16} /> 扫描本库
           </button>
         )}
-        <div className="flex-grow h-[1px] bg-gradient-to-l from-primary/50 to-transparent"></div> 
-      </div> 
+      </div>
       
       {/* Filter Control Panel (Inline) */}
       <div className="bg-[#0a0a12]/80 border border-white/10 backdrop-blur-md p-6 mb-10 relative overflow-hidden group tech-border"> 
@@ -353,7 +387,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
             当前筛选条件下未找到相关资源
           </div> 
           {activeLibraryId && onRequestBind && (
-            <button 
+            <button
               onClick={onRequestBind}
               className="mt-4 px-6 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-['Orbitron'] text-sm tracking-wider transition-all"
             >
