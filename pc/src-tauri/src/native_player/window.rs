@@ -35,6 +35,12 @@ pub enum InputEvent {
     MouseDoubleClick { x: f32, y: f32 },
     MouseWheel { delta: f32 },
     Key { code: KeyCode, pressed: bool },
+    /// 文本输入（IME / 普通字母 / CJK 等）。WM_CHAR 把每个字符当 UTF-16
+    /// 单元给我们，我们把成对的代理（high surrogate 0xD800–0xDBFF + low
+    /// surrogate 0xDC00–0xDFFF）拼成一个 `char` 再 push。控制字符
+    /// （\u{0000}~\u{001F} 和 \u{007F} 退格）由 WM_KEYDOWN 那条路径处理，
+    /// 这里只 push 可打印的字符。
+    Char { ch: char },
     /// Window resized — the main loop should query client_size and pass
     /// the new dimensions to egui.
     Resize,
@@ -344,6 +350,38 @@ unsafe extern "system" fn wnd_proc(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRE
                 };
                 push_event(h, InputEvent::Key { code, pressed: false });
                 DefWindowProcW(h, m, w, l)
+            }
+            WM_CHAR => {
+                // WM_CHAR 把字符以 UTF-16 单元送来。BMP（U+0000..U+FFFF 不含
+                // 代理）一次一个；BMP 外的字符会先后给两个：high surrogate
+                // (0xD800..0xDBFF) + low surrogate (0xDC00..0xDFFF)。我们用
+                // 一个静态线程局部缓存上一次的 high，遇到 low 再合成。
+                // 同时过滤控制字符（'\u{0000}'..='\u{001F}', '\u{007F}'），
+                // 让 Backspace/Esc/Enter 走 WM_KEYDOWN 那条线。
+                use std::cell::Cell;
+                thread_local! {
+                    static PENDING_HIGH: Cell<u16> = const { Cell::new(0) };
+                }
+                let unit = w.0 as u16;
+                let prev = PENDING_HIGH.with(|c| c.replace(0));
+                let codepoint: Option<u32> = if (0xD800..=0xDBFF).contains(&unit) {
+                    PENDING_HIGH.with(|c| c.set(unit));
+                    None
+                } else if (0xDC00..=0xDFFF).contains(&unit) && prev != 0 {
+                    let high = (prev as u32) - 0xD800;
+                    let low = (unit as u32) - 0xDC00;
+                    Some(0x10000 + (high << 10) + low)
+                } else {
+                    Some(unit as u32)
+                };
+                if let Some(cp) = codepoint {
+                    if let Some(ch) = char::from_u32(cp) {
+                        if !ch.is_control() {
+                            push_event(h, InputEvent::Char { ch });
+                        }
+                    }
+                }
+                LRESULT(0)
             }
             WM_MOUSEMOVE => {
                 let (x, y) = lparam_xy(l);

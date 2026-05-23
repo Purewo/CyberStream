@@ -41,8 +41,8 @@ mod icons {
     pub const PAUSE: &str = "\u{E769}";      // Pause
     pub const VOLUME: &str = "\u{E767}";     // Volume
     pub const MUTE: &str = "\u{E74F}";       // Mute
-    pub const FULLSCREEN: &str = "\u{E78C}"; // FullScreen（四方括号样式，避免 ↗ 误读）
-    pub const BACK_TO_WINDOW: &str = "\u{E73F}"; // BackToWindow
+    pub const FULLSCREEN: &str = "\u{E740}"; // FullScreen（Segoe Fluent 标准全屏：四角向外箭头）
+    pub const BACK_TO_WINDOW: &str = "\u{E73F}"; // BackToWindow（与 FullScreen 配对的还原）
     pub const SUBTITLE: &str = "\u{ED1E}";   // ClosedCaption
     pub const AUDIO: &str = "\u{E8D6}";      // Audio
     pub const SPEED: &str = "\u{EC4A}";      // Speed (FastForward 兜底备选)
@@ -526,7 +526,7 @@ fn draw_ui(
 ///   - 前面一项 → 上一集；后面一项 → 下一集
 ///   - 找不到（电影、单文件、首集/末集）→ None
 /// 返回值统一是 Option<(id, url)>，方便 HUD 直接派发 SwitchResource。
-fn derive_prev_next(state: &PlayerState) -> (Option<(String, String)>, Option<(String, String)>) {
+pub fn derive_prev_next(state: &PlayerState) -> (Option<(String, String)>, Option<(String, String)>) {
     let movie = match &state.movie {
         Some(m) => m,
         None => return (None, None),
@@ -536,32 +536,62 @@ fn derive_prev_next(state: &PlayerState) -> (Option<(String, String)>, Option<(S
         None => return (None, None),
     };
     // 优先用 state.active_season；再 fall back 到当前 resource 自带的 season；
+    // 再 fall back 到「在 seasons[].resource_ids 里反查 cur_id 命中的那一季」
+    // —— ResourceMeta.season 经常是 None（前端 r.season 字段缺失），单纯靠
+    // resource.season 会回落到 seasons[0]，但用户其实在第 N 季，于是
+    // entries 里找不到 cur_id，按钮就一直灰着。
     // 最后兜到 seasons[0]。
     let active = state
         .active_season
         .or_else(|| state.current_resource().and_then(|r| r.season))
+        .or_else(|| {
+            movie
+                .seasons
+                .iter()
+                .find(|s| s.resource_ids.iter().any(|id| id == cur_id))
+                .map(|s| s.season)
+        })
         .or_else(|| movie.seasons.first().map(|s| s.season));
-    // 如果连 seasons 都没有（电影），就把 movie.resources 当成单组。
-    let ids: Vec<&str> = if let Some(season) = active {
+
+    // 收集"候选 id"。规则与右侧网格保持一致：
+    //   - 多季：从 seasons[active] 拿 resource_ids，再用 movie.resources 反查
+    //     补全；剩下可能存在 seasons 里没列的 resource（后端旧数据），不用。
+    //   - 单季 / 电影：直接用 movie.resources。
+    // 然后按"集数"升序排序——右侧网格是用 BTreeMap<EpKey, _> 排好的，如果这里
+    // 用 resource_ids 数组的原始顺序，prev/next 在乱序后端下会跟UI看到的网格
+    // 不一致（用户点"下一集"跳到几集之外）。EpKey 排序与 draw_resource_groups
+    // 完全相同（数字>字母>movie），保证 prev/next 严格 = 网格的相邻方块。
+    let mut entries: Vec<(EpKey, &crate::native_player::meta::ResourceMeta)> = if let Some(season) = active {
         movie
             .seasons
             .iter()
             .find(|s| s.season == season)
-            .map(|s| s.resource_ids.iter().map(|s| s.as_str()).collect())
+            .map(|s| {
+                s.resource_ids
+                    .iter()
+                    .filter_map(|id| movie.resources.iter().find(|r| &r.id == id))
+                    .map(|r| (resource_ep_key(r), r))
+                    .collect()
+            })
             .unwrap_or_default()
     } else {
-        movie.resources.iter().map(|r| r.id.as_str()).collect()
+        movie
+            .resources
+            .iter()
+            .map(|r| (resource_ep_key(r), r))
+            .collect()
     };
-    if ids.is_empty() {
+    if entries.is_empty() {
         return (None, None);
     }
-    let pos = match ids.iter().position(|x| *x == cur_id) {
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let pos = match entries.iter().position(|(_, r)| r.id == cur_id) {
         Some(p) => p,
         None => return (None, None),
     };
     let lookup = |idx: usize| -> Option<(String, String)> {
-        let id = ids.get(idx)?;
-        let r = movie.resources.iter().find(|r| r.id == *id)?;
+        let (_, r) = entries.get(idx)?;
         if r.url.is_empty() {
             None
         } else {
@@ -571,6 +601,18 @@ fn derive_prev_next(state: &PlayerState) -> (Option<(String, String)>, Option<(S
     let prev = if pos > 0 { lookup(pos - 1) } else { None };
     let next = lookup(pos + 1);
     (prev, next)
+}
+
+/// 把 resource 的 episode 字段折成 EpKey，与 draw_resource_groups 行 2424-2430
+/// 完全一致：数字 → Number；非空非数字 → Label；空/None → Movie。
+fn resource_ep_key(r: &crate::native_player::meta::ResourceMeta) -> EpKey {
+    match r.episode.as_deref() {
+        None | Some("") => EpKey::Movie,
+        Some(s) => match s.parse::<i32>() {
+            Ok(n) => EpKey::Number(n),
+            Err(_) => EpKey::Label(s.to_string()),
+        },
+    }
 }
 
 /// 圆形 / 类圆形图标按钮 —— 透明底 + hover 时浅青描边，参考 web Player
@@ -1220,13 +1262,117 @@ fn draw_subtitle_search_window(
                     );
                 }
             }
+            // 「正在预览」醒目横幅 ——————————————————————————
+            // 用户反馈：之前用一行小字 "已预览：xxx（未绑定）" 不够明显。
+            // 这里改成一张青色描边卡片：左侧大号 label 显示当前预览的
+            // 字幕名（用 RichText.size(13) + strong），右侧直接挂「绑定
+            // 保留」按钮。看到合适直接一键持久化，免得回搜索结果再点。
+            // 真值来源：mpv 当前选中的 external sub track，反查 state.
+            // preview_subtitles 拿到 candidate_id + label。
+            let active_preview = state
+                .tracks
+                .iter()
+                .find(|t| t.kind == "sub" && t.selected && t.external)
+                .and_then(|t| t.external_filename.as_deref())
+                .and_then(|path| {
+                    state
+                        .preview_subtitles
+                        .iter()
+                        .find(|sub| sub.tmp_path == path)
+                });
+
+            if let Some(prev) = active_preview {
+                let banner_frame = egui::Frame {
+                    fill: Color32::from_rgba_unmultiplied(
+                        cyan.r(),
+                        cyan.g(),
+                        cyan.b(),
+                        18,
+                    ),
+                    stroke: egui::Stroke::new(1.4, cyan),
+                    corner_radius: egui::CornerRadius::same(8),
+                    inner_margin: egui::Margin::symmetric(12, 10),
+                    outer_margin: egui::Margin {
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        bottom: 4,
+                    },
+                    shadow: egui::epaint::Shadow::NONE,
+                };
+                banner_frame.show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.scope(|ui| {
+                                    install_chip_style(ui, cyan);
+                                    let bind_btn = ui.button(
+                                        egui::RichText::new("绑定保留")
+                                            .color(Color32::from_gray(235))
+                                            .size(12.0)
+                                            .strong(),
+                                    );
+                                    if bind_btn.clicked() {
+                                        actions.push(Action::BindOnlineSubtitle {
+                                            candidate_id: prev.candidate_id.clone(),
+                                            label: prev.label.clone(),
+                                        });
+                                    }
+                                });
+                                ui.add_space(8.0);
+                                let remain = ui.available_width().max(160.0);
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(remain, 0.0),
+                                    egui::Layout::top_down(egui::Align::LEFT),
+                                    |ui| {
+                                        ui.style_mut().wrap_mode =
+                                            Some(egui::TextWrapMode::Wrap);
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{} 正在预览",
+                                                icons::SUBTITLE
+                                            ))
+                                            .color(cyan)
+                                            .size(11.0)
+                                            .strong(),
+                                        );
+                                        ui.add_space(2.0);
+                                        ui.label(
+                                            egui::RichText::new(&prev.label)
+                                                .color(Color32::from_gray(240))
+                                                .size(13.0)
+                                                .strong(),
+                                        );
+                                        ui.add_space(2.0);
+                                        ui.label(
+                                            egui::RichText::new(
+                                                "临时挂载，未持久化 · 切集后丢失",
+                                            )
+                                            .color(Color32::from_gray(170))
+                                            .size(10.5),
+                                        );
+                                    },
+                                );
+                            },
+                        );
+                    });
+                });
+            }
+
+            // 状态行下面挂的瞬时反馈（下载中 / 绑定结果 / 错误等）。
+            // 当横幅已经表达了「已预览：xxx」时，就压掉那条同义的 last_message
+            // 避免重复信息；其它语义（下载中、绑定/删除反馈）仍然显示。
             if let Some(msg) = &last_message {
-                ui.label(
-                    egui::RichText::new(msg)
-                        .color(Color32::from_gray(170))
-                        .italics()
-                        .size(11.0),
-                );
+                let suppress = active_preview.is_some() && msg.starts_with("已预览：");
+                if !suppress {
+                    ui.label(
+                        egui::RichText::new(msg)
+                            .color(Color32::from_gray(170))
+                            .italics()
+                            .size(11.0),
+                    );
+                }
             }
 
             ui.add_space(8.0);
@@ -2667,7 +2813,11 @@ fn draw_source_row(
                         });
                 }
             });
-            // 第二行：文件名标题，开 wrap，让超长名字按 panel 宽度折行。
+            // 第二行：文件名标题。
+            // 长文件名（4K REMUX 经常 70+ 字符）整段 wrap 会把卡片撑得很高、
+            // 视觉重心全压在文件名上。改成强制单行 + 末尾省略号；egui 0.32 的
+            // Label::truncate() 在文本被截断时会自动挂 on_hover 显示完整原文，
+            // 不需要再手动 on_hover_text（那样会触发双层 tooltip 叠加）。
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(title_text)
@@ -2675,7 +2825,7 @@ fn draw_source_row(
                         .size(12.0)
                         .strong(),
                 )
-                .wrap(),
+                .truncate(),
             );
 
             if !res.badges.is_empty() {

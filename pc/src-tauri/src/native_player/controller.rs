@@ -33,6 +33,9 @@ pub const PROP_MUTE: u64 = 7;
 pub const PROP_SPEED: u64 = 8;
 pub const PROP_SID: u64 = 9;
 pub const PROP_AID: u64 = 10;
+/// `eof-reached`：mpv 在 keep-open=yes 下不会发 END_FILE，只会把这个
+/// 属性翻成 yes 然后停在最后一帧。我们观察这个属性来触发"自动下一集"。
+pub const PROP_EOF_REACHED: u64 = 11;
 
 /// Single source of truth for what the HUD shows. Updated by
 /// `PlayerState::apply_property_change` whenever an mpv property
@@ -103,6 +106,11 @@ pub struct PlayerState {
     /// 推送过一次再做决定，否则会跟 mpv 自己的 --slang 抢）。每次
     /// SwitchResource 重置为 false 让新资源能再选一次。
     pub auto_subtitle_done: bool,
+    /// mpv 触发了 END_FILE(reason=EOF)——视频自然播完。主循环每帧检查
+    /// 这个标志，如果 derive_prev_next 算得出 next，自动派发 SwitchResource
+    /// 跳到下一集。一次性标志：消费后立刻清零。
+    /// 不在 SwitchResource 路径里设置（用户切集走的是 STOP reason）。
+    pub pending_auto_next: bool,
 }
 
 /// 在线字幕子系统的真值副本。所有跨线程通信都过这个 Mutex；UI 每帧 lock 一次
@@ -318,6 +326,20 @@ impl PlayerState {
                     };
                 }
             }
+            PROP_EOF_REACHED => {
+                // mpv 把 eof-reached 翻成 true → 当前文件自然播完。
+                // keep-open=yes 让 mpv 不退出、不发 END_FILE，所以这是
+                // 我们感知 EOF 的唯一可靠信号。注意 mpv 在 loadfile 加载
+                // 新文件时也会先把 eof-reached 推一次 false，再切到具体
+                // 状态——主循环只在 true 时才置 pending_auto_next，false
+                // 推送忽略即可。
+                if prop.format == mp::MPV_FORMAT_FLAG {
+                    let v = *(prop.data as *const c_int) != 0;
+                    if v {
+                        self.pending_auto_next = true;
+                    }
+                }
+            }
             _ => {}
         }
     }}
@@ -339,6 +361,7 @@ pub unsafe fn observe_default_properties(handle: *mut mp::mpv_handle) -> Result<
             // sid/aid mpv 内部存的可能是数字或 "no"，直接拉字符串最稳。
             (PROP_SID, "sid", mp::MPV_FORMAT_STRING),
             (PROP_AID, "aid", mp::MPV_FORMAT_STRING),
+            (PROP_EOF_REACHED, "eof-reached", mp::MPV_FORMAT_FLAG),
         ] {
             let cname = CString::new(name).unwrap();
             let r = mp::mpv_observe_property(handle, id, cname.as_ptr(), format);

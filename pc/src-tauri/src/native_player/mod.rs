@@ -58,6 +58,14 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
             player.set_option("start", &format!("{:.3}", opts.start_time))?;
         }
 
+        // 视频流代理：从 proxy::video_proxy_url 取，独立于 app_proxy。mpv 的
+        // `http-proxy` option 跟 curl 一样接 http(s):// 或 socks5://；用户没配
+        // 时显式塞空串覆盖 mpv 默认（会读 HTTP_PROXY 环境变量），跟 WebView2
+        // / reqwest 那边的"无配置即直连"行为对齐——避免 v2rayN 等系统代理把
+        // 视频流偷偷拽走。
+        let vp = crate::proxy::video_proxy_url().unwrap_or_default();
+        player.set_option("http-proxy", &vp)?;
+
         let mut hud = Hud::new()?;
         let mut state = PlayerState::default();
         // 把前端送过来的元数据塞到 state 里，HUD 右侧面板会读这些字段。
@@ -98,6 +106,10 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
 
         let mut last_event_drain = Instant::now();
         let mut last_mouse_pos = (0.0_f32, 0.0_f32);
+        // 当前修饰键状态。每帧从 GetAsyncKeyState 拉，避免错过任何 keyup
+        // / 焦点切换导致的"卡住按下态"。同时拷贝给 egui，用来识别 Ctrl+A/
+        // Ctrl+C/Shift+方向键之类的组合键。
+        let mut current_modifiers = egui::Modifiers::default();
         // Cache last-applied mpv video margins so we only push updates
         // when they actually change (avoids spamming mpv every frame).
         let mut last_margin_bottom = -1.0_f64;
@@ -177,7 +189,11 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                         // 这些键不再 push_event 给 egui — 否则 egui 自己的
                         // 默认行为（Esc 关 popup、Enter 触发 focus 控件）会
                         // 和我们抢，导致按一下 Esc 既关 popup 又退全屏。
-                        if pressed {
+                        // 例外：在线字幕搜索面板打开 + 输入框聚焦时，把 Esc /
+                        // Enter / Space 留给 egui（关闭 popup / 触发搜索 / 输入
+                        // 空格），不抢。
+                        let in_search_input = state.online_search_open;
+                        if pressed && !in_search_input {
                             match code {
                                 KeyCode::Escape => {
                                     if win.is_fullscreen() {
@@ -203,23 +219,47 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                                 _ => {}
                             }
                         }
-                        // 非快捷键的按键仍交给 egui，方便后续 popup / 输入
-                        // 框真要用键盘时不会被这层吃掉。
+                        // 把 Win32 VK 映射成 egui::Key。覆盖文字编辑/导航/常用
+                        // 快捷键所需的最小集；其余按键我们没有 UI 用得上，丢
+                        // 弃即可（keyup 也一并丢，egui 没记 down 不会卡住）。
                         let key = match code {
                             KeyCode::Escape => Some(egui::Key::Escape),
                             KeyCode::Space => Some(egui::Key::Space),
                             KeyCode::Enter => Some(egui::Key::Enter),
-                            KeyCode::Other(_) => None,
+                            KeyCode::Other(vk) => translate_vk(vk),
                         };
+                        // 修饰键单独维护一份状态。Shift / Ctrl / Alt 的 VK 同时
+                        // 也走 Other(_) 派出去，但 egui 自己不靠它们读修饰键，
+                        // 而是读每个 Event 上挂的 modifiers 字段，所以我们显式
+                        // 追一遍 down/up 写到 current_modifiers。
+                        if let Some(m) = vk_modifier(code) {
+                            match m {
+                                ModifierFlag::Shift => current_modifiers.shift = pressed,
+                                ModifierFlag::Ctrl => {
+                                    current_modifiers.ctrl = pressed;
+                                    current_modifiers.command = pressed;
+                                }
+                                ModifierFlag::Alt => current_modifiers.alt = pressed,
+                            }
+                            hud.set_modifiers(current_modifiers);
+                        }
                         if let Some(k) = key {
                             hud.push_event(egui::Event::Key {
                                 key: k,
                                 physical_key: Some(k),
                                 pressed,
                                 repeat: false,
-                                modifiers: egui::Modifiers::default(),
+                                modifiers: current_modifiers,
                             });
                         }
+                    }
+                    InputEvent::Char { ch } => {
+                        // egui TextEdit 是靠 Event::Text 而不是 Event::Key 来
+                        // 插入字符的。WM_CHAR 已经做完键盘布局 + IME 转换，
+                        // 直接拼成 String 喂过去就好。Ctrl+A/C/V/X 等组合键
+                        // 走 Event::Key，那条路径不会落在这里（控制字符在
+                        // window.rs 的 WM_CHAR 处理里被过滤掉了）。
+                        hud.push_event(egui::Event::Text(ch.to_string()));
                     }
                     InputEvent::Resize => {
                         // Will be picked up by client_size below; nothing
@@ -385,7 +425,24 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
             }
 
             // egui paints over the same FBO 0 with alpha blending.
-            let actions = hud.paint(&state, cw, ch);
+            let mut actions = hud.paint(&state, cw, ch);
+            // 视频自然播完（END_FILE/reason=EOF）→ 自动跳下一集。
+            // drain_mpv_events 在收到 EOF 时设置 pending_auto_next；这里
+            // 消费一次后立即清零，避免最后一集 EOF 后 next 还是 None 时
+            // 一直保留 true，下次任何刷新又触发。
+            // SwitchResource action 走与用户手动点"下一集"完全一致的路径——
+            // 设置 current_resource_id、清零 time_pos / duration / auto_subtitle_done、
+            // 再 mpv loadfile 新 url。
+            if state.pending_auto_next {
+                state.pending_auto_next = false;
+                let (_, next_target) =
+                    crate::native_player::ui::derive_prev_next(&state);
+                if let Some((id, url)) = next_target {
+                    actions.push(
+                        crate::native_player::controller::Action::SwitchResource { id, url },
+                    );
+                }
+            }
             for action in actions {
                 match &action {
                     crate::native_player::controller::Action::ToggleFullscreen => {
@@ -723,6 +780,10 @@ unsafe fn drain_mpv_events(player: &MpvPlayer, state: &mut PlayerState) -> bool 
             if id == mp::MPV_EVENT_PROPERTY_CHANGE {
                 state.apply_property_change(ev);
             }
+            // 注意：mpv 在 keep-open=yes 模式下不会发 END_FILE 事件——它停在
+            // 最后一帧暂停，所以"自动下一集"不能依赖 END_FILE。我们改观察
+            // `eof-reached` 属性（PROP_EOF_REACHED），由 apply_property_change
+            // 直接在变 true 时设置 state.pending_auto_next。
         }
     }
 }
@@ -824,4 +885,88 @@ fn reset_gl_for_mpv(gl: &glow::Context, w: i32, h: i32) {
         gl.color_mask(true, true, true, true);
         gl.depth_mask(true);
     }
+}
+
+/// 修饰键标记。Win32 把 Shift / Ctrl / Alt 通过 VK_SHIFT(0x10) / VK_CONTROL
+/// (0x11) / VK_MENU(0x12) 经 WM_KEYDOWN 送上来；用左右版本（VK_L/RSHIFT 等）
+/// 时也认。我们不区分左右，反正 egui::Modifiers 也不区分。
+#[derive(Debug, Clone, Copy)]
+enum ModifierFlag {
+    Shift,
+    Ctrl,
+    Alt,
+}
+
+fn vk_modifier(code: KeyCode) -> Option<ModifierFlag> {
+    let vk = match code {
+        KeyCode::Other(v) => v,
+        _ => return None,
+    };
+    match vk {
+        0x10 | 0xA0 | 0xA1 => Some(ModifierFlag::Shift),
+        0x11 | 0xA2 | 0xA3 => Some(ModifierFlag::Ctrl),
+        0x12 | 0xA4 | 0xA5 => Some(ModifierFlag::Alt),
+        _ => None,
+    }
+}
+
+/// Win32 VK → egui::Key。覆盖文字编辑、导航、Ctrl+A/C/V/X、字母数字所需。
+/// 不在表里的 VK 一律返回 None（HUD 用不到）。VK 数值参考 winuser.h。
+fn translate_vk(vk: u32) -> Option<egui::Key> {
+    use egui::Key;
+    Some(match vk {
+        0x08 => Key::Backspace,
+        0x09 => Key::Tab,
+        0x0D => Key::Enter,
+        0x1B => Key::Escape,
+        0x20 => Key::Space,
+        0x21 => Key::PageUp,
+        0x22 => Key::PageDown,
+        0x23 => Key::End,
+        0x24 => Key::Home,
+        0x25 => Key::ArrowLeft,
+        0x26 => Key::ArrowUp,
+        0x27 => Key::ArrowRight,
+        0x28 => Key::ArrowDown,
+        0x2D => Key::Insert,
+        0x2E => Key::Delete,
+        // 0x30..=0x39 是数字 0-9（顶行），0x41..=0x5A 是字母 A-Z。
+        0x30 => Key::Num0,
+        0x31 => Key::Num1,
+        0x32 => Key::Num2,
+        0x33 => Key::Num3,
+        0x34 => Key::Num4,
+        0x35 => Key::Num5,
+        0x36 => Key::Num6,
+        0x37 => Key::Num7,
+        0x38 => Key::Num8,
+        0x39 => Key::Num9,
+        0x41 => Key::A,
+        0x42 => Key::B,
+        0x43 => Key::C,
+        0x44 => Key::D,
+        0x45 => Key::E,
+        0x46 => Key::F,
+        0x47 => Key::G,
+        0x48 => Key::H,
+        0x49 => Key::I,
+        0x4A => Key::J,
+        0x4B => Key::K,
+        0x4C => Key::L,
+        0x4D => Key::M,
+        0x4E => Key::N,
+        0x4F => Key::O,
+        0x50 => Key::P,
+        0x51 => Key::Q,
+        0x52 => Key::R,
+        0x53 => Key::S,
+        0x54 => Key::T,
+        0x55 => Key::U,
+        0x56 => Key::V,
+        0x57 => Key::W,
+        0x58 => Key::X,
+        0x59 => Key::Y,
+        0x5A => Key::Z,
+        _ => return None,
+    })
 }

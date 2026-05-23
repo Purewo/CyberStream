@@ -58,6 +58,16 @@ pub const MPV_EVENT_VIDEO_RECONFIG: c_int = 17;
 pub const MPV_EVENT_PLAYBACK_RESTART: c_int = 21;
 pub const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
 
+// END_FILE reason 值（mpv client.h MPV_END_FILE_REASON_*）。
+// 我们只关心 EOF —— 视频自然播完，触发"自动下一集"。其他 reason
+// （STOP=用户主动 stop / SwitchResource、QUIT、ERROR、REDIRECT）
+// 都不应该触发自动播下一集。
+pub const MPV_END_FILE_REASON_EOF: c_int = 0;
+pub const MPV_END_FILE_REASON_STOP: c_int = 2;
+pub const MPV_END_FILE_REASON_QUIT: c_int = 3;
+pub const MPV_END_FILE_REASON_ERROR: c_int = 4;
+pub const MPV_END_FILE_REASON_REDIRECT: c_int = 5;
+
 #[repr(C)]
 pub struct mpv_event {
     pub event_id: c_int,
@@ -71,6 +81,19 @@ pub struct mpv_event_property {
     pub name: *const c_char,
     pub format: c_int,
     pub data: *mut c_void,
+}
+
+/// END_FILE 事件的 data 指向的结构（mpv client.h `mpv_event_end_file`）。
+/// 我们只读 `reason` —— 0=EOF（自然播完）触发"自动下一集"。后面三个
+/// playlist_* 字段 mpv 0.36+ 才有，非空 playlist 才有意义；CyberStream
+/// 不用 mpv playlist（每集是独立 loadfile），不读它们也不会出错。
+#[repr(C)]
+pub struct mpv_event_end_file {
+    pub reason: c_int,
+    pub error: c_int,
+    pub playlist_entry_id: i64,
+    pub playlist_insert_id: i64,
+    pub playlist_insert_num_entries: c_int,
 }
 
 // ---- Render API params (subset, see render.h) ----------------------------
