@@ -27,6 +27,13 @@ from backend.app.services.favorites import (
     remove_favorite,
 )
 from backend.app.services.user_access import can_current_user_access_resource_id, current_user_id_for_personal_data
+from backend.app.services.vault import (
+    VaultAccessError,
+    build_vault_status,
+    lock_vault,
+    set_vault_pin,
+    unlock_vault,
+)
 from backend.app.utils.response import api_error, api_response
 
 logger = logging.getLogger(__name__)
@@ -42,6 +49,10 @@ def _normalize_page_args():
     page = request.args.get('page', 1, type=int) or 1
     page_size = request.args.get('page_size', 20, type=int) or 20
     return max(page, 1), min(max(page_size, 1), 100)
+
+
+def _vault_error_response(error):
+    return api_error(code=error.code, msg=error.msg, http_status=error.http_status)
 
 
 def _coerce_non_negative_seconds(value, field_name):
@@ -208,6 +219,8 @@ def list_user_favorites():
     include_movies = request.args.get('include_movies', 'false').strip().lower() in {'1', 'true', 'yes'}
     try:
         return api_response(data=list_favorites_payload(include_movies=include_movies))
+    except VaultAccessError as e:
+        return _vault_error_response(e)
     except Exception as e:
         logger.exception("List favorites failed error=%s", e)
         return api_error(code=50026, msg="Failed to list favorites", http_status=500)
@@ -215,13 +228,18 @@ def list_user_favorites():
 
 @history_bp.route('/user/favorites/<uuid:movie_id>', methods=['GET'])
 def get_user_favorite_state(movie_id):
-    return api_response(data=favorite_state(str(movie_id)))
+    try:
+        return api_response(data=favorite_state(str(movie_id)))
+    except VaultAccessError as e:
+        return _vault_error_response(e)
 
 
 @history_bp.route('/user/favorites/<uuid:movie_id>', methods=['POST'])
 def add_user_favorite(movie_id):
     try:
         return api_response(data=add_favorite(str(movie_id)), msg="Favorite saved")
+    except VaultAccessError as e:
+        return _vault_error_response(e)
     except FavoriteValidationError as e:
         status = 403 if 40300 <= e.code < 40400 else (404 if 40400 <= e.code < 40500 else 400)
         return api_error(code=e.code, msg=e.msg, http_status=status)
@@ -235,10 +253,52 @@ def add_user_favorite(movie_id):
 def delete_user_favorite(movie_id):
     try:
         return api_response(data=remove_favorite(str(movie_id)), msg="Favorite removed")
+    except VaultAccessError as e:
+        return _vault_error_response(e)
     except Exception as e:
         db.session.rollback()
         logger.exception("Remove favorite failed movie_id=%s error=%s", movie_id, e)
         return api_error(code=50028, msg="Remove favorite failed", http_status=500)
+
+
+@history_bp.route('/user/vault/status', methods=['GET'])
+def get_vault_status():
+    try:
+        return api_response(data=build_vault_status())
+    except VaultAccessError as e:
+        return _vault_error_response(e)
+
+
+@history_bp.route('/user/vault/password', methods=['POST'])
+def update_vault_password():
+    try:
+        return api_response(data=set_vault_pin(_get_json_payload()), msg="Vault PIN updated")
+    except VaultAccessError as e:
+        db.session.rollback()
+        return _vault_error_response(e)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Update vault PIN failed error=%s", e)
+        return api_error(code=50029, msg="Update vault PIN failed", http_status=500)
+
+
+@history_bp.route('/user/vault/unlock', methods=['POST'])
+def unlock_user_vault():
+    try:
+        return api_response(data=unlock_vault(_get_json_payload()), msg="Vault unlocked")
+    except VaultAccessError as e:
+        return _vault_error_response(e)
+    except Exception as e:
+        logger.exception("Unlock vault failed error=%s", e)
+        return api_error(code=50030, msg="Unlock vault failed", http_status=500)
+
+
+@history_bp.route('/user/vault/lock', methods=['POST'])
+def lock_user_vault():
+    try:
+        return api_response(data=lock_vault(), msg="Vault locked")
+    except VaultAccessError as e:
+        return _vault_error_response(e)
 
 
 @history_bp.route('/user/history', methods=['DELETE'])

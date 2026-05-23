@@ -2,30 +2,41 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import datetime
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from werkzeug.security import generate_password_hash
+
 from backend.app import create_app
 from backend.app.extensions import db
-from backend.app.models import Library, LibrarySource, MediaResource, Movie, StorageSource, User, UserFavorite
+from backend.app.models import Library, LibrarySource, MediaResource, Movie, StorageSource, User, UserFavorite, UserVaultSecret
 from backend.app.services.login_rate_limit import clear_all_login_failures
 from backend.app.services.users import set_user_password
 
 
 class FavoritesLibraryTests(unittest.TestCase):
     def setUp(self):
+        clear_all_login_failures()
         self.app = create_app({
             "TESTING": True,
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "USER_MANAGEMENT_ENABLED": True,
+            "SESSION_SECRET": "test-session-secret",
+            "SECRET_KEY": "test-session-secret",
+            "API_TOKEN": "",
+            "AUTH_ENABLED": False,
         })
         self.ctx = self.app.app_context()
         self.ctx.push()
         db.drop_all()
         db.create_all()
         self.client = self.app.test_client()
+        self.admin = self._user("admin", role=User.ROLE_ADMIN)
+        self._login("admin")
 
         self.source = StorageSource(name="Local", type="local", config={"root_path": "/media"})
         self.library = Library(name="电影库", slug="movies")
@@ -35,9 +46,30 @@ class FavoritesLibraryTests(unittest.TestCase):
         db.session.commit()
 
     def tearDown(self):
+        clear_all_login_failures()
         db.session.remove()
         db.drop_all()
         self.ctx.pop()
+
+    def _user(self, username, role=User.ROLE_USER, password="password-123"):
+        user = User(username=username, display_name=username, role=role, is_enabled=True)
+        set_user_password(user, password)
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    def _login(self, username, password="password-123"):
+        response = self.client.post("/api/v1/auth/login", json={"username": username, "password": password})
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        return response
+
+    def _setup_vault(self, pin="123456"):
+        response = self.client.post("/api/v1/user/vault/password", json={"pin": pin})
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        data = response.get_json()["data"]
+        self.assertTrue(data["configured"])
+        self.assertTrue(data["unlocked"])
+        return response
 
     def _movie(self, title):
         movie = Movie(
@@ -64,6 +96,9 @@ class FavoritesLibraryTests(unittest.TestCase):
 
         libraries = self.client.get("/api/v1/libraries").get_json()["data"]
         self.assertNotIn("favorites", [item["id"] for item in libraries])
+        self.assertEqual(403, self.client.get("/api/v1/libraries/favorites").status_code)
+
+        self._setup_vault()
         self.assertEqual(404, self.client.get("/api/v1/libraries/favorites").status_code)
 
         add_response = self.client.post(f"/api/v1/user/favorites/{movie.id}")
@@ -93,6 +128,7 @@ class FavoritesLibraryTests(unittest.TestCase):
 
     def test_favorite_add_is_idempotent_and_list_endpoint_returns_movie_ids(self):
         movie = self._movie("Idempotent")
+        self._setup_vault()
 
         first = self.client.post(f"/api/v1/user/favorites/{movie.id}")
         second = self.client.post(f"/api/v1/user/favorites/{movie.id}")
@@ -108,6 +144,57 @@ class FavoritesLibraryTests(unittest.TestCase):
         self.assertEqual([movie.id], list_data["movie_ids"])
         self.assertEqual(movie.id, list_data["items"][0]["movie"]["id"])
         self.assertTrue(state_response.get_json()["data"]["is_favorite"])
+
+    def test_vault_lock_requires_unlock_before_favorites_can_be_read(self):
+        movie = self._movie("Locked")
+        self._setup_vault()
+        self.assertEqual(200, self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code)
+
+        lock_response = self.client.post("/api/v1/user/vault/lock")
+        locked_list = self.client.get("/api/v1/user/favorites")
+        locked_libraries = self.client.get("/api/v1/libraries")
+        wrong_unlock = self.client.post("/api/v1/user/vault/unlock", json={"pin": "654321"})
+        unlock_response = self.client.post("/api/v1/user/vault/unlock", json={"pin": "123456"})
+        unlocked_list = self.client.get("/api/v1/user/favorites")
+
+        self.assertEqual(200, lock_response.status_code)
+        self.assertFalse(lock_response.get_json()["data"]["unlocked"])
+        self.assertEqual(403, locked_list.status_code)
+        self.assertIn("favorites", [item["id"] for item in locked_libraries.get_json()["data"]])
+        self.assertEqual(403, wrong_unlock.status_code)
+        self.assertEqual(200, unlock_response.status_code)
+        self.assertTrue(unlock_response.get_json()["data"]["unlocked"])
+        self.assertEqual(200, unlocked_list.status_code)
+
+    def test_vault_pin_must_be_six_digits_and_not_login_password(self):
+        self.admin.password_hash = generate_password_hash("123456")
+        db.session.commit()
+
+        short_pin = self.client.post("/api/v1/user/vault/password", json={"pin": "12345"})
+        login_password_pin = self.client.post("/api/v1/user/vault/password", json={"pin": "123456"})
+
+        self.assertEqual(400, short_pin.status_code)
+        self.assertEqual(400, login_password_pin.status_code)
+
+    def test_vault_pin_change_limit_locks_after_ten_daily_changes(self):
+        self._setup_vault()
+        secret = UserVaultSecret.query.one()
+        secret.pin_change_window_started_at = datetime.utcnow()
+        secret.pin_change_count = 10
+        db.session.commit()
+
+        change_response = self.client.post("/api/v1/user/vault/password", json={
+            "current_pin": "123456",
+            "new_pin": "234567",
+        })
+        status_response = self.client.get("/api/v1/user/vault/status")
+        unlock_response = self.client.post("/api/v1/user/vault/unlock", json={"pin": "123456"})
+
+        self.assertEqual(423, change_response.status_code)
+        status_data = status_response.get_json()["data"]
+        self.assertTrue(status_data["locked"])
+        self.assertEqual(0, status_data["pin_changes_remaining_today"])
+        self.assertEqual(423, unlock_response.status_code)
 
 
 class FavoritesUserIsolationTests(unittest.TestCase):
@@ -143,8 +230,8 @@ class FavoritesUserIsolationTests(unittest.TestCase):
         db.drop_all()
         self.ctx.pop()
 
-    def _user(self, username):
-        user = User(username=username, display_name=username, role=User.ROLE_USER, is_enabled=True)
+    def _user(self, username, role=User.ROLE_USER):
+        user = User(username=username, display_name=username, role=role, is_enabled=True)
         set_user_password(user, "password-123")
         db.session.add(user)
         db.session.commit()
@@ -173,10 +260,12 @@ class FavoritesUserIsolationTests(unittest.TestCase):
         db.session.commit()
         return movie
 
-    def test_favorites_are_isolated_by_login_user(self):
+    def test_vault_is_visible_only_to_admin_session(self):
         movie = self._movie()
 
-        self._login("alice")
+        self._user("admin", role=User.ROLE_ADMIN)
+        self._login("admin")
+        self.assertEqual(200, self.client.post("/api/v1/user/vault/password", json={"pin": "123456"}).status_code)
         self.assertEqual(200, self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code)
         self.assertEqual(["favorites"], [
             item["id"]
@@ -185,12 +274,14 @@ class FavoritesUserIsolationTests(unittest.TestCase):
         ])
         self.client.post("/api/v1/auth/logout")
 
-        self._login("bob")
+        self._login("alice")
         self.assertEqual([], [
             item["id"]
             for item in self.client.get("/api/v1/libraries").get_json()["data"]
             if item["id"] == "favorites"
         ])
+        self.assertEqual(403, self.client.get("/api/v1/user/favorites").status_code)
+        self.assertEqual(403, self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code)
 
 
 if __name__ == "__main__":

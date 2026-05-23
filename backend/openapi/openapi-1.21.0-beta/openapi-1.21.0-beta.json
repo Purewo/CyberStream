@@ -618,7 +618,7 @@
     "/api/v1/libraries/favorites": {
       "get": {
         "summary": "🔵 [新增] 获取收藏虚拟资源库详情",
-        "description": "收藏是用户维度的虚拟资源库。当前用户至少收藏 1 部影视后该资源库才存在；它没有存储源绑定，也不支持整库扫描。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可见。收藏是用户维度的虚拟资源库。当前用户至少收藏 1 部影视后该资源库才存在；它没有存储源绑定，也不支持整库扫描。",
         "operationId": "getFavoritesLibrary",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -637,6 +637,12 @@
           },
           "404": {
             "description": "当前用户还没有收藏任何影视"
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       }
@@ -644,7 +650,7 @@
     "/api/v1/libraries/favorites/movies": {
       "get": {
         "summary": "🔵 [新增] 获取收藏资源库影片列表",
-        "description": "分页获取当前用户收藏的影视。默认按收藏时间倒序排序，返回项的 library_membership 固定为 favorite。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可见。分页获取当前用户收藏的影视。默认按收藏时间倒序排序，返回项的 library_membership 固定为 favorite。",
         "operationId": "listFavoriteLibraryMovies",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -712,6 +718,12 @@
           },
           "404": {
             "description": "当前用户还没有收藏任何影视"
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       }
@@ -719,7 +731,7 @@
     "/api/v1/libraries/favorites/featured": {
       "get": {
         "summary": "🔵 [新增] 获取收藏资源库 featured 内容",
-        "description": "从当前用户收藏影视中返回可用于置顶展示的内容。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可见。从当前用户收藏影视中返回可用于置顶展示的内容。",
         "operationId": "getFavoriteLibraryFeatured",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -763,6 +775,12 @@
           },
           "404": {
             "description": "当前用户还没有收藏任何影视"
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       }
@@ -770,7 +788,7 @@
     "/api/v1/libraries/favorites/recommendations": {
       "get": {
         "summary": "🔵 [新增] 获取收藏资源库推荐",
-        "description": "在当前用户收藏影视集合内生成推荐内容。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可见。在当前用户收藏影视集合内生成推荐内容。",
         "operationId": "getFavoriteLibraryRecommendations",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -829,6 +847,12 @@
           },
           "404": {
             "description": "当前用户还没有收藏任何影视"
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       }
@@ -836,7 +860,7 @@
     "/api/v1/libraries/favorites/filters": {
       "get": {
         "summary": "🔵 [新增] 获取收藏资源库筛选字典",
-        "description": "从当前用户收藏影视集合中生成 genres/years/countries 筛选项。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可见。从当前用户收藏影视集合中生成 genres/years/countries 筛选项。",
         "operationId": "getFavoriteLibraryFilters",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -876,6 +900,12 @@
           },
           "404": {
             "description": "当前用户还没有收藏任何影视"
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       }
@@ -5419,10 +5449,143 @@
         }
       }
     },
+    "/api/v1/user/vault/status": {
+      "get": {
+        "summary": "🔵 [新增] 获取保险库状态",
+        "description": "仅已登录管理员可调用。返回保险库 PIN 是否已配置、当前会话是否已解锁、是否被修改限额锁定。",
+        "operationId": "getUserVaultStatus",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "responses": {
+          "200": {
+            "description": "保险库状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VaultStatusResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "仅管理员会话可访问保险库状态"
+          }
+        }
+      }
+    },
+    "/api/v1/user/vault/password": {
+      "post": {
+        "summary": "🔵 [新增] 设置或修改保险库 PIN",
+        "description": "设置或修改管理员自己的保险库 6 位数字 PIN。PIN 不能与登录密码相同；已有 PIN 时必须提供 current_pin；24 小时窗口内最多修改 10 次，第 11 次会锁定保险库直到窗口结束。成功后当前会话自动解锁保险库。",
+        "operationId": "updateUserVaultPassword",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "PIN 已更新并解锁当前会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VaultPasswordResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "PIN 格式错误、与登录密码相同或与当前 PIN 相同"
+          },
+          "403": {
+            "description": "非管理员、未设置 PIN、未解锁或 PIN 错误"
+          },
+          "423": {
+            "description": "保险库因 24 小时内修改 PIN 超过 10 次而锁定"
+          }
+        }
+      }
+    },
+    "/api/v1/user/vault/unlock": {
+      "post": {
+        "summary": "🔵 [新增] 解锁保险库",
+        "description": "使用 6 位 PIN 解锁当前管理员会话的保险库访问。",
+        "operationId": "unlockUserVault",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultUnlockRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "保险库已解锁",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VaultUnlockResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "非管理员、未设置 PIN、未解锁或 PIN 错误"
+          },
+          "423": {
+            "description": "保险库因 24 小时内修改 PIN 超过 10 次而锁定"
+          }
+        }
+      }
+    },
+    "/api/v1/user/vault/lock": {
+      "post": {
+        "summary": "🔵 [新增] 锁定当前会话保险库",
+        "description": "清除当前会话的保险库解锁态，不删除 PIN 或收藏关系。",
+        "operationId": "lockUserVault",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "responses": {
+          "200": {
+            "description": "当前会话保险库已锁定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VaultLockResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "仅管理员会话可锁定保险库"
+          }
+        }
+      }
+    },
     "/api/v1/user/favorites": {
       "get": {
         "summary": "🔵 [新增] 获取当前用户收藏",
-        "description": "返回当前用户收藏关系和影片 ID。首次收藏前 items 为空且 library 为 null；收藏库不会预先创建空壳。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可用。返回当前用户收藏关系和影片 ID。首次收藏前 items 为空且 library 为 null；收藏库不会预先创建空壳。",
         "operationId": "listUserFavorites",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -5449,6 +5612,12 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       }
@@ -5456,7 +5625,7 @@
     "/api/v1/user/favorites/{movie_id}": {
       "get": {
         "summary": "🔵 [新增] 获取单片收藏状态",
-        "description": "用于详情页初始化收藏按钮状态。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可用。用于详情页初始化收藏按钮状态。",
         "operationId": "getUserFavoriteState",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -5483,12 +5652,18 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       },
       "post": {
         "summary": "🔵 [新增] 收藏影视",
-        "description": "幂等收藏指定影视。首次收藏会令 favorites 虚拟资源库出现在 GET /api/v1/libraries 结果中。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可用。幂等收藏指定影视。首次收藏会令 favorites 虚拟资源库出现在 GET /api/v1/libraries 结果中。",
         "operationId": "addUserFavorite",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -5521,12 +5696,15 @@
           },
           "404": {
             "description": "影视不存在"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       },
       "delete": {
         "summary": "🔵 [新增] 移除收藏",
-        "description": "幂等移除指定影视收藏。移除最后一条收藏后 favorites 虚拟资源库从资源库列表消失。",
+        "description": "仅已登录管理员在保险库 PIN 解锁后可用。幂等移除指定影视收藏。移除最后一条收藏后 favorites 虚拟资源库从资源库列表消失。",
         "operationId": "deleteUserFavorite",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -5553,6 +5731,12 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "保险库未解锁、未配置或非管理员访问"
+          },
+          "423": {
+            "description": "保险库已锁定"
           }
         }
       }
@@ -17783,6 +17967,141 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/OpenApiModulesData"
+              }
+            }
+          }
+        ]
+      },
+      "VaultAccessState": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "是否已设置保险库 6 位 PIN。"
+          },
+          "unlocked": {
+            "type": "boolean",
+            "description": "当前管理员会话是否已解锁保险库。"
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "是否因超过 PIN 修改限制被锁定。"
+          },
+          "locked_until": {
+            "type": "string",
+            "nullable": true,
+            "description": "锁定截止时间；未锁定时为 null。"
+          },
+          "pin_change_limit_per_day": {
+            "type": "integer",
+            "example": 10
+          },
+          "pin_changes_used_today": {
+            "type": "integer",
+            "example": 1
+          },
+          "pin_changes_remaining_today": {
+            "type": "integer",
+            "example": 9
+          }
+        },
+        "required": [
+          "configured",
+          "unlocked",
+          "locked",
+          "pin_change_limit_per_day",
+          "pin_changes_used_today",
+          "pin_changes_remaining_today"
+        ]
+      },
+      "VaultStatusResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/VaultAccessState"
+              }
+            }
+          }
+        ]
+      },
+      "VaultPasswordRequest": {
+        "type": "object",
+        "properties": {
+          "pin": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "description": "首次设置时可用；与 new_pin 等价。"
+          },
+          "new_pin": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "description": "新的 6 位数字保险库 PIN。"
+          },
+          "current_pin": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "description": "修改已有 PIN 时必填。"
+          }
+        },
+        "description": "首次设置传 pin 或 new_pin；修改已有 PIN 时传 current_pin + new_pin。PIN 不能与登录密码相同。"
+      },
+      "VaultPasswordResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/VaultAccessState"
+              }
+            }
+          }
+        ]
+      },
+      "VaultUnlockRequest": {
+        "type": "object",
+        "required": [
+          "pin"
+        ],
+        "properties": {
+          "pin": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          }
+        }
+      },
+      "VaultUnlockResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/VaultAccessState"
+              }
+            }
+          }
+        ]
+      },
+      "VaultLockResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/VaultAccessState"
               }
             }
           }

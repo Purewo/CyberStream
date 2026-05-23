@@ -128,7 +128,7 @@ class AchievementRoutesTests(unittest.TestCase):
         ghost = next(item for item in achievements if item["id"] == "ghost")
         self.assertIsNotNone(ghost["unlocked_at"])
 
-    def test_collector_is_a_server_calculated_milestone(self):
+    def test_collector_does_not_expose_default_scope_vault_data(self):
         for index in range(50):
             movie = Movie(
                 tmdb_id=f"movie/favorite-{index}",
@@ -146,8 +146,8 @@ class AchievementRoutesTests(unittest.TestCase):
 
         self.assertEqual("milestone", definition["category"])
         self.assertEqual("favorites_count", definition["trigger"]["metric"])
-        self.assertIsNotNone(state["unlocked_at"])
-        self.assertEqual(1, state["progress"])
+        self.assertIsNone(state["unlocked_at"])
+        self.assertEqual(0, state["progress"])
 
 
 class AchievementUserIsolationTests(unittest.TestCase):
@@ -176,8 +176,8 @@ class AchievementUserIsolationTests(unittest.TestCase):
         db.drop_all()
         self.ctx.pop()
 
-    def _user(self, username):
-        user = User(username=username, display_name=username, role=User.ROLE_USER, is_enabled=True)
+    def _user(self, username, role=User.ROLE_USER):
+        user = User(username=username, display_name=username, role=role, is_enabled=True)
         set_user_password(user, "password-123")
         db.session.add(user)
         db.session.commit()
@@ -201,6 +201,25 @@ class AchievementUserIsolationTests(unittest.TestCase):
 
         self._login("bob")
         self.assertIsNone(self._achievement_state("overclock")["unlocked_at"])
+
+    def test_collector_is_calculated_for_admin_vault_scope(self):
+        admin = self._user("admin", role=User.ROLE_ADMIN)
+        self._login("admin")
+        for index in range(50):
+            movie = Movie(
+                tmdb_id=f"movie/admin-favorite-{index}",
+                title=f"Admin Favorite {index}",
+                scraper_source="TMDB",
+            )
+            db.session.add(movie)
+            db.session.flush()
+            db.session.add(UserFavorite(scope_key=f"user:{admin.id}", user_id=admin.id, movie_id=movie.id))
+        db.session.commit()
+
+        state = self._achievement_state("collector")
+
+        self.assertIsNotNone(state["unlocked_at"])
+        self.assertEqual(1, state["progress"])
 
 
 if __name__ == "__main__":

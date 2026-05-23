@@ -134,7 +134,7 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 普通资源库来自数据库 `libraries`
-- 当前用户至少收藏 1 部影视后，列表会额外返回一个虚拟资源库：`id="favorites"`、`slug="favorites"`、`is_virtual=true`
+- 已登录管理员至少收藏 1 部影视后，列表会额外返回一个虚拟资源库：`id="favorites"`、`slug="favorites"`、`is_virtual=true`；读取内容前仍需解锁保险库 PIN
 - 收藏虚拟库没有存储源、没有来源绑定、没有整库扫描动作；前端应根据 `actions.can_scan=false` 隐藏扫描按钮
 
 ### `POST /api/v1/libraries`
@@ -157,6 +157,8 @@ X-Cyber-API-Token: <token>
 获取当前用户收藏虚拟资源库详情。
 
 说明：
+- 仅已登录管理员可访问；普通用户、未登录默认作用域、API Token 管理后门都不能访问保险库
+- 访问前必须先设置并解锁 6 位数字保险库 PIN
 - 未收藏任何影视时返回 `404`
 - 返回结构与普通资源库详情一致，但 `sources=[]`、`is_virtual=true`、`kind="favorites"`
 - 该资源库不能绑定来源、不能创建/删除、不能触发整库扫描
@@ -1507,9 +1509,45 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - `include_movies=true|false`，默认 `false`
 
 说明：
+- 该组接口只面向已登录管理员自己的保险库；访问前必须先完成 PIN 解锁
 - 返回 `items`、`movie_ids`、`total`
 - 未收藏任何影视时 `items=[]`，`library=null`
 - 有收藏时 `library` 为 `favorites` 虚拟资源库摘要
+
+### `GET /api/v1/user/vault/status`
+获取当前管理员保险库状态。
+
+返回核心字段：
+- `configured`：是否已设置保险库 PIN
+- `unlocked`：当前会话是否已解锁保险库
+- `locked`：是否因超过 PIN 修改限制被锁定
+- `locked_until`：锁定截止时间
+- `pin_change_limit_per_day=10`
+- `pin_changes_used_today`
+- `pin_changes_remaining_today`
+
+### `POST /api/v1/user/vault/password`
+设置或修改保险库 PIN。
+
+请求：
+- 首次设置：`{"pin":"123456"}` 或 `{"new_pin":"123456"}`
+- 修改已有 PIN：`{"current_pin":"123456","new_pin":"234567"}`
+
+规则：
+- PIN 必须是 6 位数字
+- PIN 不能与登录密码相同
+- 修改已有 PIN 时必须提供正确 `current_pin`
+- 24 小时窗口内最多修改 10 次；第 11 次会直接锁定保险库，直到该窗口结束
+- 设置或修改成功后，当前会话自动解锁保险库
+
+### `POST /api/v1/user/vault/unlock`
+用 6 位 PIN 解锁保险库。
+
+请求：
+- `{"pin":"123456"}`
+
+### `POST /api/v1/user/vault/lock`
+显式锁定当前会话的保险库访问；不会清空收藏关系或删除 PIN。
 
 ### `GET /api/v1/user/favorites/<movie_id>`
 获取单片收藏状态，用于详情页初始化收藏按钮。
@@ -1519,7 +1557,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 说明：
 - 幂等；重复收藏仍返回 `200`，`data.newly_added=false`
-- 第一次收藏后，`GET /api/v1/libraries` 会出现 `favorites` 虚拟资源库
+- 第一次收藏后，在当前管理员已解锁保险库的会话里，`GET /api/v1/libraries` 会出现 `favorites` 虚拟资源库
 - 启用用户系统时只允许收藏当前用户可访问的影视
 
 ### `DELETE /api/v1/user/favorites/<movie_id>`
@@ -1535,6 +1573,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 说明：
 - 返回 `defs` 和 `user` 两组数据，`defs[].icon` 是 lucide-react 图标名字符串，前端自行映射图标组件
 - `category=milestone` 表示后端基于可统计指标自动结算；当前支持 `completed_movies_count`、`favorites_count`、`watched_legacy_titles_count`、`high_quality_playback_count`、`dolby_vision_playback_count`、`dolby_atmos_playback_count`、`playback_device_count`
+- `favorites_count` 只统计已登录管理员自己的保险库收藏，普通用户和默认未登录作用域不暴露该计数
 - `category=behavior` 表示播放器或客户端明确行为，由前端在事件发生后调用 unlock 端点
 - 读取该接口时会结算并持久化已达标 milestone；`POST /api/v1/user/history` 后也会触发一次 milestone 结算
 - 启用用户系统时按登录用户隔离；未启用用户系统时使用单用户默认作用域

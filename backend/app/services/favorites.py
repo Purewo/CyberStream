@@ -9,6 +9,7 @@ from backend.app.services.user_access import (
     can_current_user_access_movie_id,
     current_user_id_for_personal_data,
 )
+from backend.app.services.vault import is_vault_admin_session, require_vault_unlocked
 
 
 FAVORITES_LIBRARY_ID = "favorites"
@@ -28,6 +29,7 @@ def favorite_scope_context():
 
 
 def favorite_movie_query():
+    require_vault_unlocked()
     scope_key, _user_id = favorite_scope_context()
     query = Movie.query.join(UserFavorite, UserFavorite.movie_id == Movie.id) \
         .filter(UserFavorite.scope_key == scope_key)
@@ -48,6 +50,13 @@ def favorite_count():
     return favorite_movie_query().count()
 
 
+def visible_vault_favorite_count():
+    if not is_vault_admin_session():
+        return 0
+    scope_key, _user_id = favorite_scope_context()
+    return UserFavorite.query.filter_by(scope_key=scope_key).count()
+
+
 def favorite_created_at_map(movie_ids):
     if not movie_ids:
         return {}
@@ -63,8 +72,8 @@ def favorite_membership_map(movie_ids):
     return {movie_id: "favorite" for movie_id in (movie_ids or [])}
 
 
-def build_favorites_library_payload():
-    count = favorite_count()
+def build_favorites_library_payload(require_access=True):
+    count = favorite_count() if require_access else visible_vault_favorite_count()
     return {
         "id": FAVORITES_LIBRARY_ID,
         "name": "我的收藏",
@@ -96,6 +105,7 @@ def get_favorite_row(movie_id):
 
 
 def favorite_state(movie_id):
+    require_vault_unlocked()
     row = get_favorite_row(movie_id)
     return {
         "movie_id": str(movie_id),
@@ -105,6 +115,7 @@ def favorite_state(movie_id):
 
 
 def add_favorite(movie_id):
+    require_vault_unlocked()
     movie = db.session.get(Movie, str(movie_id))
     if not movie:
         raise FavoriteValidationError(40401, "Movie not found")
@@ -133,6 +144,7 @@ def add_favorite(movie_id):
 
 
 def remove_favorite(movie_id):
+    require_vault_unlocked()
     row = get_favorite_row(movie_id)
     removed = row is not None
     if row:
@@ -147,6 +159,7 @@ def remove_favorite(movie_id):
 
 
 def list_favorites_payload(include_movies=False):
+    require_vault_unlocked()
     scope_key, _user_id = favorite_scope_context()
     query = UserFavorite.query.filter_by(scope_key=scope_key).join(Movie, UserFavorite.movie_id == Movie.id)
     query = query.filter(Movie.id.in_([item for item in favorite_movie_ids()]))

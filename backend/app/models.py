@@ -1291,6 +1291,29 @@ class UserFavorite(db.Model):
         return data
 
 
+class UserVaultSecret(db.Model):
+    """Per-admin vault PIN state for the Favorites virtual library."""
+    __tablename__ = 'user_vault_secrets'
+    __table_args__ = (
+        db.UniqueConstraint('scope_key', name='uq_user_vault_secret_scope'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    scope_key = db.Column(db.String(80), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    pin_hash = db.Column(db.String(255), nullable=False)
+    pin_changed_at = db.Column(db.DateTime)
+    pin_change_window_started_at = db.Column(db.DateTime)
+    pin_change_count = db.Column(db.Integer, default=0, nullable=False)
+    is_locked = db.Column(db.Boolean, default=False, nullable=False)
+    locked_until = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User')
+
+
 class MaintenanceJob(db.Model):
     """Persistent audit record for in-process maintenance jobs."""
     __tablename__ = 'maintenance_jobs'

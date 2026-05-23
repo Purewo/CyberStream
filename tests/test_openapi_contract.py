@@ -210,6 +210,10 @@ class OpenApiContractTests(unittest.TestCase):
 
         self.assertIn("/api/v1/user/favorites", paths)
         self.assertIn("/api/v1/user/favorites/{movie_id}", paths)
+        self.assertIn("/api/v1/user/vault/status", paths)
+        self.assertIn("/api/v1/user/vault/password", paths)
+        self.assertIn("/api/v1/user/vault/unlock", paths)
+        self.assertIn("/api/v1/user/vault/lock", paths)
         self.assertIn("/api/v1/libraries/favorites", paths)
         self.assertIn("/api/v1/libraries/favorites/movies", paths)
         self.assertIn("/api/v1/libraries/favorites/featured", paths)
@@ -219,6 +223,10 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("UserFavoritesResponse", schemas)
         self.assertIn("UserFavoriteStateResponse", schemas)
         self.assertIn("UserFavoriteMutationResponse", schemas)
+        self.assertIn("VaultAccessState", schemas)
+        self.assertIn("VaultStatusResponse", schemas)
+        self.assertIn("VaultPasswordRequest", schemas)
+        self.assertIn("VaultUnlockRequest", schemas)
         self.assertIn("is_virtual", schemas["Library"]["properties"])
         self.assertIn("actions", schemas["Library"]["properties"])
 

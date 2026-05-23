@@ -254,6 +254,24 @@ SQLITE_TABLE_PATCHES = {
             FOREIGN KEY(movie_id) REFERENCES movies (id)
         )
     """,
+    "user_vault_secrets": """
+        CREATE TABLE user_vault_secrets (
+            id INTEGER NOT NULL,
+            scope_key VARCHAR(80) NOT NULL,
+            user_id INTEGER NOT NULL,
+            pin_hash VARCHAR(255) NOT NULL,
+            pin_changed_at DATETIME,
+            pin_change_window_started_at DATETIME,
+            pin_change_count INTEGER NOT NULL,
+            is_locked BOOLEAN NOT NULL,
+            locked_until DATETIME,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_user_vault_secret_scope UNIQUE (scope_key),
+            FOREIGN KEY(user_id) REFERENCES users (id)
+        )
+    """,
 }
 
 
