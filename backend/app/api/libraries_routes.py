@@ -15,6 +15,8 @@ from backend.app.api.library_helpers import (
 )
 from backend.app.extensions import db
 from backend.app.models import Library, LibraryMovieMembership, LibrarySource, MediaResource, Movie, StorageSource, UserFavorite
+from backend.app.providers.base import StorageProviderError
+from backend.app.providers.factory import provider_factory
 from backend.app.services.favorites import (
     FAVORITES_LIBRARY_ID,
     build_favorites_library_payload,
@@ -31,6 +33,7 @@ from backend.app.services.user_access import (
 )
 from backend.app.services.vault import VaultAccessError, require_vault_unlocked
 from backend.app.security import is_admin_request
+from backend.app.storage.source_registry import get_source_capabilities
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
 
@@ -85,7 +88,67 @@ def _build_binding_path_filter(binding):
     )
 
 
-def _scan_library_background_task(app, library_id):
+def _normalize_request_bool(value, *, default=False, field_name="refresh"):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return default
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"Invalid field type: {field_name} should be boolean")
+
+
+def _source_refresh_supported(source):
+    if not source:
+        return False
+    try:
+        _, capabilities = get_source_capabilities(source.type)
+    except StorageProviderError:
+        return False
+    return bool(capabilities.get('refresh'))
+
+
+def _refresh_library_binding_source(library_id, binding):
+    source = binding.source
+    if not source or not _source_refresh_supported(source):
+        return []
+
+    root_path = binding.root_path or '/'
+    try:
+        provider = provider_factory.get_provider(source)
+    except Exception as e:
+        logger.warning(
+            'Library scan refresh provider unavailable library_id=%s source_id=%s root_path=%s error=%s',
+            library_id,
+            source.id,
+            root_path,
+            e,
+        )
+        return [(root_path, e)]
+
+    try:
+        provider.refresh_directory(root_path)
+    except Exception as e:
+        logger.warning(
+            'Library scan refresh failed library_id=%s source_id=%s root_path=%s error=%s',
+            library_id,
+            source.id,
+            root_path,
+            e,
+        )
+        return [(root_path, e)]
+    return []
+
+
+def _scan_library_background_task(app, library_id, refresh=True):
     with app.app_context():
         session_started = False
         try:
@@ -102,9 +165,12 @@ def _scan_library_background_task(app, library_id):
             scanner_engine._begin_scan_session(current_source=f'library:{library.name}')
             session_started = True
             app_instance = current_app._get_current_object()
+            refresh_errors = []
             for binding in bindings:
                 if not binding.source or not binding.is_enabled:
                     continue
+                if refresh:
+                    refresh_errors.extend(_refresh_library_binding_source(library_id, binding))
                 scanner_engine.scan_source(
                     binding.source,
                     app_instance=app_instance,
@@ -115,6 +181,8 @@ def _scan_library_background_task(app, library_id):
                     library_source_id=binding.id,
                     scraper_policy=binding.scraper_policy or {},
                 )
+            for path, error in refresh_errors:
+                scanner_engine._record_indexing_directory_skip(path, error)
         except Exception as e:
             logger.exception('Library scan failed library_id=%s error=%s', library_id, e)
         finally:
@@ -811,6 +879,12 @@ def get_favorite_library_filters():
 
 @libraries_bp.route('/libraries/<int:id>/scan', methods=['POST'])
 def trigger_library_scan(id):
+    payload = _get_json_payload()
+    try:
+        refresh = _normalize_request_bool(payload.get('refresh'), default=True)
+    except ValueError as exc:
+        return api_error(code=40090, msg=str(exc))
+
     library, error_response = _get_library_or_404(id)
     if error_response:
         return error_response
@@ -823,6 +897,6 @@ def trigger_library_scan(id):
         return api_error(code=42900, msg='Scanner is already running', http_status=429)
 
     app = current_app._get_current_object()
-    thread = threading.Thread(target=_scan_library_background_task, args=(app, id))
+    thread = threading.Thread(target=_scan_library_background_task, args=(app, id, refresh))
     thread.start()
     return api_response(msg='Library scan task accepted', http_status=202)

@@ -321,6 +321,8 @@ X-Cyber-API-Token: <token>
 当前行为：
 - 按绑定顺序扫描该库所有启用的 source
 - 扫描时支持 `root_path` 限定起始路径
+- 请求体可选 `refresh`，默认 `true`；对支持目录刷新的 `alist/openlist` 绑定，会先刷新该绑定的 `root_path` 再扫描
+- 刷新失败只记录到扫描错误/日志，不会阻断后续扫描与刮削；需要跳过上游刷新时传 `{"refresh": false}`
 - 入库时仍保持 `MediaResource.path` 为相对 source 根路径，避免破坏现有播放与资源定位逻辑
 - 与全量扫描、指定存储源扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
 - 收藏虚拟资源库没有 `/api/v1/libraries/favorites/scan`，前端不应展示或调用扫描入口

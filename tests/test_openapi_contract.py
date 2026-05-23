@@ -110,6 +110,19 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("refresh", schemas["StorageProviderCapabilities"]["properties"])
         self.assertIn("can_refresh", schemas["StorageSourceActions"]["properties"])
 
+    def test_library_scan_openapi_documents_refresh_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        scan_operation = paths["/api/v1/libraries/{id}/scan"]["post"]
+        self.assertIn("LibraryScanRequest", schemas)
+        self.assertEqual(
+            "#/components/schemas/LibraryScanRequest",
+            scan_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        )
+        self.assertIn("refresh", schemas["LibraryScanRequest"]["properties"])
+
     def test_catalog_visibility_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]

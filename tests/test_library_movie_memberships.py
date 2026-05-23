@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from sqlalchemy.exc import IntegrityError
 
@@ -328,6 +328,97 @@ class LibraryMovieMembershipTests(unittest.TestCase):
             library_source_id=binding.id,
             scraper_policy={"provider_order": ["tmdb", "local"]},
         )
+
+    def test_library_scan_refreshes_capable_bindings_by_default(self):
+        self.source_a.type = "alist"
+        db.session.commit()
+        provider = MagicMock()
+
+        with patch("backend.app.api.libraries_routes.threading.Thread", _ImmediateThread), \
+                patch("backend.app.api.libraries_routes.scanner_engine") as scanner_mock, \
+                patch("backend.app.api.libraries_routes.provider_factory.get_provider", return_value=provider) as get_provider:
+            scanner_mock.try_start_scan.return_value = True
+
+            response = self.client.post(f"/api/v1/libraries/{self.library.id}/scan")
+
+        self.assertEqual(202, response.status_code)
+        get_provider.assert_called_once()
+        provider.refresh_directory.assert_called_once_with("movies")
+        scanner_mock.scan_source.assert_any_call(
+            ANY,
+            app_instance=ANY,
+            root_path="movies",
+            content_type=None,
+            scrape_enabled=True,
+            library_id=self.library.id,
+            library_source_id=ANY,
+            scraper_policy={},
+        )
+
+    def test_library_scan_can_skip_upstream_refresh(self):
+        self.source_a.type = "alist"
+        db.session.commit()
+        provider = MagicMock()
+
+        with patch("backend.app.api.libraries_routes.threading.Thread", _ImmediateThread), \
+                patch("backend.app.api.libraries_routes.scanner_engine") as scanner_mock, \
+                patch("backend.app.api.libraries_routes.provider_factory.get_provider", return_value=provider) as get_provider:
+            scanner_mock.try_start_scan.return_value = True
+
+            response = self.client.post(f"/api/v1/libraries/{self.library.id}/scan", json={"refresh": False})
+
+        self.assertEqual(202, response.status_code)
+        get_provider.assert_not_called()
+        provider.refresh_directory.assert_not_called()
+        scanner_mock.scan_source.assert_any_call(
+            ANY,
+            app_instance=ANY,
+            root_path="movies",
+            content_type=None,
+            scrape_enabled=True,
+            library_id=self.library.id,
+            library_source_id=ANY,
+            scraper_policy={},
+        )
+
+    def test_library_scan_refresh_failure_does_not_abort_scan(self):
+        self.source_a.type = "alist"
+        db.session.commit()
+        provider = MagicMock()
+        provider.refresh_directory.side_effect = RuntimeError("stale upstream")
+
+        with patch("backend.app.api.libraries_routes.threading.Thread", _ImmediateThread), \
+                patch("backend.app.api.libraries_routes.scanner_engine") as scanner_mock, \
+                patch("backend.app.api.libraries_routes.provider_factory.get_provider", return_value=provider):
+            scanner_mock.try_start_scan.return_value = True
+
+            response = self.client.post(f"/api/v1/libraries/{self.library.id}/scan")
+
+        self.assertEqual(202, response.status_code)
+        provider.refresh_directory.assert_called_once_with("movies")
+        scanner_mock._record_indexing_directory_skip.assert_called_once()
+        self.assertEqual("movies", scanner_mock._record_indexing_directory_skip.call_args.args[0])
+        scanner_mock.scan_source.assert_any_call(
+            ANY,
+            app_instance=ANY,
+            root_path="movies",
+            content_type=None,
+            scrape_enabled=True,
+            library_id=self.library.id,
+            library_source_id=ANY,
+            scraper_policy={},
+        )
+
+    def test_library_scan_rejects_invalid_refresh_flag(self):
+        with patch("backend.app.api.libraries_routes.scanner_engine") as scanner_mock:
+            response = self.client.post(
+                f"/api/v1/libraries/{self.library.id}/scan",
+                json={"refresh": "sometimes"},
+            )
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("refresh", response.get_json()["msg"])
+        scanner_mock.try_start_scan.assert_not_called()
 
 
 if __name__ == "__main__":

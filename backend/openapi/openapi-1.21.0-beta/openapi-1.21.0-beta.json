@@ -1329,7 +1329,7 @@
     "/api/v1/libraries/{id}/scan": {
       "post": {
         "summary": "✅ [验证通过] 按资源库触发扫描",
-        "description": "按资源库绑定关系触发扫描，支持 root_path 限定起始路径。",
+        "description": "按资源库绑定关系触发扫描，支持 root_path 限定起始路径。默认会在扫描前刷新支持该能力的 AList/OpenList 绑定目录；刷新失败会记录到扫描状态但不阻断扫描。",
         "operationId": "triggerLibraryScan",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -1345,6 +1345,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryScanRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "扫描任务已接受（HTTP 202；body.code 当前固定为 200）",
@@ -1357,7 +1367,7 @@
             }
           },
           "400": {
-            "description": "资源库无可用绑定"
+            "description": "资源库无可用绑定或 refresh 参数非法"
           },
           "404": {
             "description": "资源库不存在"
@@ -10291,6 +10301,17 @@
           "settings": {
             "type": "object",
             "additionalProperties": true
+          }
+        }
+      },
+      "LibraryScanRequest": {
+        "type": "object",
+        "description": "资源库扫描请求。默认扫描前刷新支持该能力的上游目录缓存。",
+        "properties": {
+          "refresh": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否在扫描前刷新支持该能力的上游目录缓存。当前仅 alist/openlist 支持；刷新失败只记录到扫描状态，不阻断扫描。"
           }
         }
       },
