@@ -69,26 +69,29 @@ fn download_subtitle_to_temp(url: &str) -> Result<PathBuf, String> {
     parsed.as_str().hash(&mut hasher);
     let key = hasher.finish();
 
-    // 推断扩展名：从 path 末尾取，默认 .srt 兜底；后端字幕 query 里通常也明确了 format。
-    let ext = parsed
+    // 推断扩展名优先级：
+    //   1. URL path 末尾（cyber.srt 这种静态文件）
+    //   2. query 里的 format=xxx（后端动态字幕 URL 通常是
+    //      /resources/.../stream?subtitle_id=...&format=sup 这种形态，
+    //      path 末尾根本没扩展名）
+    //   3. 默认 .srt
+    // 三者都按白名单（srt/ass/ssa/vtt/sub/sup/idx）做正字校验，避免把奇怪后缀
+    // 当成扩展名。早期版本只把 vtt 单独认了一个，sup 字幕被错命名成 .srt
+    // 给 PotPlayer，能加载但用户看到 .srt 后缀会误以为字幕格式不对。
+    const KNOWN_EXTS: [&str; 7] = ["srt", "ass", "ssa", "vtt", "sub", "sup", "idx"];
+    let path_ext = parsed
         .path_segments()
         .and_then(|mut s| s.next_back())
         .and_then(|name| name.rsplit('.').next())
-        .filter(|e| {
-            ["srt", "ass", "ssa", "vtt", "sub", "sup"]
-                .iter()
-                .any(|known| known.eq_ignore_ascii_case(e))
-        })
-        .unwrap_or_else(|| {
-            // query 里可能写了 format=vtt
-            let q: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
-            if q.get("format").map(|s| s.as_str()) == Some("vtt") {
-                "vtt"
-            } else {
-                "srt"
-            }
-        })
-        .to_ascii_lowercase();
+        .filter(|e| KNOWN_EXTS.iter().any(|known| known.eq_ignore_ascii_case(e)))
+        .map(|s| s.to_ascii_lowercase());
+    let query_ext = {
+        let q: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+        q.get("format")
+            .map(|s| s.to_ascii_lowercase())
+            .filter(|s| KNOWN_EXTS.iter().any(|k| k == s))
+    };
+    let ext = path_ext.or(query_ext).unwrap_or_else(|| "srt".to_string());
 
     let path = std::env::temp_dir().join(format!("cyberstream_sub_{key:016x}.{ext}"));
     if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
@@ -99,9 +102,7 @@ fn download_subtitle_to_temp(url: &str) -> Result<PathBuf, String> {
     let url = url.to_string();
     let path_clone = path.clone();
     let result = std::thread::spawn(move || -> Result<(), String> {
-        let resp = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
+        let resp = crate::proxy::build_http_client(15)
             .map_err(|e| format!("reqwest 构造失败：{e}"))?
             .get(&url)
             .send()
