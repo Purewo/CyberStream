@@ -7,11 +7,24 @@ from flask import Blueprint, current_app, request
 from backend.app.api.helpers import build_history_item, build_pagination_meta
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource, Movie
+from backend.app.services.achievements import (
+    AchievementValidationError,
+    build_user_achievement_payload,
+    evaluate_and_persist_milestones,
+    unlock_behavior_achievement,
+)
 from backend.app.services.audio_transcode import (
     AudioTranscodeValidationError,
     DEFAULT_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS,
     parse_audio_transcode_session_id,
     record_audio_transcode_history_heartbeat,
+)
+from backend.app.services.favorites import (
+    FavoriteValidationError,
+    add_favorite,
+    favorite_state,
+    list_favorites_payload,
+    remove_favorite,
 )
 from backend.app.services.user_access import can_current_user_access_resource_id, current_user_id_for_personal_data
 from backend.app.utils.response import api_error, api_response
@@ -162,6 +175,11 @@ def report_progress():
 
         db.session.commit()
         _notify_audio_transcode_history_heartbeat(resource_id, payload)
+        try:
+            evaluate_and_persist_milestones()
+        except Exception as e:
+            db.session.rollback()
+            logger.warning("Achievement milestone evaluation failed resource_id=%s error=%s", resource_id, e)
         return api_response(msg="Progress updated")
     except Exception as e:
         db.session.rollback()
@@ -185,13 +203,79 @@ def delete_history_item(resource_id):
         return api_error(code=50005, msg="DB Error", http_status=500)
 
 
+@history_bp.route('/user/favorites', methods=['GET'])
+def list_user_favorites():
+    include_movies = request.args.get('include_movies', 'false').strip().lower() in {'1', 'true', 'yes'}
+    try:
+        return api_response(data=list_favorites_payload(include_movies=include_movies))
+    except Exception as e:
+        logger.exception("List favorites failed error=%s", e)
+        return api_error(code=50026, msg="Failed to list favorites", http_status=500)
+
+
+@history_bp.route('/user/favorites/<uuid:movie_id>', methods=['GET'])
+def get_user_favorite_state(movie_id):
+    return api_response(data=favorite_state(str(movie_id)))
+
+
+@history_bp.route('/user/favorites/<uuid:movie_id>', methods=['POST'])
+def add_user_favorite(movie_id):
+    try:
+        return api_response(data=add_favorite(str(movie_id)), msg="Favorite saved")
+    except FavoriteValidationError as e:
+        status = 403 if 40300 <= e.code < 40400 else (404 if 40400 <= e.code < 40500 else 400)
+        return api_error(code=e.code, msg=e.msg, http_status=status)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Add favorite failed movie_id=%s error=%s", movie_id, e)
+        return api_error(code=50027, msg="Add favorite failed", http_status=500)
+
+
+@history_bp.route('/user/favorites/<uuid:movie_id>', methods=['DELETE'])
+def delete_user_favorite(movie_id):
+    try:
+        return api_response(data=remove_favorite(str(movie_id)), msg="Favorite removed")
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Remove favorite failed movie_id=%s error=%s", movie_id, e)
+        return api_error(code=50028, msg="Remove favorite failed", http_status=500)
+
+
 @history_bp.route('/user/history', methods=['DELETE'])
 def clear_all_history():
     try:
         _scope_history_query(db.session.query(History)).delete(synchronize_session=False)
+        unlock_behavior_achievement("ghost", source="history_clear", commit=False)
         db.session.commit()
         return api_response(msg="History cleared")
     except Exception as e:
         db.session.rollback()
         logger.exception("Clear history failed error=%s", e)
         return api_error(code=50006, msg="DB Error", http_status=500)
+
+
+@history_bp.route('/user/achievements', methods=['GET'])
+def get_user_achievements():
+    try:
+        return api_response(data=build_user_achievement_payload())
+    except Exception as e:
+        logger.exception("Get achievements failed error=%s", e)
+        return api_error(code=50024, msg="Failed to get achievements", http_status=500)
+
+
+@history_bp.route('/user/achievements/unlock', methods=['POST'])
+def unlock_user_achievement():
+    payload = _get_json_payload()
+    achievement_id = payload.get('id') if isinstance(payload, dict) else None
+    if not achievement_id:
+        return api_error(code=40001, msg="Missing required field: id")
+
+    try:
+        return api_response(data=unlock_behavior_achievement(achievement_id), msg="Achievement unlocked")
+    except AchievementValidationError as e:
+        status = 404 if 40400 <= e.code < 40500 else 400
+        return api_error(code=e.code, msg=e.msg, http_status=status)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Unlock achievement failed id=%s error=%s", achievement_id, e)
+        return api_error(code=50025, msg="Unlock achievement failed", http_status=500)

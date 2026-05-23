@@ -44,8 +44,11 @@ NORMAL_USER_GET_PATTERNS = (
     re.compile(r"^/api/v1/libraries$"),
     re.compile(r"^/api/v1/libraries/\d+$"),
     re.compile(r"^/api/v1/libraries/\d+/(?:movies|featured|recommendations|filters)$"),
+    re.compile(r"^/api/v1/libraries/favorites(?:$|/(?:movies|featured|recommendations|filters))$"),
     re.compile(r"^/api/v1/user/profile$"),
     re.compile(r"^/api/v1/user/history$"),
+    re.compile(r"^/api/v1/user/favorites(?:$|/[0-9a-fA-F-]{36})$"),
+    re.compile(r"^/api/v1/user/achievements$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/(?:stream|external-playback|audio-transcode|subtitle-settings)$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/search$"),
 )
@@ -55,6 +58,8 @@ NORMAL_USER_WRITE_PATTERNS = (
     re.compile(r"^/api/v1/user/password$"),
     re.compile(r"^/api/v1/user/history$"),
     re.compile(rf"^/api/v1/user/history/{UUID_PATTERN}$"),
+    re.compile(rf"^/api/v1/user/favorites/{UUID_PATTERN}$"),
+    re.compile(r"^/api/v1/user/achievements/unlock$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitle-settings$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/audio-transcode$"),
 )

@@ -169,6 +169,59 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("hydrated_playback_source_count", summary_properties)
         self.assertIn("episode_diagnostics", metadata_diagnostics_properties)
 
+    def test_movie_resource_sync_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/movies/{id}/resources/sync", paths)
+        self.assertIn("MovieResourceSyncRequest", schemas)
+        self.assertIn("MovieResourceSyncTarget", schemas)
+        self.assertIn("MovieResourceSyncData", schemas)
+        self.assertIn("MovieResourceSyncResponse", schemas)
+        request_properties = schemas["MovieResourceSyncRequest"]["properties"]
+        self.assertIn("refresh", request_properties)
+        self.assertIn("root_paths", request_properties)
+        self.assertIn("source_ids", request_properties)
+        self.assertIn("allow_source_root", request_properties)
+
+    def test_user_achievements_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/user/achievements", paths)
+        self.assertIn("/api/v1/user/achievements/unlock", paths)
+        self.assertIn("AchievementDefinition", schemas)
+        self.assertIn("AchievementTrigger", schemas)
+        self.assertIn("UserAchievement", schemas)
+        self.assertIn("UserAchievementsResponse", schemas)
+        self.assertIn("AchievementUnlockRequest", schemas)
+        self.assertIn("AchievementUnlockResponse", schemas)
+        self.assertEqual(
+            ["behavior", "milestone"],
+            schemas["AchievementCategory"]["enum"],
+        )
+
+    def test_favorites_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/user/favorites", paths)
+        self.assertIn("/api/v1/user/favorites/{movie_id}", paths)
+        self.assertIn("/api/v1/libraries/favorites", paths)
+        self.assertIn("/api/v1/libraries/favorites/movies", paths)
+        self.assertIn("/api/v1/libraries/favorites/featured", paths)
+        self.assertIn("/api/v1/libraries/favorites/recommendations", paths)
+        self.assertIn("/api/v1/libraries/favorites/filters", paths)
+        self.assertIn("UserFavoriteItem", schemas)
+        self.assertIn("UserFavoritesResponse", schemas)
+        self.assertIn("UserFavoriteStateResponse", schemas)
+        self.assertIn("UserFavoriteMutationResponse", schemas)
+        self.assertIn("is_virtual", schemas["Library"]["properties"])
+        self.assertIn("actions", schemas["Library"]["properties"])
+
     def test_metadata_quality_workbench_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]

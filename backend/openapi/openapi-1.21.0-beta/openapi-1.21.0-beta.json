@@ -615,6 +615,271 @@
         }
       }
     },
+    "/api/v1/libraries/favorites": {
+      "get": {
+        "summary": "🔵 [新增] 获取收藏虚拟资源库详情",
+        "description": "收藏是用户维度的虚拟资源库。当前用户至少收藏 1 部影视后该资源库才存在；它没有存储源绑定，也不支持整库扫描。",
+        "operationId": "getFavoritesLibrary",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Libraries"
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏虚拟资源库详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "当前用户还没有收藏任何影视"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/favorites/movies": {
+      "get": {
+        "summary": "🔵 [新增] 获取收藏资源库影片列表",
+        "description": "分页获取当前用户收藏的影视。默认按收藏时间倒序排序，返回项的 library_membership 固定为 favorite。",
+        "operationId": "listFavoriteLibraryMovies",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "favorited_at",
+                "date_added",
+                "updated_at",
+                "year",
+                "rating",
+                "title"
+              ],
+              "default": "favorited_at"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏影片列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovieListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "当前用户还没有收藏任何影视"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/favorites/featured": {
+      "get": {
+        "summary": "🔵 [新增] 获取收藏资源库 featured 内容",
+        "description": "从当前用户收藏影视中返回可用于置顶展示的内容。",
+        "operationId": "getFavoriteLibraryFeatured",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏 featured 内容",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MovieDetailed"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "当前用户还没有收藏任何影视"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/favorites/recommendations": {
+      "get": {
+        "summary": "🔵 [新增] 获取收藏资源库推荐",
+        "description": "在当前用户收藏影视集合内生成推荐内容。",
+        "operationId": "getFavoriteLibraryRecommendations",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 12
+            }
+          },
+          {
+            "name": "strategy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "default",
+                "latest",
+                "top_rated",
+                "surprise",
+                "continue_watching"
+              ],
+              "default": "default"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏推荐内容",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MovieSimple"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "当前用户还没有收藏任何影视"
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/favorites/filters": {
+      "get": {
+        "summary": "🔵 [新增] 获取收藏资源库筛选字典",
+        "description": "从当前用户收藏影视集合中生成 genres/years/countries 筛选项。",
+        "operationId": "getFavoriteLibraryFilters",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Libraries"
+        ],
+        "parameters": [
+          {
+            "name": "include",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏筛选字典",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FilterDictionaries"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "当前用户还没有收藏任何影视"
+          }
+        }
+      }
+    },
     "/api/v1/libraries/{id}/featured": {
       "get": {
         "summary": "✅ [验证通过] 按资源库获取置顶内容",
@@ -2539,6 +2804,59 @@
           },
           "404": {
             "description": "电影不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/movies/{id}/resources/sync": {
+      "post": {
+        "summary": "🔵 [新增] 针对单片触发资源同步",
+        "description": "从当前影片已有资源路径推导最小扫描目录，先按需刷新 AList/OpenList 目录缓存，再复用现有扫描刮削链路补齐新增资源。该接口不强制挂载任意新文件；新资源是否进入当前影片仍由现有解析和元数据匹配规则决定。任务异步执行，前端通过 GET /api/v1/scan 轮询进度。",
+        "operationId": "syncMovieResources",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "电影 UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MovieResourceSyncRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "单片资源同步任务已接受",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovieResourceSyncResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "无可同步资源或请求字段非法"
+          },
+          "404": {
+            "description": "电影不存在"
+          },
+          "429": {
+            "description": "扫描器已有任务运行中"
           }
         }
       }
@@ -5035,6 +5353,206 @@
           },
           "404": {
             "description": "记录不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/user/achievements": {
+      "get": {
+        "summary": "🔵 [新增] 获取当前用户成就定义与解锁状态",
+        "description": "返回统一成就定义和当前用户解锁状态。milestone 类仅对后端已有可靠数据依据的指标自动结算；behavior 类由明确交互发生后调用 unlock 端点。读取该接口会结算并持久化已满足的 milestone。",
+        "operationId": "getUserAchievements",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "responses": {
+          "200": {
+            "description": "成就定义和当前用户状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAchievementsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/achievements/unlock": {
+      "post": {
+        "summary": "🔵 [新增] 解锁行为类成就",
+        "description": "由前端在明确发生播放器或客户端行为时提交；调用幂等。该入口只接受 category=behavior 的成就，milestone 不能由前端直接解锁。",
+        "operationId": "unlockUserAchievement",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AchievementUnlockRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "行为成就解锁状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AchievementUnlockResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "缺少 id，或尝试通过行为入口解锁 milestone"
+          },
+          "404": {
+            "description": "成就 id 不存在"
+          }
+        }
+      }
+    },
+    "/api/v1/user/favorites": {
+      "get": {
+        "summary": "🔵 [新增] 获取当前用户收藏",
+        "description": "返回当前用户收藏关系和影片 ID。首次收藏前 items 为空且 library 为 null；收藏库不会预先创建空壳。",
+        "operationId": "listUserFavorites",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "parameters": [
+          {
+            "name": "include_movies",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "为 true 时在 items[].movie 中附带影片简要结构。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏关系列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserFavoritesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/favorites/{movie_id}": {
+      "get": {
+        "summary": "🔵 [新增] 获取单片收藏状态",
+        "description": "用于详情页初始化收藏按钮状态。",
+        "operationId": "getUserFavoriteState",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "parameters": [
+          {
+            "name": "movie_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "单片收藏状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserFavoriteStateResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "🔵 [新增] 收藏影视",
+        "description": "幂等收藏指定影视。首次收藏会令 favorites 虚拟资源库出现在 GET /api/v1/libraries 结果中。",
+        "operationId": "addUserFavorite",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "parameters": [
+          {
+            "name": "movie_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserFavoriteMutationResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不可访问此影视"
+          },
+          "404": {
+            "description": "影视不存在"
+          }
+        }
+      },
+      "delete": {
+        "summary": "🔵 [新增] 移除收藏",
+        "description": "幂等移除指定影视收藏。移除最后一条收藏后 favorites 虚拟资源库从资源库列表消失。",
+        "operationId": "deleteUserFavorite",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "User"
+        ],
+        "parameters": [
+          {
+            "name": "movie_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "收藏已移除",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserFavoriteMutationResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -9386,7 +9904,18 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "integer",
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "favorites"
+                ]
+              }
+            ],
+            "description": "普通资源库为整数 ID；收藏虚拟资源库固定为 favorites。",
             "example": 1
           },
           "name": {
@@ -9422,6 +9951,38 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "is_virtual": {
+            "type": "boolean",
+            "description": "true 表示后端虚拟资源库，例如用户收藏。普通资源库可能不返回该字段。"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "favorites"
+            ]
+          },
+          "movie_count": {
+            "type": "integer",
+            "description": "虚拟资源库当前影片数量。"
+          },
+          "actions": {
+            "type": "object",
+            "properties": {
+              "can_scan": {
+                "type": "boolean"
+              },
+              "can_bind_sources": {
+                "type": "boolean"
+              },
+              "can_manage_memberships": {
+                "type": "boolean"
+              },
+              "can_delete": {
+                "type": "boolean"
+              }
+            }
           }
         }
       },
@@ -11601,6 +12162,214 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/MovieResourceGroups"
+              }
+            }
+          }
+        ]
+      },
+      "MovieResourceSyncRequest": {
+        "type": "object",
+        "description": "单片资源同步请求。默认由后端从已有资源路径推导扫描目录；传 root_path/root_paths 时覆盖推导结果。",
+        "properties": {
+          "refresh": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否在扫描前刷新支持该能力的上游目录缓存。当前仅 alist/openlist 支持。"
+          },
+          "scrape_enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否启用元数据刮削。"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv"
+            ],
+            "description": "扫描媒体类型提示；不传时后端按影片与资源推断。"
+          },
+          "media_type_hint": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv"
+            ],
+            "description": "content_type 的兼容别名。"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "显式扫描目录，相对存储源根路径；/ 表示根目录。"
+          },
+          "target_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "root_paths": {
+            "type": "array",
+            "description": "显式扫描目录列表；传入后覆盖自动推导。多存储源影片如需精确控制，建议同时传 source_ids。",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_ids": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "可选存储源过滤，支持数组、单个整数或逗号分隔字符串。"
+          },
+          "allow_source_root": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否允许自动推导结果扩大到存储源根目录。默认 false，避免单片同步误扫整盘。"
+          },
+          "scraper_policy": {
+            "type": "object",
+            "description": "复用扫描刮削策略，例如 provider_order。"
+          },
+          "provider_order": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "刮削 provider 顺序，兼容现有扫描接口。"
+          },
+          "providers": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "provider_order 的兼容别名。"
+          }
+        }
+      },
+      "MovieResourceSyncTarget": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "integer"
+          },
+          "source_name": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "root_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "本次实际扫描目录，相对存储源根路径；空字符串表示根目录。"
+          },
+          "display_root_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "用于前端展示的扫描目录；根目录显示为 /。"
+          },
+          "resource_count": {
+            "type": "integer",
+            "description": "参与该目标目录推导的当前影片资源数量。"
+          },
+          "refresh_supported": {
+            "type": "boolean",
+            "description": "该存储源是否支持扫描前目录刷新。"
+          }
+        }
+      },
+      "MovieResourceSyncPoll": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "example": "GET"
+          },
+          "endpoint": {
+            "type": "string",
+            "example": "/api/v1/scan"
+          }
+        }
+      },
+      "MovieResourceSyncData": {
+        "type": "object",
+        "properties": {
+          "movie_id": {
+            "type": "string"
+          },
+          "accepted": {
+            "type": "boolean"
+          },
+          "refresh": {
+            "type": "boolean"
+          },
+          "scrape_enabled": {
+            "type": "boolean"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv"
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MovieResourceSyncTarget"
+            }
+          },
+          "skipped_resource_ids": {
+            "type": "array",
+            "description": "因缺少存储源或 source_id 被过滤而未参与同步推导的资源 ID。",
+            "items": {
+              "type": "string"
+            }
+          },
+          "poll": {
+            "$ref": "#/components/schemas/MovieResourceSyncPoll"
+          }
+        }
+      },
+      "MovieResourceSyncResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/MovieResourceSyncData"
               }
             }
           }
@@ -15893,6 +16662,315 @@
             }
           }
         }
+      },
+      "UserFavoriteItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "movie_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "movie": {
+            "$ref": "#/components/schemas/MovieSimple"
+          }
+        }
+      },
+      "UserFavoritesData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserFavoriteItem"
+            }
+          },
+          "movie_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "library": {
+            "$ref": "#/components/schemas/Library",
+            "nullable": true,
+            "description": "有收藏时返回 favorites 虚拟资源库；没有收藏时为 null。"
+          }
+        }
+      },
+      "UserFavoriteState": {
+        "type": "object",
+        "properties": {
+          "movie_id": {
+            "type": "string"
+          },
+          "is_favorite": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "UserFavoriteMutationData": {
+        "type": "object",
+        "properties": {
+          "favorite": {
+            "$ref": "#/components/schemas/UserFavoriteItem"
+          },
+          "movie_id": {
+            "type": "string"
+          },
+          "is_favorite": {
+            "type": "boolean"
+          },
+          "newly_added": {
+            "type": "boolean"
+          },
+          "removed": {
+            "type": "boolean"
+          },
+          "library": {
+            "$ref": "#/components/schemas/Library",
+            "nullable": true
+          }
+        }
+      },
+      "UserFavoritesResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/UserFavoritesData"
+              }
+            }
+          }
+        ]
+      },
+      "UserFavoriteStateResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/UserFavoriteState"
+              }
+            }
+          }
+        ]
+      },
+      "UserFavoriteMutationResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/UserFavoriteMutationData"
+              }
+            }
+          }
+        ]
+      },
+      "AchievementCategory": {
+        "type": "string",
+        "enum": [
+          "behavior",
+          "milestone"
+        ]
+      },
+      "AchievementTrigger": {
+        "type": "object",
+        "required": [
+          "metric",
+          "op",
+          "value"
+        ],
+        "properties": {
+          "metric": {
+            "type": "string",
+            "description": "后端可统计指标，例如 completed_movies_count。"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              ">=",
+              "=="
+            ]
+          },
+          "value": {
+            "type": "number"
+          }
+        }
+      },
+      "AchievementDefinition": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "desc",
+          "icon",
+          "category"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "desc": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string",
+            "description": "lucide-react 图标名字符串，前端自行映射。"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AchievementCategory"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/AchievementTrigger"
+          }
+        }
+      },
+      "UserAchievement": {
+        "type": "object",
+        "required": [
+          "id",
+          "unlocked_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "unlocked_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "null 表示未解锁。"
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "milestone 进度，behavior 已解锁时为 1；部分行为类可能不返回该字段。"
+          }
+        }
+      },
+      "UserAchievementsSummary": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "unlocked": {
+            "type": "integer"
+          },
+          "milestones": {
+            "type": "integer"
+          },
+          "behaviors": {
+            "type": "integer"
+          },
+          "newly_unlocked_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UserAchievementsData": {
+        "type": "object",
+        "properties": {
+          "defs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AchievementDefinition"
+            }
+          },
+          "user": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserAchievement"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/UserAchievementsSummary"
+          }
+        }
+      },
+      "UserAchievementsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/UserAchievementsData"
+              }
+            }
+          }
+        ]
+      },
+      "AchievementUnlockRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "要解锁的 behavior 类成就 ID。"
+          }
+        }
+      },
+      "AchievementUnlockData": {
+        "type": "object",
+        "properties": {
+          "achievement": {
+            "$ref": "#/components/schemas/UserAchievement"
+          },
+          "newly_unlocked": {
+            "type": "boolean",
+            "description": "true 表示本次请求首次解锁；false 表示此前已解锁。"
+          }
+        }
+      },
+      "AchievementUnlockResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/AchievementUnlockData"
+              }
+            }
+          }
+        ]
       },
       "AuthStatusResponse": {
         "allOf": [

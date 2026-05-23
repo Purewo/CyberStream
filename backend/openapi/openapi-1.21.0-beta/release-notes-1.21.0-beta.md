@@ -30,6 +30,28 @@
 - 传 `season=N` 时，`items` 只返回该季资源和无季资源，`groups.seasons` 仍保留完整季索引。
 - 响应 `summary` 额外暴露 `selected_season`、`hydrated_item_count` 和 `hydrated_playback_source_count`，方便前端识别局部 hydrate。
 
+## 单片资源同步
+
+- 新增 `POST /api/v1/movies/{id}/resources/sync`，用于前端针对某一部影视一键刷新目录并补扫新增资源。
+- 后端按当前影片已有资源路径推导每个存储源的最小扫描目录，默认不把多目录影片扩大成整盘扫描。
+- 默认 `refresh=true`；只有 `alist/openlist` 会在扫描前刷新上游目录缓存，其他存储源直接扫描。
+- 任务异步执行并复用现有扫描锁；返回 `202` 后前端轮询 `GET /api/v1/scan`，扫描完成后重新拉取 `/movies/{id}/resources`。
+- 该接口不强制把任意新文件挂到当前影视，仍遵循现有路径解析和元数据匹配规则。
+
+## 用户成就
+
+- 新增 `GET /api/v1/user/achievements`，返回统一成就定义 `defs` 和当前用户解锁状态 `user`。
+- 新增 `POST /api/v1/user/achievements/unlock`，用于前端幂等解锁 `category=behavior` 的交互类成就。
+- 后端自动结算 `category=milestone` 中已有可靠数据依据的指标：看完影片数、收藏数、老片观看、4K/REMUX、Dolby Vision、Dolby Atmos、多设备播放。
+- milestone 不能通过 unlock 端点直接解锁，避免前端绕过后端统计口径。
+
+## 收藏虚拟资源库
+
+- 新增 `GET /api/v1/user/favorites`、`GET/POST/DELETE /api/v1/user/favorites/{movie_id}`，用于当前用户收藏影视。
+- 当前用户首次收藏后，`GET /api/v1/libraries` 会额外返回 `id="favorites"` 的虚拟资源库；移除最后一条收藏后自动消失。
+- 收藏虚拟库支持普通资源库读取入口：`GET /api/v1/libraries/favorites`、`/movies`、`/featured`、`/recommendations`、`/filters`。
+- 收藏虚拟库没有存储源绑定，也没有 `/api/v1/libraries/favorites/scan`；前端应根据 `actions.can_scan=false` 隐藏扫描入口。
+
 ## 契约变化
 
 - `MovieSimple`、`MovieDetailed` 和 `MetadataWorkItem` 增加 `manual_content`。

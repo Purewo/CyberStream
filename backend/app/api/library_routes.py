@@ -2,6 +2,8 @@ import hashlib
 import logging
 import posixpath
 import re
+import threading
+import time
 from datetime import datetime
 from uuid import uuid4
 
@@ -23,7 +25,9 @@ from backend.app.api.library_helpers import (
 from backend.app.db.database import scanner_adapter
 from backend.app.extensions import db
 from backend.app.metadata.rescrape import movie_metadata_rescrape_service
-from backend.app.models import Library, LibraryMovieMembership, MediaResource, Movie, MovieSeasonMetadata
+from backend.app.models import Library, LibraryMovieMembership, MediaResource, Movie, MovieSeasonMetadata, StorageSource
+from backend.app.providers.base import StorageProviderError
+from backend.app.providers.factory import provider_factory
 from backend.app.services.image_assets import (
     IMAGE_KINDS,
     MovieImageAssetError,
@@ -43,6 +47,7 @@ from backend.app.services.episode_diagnostics import (
 from backend.app.services.media_path_cleaner import MediaPathCleaner
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.metadata_scraper import ScrapeContext, metadata_scraper
+from backend.app.services.scanner import scanner_engine
 from backend.app.services.review_taxonomy import build_review_taxonomy
 from backend.app.services.resource_governance import (
     ResourceGovernanceValidationError,
@@ -59,6 +64,7 @@ from backend.app.services.resource_governance import (
 )
 from backend.app.services.user_access import clear_user_access_cache
 from backend.app.services.tmdb import scraper
+from backend.app.storage.source_registry import get_source_capabilities
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
 
@@ -633,6 +639,308 @@ def _normalize_request_bool(value, *, default=False, field_name="refresh"):
         if normalized in {"0", "false", "no", "off"}:
             return False
     raise MetadataValidationError(code=40090, msg=f"Invalid field type: {field_name} should be boolean")
+
+
+def _normalize_sync_relative_path(path_value):
+    if path_value is None:
+        return ''
+    if not isinstance(path_value, str):
+        path_value = str(path_value)
+    normalized = path_value.strip().replace('\\', '/').strip('/')
+    parts = [part for part in normalized.split('/') if part and part != '.']
+    return '/'.join(parts)
+
+
+def _display_sync_relative_path(path_value):
+    normalized = _normalize_sync_relative_path(path_value)
+    return normalized or '/'
+
+
+def _resource_parent_path(resource):
+    path = _normalize_sync_relative_path(getattr(resource, 'path', None))
+    if not path:
+        return None
+    return _normalize_sync_relative_path(posixpath.dirname(path))
+
+
+def _unique_preserving_order(values):
+    items = []
+    seen = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        items.append(value)
+    return items
+
+
+def _infer_movie_sync_roots(resources, *, allow_source_root=False):
+    directories = _unique_preserving_order(
+        parent
+        for parent in (_resource_parent_path(resource) for resource in resources)
+        if parent is not None
+    )
+    if not directories:
+        return []
+    if len(directories) == 1:
+        if not directories[0] and not allow_source_root:
+            return []
+        return directories
+
+    try:
+        common_root = _normalize_sync_relative_path(posixpath.commonpath(directories))
+    except ValueError:
+        common_root = ''
+
+    if common_root:
+        return [common_root]
+    if allow_source_root:
+        return ['']
+
+    # If resources live under unrelated top-level folders, avoid turning a
+    # single-movie sync into a full-source scan. Source-root files can still be
+    # synced by passing allow_source_root=true or an explicit root_path.
+    non_root_directories = sorted(directory for directory in set(directories) if directory)
+    return non_root_directories or ['']
+
+
+def _normalize_movie_sync_root_paths(payload):
+    raw_paths = None
+    if isinstance(payload, dict):
+        if 'root_paths' in payload:
+            raw_paths = payload.get('root_paths')
+        else:
+            raw_paths = payload.get('root_path')
+            if raw_paths is None:
+                raw_paths = payload.get('target_path')
+
+    if raw_paths is None:
+        return None
+    if isinstance(raw_paths, str):
+        raw_paths = [raw_paths]
+    if not isinstance(raw_paths, list):
+        raise MetadataValidationError(code=40091, msg="Invalid field type: root_paths should be list or string")
+
+    normalized_paths = []
+    for raw_path in raw_paths:
+        if raw_path is None:
+            continue
+        if not isinstance(raw_path, str):
+            raw_path = str(raw_path)
+        normalized_paths.append(_normalize_sync_relative_path(raw_path))
+
+    normalized_paths = _unique_preserving_order(normalized_paths)
+    if not normalized_paths:
+        raise MetadataValidationError(code=40092, msg="Invalid field value: root_paths cannot be empty")
+    return normalized_paths
+
+
+def _normalize_movie_sync_source_ids(value):
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        raw_items = [value]
+    elif isinstance(value, str):
+        raw_items = [item.strip() for item in value.split(',')]
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raise MetadataValidationError(code=40093, msg="Invalid field type: source_ids should be list, int, or comma separated string")
+
+    source_ids = []
+    seen = set()
+    for raw_item in raw_items:
+        if raw_item in (None, ''):
+            continue
+        if isinstance(raw_item, bool):
+            raise MetadataValidationError(code=40094, msg="Invalid field value: source_ids should contain positive integers")
+        try:
+            source_id = int(raw_item)
+        except (TypeError, ValueError):
+            raise MetadataValidationError(code=40094, msg="Invalid field value: source_ids should contain positive integers")
+        if source_id <= 0:
+            raise MetadataValidationError(code=40094, msg="Invalid field value: source_ids should contain positive integers")
+        if source_id in seen:
+            continue
+        seen.add(source_id)
+        source_ids.append(source_id)
+
+    if not source_ids:
+        raise MetadataValidationError(code=40095, msg="Invalid field value: source_ids cannot be empty")
+    return source_ids
+
+
+def _infer_movie_sync_content_type(movie, resources):
+    manual_media_type = Movie.manual_media_type_from_source(movie.scraper_source)
+    if manual_media_type:
+        return manual_media_type
+
+    tmdb_id = (movie.tmdb_id or '').strip().lower()
+    if tmdb_id.startswith('tv/'):
+        return 'tv'
+    if tmdb_id.startswith('movie/'):
+        return 'movie'
+
+    for resource in resources:
+        if resource.season is not None or resource.episode is not None:
+            return 'tv'
+    return None
+
+
+def _normalize_movie_resource_sync_payload(payload, movie, resources):
+    payload = payload if isinstance(payload, dict) else {}
+    raw_media_type_hint = payload.get('content_type')
+    if raw_media_type_hint is None:
+        raw_media_type_hint = payload.get('media_type_hint')
+
+    content_type = _normalize_media_type_hint(raw_media_type_hint)
+    if not content_type:
+        content_type = _infer_movie_sync_content_type(movie, resources)
+
+    scraper_policy = normalize_scraper_policy_payload(
+        raw_policy=payload.get('scraper_policy'),
+        provider_order=payload.get('provider_order') or payload.get('providers'),
+    )
+
+    return {
+        "refresh": _normalize_request_bool(payload.get('refresh'), default=True),
+        "scrape_enabled": _normalize_request_bool(
+            payload.get('scrape_enabled'),
+            default=True,
+            field_name='scrape_enabled',
+        ),
+        "allow_source_root": _normalize_request_bool(
+            payload.get('allow_source_root'),
+            default=False,
+            field_name='allow_source_root',
+        ),
+        "content_type": content_type,
+        "root_paths": _normalize_movie_sync_root_paths(payload),
+        "source_ids": _normalize_movie_sync_source_ids(payload.get('source_ids')),
+        "scraper_policy": scraper_policy,
+    }
+
+
+def _source_refresh_supported(source):
+    try:
+        _, capabilities = get_source_capabilities(source.type)
+    except StorageProviderError:
+        return False
+    return bool(capabilities.get('refresh'))
+
+
+def _build_movie_resource_sync_targets(movie, options):
+    resources = movie.resources.all()
+    if not resources:
+        raise MetadataValidationError(code=40026, msg="Movie has no resources to sync")
+
+    selected_source_ids = set(options["source_ids"] or [])
+    source_groups = {}
+    skipped_resource_ids = []
+    for resource in resources:
+        if not resource.source_id or not resource.source:
+            skipped_resource_ids.append(resource.id)
+            continue
+        if selected_source_ids and resource.source_id not in selected_source_ids:
+            skipped_resource_ids.append(resource.id)
+            continue
+        source_groups.setdefault(resource.source_id, {
+            "source": resource.source,
+            "resources": [],
+        })["resources"].append(resource)
+
+    if not source_groups:
+        raise MetadataValidationError(code=40026, msg="Movie has no scannable resources for selected sources")
+
+    targets = []
+    for source_id, group in sorted(source_groups.items()):
+        source = group["source"]
+        source_resources = group["resources"]
+        root_paths = options["root_paths"]
+        if root_paths is None:
+            root_paths = _infer_movie_sync_roots(
+                source_resources,
+                allow_source_root=options["allow_source_root"],
+            )
+        root_paths = _unique_preserving_order(root_paths)
+        if not root_paths:
+            continue
+
+        targets.append({
+            "source_id": source_id,
+            "source_name": source.name,
+            "source_type": source.type,
+            "root_paths": root_paths,
+            "display_root_paths": [_display_sync_relative_path(path) for path in root_paths],
+            "resource_count": len(source_resources),
+            "refresh_supported": _source_refresh_supported(source),
+        })
+
+    if not targets:
+        raise MetadataValidationError(code=40026, msg="Movie has no scannable resource directories")
+
+    return {
+        "targets": targets,
+        "skipped_resource_ids": skipped_resource_ids,
+    }
+
+
+def _movie_resource_sync_background_task(app, movie_id, movie_title, targets, options):
+    with app.app_context():
+        session_started = False
+        try:
+            scanner_engine._begin_scan_session(current_source=f"{movie_title or movie_id}:sync")
+            session_started = True
+            app_instance = current_app._get_current_object()
+
+            for target in targets:
+                source = db.session.get(StorageSource, target["source_id"])
+                if not source:
+                    continue
+
+                provider = None
+                if options["refresh"] and target["refresh_supported"]:
+                    try:
+                        provider = provider_factory.get_provider(source)
+                    except Exception as e:
+                        logger.warning(
+                            "Movie resource sync refresh provider unavailable movie_id=%s source_id=%s error=%s",
+                            movie_id,
+                            source.id,
+                            e,
+                        )
+                        scanner_engine._record_indexing_directory_skip('/', e)
+
+                    if provider:
+                        for root_path in target["root_paths"]:
+                            try:
+                                provider.refresh_directory(root_path)
+                            except Exception as e:
+                                logger.warning(
+                                    "Movie resource sync refresh failed movie_id=%s source_id=%s root_path=%s error=%s",
+                                    movie_id,
+                                    source.id,
+                                    root_path or '/',
+                                    e,
+                                )
+                                scanner_engine._record_indexing_directory_skip(root_path, e)
+
+                for root_path in target["root_paths"]:
+                    scanner_engine.scan_source(
+                        source,
+                        app_instance=app_instance,
+                        root_path=root_path,
+                        content_type=options["content_type"],
+                        scrape_enabled=options["scrape_enabled"],
+                        scraper_policy=options["scraper_policy"],
+                    )
+        except Exception as e:
+            logger.exception("Movie resource sync task failed movie_id=%s error=%s", movie_id, e)
+        finally:
+            scanner_engine.last_scan_time = time.time()
+            if session_started:
+                scanner_engine._finish_scan_session()
+            scanner_engine.finish_scan()
 
 
 def _normalize_image_selection_payload(payload):
@@ -4062,6 +4370,51 @@ def get_movie_resources(id):
         return api_error(code=e.code, msg=e.msg, http_status=400)
 
     return api_response(data=_build_movie_resource_groups(movie, season_filter=season_filter))
+
+
+@library_bp.route('/movies/<uuid:id>/resources/sync', methods=['POST'])
+def sync_movie_resources(id):
+    movie = db.session.get(Movie, str(id))
+    if not movie:
+        return api_error(code=40401, msg="Movie not found", http_status=404)
+
+    resources = movie.resources.all()
+    try:
+        options = _normalize_movie_resource_sync_payload(_get_json_payload(), movie, resources)
+        target_result = _build_movie_resource_sync_targets(movie, options)
+    except MetadataValidationError as e:
+        return api_error(code=e.code, msg=e.msg)
+    except ScraperPolicyError as e:
+        return api_error(code=e.code, msg=e.msg)
+
+    if not scanner_engine.try_start_scan():
+        return api_error(code=42900, msg="Scanner is busy", http_status=429)
+
+    targets = target_result["targets"]
+    app = current_app._get_current_object()
+    thread = threading.Thread(
+        target=_movie_resource_sync_background_task,
+        args=(app, movie.id, movie.title, targets, options),
+    )
+    thread.start()
+
+    return api_response(
+        data={
+            "movie_id": movie.id,
+            "accepted": True,
+            "refresh": options["refresh"],
+            "scrape_enabled": options["scrape_enabled"],
+            "content_type": options["content_type"],
+            "targets": targets,
+            "skipped_resource_ids": target_result["skipped_resource_ids"],
+            "poll": {
+                "method": "GET",
+                "endpoint": "/api/v1/scan",
+            },
+        },
+        msg="Movie resource sync task accepted",
+        http_status=202,
+    )
 
 
 @library_bp.route('/movies/<uuid:id>/resources/attach', methods=['POST'])

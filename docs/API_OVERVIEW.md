@@ -132,6 +132,11 @@ X-Cyber-API-Token: <token>
 ### `GET /api/v1/libraries`
 列出所有逻辑资源库。
 
+说明：
+- 普通资源库来自数据库 `libraries`
+- 当前用户至少收藏 1 部影视后，列表会额外返回一个虚拟资源库：`id="favorites"`、`slug="favorites"`、`is_virtual=true`
+- 收藏虚拟库没有存储源、没有来源绑定、没有整库扫描动作；前端应根据 `actions.can_scan=false` 隐藏扫描按钮
+
 ### `POST /api/v1/libraries`
 创建逻辑资源库。
 
@@ -147,6 +152,14 @@ X-Cyber-API-Token: <token>
 
 ### `GET /api/v1/libraries/<id>`
 获取单个资源库详情（含已绑定来源）。
+
+### `GET /api/v1/libraries/favorites`
+获取当前用户收藏虚拟资源库详情。
+
+说明：
+- 未收藏任何影视时返回 `404`
+- 返回结构与普通资源库详情一致，但 `sources=[]`、`is_virtual=true`、`kind="favorites"`
+- 该资源库不能绑定来源、不能创建/删除、不能触发整库扫描
 
 ### `PATCH /api/v1/libraries/<id>`
 更新资源库信息。
@@ -253,8 +266,25 @@ X-Cyber-API-Token: <token>
 - 需要人工处理的 raw/占位/缺海报影片不会因挂载点自动进入资源库，必须通过手动 `include` 拉入
 - 手动 `exclude` 会从该资源库隐藏自动命中的影视
 
+### `GET /api/v1/libraries/favorites/movies`
+按资源库形式分页查看当前用户收藏的影视。
+
+支持查询参数：
+- `page`
+- `page_size`
+- `sort_by=favorited_at|date_added|updated_at|year|rating|title`
+- `order=asc|desc`
+
+说明：
+- 默认 `sort_by=favorited_at&order=desc`
+- 返回项 `library_membership` 固定为 `favorite`
+- 未收藏任何影视时返回 `404`
+
 ### `GET /api/v1/libraries/<id>/featured`
 按资源库获取置顶/轮播内容（当前支持按 `source_id + root_path` 过滤）。
+
+### `GET /api/v1/libraries/favorites/featured`
+从当前用户收藏影视中获取置顶/轮播内容。
 
 ### `GET /api/v1/libraries/<id>/recommendations`
 按资源库获取推荐内容。
@@ -269,6 +299,9 @@ X-Cyber-API-Token: <token>
 - `recommendation.primary_reason` 给前端展示主推荐理由
 - `recommendation.reasons` 包含续看、最近入库、高评分、清晰度、可播放资源、类型多样性等信号
 
+### `GET /api/v1/libraries/favorites/recommendations`
+从当前用户收藏影视集合中获取推荐内容。
+
 ### `GET /api/v1/libraries/<id>/filters`
 按资源库获取筛选项。
 
@@ -276,6 +309,9 @@ X-Cyber-API-Token: <token>
 - `genres`
 - `years`
 - `countries`
+
+### `GET /api/v1/libraries/favorites/filters`
+从当前用户收藏影视集合中获取筛选项。
 
 ### `POST /api/v1/libraries/<id>/scan`
 按资源库触发扫描任务。
@@ -285,6 +321,7 @@ X-Cyber-API-Token: <token>
 - 扫描时支持 `root_path` 限定起始路径
 - 入库时仍保持 `MediaResource.path` 为相对 source 根路径，避免破坏现有播放与资源定位逻辑
 - 与全量扫描、指定存储源扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
+- 收藏虚拟资源库没有 `/api/v1/libraries/favorites/scan`，前端不应展示或调用扫描入口
 
 ---
 
@@ -871,6 +908,31 @@ X-Cyber-API-Token: <token>
   - `source_summary`
   - `user_data`
 
+### `POST /api/v1/movies/<id>/resources/sync`
+针对某一部影视触发一键资源同步。
+
+说明：
+- 后端会读取该影视当前已有 `MediaResource`，按 `source_id` 分组，并从资源路径推导最小扫描目录
+- 典型剧集路径如 `shows/Foo/S01/E01.mkv`、`shows/Foo/S02/E01.mkv` 会推导为 `shows/Foo`，用于补齐后续新增集数
+- 如果同一影视散落在多个无公共父目录的路径下，默认扫描各自父目录，不自动扩大到存储源根目录；资源本身位于存储源根目录或确需扫根目录时，传 `allow_source_root=true` 或显式传 `root_path=/`
+- 默认 `refresh=true`，仅对支持目录刷新的 `alist/openlist` 先刷新对应目录缓存；其他存储源跳过刷新但仍可扫描
+- 扫描仍走现有刮削链路，不强制把任意新文件挂到当前影视；新文件是否并入当前条目取决于现有路径解析和元数据匹配规则
+- 与全量扫描、资源库扫描、指定存储源扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
+- 返回 `202` 后前端轮询 `GET /api/v1/scan` 查看进度，扫描结束后重新请求 `GET /api/v1/movies/<id>/resources`
+
+请求体可选字段：
+- `refresh`：布尔值，默认 `true`
+- `scrape_enabled`：布尔值，默认 `true`
+- `content_type` 或 `media_type_hint`：`movie` / `tv`，不传时后端按影片和资源推断
+- `root_path` / `target_path` / `root_paths`：显式扫描目录，覆盖自动推导；相对存储源根路径，`/` 表示根目录
+- `source_ids`：只同步指定存储源，支持数组、整数或逗号分隔字符串
+- `allow_source_root`：是否允许自动推导到存储源根目录，默认 `false`
+- `scraper_policy` / `provider_order` / `providers`：复用现有刮削来源策略
+
+响应核心字段：
+- `targets[]`：本次接受的存储源、推导目录、是否支持刷新、参与推导的资源数量
+- `poll.endpoint`：固定为 `/api/v1/scan`
+
 ### `GET /api/v1/movies/<id>/seasons`
 获取单条影片的季级聚合结果。
 
@@ -1437,6 +1499,59 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 ### `DELETE /api/v1/user/history`
 清空历史记录。
+
+### `GET /api/v1/user/favorites`
+获取当前用户收藏列表。
+
+支持查询参数：
+- `include_movies=true|false`，默认 `false`
+
+说明：
+- 返回 `items`、`movie_ids`、`total`
+- 未收藏任何影视时 `items=[]`，`library=null`
+- 有收藏时 `library` 为 `favorites` 虚拟资源库摘要
+
+### `GET /api/v1/user/favorites/<movie_id>`
+获取单片收藏状态，用于详情页初始化收藏按钮。
+
+### `POST /api/v1/user/favorites/<movie_id>`
+收藏指定影视。
+
+说明：
+- 幂等；重复收藏仍返回 `200`，`data.newly_added=false`
+- 第一次收藏后，`GET /api/v1/libraries` 会出现 `favorites` 虚拟资源库
+- 启用用户系统时只允许收藏当前用户可访问的影视
+
+### `DELETE /api/v1/user/favorites/<movie_id>`
+移除指定影视收藏。
+
+说明：
+- 幂等；未收藏时删除仍返回 `200`
+- 移除最后一条收藏后，`favorites` 虚拟资源库从资源库列表消失
+
+### `GET /api/v1/user/achievements`
+获取当前用户的成就定义和解锁状态。
+
+说明：
+- 返回 `defs` 和 `user` 两组数据，`defs[].icon` 是 lucide-react 图标名字符串，前端自行映射图标组件
+- `category=milestone` 表示后端基于可统计指标自动结算；当前支持 `completed_movies_count`、`favorites_count`、`watched_legacy_titles_count`、`high_quality_playback_count`、`dolby_vision_playback_count`、`dolby_atmos_playback_count`、`playback_device_count`
+- `category=behavior` 表示播放器或客户端明确行为，由前端在事件发生后调用 unlock 端点
+- 读取该接口时会结算并持久化已达标 milestone；`POST /api/v1/user/history` 后也会触发一次 milestone 结算
+- 启用用户系统时按登录用户隔离；未启用用户系统时使用单用户默认作用域
+
+### `POST /api/v1/user/achievements/unlock`
+幂等解锁行为类成就。
+
+请求体：
+
+```json
+{ "id": "overclock" }
+```
+
+说明：
+- 只接受 `category=behavior` 的成就 ID
+- 对已解锁成就重复提交仍返回 `200`，`data.newly_unlocked=false`
+- milestone 类不能由前端直接解锁，防止绕过后端统计口径
 
 ---
 

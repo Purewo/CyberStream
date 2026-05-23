@@ -14,7 +14,14 @@ from backend.app.api.library_helpers import (
     resolve_movie_sort_column,
 )
 from backend.app.extensions import db
-from backend.app.models import Library, LibraryMovieMembership, LibrarySource, MediaResource, Movie, StorageSource
+from backend.app.models import Library, LibraryMovieMembership, LibrarySource, MediaResource, Movie, StorageSource, UserFavorite
+from backend.app.services.favorites import (
+    FAVORITES_LIBRARY_ID,
+    build_favorites_library_payload,
+    favorite_count,
+    favorite_membership_map,
+    favorite_movie_query,
+)
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
 from backend.app.services.user_access import (
@@ -178,6 +185,18 @@ def _serialize_library_movie(movie, membership_map, user_history=None, detail=Fa
     return data
 
 
+def _favorites_library_or_404():
+    if favorite_count() <= 0:
+        return None, api_error(code=40410, msg='Library not found', http_status=404)
+    return build_favorites_library_payload(), None
+
+
+def _favorite_query_and_memberships():
+    query = favorite_movie_query()
+    movie_ids = [row[0] for row in query.with_entities(Movie.id).all()]
+    return query, favorite_membership_map(movie_ids)
+
+
 def _normalize_membership_mode(raw_mode):
     mode = (raw_mode or 'include').strip().lower() if isinstance(raw_mode, str) else ''
     return mode if mode in LIBRARY_MOVIE_MEMBERSHIP_MODES else None
@@ -216,11 +235,12 @@ def list_libraries():
     query = Library.query
     visible_ids = visible_library_ids_for_current_user()
     if visible_ids is not None:
-        if not visible_ids:
-            return api_response(data=[])
-        query = query.filter(Library.id.in_(list(visible_ids)))
+        query = query.filter(Library.id.in_(list(visible_ids))) if visible_ids else query.filter(db.false())
     libraries = query.order_by(Library.sort_order.asc(), Library.id.asc()).all()
-    return api_response(data=[library.to_dict() for library in libraries])
+    items = [library.to_dict() for library in libraries]
+    if favorite_count() > 0:
+        items.insert(0, build_favorites_library_payload())
+    return api_response(data=items)
 
 
 @libraries_bp.route('/libraries', methods=['POST'])
@@ -262,6 +282,15 @@ def get_library(id):
     if error_response:
         return error_response
     return api_response(data=library.to_dict(include_sources=is_admin_request()))
+
+
+@libraries_bp.route('/libraries/favorites', methods=['GET'])
+def get_favorites_library():
+    library, error_response = _favorites_library_or_404()
+    if error_response:
+        return error_response
+    library["sources"] = []
+    return api_response(data=library)
 
 
 @libraries_bp.route('/libraries/<int:id>', methods=['PATCH'])
@@ -577,6 +606,37 @@ def list_library_movies(id):
     })
 
 
+@libraries_bp.route('/libraries/favorites/movies', methods=['GET'])
+def list_favorite_library_movies():
+    _library, error_response = _favorites_library_or_404()
+    if error_response:
+        return error_response
+
+    page, page_size = _normalize_page_args()
+    sort_by = request.args.get('sort_by', 'favorited_at')
+    order = request.args.get('order', 'desc')
+    query, membership_map = _favorite_query_and_memberships()
+
+    if sort_by == 'favorited_at':
+        sort_column = UserFavorite.created_at
+    else:
+        sort_column = resolve_movie_sort_column(sort_by)
+    query = query.order_by(sort_column.asc() if order == 'asc' else sort_column.desc())
+    query = query.order_by(Movie.id.asc())
+
+    pagination = query.paginate(page=page, per_page=page_size, error_out=False)
+    movies = pagination.items
+    history_map = get_history_map([movie.id for movie in movies])
+    return api_response(data={
+        "items": [
+            _serialize_library_movie(movie, membership_map, user_history=history_map.get(movie.id))
+            for movie in movies
+        ],
+        "total": pagination.total,
+        "pagination": build_pagination_meta(pagination, page, page_size),
+    })
+
+
 @libraries_bp.route('/libraries/<int:id>/featured', methods=['GET'])
 def get_library_featured(id):
     library, error_response = _get_library_or_404(id)
@@ -592,6 +652,25 @@ def get_library_featured(id):
     membership_map = context["membership_map"]
     history_map = get_history_map([movie.id for movie in movies])
 
+    return api_response(data=[
+        _serialize_library_movie(movie, membership_map, user_history=history_map.get(movie.id), detail=True)
+        for movie in movies
+    ])
+
+
+@libraries_bp.route('/libraries/favorites/featured', methods=['GET'])
+def get_favorite_library_featured():
+    _library, error_response = _favorites_library_or_404()
+    if error_response:
+        return error_response
+
+    limit = request.args.get('limit', 5, type=int)
+    query, membership_map = _favorite_query_and_memberships()
+    movies = query.filter(
+        Movie.background_cover.isnot(None),
+        Movie.background_cover != "",
+    ).order_by(Movie.rating.desc(), UserFavorite.created_at.desc(), Movie.id.asc()).limit(max(limit, 0)).all()
+    history_map = get_history_map([movie.id for movie in movies])
     return api_response(data=[
         _serialize_library_movie(movie, membership_map, user_history=history_map.get(movie.id), detail=True)
         for movie in movies
@@ -614,6 +693,33 @@ def get_library_recommendations(id):
     recommendation_items = get_recommendation_items_from_query(query, limit=limit, strategy=strategy)
     movies = [item["movie"] for item in recommendation_items]
     membership_map = context["membership_map"]
+    history_map = get_history_map([movie.id for movie in movies])
+    return api_response(data=[
+        attach_recommendation_payload(
+            _serialize_library_movie(
+                item["movie"],
+                membership_map,
+                user_history=history_map.get(item["movie"].id),
+            ),
+            item,
+            strategy=strategy,
+            rank=index,
+        )
+        for index, item in enumerate(recommendation_items, start=1)
+    ])
+
+
+@libraries_bp.route('/libraries/favorites/recommendations', methods=['GET'])
+def get_favorite_library_recommendations():
+    _library, error_response = _favorites_library_or_404()
+    if error_response:
+        return error_response
+
+    limit = request.args.get('limit', 12, type=int)
+    strategy = normalize_recommendation_strategy(request.args.get('strategy', 'default'))
+    query, membership_map = _favorite_query_and_memberships()
+    recommendation_items = get_recommendation_items_from_query(query, limit=limit, strategy=strategy)
+    movies = [item["movie"] for item in recommendation_items]
     history_map = get_history_map([movie.id for movie in movies])
     return api_response(data=[
         attach_recommendation_payload(
@@ -666,6 +772,36 @@ def get_library_filters(id):
         for movie in movies:
             if movie.country:
                 counter[movie.country] += 1
+        data['countries'] = [{"name": name, "code": name, "count": count} for name, count in counter.most_common()]
+
+    return api_response(data=data)
+
+
+@libraries_bp.route('/libraries/favorites/filters', methods=['GET'])
+def get_favorite_library_filters():
+    _library, error_response = _favorites_library_or_404()
+    if error_response:
+        return error_response
+
+    include_param = request.args.get('include')
+    includes = include_param.split(',') if include_param else ['genres', 'years', 'countries']
+    query, _membership_map = _favorite_query_and_memberships()
+    movies = query.all()
+    data = {}
+
+    if 'genres' in includes:
+        counter = Counter()
+        for movie in movies:
+            for category in normalize_genres(movie.category or []):
+                counter[category] += 1
+        data['genres'] = [{"name": name, "slug": name, "count": count} for name, count in counter.most_common()]
+
+    if 'years' in includes:
+        counter = Counter(movie.year for movie in movies if movie.year is not None)
+        data['years'] = [{"year": year, "count": count} for year, count in sorted(counter.items(), reverse=True)]
+
+    if 'countries' in includes:
+        counter = Counter(movie.country for movie in movies if movie.country)
         data['countries'] = [{"name": name, "code": name, "count": count} for name, count in counter.most_common()]
 
     return api_response(data=data)

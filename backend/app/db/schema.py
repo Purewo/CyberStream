@@ -226,6 +226,34 @@ SQLITE_TABLE_PATCHES = {
             FOREIGN KEY(resource_id) REFERENCES media_resources (id)
         )
     """,
+    "user_achievements": """
+        CREATE TABLE user_achievements (
+            id INTEGER NOT NULL,
+            scope_key VARCHAR(80) NOT NULL,
+            user_id INTEGER,
+            achievement_id VARCHAR(80) NOT NULL,
+            unlock_source VARCHAR(40),
+            unlocked_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_user_achievement_scope_id UNIQUE (scope_key, achievement_id),
+            FOREIGN KEY(user_id) REFERENCES users (id)
+        )
+    """,
+    "user_favorites": """
+        CREATE TABLE user_favorites (
+            id INTEGER NOT NULL,
+            scope_key VARCHAR(80) NOT NULL,
+            user_id INTEGER,
+            movie_id VARCHAR(36) NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_user_favorite_scope_movie UNIQUE (scope_key, movie_id),
+            FOREIGN KEY(user_id) REFERENCES users (id),
+            FOREIGN KEY(movie_id) REFERENCES movies (id)
+        )
+    """,
 }
 
 

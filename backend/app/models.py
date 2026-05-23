@@ -1229,6 +1229,68 @@ class History(db.Model):
     user = db.relationship('User')
 
 
+class UserAchievement(db.Model):
+    """Per-user achievement unlock state.
+
+    scope_key keeps the single-user/no-login deployment isolated from nullable
+    unique-index behavior, while user_id remains available for user-management
+    deployments.
+    """
+    __tablename__ = 'user_achievements'
+    __table_args__ = (
+        db.UniqueConstraint('scope_key', 'achievement_id', name='uq_user_achievement_scope_id'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    scope_key = db.Column(db.String(80), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    achievement_id = db.Column(db.String(80), nullable=False, index=True)
+    unlock_source = db.Column(db.String(40))
+    unlocked_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User')
+
+    def to_user_dict(self, progress=None):
+        data = {
+            "id": self.achievement_id,
+            "unlocked_at": self.unlocked_at.isoformat() if self.unlocked_at else None,
+        }
+        if progress is not None:
+            data["progress"] = progress
+        return data
+
+
+class UserFavorite(db.Model):
+    """Per-user favorite movie relation backing the virtual Favorites library."""
+    __tablename__ = 'user_favorites'
+    __table_args__ = (
+        db.UniqueConstraint('scope_key', 'movie_id', name='uq_user_favorite_scope_movie'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    scope_key = db.Column(db.String(80), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User')
+    movie = db.relationship('Movie')
+
+    def to_dict(self, include_movie=False):
+        data = {
+            "id": self.id,
+            "movie_id": self.movie_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_movie:
+            data["movie"] = self.movie.to_simple_dict(include_season_cards=False) if self.movie else None
+        return data
+
+
 class MaintenanceJob(db.Model):
     """Persistent audit record for in-process maintenance jobs."""
     __tablename__ = 'maintenance_jobs'

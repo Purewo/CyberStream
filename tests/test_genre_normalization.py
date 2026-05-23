@@ -44,6 +44,15 @@ class GenreNormalizationTests(unittest.TestCase):
             ]),
         )
 
+    def test_filters_metadata_field_names_mistaken_for_genres(self):
+        self.assertEqual(
+            ["剧情"],
+            normalize_genres([
+                "category", "Genre", "genres", "tag", "tags", "director",
+                "title", "poster_url", "scraper_source", "剧情",
+            ]),
+        )
+
     def test_filters_and_movie_tags_return_public_genres(self):
         tv_movie = Movie(
             tmdb_id="tv/1",
