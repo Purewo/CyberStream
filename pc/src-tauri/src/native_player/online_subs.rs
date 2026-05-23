@@ -240,10 +240,7 @@ pub fn spawn_delete(
 // ---- helpers ----
 
 fn build_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
-    reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .user_agent("CyberStreamPC/1.21 (Native Player)")
-        .build()
+    crate::proxy::build_http_client(20)
 }
 
 fn fail(state: &Arc<Mutex<OnlineSubState>>, msg: String) {

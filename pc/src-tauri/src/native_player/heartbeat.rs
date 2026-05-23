@@ -70,12 +70,7 @@ pub fn spawn(
     let join = std::thread::Builder::new()
         .name("cyberstream-heartbeat".into())
         .spawn(move || {
-            // rustls-tls 默认就行；把 timeout 收紧避免心跳堵塞退出。
-            let client = match reqwest::blocking::Client::builder()
-                .timeout(Duration::from_secs(8))
-                .user_agent("CyberStreamPC/1.21 (Native Player)")
-                .build()
-            {
+            let client = match crate::proxy::build_http_client(8) {
                 Ok(c) => c,
                 Err(e) => {
                     log::warn!("heartbeat: failed to build reqwest client: {e}");
