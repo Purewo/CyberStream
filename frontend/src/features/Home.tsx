@@ -1,20 +1,110 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Cpu, Zap, Heart, Monitor, ChevronRight, Play, Film } from 'lucide-react';
+import {
+  Cpu, Zap, Heart, Drama, Monitor, ChevronRight, Play, Film,
+  Swords, Compass, Search, Skull, Wand2, Crosshair, Music,
+  Smile, Ghost, Rocket, Trophy, Baby, History, FileText, Camera, Tv,
+} from 'lucide-react';
 import { MovieCard } from '../components/movies/Cards';
 import { Movie, Category } from '../types';
 import { FEATURED_MOVIE } from '../constants';
 import { homeService, movieService } from '../api';
 
-const DEFAULT_CATEGORY_ICONS: Record<string, { icon: React.ReactNode, colorClass: string, bgClass: string }> = {
-  'sci_fi': { icon: <Cpu className="w-5 h-5" />, colorClass: 'border-primary text-primary', bgClass: 'bg-primary/10' },
-  'action': { icon: <Zap className="w-5 h-5" />, colorClass: 'border-red-500 text-red-500', bgClass: 'bg-red-500/10' },
-  'drama': { icon: <Heart className="w-5 h-5" />, colorClass: 'border-secondary text-secondary', bgClass: 'bg-secondary/10' },
-  'anime': { icon: <Monitor className="w-5 h-5" />, colorClass: 'border-accent text-accent', bgClass: 'bg-accent/10' },
+type CategoryStyle = { icon: React.ReactNode; colorClass: string; bgClass: string };
+
+// 主流类型 → 图标 / 颜色映射。后端 section.key 可能是英文 slug（sci_fi、action…）
+// 也可能是中文（科幻、动作…），section.title 也可能是中文标签——map 同时挂上几种
+// 别名，匹配时按 key → title 顺序找。
+const DEFAULT_CATEGORY_ICONS: Record<string, CategoryStyle> = {
+  // 科幻
+  sci_fi:    { icon: <Cpu     className="w-5 h-5" />, colorClass: 'border-primary text-primary', bgClass: 'bg-primary/10' },
+  scifi:     { icon: <Cpu     className="w-5 h-5" />, colorClass: 'border-primary text-primary', bgClass: 'bg-primary/10' },
+  '科幻':    { icon: <Cpu     className="w-5 h-5" />, colorClass: 'border-primary text-primary', bgClass: 'bg-primary/10' },
+  // 动作
+  action:    { icon: <Zap     className="w-5 h-5" />, colorClass: 'border-red-500 text-red-500', bgClass: 'bg-red-500/10' },
+  '动作':    { icon: <Zap     className="w-5 h-5" />, colorClass: 'border-red-500 text-red-500', bgClass: 'bg-red-500/10' },
+  // 剧情：戏剧面具 icon
+  drama:     { icon: <Drama   className="w-5 h-5" />, colorClass: 'border-secondary text-secondary', bgClass: 'bg-secondary/10' },
+  '剧情':    { icon: <Drama   className="w-5 h-5" />, colorClass: 'border-secondary text-secondary', bgClass: 'bg-secondary/10' },
+  // 爱情：心
+  romance:   { icon: <Heart   className="w-5 h-5" />, colorClass: 'border-pink-500 text-pink-500', bgClass: 'bg-pink-500/10' },
+  '爱情':    { icon: <Heart   className="w-5 h-5" />, colorClass: 'border-pink-500 text-pink-500', bgClass: 'bg-pink-500/10' },
+  // 动画
+  anime:     { icon: <Monitor className="w-5 h-5" />, colorClass: 'border-accent text-accent', bgClass: 'bg-accent/10' },
+  animation: { icon: <Monitor className="w-5 h-5" />, colorClass: 'border-accent text-accent', bgClass: 'bg-accent/10' },
+  '动画':    { icon: <Monitor className="w-5 h-5" />, colorClass: 'border-accent text-accent', bgClass: 'bg-accent/10' },
+  // 战争
+  war:       { icon: <Swords  className="w-5 h-5" />, colorClass: 'border-amber-700 text-amber-600', bgClass: 'bg-amber-700/10' },
+  '战争':    { icon: <Swords  className="w-5 h-5" />, colorClass: 'border-amber-700 text-amber-600', bgClass: 'bg-amber-700/10' },
+  // 冒险
+  adventure: { icon: <Compass className="w-5 h-5" />, colorClass: 'border-orange-400 text-orange-400', bgClass: 'bg-orange-400/10' },
+  '冒险':    { icon: <Compass className="w-5 h-5" />, colorClass: 'border-orange-400 text-orange-400', bgClass: 'bg-orange-400/10' },
+  // 悬疑
+  mystery:   { icon: <Search  className="w-5 h-5" />, colorClass: 'border-indigo-400 text-indigo-400', bgClass: 'bg-indigo-400/10' },
+  '悬疑':    { icon: <Search  className="w-5 h-5" />, colorClass: 'border-indigo-400 text-indigo-400', bgClass: 'bg-indigo-400/10' },
+  // 惊悚
+  thriller:  { icon: <Crosshair className="w-5 h-5" />, colorClass: 'border-red-400 text-red-400', bgClass: 'bg-red-400/10' },
+  '惊悚':    { icon: <Crosshair className="w-5 h-5" />, colorClass: 'border-red-400 text-red-400', bgClass: 'bg-red-400/10' },
+  // 恐怖
+  horror:    { icon: <Skull   className="w-5 h-5" />, colorClass: 'border-zinc-300 text-zinc-300', bgClass: 'bg-zinc-700/30' },
+  '恐怖':    { icon: <Skull   className="w-5 h-5" />, colorClass: 'border-zinc-300 text-zinc-300', bgClass: 'bg-zinc-700/30' },
+  // 犯罪
+  crime:     { icon: <Skull   className="w-5 h-5" />, colorClass: 'border-yellow-600 text-yellow-600', bgClass: 'bg-yellow-600/10' },
+  '犯罪':    { icon: <Skull   className="w-5 h-5" />, colorClass: 'border-yellow-600 text-yellow-600', bgClass: 'bg-yellow-600/10' },
+  // 奇幻
+  fantasy:   { icon: <Wand2   className="w-5 h-5" />, colorClass: 'border-purple-400 text-purple-400', bgClass: 'bg-purple-400/10' },
+  '奇幻':    { icon: <Wand2   className="w-5 h-5" />, colorClass: 'border-purple-400 text-purple-400', bgClass: 'bg-purple-400/10' },
+  // 喜剧
+  comedy:    { icon: <Smile   className="w-5 h-5" />, colorClass: 'border-yellow-400 text-yellow-400', bgClass: 'bg-yellow-400/10' },
+  '喜剧':    { icon: <Smile   className="w-5 h-5" />, colorClass: 'border-yellow-400 text-yellow-400', bgClass: 'bg-yellow-400/10' },
+  // 音乐 / 歌舞
+  music:     { icon: <Music   className="w-5 h-5" />, colorClass: 'border-fuchsia-400 text-fuchsia-400', bgClass: 'bg-fuchsia-400/10' },
+  musical:   { icon: <Music   className="w-5 h-5" />, colorClass: 'border-fuchsia-400 text-fuchsia-400', bgClass: 'bg-fuchsia-400/10' },
+  '音乐':    { icon: <Music   className="w-5 h-5" />, colorClass: 'border-fuchsia-400 text-fuchsia-400', bgClass: 'bg-fuchsia-400/10' },
+  '歌舞':    { icon: <Music   className="w-5 h-5" />, colorClass: 'border-fuchsia-400 text-fuchsia-400', bgClass: 'bg-fuchsia-400/10' },
+  // 灵异 / 超自然
+  supernatural: { icon: <Ghost className="w-5 h-5" />, colorClass: 'border-violet-400 text-violet-400', bgClass: 'bg-violet-400/10' },
+  '灵异':    { icon: <Ghost   className="w-5 h-5" />, colorClass: 'border-violet-400 text-violet-400', bgClass: 'bg-violet-400/10' },
+  // 太空 / 末日
+  space:     { icon: <Rocket  className="w-5 h-5" />, colorClass: 'border-cyan-400 text-cyan-400', bgClass: 'bg-cyan-400/10' },
+  // 体育
+  sport:     { icon: <Trophy  className="w-5 h-5" />, colorClass: 'border-emerald-400 text-emerald-400', bgClass: 'bg-emerald-400/10' },
+  sports:    { icon: <Trophy  className="w-5 h-5" />, colorClass: 'border-emerald-400 text-emerald-400', bgClass: 'bg-emerald-400/10' },
+  '体育':    { icon: <Trophy  className="w-5 h-5" />, colorClass: 'border-emerald-400 text-emerald-400', bgClass: 'bg-emerald-400/10' },
+  // 家庭 / 儿童
+  family:    { icon: <Baby    className="w-5 h-5" />, colorClass: 'border-teal-400 text-teal-400', bgClass: 'bg-teal-400/10' },
+  kids:      { icon: <Baby    className="w-5 h-5" />, colorClass: 'border-teal-400 text-teal-400', bgClass: 'bg-teal-400/10' },
+  '家庭':    { icon: <Baby    className="w-5 h-5" />, colorClass: 'border-teal-400 text-teal-400', bgClass: 'bg-teal-400/10' },
+  '儿童':    { icon: <Baby    className="w-5 h-5" />, colorClass: 'border-teal-400 text-teal-400', bgClass: 'bg-teal-400/10' },
+  // 历史 / 古装
+  history:   { icon: <History className="w-5 h-5" />, colorClass: 'border-amber-400 text-amber-400', bgClass: 'bg-amber-400/10' },
+  '历史':    { icon: <History className="w-5 h-5" />, colorClass: 'border-amber-400 text-amber-400', bgClass: 'bg-amber-400/10' },
+  '古装':    { icon: <History className="w-5 h-5" />, colorClass: 'border-amber-400 text-amber-400', bgClass: 'bg-amber-400/10' },
+  // 纪录片
+  documentary: { icon: <FileText className="w-5 h-5" />, colorClass: 'border-stone-300 text-stone-300', bgClass: 'bg-stone-500/10' },
+  '纪录片':  { icon: <FileText className="w-5 h-5" />, colorClass: 'border-stone-300 text-stone-300', bgClass: 'bg-stone-500/10' },
+  // 传记
+  biography: { icon: <Camera  className="w-5 h-5" />, colorClass: 'border-rose-400 text-rose-400', bgClass: 'bg-rose-400/10' },
+  '传记':    { icon: <Camera  className="w-5 h-5" />, colorClass: 'border-rose-400 text-rose-400', bgClass: 'bg-rose-400/10' },
+  // 综艺 / TV
+  tv:        { icon: <Tv      className="w-5 h-5" />, colorClass: 'border-sky-400 text-sky-400', bgClass: 'bg-sky-400/10' },
+  variety:   { icon: <Tv      className="w-5 h-5" />, colorClass: 'border-sky-400 text-sky-400', bgClass: 'bg-sky-400/10' },
+  '综艺':    { icon: <Tv      className="w-5 h-5" />, colorClass: 'border-sky-400 text-sky-400', bgClass: 'bg-sky-400/10' },
 };
 
-const getCategoryStyle = (key: string, title: string) => {
-  if (DEFAULT_CATEGORY_ICONS[key]) return DEFAULT_CATEGORY_ICONS[key];
-  return { icon: <Film className="w-5 h-5" />, colorClass: 'border-gray-400 text-gray-400', bgClass: 'bg-gray-400/10' };
+// 兜底图标：未知冷门分类用通用 Film。
+const FALLBACK_CATEGORY_STYLE: CategoryStyle = {
+  icon: <Film className="w-5 h-5" />,
+  colorClass: 'border-gray-400 text-gray-400',
+  bgClass: 'bg-gray-400/10',
+};
+
+const getCategoryStyle = (key: string, title: string): CategoryStyle => {
+  // 先按后端 key 匹配（最稳定），再按 title 匹配（兼容用户在 HomepageEditor
+  // 里自定义的中文标签）。两边都不命中走兜底。
+  const k = (key || '').toLowerCase();
+  if (DEFAULT_CATEGORY_ICONS[k]) return DEFAULT_CATEGORY_ICONS[k];
+  if (DEFAULT_CATEGORY_ICONS[title]) return DEFAULT_CATEGORY_ICONS[title];
+  return FALLBACK_CATEGORY_STYLE;
 };
 
 let cachedHomepageData: { hero: Movie | null, sections: any[] } | null = null;
@@ -96,7 +186,17 @@ export const Home = ({ onMovieSelect, onViewMore }: { onMovieSelect: (m: Movie) 
       fetchHomepageData();
     };
     window.addEventListener('homepage-config-updated', onConfigUpdated);
-    return () => window.removeEventListener('homepage-config-updated', onConfigUpdated);
+    // 资源库扫描结束 → 首页推荐 / 精选可能变化，缓存失效后重新拉一次。
+    // 用户对 ScanProgressBar 完成不再需要手动刷新页面就能看到新增内容。
+    const onScanCompleted = () => {
+      cachedHomepageData = null;
+      fetchHomepageData();
+    };
+    window.addEventListener('cyber:scan:completed', onScanCompleted);
+    return () => {
+      window.removeEventListener('homepage-config-updated', onConfigUpdated);
+      window.removeEventListener('cyber:scan:completed', onScanCompleted);
+    };
   }, []);
 
   return (
