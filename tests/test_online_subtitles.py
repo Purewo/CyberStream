@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.models import MediaResource, Movie, ResourceSubtitle, StorageSource
+from backend.app.services.online_subtitles import normalize_downloaded_subtitle_file
 
 
 class FakeCDNResponse:
@@ -707,10 +708,11 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
     def test_online_download_returns_payload_too_large_for_oversized_subtitle(self):
         resource = self._resource()
 
+        self.app.config["ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES"] = 8
         with patch(
             "backend.app.services.online_subtitles._load_skill_module",
             side_effect=self._fake_skill_module,
-        ), patch("backend.app.services.online_subtitles.MAX_EXTRACTED_SUBTITLE_BYTES", 8):
+        ):
             response = self.client.post(
                 f"/api/v1/resources/{resource.id}/subtitles/online/download",
                 json={"candidate_id": "subhd:large"},
@@ -719,6 +721,21 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual(413, response.status_code)
         self.assertEqual(41369, response.get_json()["code"])
         self.assertIn("too large", response.get_json()["msg"])
+
+    def test_online_subtitle_normalization_has_no_default_size_limit(self):
+        resource = self._resource()
+        content = b"1\n00:00:00,000 --> 00:00:01,000\n" + b"x" * (30 * 1024 * 1024 + 1)
+
+        result = normalize_downloaded_subtitle_file(
+            resource,
+            "subhd",
+            "large-default",
+            "large-default.srt",
+            content,
+        )
+
+        self.assertEqual(len(content), len(result["content"]))
+        self.assertEqual("application/x-subrip; charset=utf-8", result["mime_type"])
 
     def test_online_download_accepts_string_srtku_download_index(self):
         resource = self._resource()

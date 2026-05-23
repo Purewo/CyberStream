@@ -113,6 +113,7 @@
 - 搜索关键字默认先使用资源展示标题，再使用原名和文件名，避免中文片名资源优先被英文文件名带偏。
 - 显式传入 `srtku` 时后端会实际尝试该备用源，但受独立超时预算限制；超时会记录到 `providers.errors`，并返回 `reason=timeout`。
 - `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS` 默认改为 `5` 秒。
+- 字幕下载、手动上传和 WebVTT 预览转换默认不限制字幕文件大小；如需限制，可显式设置 `CYBER_ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES`、`CYBER_SUBTITLE_MANUAL_UPLOAD_MAX_BYTES` 或 `CYBER_SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES`。
 
 ## 手动元数据匹配防幽灵数据
 

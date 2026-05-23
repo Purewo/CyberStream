@@ -75,8 +75,8 @@ LANGUAGE_LABELS = {
 DEFAULT_MARKERS = {"default", "defaults", "默认", "缺省"}
 FORCED_MARKERS = {"forced", "force", "only", "强制"}
 DIRECTORY_CACHE_TTL_SECONDS = 30
-MAX_MANUAL_UPLOAD_SUBTITLE_BYTES = 100 * 1024 * 1024
-MAX_WEBVTT_CONVERSION_BYTES = 10 * 1024 * 1024
+MAX_MANUAL_UPLOAD_SUBTITLE_BYTES = getattr(config, "SUBTITLE_MANUAL_UPLOAD_MAX_BYTES", 0)
+MAX_WEBVTT_CONVERSION_BYTES = getattr(config, "SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES", 0)
 WEBVTT_CONVERTIBLE_FORMATS = {"srt", "ass", "ssa", "vtt"}
 
 _DIRECTORY_CACHE = {}
@@ -308,6 +308,14 @@ def _config_value(name: str, default=None):
     return getattr(config, name, default)
 
 
+def _subtitle_size_limit(config_name: str, default: int):
+    try:
+        configured = int(_config_value(config_name, default))
+    except (TypeError, ValueError):
+        configured = default
+    return configured if configured > 0 else None
+
+
 def cached_subtitle_file_path(subtitle):
     storage = subtitle.get("storage") if isinstance(subtitle, dict) else None
     if not isinstance(storage, dict) or storage.get("kind") != "cache":
@@ -407,7 +415,8 @@ def _ass_to_vtt(text: str) -> str:
 
 
 def convert_subtitle_bytes_to_vtt(content: bytes, source_format: str) -> str:
-    if len(content or b"") > MAX_WEBVTT_CONVERSION_BYTES:
+    max_bytes = _subtitle_size_limit("SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES", MAX_WEBVTT_CONVERSION_BYTES)
+    if max_bytes is not None and len(content or b"") > max_bytes:
         raise ResourceSubtitleError("Subtitle is too large to convert to WebVTT", code=41371, http_status=413)
 
     subtitle_format = str(source_format or "").strip().lower()
@@ -874,8 +883,9 @@ def upload_resource_subtitle(resource, file_storage, set_default=False):
     if not filename:
         raise ResourceSubtitleError("subtitle filename is required", code=40073, http_status=400)
 
-    content = file_storage.read(MAX_MANUAL_UPLOAD_SUBTITLE_BYTES + 1)
-    if len(content) > MAX_MANUAL_UPLOAD_SUBTITLE_BYTES:
+    max_bytes = _subtitle_size_limit("SUBTITLE_MANUAL_UPLOAD_MAX_BYTES", MAX_MANUAL_UPLOAD_SUBTITLE_BYTES)
+    content = file_storage.read(max_bytes + 1) if max_bytes is not None else file_storage.read()
+    if max_bytes is not None and len(content) > max_bytes:
         raise ResourceSubtitleError("subtitle upload is too large", code=41370, http_status=413)
 
     source_key = uuid.uuid4().hex

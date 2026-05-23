@@ -639,7 +639,7 @@ curl -i "http://127.0.0.1:5004/api/v1/resources/<resource_id>/stream?subtitle_id
 当修改在线字幕搜索/下载/绑定时，抽样验证：
 - `GET /api/v1/resources/<resource_id>/subtitles/online/search?keyword=<keyword>` 的候选中，`srt/ass/ssa/vtt` 文本字幕排在 `sub/sup` 位图字幕前
 - 候选包含 `format_normalized` 和 `web_player`；`sub/sup` 应返回 `web_player.supported=false`
-- 下载超出后端大小限制的字幕应返回 413，不应伪装为远端下载 502
+- 字幕大小默认不限制；显式配置大小上限后，超限下载应返回 413，不应伪装为远端下载 502
 - 下载到 RAR 等后端不支持的压缩包时应返回 415，前端提示用户换一个候选
 
 ### 6.7 外部播放器播放清单验证

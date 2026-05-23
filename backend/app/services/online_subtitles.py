@@ -24,8 +24,8 @@ TEXT_SUBTITLE_SUFFIXES = {".srt", ".ass", ".ssa", ".vtt"}
 ONLINE_TEXT_SUBTITLE_FORMATS = {"srt", "ass", "ssa", "vtt"}
 ONLINE_BITMAP_SUBTITLE_FORMATS = {"sub", "sup"}
 COMPOUND_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz")
-MAX_EXTRACTED_SUBTITLE_BYTES = 30 * 1024 * 1024
-MAX_NESTED_ARCHIVE_BYTES = 100 * 1024 * 1024
+MAX_EXTRACTED_SUBTITLE_BYTES = getattr(config, "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES", 0)
+MAX_NESTED_ARCHIVE_BYTES = getattr(config, "ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES", 0)
 MAX_ARCHIVE_DEPTH = 3
 DEFAULT_QUERY_ATTEMPT_LIMIT = 6
 MAX_QUERY_ATTEMPT_LIMIT = 12
@@ -127,6 +127,25 @@ def _config_float(name, default):
         return float(value)
     except (TypeError, ValueError):
         return float(default)
+
+
+def _config_int(name, default):
+    value = current_app.config.get(name, default) if has_app_context() else getattr(config, name, default)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _subtitle_size_limit(config_name, default):
+    configured = _config_int(config_name, default)
+    return configured if configured > 0 else None
+
+
+def _read_with_optional_limit(file_obj, limit):
+    if limit is None:
+        return file_obj.read()
+    return file_obj.read(limit + 1)
 
 
 def _clamp_timeout_value(value, cap):
@@ -890,7 +909,8 @@ def _pick_best_subtitle_candidate(candidates):
 
 
 def _ensure_subtitle_size(content, filename):
-    if len(content) > MAX_EXTRACTED_SUBTITLE_BYTES:
+    max_bytes = _subtitle_size_limit("ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES", MAX_EXTRACTED_SUBTITLE_BYTES)
+    if max_bytes is not None and len(content) > max_bytes:
         raise OnlineSubtitleError(
             f"Subtitle file is too large: {_basename(filename)}",
             code=41369,
@@ -899,7 +919,8 @@ def _ensure_subtitle_size(content, filename):
 
 
 def _ensure_nested_archive_size(content, filename):
-    if len(content) > MAX_NESTED_ARCHIVE_BYTES:
+    max_bytes = _subtitle_size_limit("ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES", MAX_NESTED_ARCHIVE_BYTES)
+    if max_bytes is not None and len(content) > max_bytes:
         raise OnlineSubtitleError(
             f"Nested subtitle archive is too large: {_basename(filename)}",
             code=41369,
@@ -979,12 +1000,18 @@ def _extract_tar_subtitles(content, depth=0, parent_entry=None):
                 entry_name = _candidate_entry_name(parent_entry, member.name)
                 kind = _archive_kind(member.name, b"")
                 if _is_subtitle_filename(member.name):
-                    data = fp.read(MAX_EXTRACTED_SUBTITLE_BYTES + 1)
+                    data = _read_with_optional_limit(
+                        fp,
+                        _subtitle_size_limit("ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES", MAX_EXTRACTED_SUBTITLE_BYTES),
+                    )
                     candidates.append(_collect_subtitle_candidate(member.name, data, entry_name))
                     continue
 
                 if _is_supported_archive_kind(kind) and depth < MAX_ARCHIVE_DEPTH:
-                    data = fp.read(MAX_NESTED_ARCHIVE_BYTES + 1)
+                    data = _read_with_optional_limit(
+                        fp,
+                        _subtitle_size_limit("ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES", MAX_NESTED_ARCHIVE_BYTES),
+                    )
                     _ensure_nested_archive_size(data, member.name)
                     candidates.extend(_extract_archive_subtitles(member.name, data, depth + 1, entry_name))
                     continue
@@ -1021,7 +1048,11 @@ def _extract_7z_subtitles(content, depth=0, parent_entry=None):
                 kind = _archive_kind(path.name, b"")
                 if not _is_supported_archive_kind(kind):
                     continue
-                if path.stat().st_size > MAX_NESTED_ARCHIVE_BYTES:
+                nested_archive_limit = _subtitle_size_limit(
+                    "ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES",
+                    MAX_NESTED_ARCHIVE_BYTES,
+                )
+                if nested_archive_limit is not None and path.stat().st_size > nested_archive_limit:
                     raise OnlineSubtitleError(
                         f"Nested subtitle archive is too large: {path.name}",
                         code=41369,
@@ -1035,7 +1066,11 @@ def _extract_7z_subtitles(content, depth=0, parent_entry=None):
                 resolved.relative_to(root)
             except ValueError:
                 continue
-            if resolved.stat().st_size > MAX_EXTRACTED_SUBTITLE_BYTES:
+            extracted_limit = _subtitle_size_limit(
+                "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES",
+                MAX_EXTRACTED_SUBTITLE_BYTES,
+            )
+            if extracted_limit is not None and resolved.stat().st_size > extracted_limit:
                 raise OnlineSubtitleError(
                     f"Subtitle file is too large: {resolved.name}",
                     code=41369,

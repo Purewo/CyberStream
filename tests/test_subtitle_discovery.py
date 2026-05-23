@@ -14,7 +14,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.models import MediaResource, Movie, StorageSource
-from backend.app.services.subtitles import clear_subtitle_discovery_cache
+from backend.app.services.subtitles import (
+    ResourceSubtitleError,
+    clear_subtitle_discovery_cache,
+    convert_subtitle_bytes_to_vtt,
+)
 
 
 class SubtitleDiscoveryTests(unittest.TestCase):
@@ -140,6 +144,23 @@ class SubtitleDiscoveryTests(unittest.TestCase):
         self.assertTrue(body.startswith("WEBVTT"))
         self.assertIn("00:00:00.000 --> 00:00:01.000", body)
         self.assertIn("你好", body)
+
+    def test_webvtt_conversion_accepts_subtitles_above_legacy_10mb_default(self):
+        content = b"1\n00:00:00,000 --> 00:00:01,000\n" + b"x" * (10 * 1024 * 1024 + 1)
+
+        body = convert_subtitle_bytes_to_vtt(content, "srt")
+
+        self.assertTrue(body.startswith("WEBVTT"))
+        self.assertIn("00:00:00.000 --> 00:00:01.000", body)
+
+    def test_webvtt_conversion_respects_configured_limit(self):
+        self.app.config["SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES"] = 8
+
+        with self.assertRaises(ResourceSubtitleError) as context:
+            convert_subtitle_bytes_to_vtt(b"1\n00:00:00,000 --> 00:00:01,000\nToo large\n", "srt")
+
+        self.assertEqual(413, context.exception.http_status)
+        self.assertEqual(41371, context.exception.code)
 
     def test_stream_endpoint_can_convert_ass_subtitle_to_webvtt(self):
         movie, _resource = self._movie_with_resource()

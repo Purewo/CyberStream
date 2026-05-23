@@ -3518,7 +3518,7 @@
     "/api/v1/resources/{id}/subtitles/online/download": {
       "post": {
         "summary": "下载在线字幕候选",
-        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。超过后端大小限制的字幕返回 413。",
+        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。默认不限制字幕文件大小；只有显式配置后端大小上限且超限时才返回 413。",
         "operationId": "downloadResourceOnlineSubtitle",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3621,7 +3621,7 @@
             "description": "资源不存在"
           },
           "413": {
-            "description": "字幕文件或嵌套压缩包超过后端大小限制"
+            "description": "显式配置后端大小上限后，字幕文件或嵌套压缩包超过限制"
           },
           "415": {
             "description": "字幕源返回了后端当前不支持的压缩包或媒体类型，例如 RAR"
@@ -3814,7 +3814,7 @@
     "/api/v1/resources/{id}/subtitles/upload": {
       "post": {
         "summary": "手动上传字幕并绑定到资源",
-        "description": "用户手动上传字幕文件后，后端保存到缓存目录并绑定到当前资源，返回更新后的 playback.subtitles。支持直接上传 srt/ass/ssa/vtt/sub/sup，也支持上传 zip/7z/tar/gzip 后由后端提取真实字幕文件；不会写入原始媒体目录。",
+        "description": "用户手动上传字幕文件后，后端保存到缓存目录并绑定到当前资源，返回更新后的 playback.subtitles。支持直接上传 srt/ass/ssa/vtt/sub/sup，也支持上传 zip/7z/tar/gzip 后由后端提取真实字幕文件；不会写入原始媒体目录。默认不限制字幕文件大小；只有显式配置上传大小上限且超限时才返回 413。",
         "operationId": "uploadResourceSubtitleFile",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3874,7 +3874,7 @@
             "description": "资源不存在"
           },
           "413": {
-            "description": "上传文件过大"
+            "description": "显式配置上传大小上限后，上传文件超过限制"
           }
         }
       }
