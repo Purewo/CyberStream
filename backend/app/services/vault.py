@@ -7,7 +7,7 @@ from flask import session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from backend.app.extensions import db
-from backend.app.models import User, UserVaultSecret
+from backend.app.models import UserVaultSecret
 from backend.app.security import get_current_user, is_user_management_enabled
 from backend.app.services.audit import record_audit
 from backend.app.services.users import verify_user_password
@@ -28,26 +28,25 @@ class VaultAccessError(ValueError):
         self.http_status = http_status
 
 
-def _current_admin_user():
+def _current_admin_context():
+    if not is_user_management_enabled():
+        return "default", None
+
     user = get_current_user()
-    if not is_user_management_enabled() or not user or not user.is_admin() or not user.is_enabled:
+    if not user or not user.is_admin() or not user.is_enabled:
         return None
-    return user
+    return f"user:{user.id}", user
 
 
-def _require_admin_user():
-    user = _current_admin_user()
-    if not user:
-        raise VaultAccessError(40340, "Vault is available only to an authenticated administrator")
-    return user
+def _require_admin_context():
+    context = _current_admin_context()
+    if not context:
+        raise VaultAccessError(40340, "Vault is available only to the default administrator or an authenticated administrator")
+    return context
 
 
-def _scope_key(user):
-    return f"user:{user.id}"
-
-
-def _secret_for_user(user):
-    return UserVaultSecret.query.filter_by(scope_key=_scope_key(user)).first()
+def _secret_for_scope(scope_key):
+    return UserVaultSecret.query.filter_by(scope_key=scope_key).first()
 
 
 def _clear_unlock_session():
@@ -98,24 +97,24 @@ def _validate_pin(value):
     return pin
 
 
-def _unlocked_with_secret(secret, user, now):
+def _unlocked_with_secret(secret, scope_key, now):
     if not secret or _is_locked(secret, now):
         return False
     return (
-        session.get(_SESSION_SCOPE_KEY) == _scope_key(user)
+        session.get(_SESSION_SCOPE_KEY) == scope_key
         and session.get(_SESSION_PIN_CHANGED_AT_KEY) == _pin_version(secret)
     )
 
 
 def build_vault_status():
-    user = _require_admin_user()
+    scope_key, _actor = _require_admin_context()
     now = datetime.utcnow()
-    secret = _secret_for_user(user)
+    secret = _secret_for_scope(scope_key)
     if secret and _refresh_lock_state(secret, now, commit=True):
         _clear_unlock_session()
     used, remaining = _window_stats(secret, now)
     locked = _is_locked(secret, now)
-    unlocked = _unlocked_with_secret(secret, user, now)
+    unlocked = _unlocked_with_secret(secret, scope_key, now)
     return {
         "configured": bool(secret and secret.pin_hash),
         "unlocked": unlocked,
@@ -128,32 +127,33 @@ def build_vault_status():
 
 
 def is_vault_unlocked():
-    user = _current_admin_user()
-    if not user:
+    context = _current_admin_context()
+    if not context:
         return False
+    scope_key, _actor = context
     now = datetime.utcnow()
-    secret = _secret_for_user(user)
-    return _unlocked_with_secret(secret, user, now)
+    secret = _secret_for_scope(scope_key)
+    return _unlocked_with_secret(secret, scope_key, now)
 
 
 def is_vault_admin_session():
-    return _current_admin_user() is not None
+    return _current_admin_context() is not None
 
 
 def require_vault_unlocked():
-    user = _require_admin_user()
+    scope_key, _actor = _require_admin_context()
     now = datetime.utcnow()
-    secret = _secret_for_user(user)
+    secret = _secret_for_scope(scope_key)
     if not secret:
         raise VaultAccessError(40341, "Vault PIN is not configured")
     if _is_locked(secret, now):
         raise VaultAccessError(42340, "Vault is locked due to excessive PIN changes", http_status=423)
-    if not _unlocked_with_secret(secret, user, now):
+    if not _unlocked_with_secret(secret, scope_key, now):
         raise VaultAccessError(40342, "Vault PIN unlock required")
     return secret
 
 
-def _consume_pin_change(secret, now, user):
+def _consume_pin_change(secret, now, actor):
     if (
         not secret.pin_change_window_started_at
         or now - secret.pin_change_window_started_at >= VAULT_PIN_CHANGE_WINDOW
@@ -172,7 +172,7 @@ def _consume_pin_change(secret, now, user):
             target_type="vault",
             target_id=secret.scope_key,
             outcome="blocked",
-            actor=user,
+            actor=actor,
             details={"reason": "daily_pin_change_limit", "limit": VAULT_PIN_CHANGE_LIMIT},
         )
         db.session.commit()
@@ -181,13 +181,13 @@ def _consume_pin_change(secret, now, user):
 
 
 def set_vault_pin(payload):
-    user = _require_admin_user()
+    scope_key, actor = _require_admin_context()
     now = datetime.utcnow()
     new_pin = _validate_pin(payload.get("new_pin", payload.get("pin")))
-    if verify_user_password(user, new_pin):
+    if actor and verify_user_password(actor, new_pin):
         raise VaultAccessError(40041, "Vault PIN must not match the login password", http_status=400)
 
-    secret = _secret_for_user(user)
+    secret = _secret_for_scope(scope_key)
     initial_setup = secret is None
     if secret and _is_locked(secret, now):
         raise VaultAccessError(42340, "Vault is locked due to excessive PIN changes", http_status=423)
@@ -199,7 +199,7 @@ def set_vault_pin(payload):
                 target_type="vault",
                 target_id=secret.scope_key,
                 outcome="failure",
-                actor=user,
+                actor=actor,
                 details={"reason": "invalid_current_pin"},
                 commit=True,
             )
@@ -208,8 +208,8 @@ def set_vault_pin(payload):
             raise VaultAccessError(40042, "New vault PIN must differ from the current PIN", http_status=400)
     else:
         secret = UserVaultSecret(
-            scope_key=_scope_key(user),
-            user_id=user.id,
+            scope_key=scope_key,
+            user_id=actor.id if actor else None,
             pin_hash="",
             pin_change_count=0,
             is_locked=False,
@@ -219,7 +219,7 @@ def set_vault_pin(payload):
         db.session.add(secret)
 
     if not initial_setup:
-        _consume_pin_change(secret, now, user)
+        _consume_pin_change(secret, now, actor)
     secret.pin_hash = generate_password_hash(new_pin)
     secret.pin_changed_at = now
     secret.updated_at = now
@@ -229,7 +229,7 @@ def set_vault_pin(payload):
         "vault.pin.update",
         target_type="vault",
         target_id=secret.scope_key,
-        actor=user,
+        actor=actor,
         details={"initial_setup": initial_setup},
     )
     db.session.commit()
@@ -237,9 +237,9 @@ def set_vault_pin(payload):
 
 
 def unlock_vault(payload):
-    user = _require_admin_user()
+    scope_key, actor = _require_admin_context()
     now = datetime.utcnow()
-    secret = _secret_for_user(user)
+    secret = _secret_for_scope(scope_key)
     if not secret:
         raise VaultAccessError(40341, "Vault PIN is not configured")
     if _is_locked(secret, now):
@@ -252,18 +252,18 @@ def unlock_vault(payload):
             target_type="vault",
             target_id=secret.scope_key,
             outcome="failure",
-            actor=user,
+            actor=actor,
             details={"reason": "invalid_pin"},
             commit=True,
         )
         raise VaultAccessError(40344, "Vault PIN is incorrect")
     _mark_unlocked(secret)
-    record_audit("vault.unlock", target_type="vault", target_id=secret.scope_key, actor=user, commit=True)
+    record_audit("vault.unlock", target_type="vault", target_id=secret.scope_key, actor=actor, commit=True)
     return build_vault_status()
 
 
 def lock_vault():
-    user = _require_admin_user()
+    scope_key, actor = _require_admin_context()
     _clear_unlock_session()
-    record_audit("vault.lock", target_type="vault", target_id=_scope_key(user), actor=user, commit=True)
+    record_audit("vault.lock", target_type="vault", target_id=scope_key, actor=actor, commit=True)
     return build_vault_status()

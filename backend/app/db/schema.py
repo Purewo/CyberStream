@@ -258,7 +258,7 @@ SQLITE_TABLE_PATCHES = {
         CREATE TABLE user_vault_secrets (
             id INTEGER NOT NULL,
             scope_key VARCHAR(80) NOT NULL,
-            user_id INTEGER NOT NULL,
+            user_id INTEGER,
             pin_hash VARCHAR(255) NOT NULL,
             pin_changed_at DATETIME,
             pin_change_window_started_at DATETIME,
@@ -293,6 +293,42 @@ def ensure_sqlite_schema(engine):
                 continue
             conn.execute(text(ddl))
             existing_tables.add(table_name)
+
+        if "user_vault_secrets" in existing_tables:
+            vault_columns = {col["name"]: col for col in inspect(engine).get_columns("user_vault_secrets")}
+            if not vault_columns["user_id"]["nullable"]:
+                conn.execute(text("""
+                    CREATE TABLE user_vault_secrets_nullable (
+                        id INTEGER NOT NULL,
+                        scope_key VARCHAR(80) NOT NULL,
+                        user_id INTEGER,
+                        pin_hash VARCHAR(255) NOT NULL,
+                        pin_changed_at DATETIME,
+                        pin_change_window_started_at DATETIME,
+                        pin_change_count INTEGER NOT NULL,
+                        is_locked BOOLEAN NOT NULL,
+                        locked_until DATETIME,
+                        created_at DATETIME NOT NULL,
+                        updated_at DATETIME NOT NULL,
+                        PRIMARY KEY (id),
+                        CONSTRAINT uq_user_vault_secret_scope UNIQUE (scope_key),
+                        FOREIGN KEY(user_id) REFERENCES users (id)
+                    )
+                """))
+                conn.execute(text("""
+                    INSERT INTO user_vault_secrets_nullable (
+                        id, scope_key, user_id, pin_hash, pin_changed_at,
+                        pin_change_window_started_at, pin_change_count, is_locked,
+                        locked_until, created_at, updated_at
+                    )
+                    SELECT
+                        id, scope_key, user_id, pin_hash, pin_changed_at,
+                        pin_change_window_started_at, pin_change_count, is_locked,
+                        locked_until, created_at, updated_at
+                    FROM user_vault_secrets
+                """))
+                conn.execute(text("DROP TABLE user_vault_secrets"))
+                conn.execute(text("ALTER TABLE user_vault_secrets_nullable RENAME TO user_vault_secrets"))
 
         for table_name, column_patches in SQLITE_COLUMN_PATCHES.items():
             if table_name not in existing_tables:

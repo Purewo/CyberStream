@@ -116,7 +116,9 @@ def _build_server_metrics():
     }
     scope_key, user_id = _scope_context()
     current_user = get_current_user()
-    if is_user_management_enabled() and current_user and current_user.is_admin() and current_user.id == user_id:
+    if not is_user_management_enabled():
+        favorites_count = UserFavorite.query.filter_by(scope_key=scope_key).count()
+    elif current_user and current_user.is_admin() and current_user.id == user_id:
         favorites_count = UserFavorite.query.filter_by(scope_key=scope_key).count()
     else:
         favorites_count = 0

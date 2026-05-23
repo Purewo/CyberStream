@@ -197,6 +197,53 @@ class FavoritesLibraryTests(unittest.TestCase):
         self.assertEqual(423, unlock_response.status_code)
 
 
+class DefaultAdminVaultModeTests(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app({
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "USER_MANAGEMENT_ENABLED": False,
+            "SECRET_KEY": "test-session-secret",
+            "AUTH_ENABLED": False,
+        })
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.drop_all()
+        db.create_all()
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def test_default_scope_is_temporary_admin_but_still_requires_pin(self):
+        movie = Movie(
+            tmdb_id="movie/default-vault",
+            title="Default Vault",
+            cover="https://img.example/default-vault.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        status = self.client.get("/api/v1/user/vault/status")
+        before_pin = self.client.post(f"/api/v1/user/favorites/{movie.id}")
+        setup = self.client.post("/api/v1/user/vault/password", json={"pin": "123456"})
+        saved = self.client.post(f"/api/v1/user/favorites/{movie.id}")
+        listed = self.client.get("/api/v1/user/favorites")
+
+        self.assertEqual(200, status.status_code)
+        self.assertFalse(status.get_json()["data"]["configured"])
+        self.assertEqual(403, before_pin.status_code)
+        self.assertEqual(200, setup.status_code)
+        self.assertEqual(200, saved.status_code)
+        self.assertEqual([movie.id], listed.get_json()["data"]["movie_ids"])
+        secret = UserVaultSecret.query.one()
+        self.assertEqual("default", secret.scope_key)
+        self.assertIsNone(secret.user_id)
+
+
 class FavoritesUserIsolationTests(unittest.TestCase):
     def setUp(self):
         clear_all_login_failures()

@@ -49,11 +49,11 @@
 
 - 新增 `GET /api/v1/user/favorites`、`GET/POST/DELETE /api/v1/user/favorites/{movie_id}`，用于当前用户收藏影视。
 - 新增 `GET /api/v1/user/vault/status`、`POST /api/v1/user/vault/password`、`POST /api/v1/user/vault/unlock`、`POST /api/v1/user/vault/lock`，用于保险库独立 PIN 门禁。
-- 保险库仅已登录管理员本人可访问；普通用户、未登录默认作用域和 API Token 管理后门都不能读取或写入收藏虚拟库。
-- 访问收藏关系和 `libraries/favorites*` 前，管理员必须先设置并解锁 6 位数字 PIN；PIN 不能与登录密码相同。
+- 当前单用户/默认模式临时按默认管理员处理；开启用户系统后保险库仅已登录管理员本人可访问，普通用户不能读取或写入收藏虚拟库。
+- 访问收藏关系和 `libraries/favorites*` 前，默认管理员或已登录管理员必须先设置并解锁 6 位数字 PIN；开启用户系统后 PIN 不能与登录密码相同。
 - 保险库 PIN 在 24 小时窗口内最多修改 10 次；第 11 次会锁定保险库直到窗口结束。
 - 管理员首次收藏后，`GET /api/v1/libraries` 会额外返回 `id="favorites"` 的虚拟资源库；读取内容和继续增删收藏仍需解锁 PIN，移除最后一条收藏后自动消失。
-- “收藏家”成就的 `favorites_count` 只统计管理员自己的保险库收藏，避免普通用户或默认作用域间接暴露保险库数量。
+- “收藏家”成就的 `favorites_count` 在默认模式统计默认管理员保险库；开启用户系统后只统计管理员自己的保险库收藏，避免普通用户间接暴露保险库数量。
 - 收藏虚拟库支持普通资源库读取入口：`GET /api/v1/libraries/favorites`、`/movies`、`/featured`、`/recommendations`、`/filters`。
 - 收藏虚拟库没有存储源绑定，也没有 `/api/v1/libraries/favorites/scan`；前端应根据 `actions.can_scan=false` 隐藏扫描入口。
 

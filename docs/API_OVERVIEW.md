@@ -134,7 +134,7 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 普通资源库来自数据库 `libraries`
-- 已登录管理员至少收藏 1 部影视后，列表会额外返回一个虚拟资源库：`id="favorites"`、`slug="favorites"`、`is_virtual=true`；读取内容前仍需解锁保险库 PIN
+- 默认单用户模式或已登录管理员至少收藏 1 部影视后，列表会额外返回一个虚拟资源库：`id="favorites"`、`slug="favorites"`、`is_virtual=true`；读取内容前仍需解锁保险库 PIN
 - 收藏虚拟库没有存储源、没有来源绑定、没有整库扫描动作；前端应根据 `actions.can_scan=false` 隐藏扫描按钮
 
 ### `POST /api/v1/libraries`
@@ -157,7 +157,7 @@ X-Cyber-API-Token: <token>
 获取当前用户收藏虚拟资源库详情。
 
 说明：
-- 仅已登录管理员可访问；普通用户、未登录默认作用域、API Token 管理后门都不能访问保险库
+- 当前单用户/默认模式临时按默认管理员处理；开启用户系统后仅已登录管理员可访问，普通用户不能访问保险库
 - 访问前必须先设置并解锁 6 位数字保险库 PIN
 - 未收藏任何影视时返回 `404`
 - 返回结构与普通资源库详情一致，但 `sources=[]`、`is_virtual=true`、`kind="favorites"`
@@ -1509,7 +1509,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - `include_movies=true|false`，默认 `false`
 
 说明：
-- 该组接口只面向已登录管理员自己的保险库；访问前必须先完成 PIN 解锁
+- 该组接口只面向默认管理员或已登录管理员自己的保险库；访问前必须先完成 PIN 解锁
 - 返回 `items`、`movie_ids`、`total`
 - 未收藏任何影视时 `items=[]`，`library=null`
 - 有收藏时 `library` 为 `favorites` 虚拟资源库摘要
@@ -1535,7 +1535,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 规则：
 - PIN 必须是 6 位数字
-- PIN 不能与登录密码相同
+- 开启用户系统后，PIN 不能与当前管理员登录密码相同；默认单用户模式没有登录密码可比较
 - 修改已有 PIN 时必须提供正确 `current_pin`
 - 24 小时窗口内最多修改 10 次；第 11 次会直接锁定保险库，直到该窗口结束
 - 设置或修改成功后，当前会话自动解锁保险库
@@ -1573,7 +1573,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 说明：
 - 返回 `defs` 和 `user` 两组数据，`defs[].icon` 是 lucide-react 图标名字符串，前端自行映射图标组件
 - `category=milestone` 表示后端基于可统计指标自动结算；当前支持 `completed_movies_count`、`favorites_count`、`watched_legacy_titles_count`、`high_quality_playback_count`、`dolby_vision_playback_count`、`dolby_atmos_playback_count`、`playback_device_count`
-- `favorites_count` 只统计已登录管理员自己的保险库收藏，普通用户和默认未登录作用域不暴露该计数
+- `favorites_count` 在默认模式统计默认管理员保险库；开启用户系统后只统计已登录管理员自己的保险库收藏，普通用户不暴露该计数
 - `category=behavior` 表示播放器或客户端明确行为，由前端在事件发生后调用 unlock 端点
 - 读取该接口时会结算并持久化已达标 milestone；`POST /api/v1/user/history` 后也会触发一次 milestone 结算
 - 启用用户系统时按登录用户隔离；未启用用户系统时使用单用户默认作用域

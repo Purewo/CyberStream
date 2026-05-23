@@ -128,7 +128,7 @@ class AchievementRoutesTests(unittest.TestCase):
         ghost = next(item for item in achievements if item["id"] == "ghost")
         self.assertIsNotNone(ghost["unlocked_at"])
 
-    def test_collector_does_not_expose_default_scope_vault_data(self):
+    def test_collector_is_calculated_for_default_admin_vault_scope(self):
         for index in range(50):
             movie = Movie(
                 tmdb_id=f"movie/favorite-{index}",
@@ -146,8 +146,8 @@ class AchievementRoutesTests(unittest.TestCase):
 
         self.assertEqual("milestone", definition["category"])
         self.assertEqual("favorites_count", definition["trigger"]["metric"])
-        self.assertIsNone(state["unlocked_at"])
-        self.assertEqual(0, state["progress"])
+        self.assertIsNotNone(state["unlocked_at"])
+        self.assertEqual(1, state["progress"])
 
 
 class AchievementUserIsolationTests(unittest.TestCase):

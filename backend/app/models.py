@@ -1301,7 +1301,7 @@ class UserVaultSecret(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     scope_key = db.Column(db.String(80), nullable=False, index=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     pin_hash = db.Column(db.String(255), nullable=False)
     pin_changed_at = db.Column(db.DateTime)
     pin_change_window_started_at = db.Column(db.DateTime)
