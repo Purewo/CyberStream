@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bell, User, Clock, AlertTriangle, Film, Server, MessageSquare, ChevronLeft, Sparkles, X, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Bell, User, Clock, AlertTriangle, Film, Server, MessageSquare, ChevronLeft, Sparkles, X, Loader2, RefreshCw, Trophy } from 'lucide-react';
 import { ViewState, Notification, ScanStatus } from '../../types';
 import { systemService } from '../../api';
 
@@ -134,8 +134,9 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, onSearch, onPr
               className={`bg-transparent border-none outline-none text-white text-xs font-['Rajdhani'] transition-all duration-300 ease-in-out overflow-hidden placeholder-gray-600 ${isSearchExpanded ? 'w-48 ml-2 opacity-100' : 'w-0 ml-0 opacity-0'}`} 
             /> 
           </div> 
-          <div className="flex items-center gap-4 text-gray-300 relative"> 
-            <div className="cursor-pointer hover:text-primary transition-colors bg-white/5 p-2 rounded-full border border-white/5" onClick={() => onNavigate('history')} title="History"><Clock className={`w-4 h-4 ${currentView === 'history' ? 'text-primary' : ''}`} /></div> 
+          <div className="flex items-center gap-4 text-gray-300 relative">
+            <div className="cursor-pointer hover:text-primary transition-colors bg-white/5 p-2 rounded-full border border-white/5" onClick={() => onNavigate('leaderboard')} title="Leaderboard"><Trophy className={`w-4 h-4 ${currentView === 'leaderboard' ? 'text-primary' : ''}`} /></div>
+            <div className="cursor-pointer hover:text-primary transition-colors bg-white/5 p-2 rounded-full border border-white/5" onClick={() => onNavigate('history')} title="History"><Clock className={`w-4 h-4 ${currentView === 'history' ? 'text-primary' : ''}`} /></div>
             <div className="relative cursor-pointer group bg-white/5 p-2 rounded-full border border-white/5" onClick={() => setShowNotifications(!showNotifications)}>
                 <Bell className={`w-4 h-4 transition-colors ${showNotifications ? 'text-primary' : 'hover:text-accent'}`} />
                 <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_#ff003c]"></span>
