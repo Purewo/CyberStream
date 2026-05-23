@@ -348,9 +348,9 @@ export const movieService = {
   },
 
   // 重新刮削元数据 (Re-scrape)
-  reScrapeMetadata: async (id: string, options: { 
-    tmdb_id?: string, 
-    media_type_hint?: 'movie' | 'tv', 
+  reScrapeMetadata: async (id: string, options: {
+    tmdb_id?: string,
+    media_type_hint?: 'movie' | 'tv',
     allow_nfo?: boolean,
     force_refresh?: boolean
   } = {}): Promise<Movie | null> => {
@@ -362,6 +362,30 @@ export const movieService = {
     });
     if (!data) return null;
     return mapApiMovieToUi(data);
+  },
+
+  // 单片资源同步：从已有资源路径推导最小扫描目录，补齐新增集 / 重新入库丢失资源。
+  // 异步任务，进度通过 GET /v1/scan 轮询。
+  syncResources: async (id: string | number, options: {
+    refresh?: boolean;
+    scrape_enabled?: boolean;
+    content_type?: 'movie' | 'tv';
+    root_path?: string;
+    root_paths?: string[];
+    source_ids?: number[];
+    allow_source_root?: boolean;
+    provider_order?: string[];
+  } = {}): Promise<{ ok: boolean; status: number; msg?: string }> => {
+    const queryId = movieService.getRealId(id);
+    const result = await fetchApiRaw<unknown>(`/v1/movies/${queryId}/resources/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options),
+    });
+    // 后端按 202 Accepted 返回，不一定走 code===200 这条路径，
+    // 这里以 HTTP 2xx 为成功判据。
+    const ok = result.status >= 200 && result.status < 300;
+    return { ok, status: result.status, msg: result.msg };
   },
 
   // 删除影片实体 (物理文件不会被删除，仅从数据库移除档案)

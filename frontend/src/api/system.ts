@@ -66,5 +66,11 @@ export const systemService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
+  },
+
+  // 后端 OpenAPI 文档索引；返回里包含后端运行版本（version / openapi_version），
+  // 用作"关于"页里检查后端版本是否与前端同步。
+  getDocsInfo: async (): Promise<{ version: string; openapi_version: string } | null> => {
+    return await fetchApi<{ version: string; openapi_version: string }>('/v1/docs');
   }
 };
