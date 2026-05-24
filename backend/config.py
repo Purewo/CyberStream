@@ -1,5 +1,6 @@
 
 import os
+import sys
 from datetime import timedelta
 
 
@@ -54,10 +55,30 @@ def _build_http_proxy_map(url):
     }
 
 
-# --- 基础路径配置 ---
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# --- 运行模式：源码 vs PyInstaller 冻结的 exe ---
+# 冻结时 sys.frozen=True、sys._MEIPASS 指向解压后的 datas 目录（用于读
+# openapi/ docs/ 这类只读资源）。可写数据 (DB / cache / .env.local) 必须
+# 落到 %LOCALAPPDATA%\CyberStream\，否则 PyInstaller 单文件模式下每次运行
+# 用的 _MEIPASS 是临时目录，下次重启就清空了。
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+if IS_FROZEN:
+    # _MEIPASS 是 PyInstaller 解包后的临时根目录；onedir 模式没这个属性，
+    # 退一步用 exe 同目录。
+    BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    DATA_DIR = os.path.join(
+        os.environ.get("LOCALAPPDATA")
+        or os.path.expanduser(r"~\AppData\Local"),
+        "CyberStream",
+    )
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # 源码模式保持仓库根目录 = data dir，跟现有 dev 流程兼容。
+    DATA_DIR = BASE_DIR
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
 DB_NAME = "cyber_library.db"
-DB_PATH = os.path.join(BASE_DIR, DB_NAME)
+DB_PATH = os.path.join(DATA_DIR, DB_NAME)
 
 # --- 数据库配置 (SQLAlchemy) ---
 SQLALCHEMY_DATABASE_URI = f"sqlite:///{DB_PATH}"
@@ -115,7 +136,9 @@ TENCENT_VIDEO_USER_AGENT = _env(
 )
 
 # --- 缓存目录 ---
-CACHE_DIR = os.path.join(BASE_DIR, "cache")
+# 冻结模式下落 LOCALAPPDATA/CyberStream/cache（DATA_DIR 已经是它）；
+# 源码模式保持仓库根目录的 cache/ 跟现有逻辑兼容。
+CACHE_DIR = os.path.join(DATA_DIR, "cache")
 IMAGE_ASSET_MAX_BYTES = _env_int('CYBER_IMAGE_ASSET_MAX_BYTES', 20 * 1024 * 1024)
 IMAGE_ASSET_TIMEOUT_SECONDS = _env_float('CYBER_IMAGE_ASSET_TIMEOUT_SECONDS', 15)
 IMAGE_ASSET_CACHE_MAX_AGE_SECONDS = _env_int('CYBER_IMAGE_ASSET_CACHE_MAX_AGE_SECONDS', 24 * 60 * 60)

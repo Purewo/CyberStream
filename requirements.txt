@@ -24,6 +24,7 @@ pycparser==2.23
 py7zr==1.1.0
 pysmb==1.2.13
 python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
 RapidFuzz==3.14.3
 requests==2.32.5
 six==1.17.0
@@ -33,5 +34,6 @@ syncedlyrics==1.0.1
 tqdm==4.67.1
 typing_extensions==4.15.0
 urllib3==2.6.3
+waitress==3.0.2
 webdavclient3==3.14.6
 Werkzeug==3.1.5

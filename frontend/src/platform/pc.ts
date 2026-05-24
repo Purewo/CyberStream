@@ -5,12 +5,22 @@
 // call sites) so the web bundle still tree-shakes them out — Vite ignores
 // dynamic imports that no caller reaches.
 
-import { API_BASE } from '../constants';
 import type { Platform, PlatformStorage } from './index';
 
 const STORAGE_KEYS = {
   apiBase: 'cyber_pc_api_base',
 } as const;
+
+/**
+ * 桌面单机分发场景：Tauri 启动时会拉起 sidecar (cyber-backend.exe)，
+ * 后端冻结模式默认监听 127.0.0.1:49152。前端 API_BASE 默认就指向它，
+ * 用户没在设置里自定义后端地址时直接用这个；自定义了就用 localStorage
+ * 里的覆盖值。
+ *
+ * 跟 backend/run.py / pc/src-tauri/src/backend.rs 里的端口保持一致；
+ * 改一处记得三处都同步。
+ */
+const PC_DEFAULT_API_BASE = 'http://127.0.0.1:49152/api';
 
 // In-memory cache backed by localStorage. The Tauri webview's localStorage is
 // scoped to the app data directory, so values survive across launches without
@@ -29,7 +39,7 @@ const pcStorage: PlatformStorage = {
 };
 
 function readApiBase(): string {
-  return pcStorage.get(STORAGE_KEYS.apiBase) || API_BASE;
+  return pcStorage.get(STORAGE_KEYS.apiBase) || PC_DEFAULT_API_BASE;
 }
 
 function derivePublicBase(apiBase: string): string {

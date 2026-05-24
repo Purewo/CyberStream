@@ -7,6 +7,7 @@
 // HWND embedding) was removed in M3.4 because it's permanently dead
 // code.
 
+mod backend;
 mod external_player;
 mod native_player;
 pub mod proxy;
@@ -31,11 +32,22 @@ pub fn run() {
     };
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", proxy_arg);
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .manage(backend::BackendState::new())
+        .setup(|app| {
+            // 拉起捆绑的 cyber-backend.exe，阻塞到 /  返回 200 才继续。
+            // 没起来就直接 panic —— 桌面应用没后端=空壳，让用户看到明确报错
+            // 比悄悄打开一个空白 WebView 强。失败原因从 stdout/stderr 已
+            // 经流到 log 里。
+            if let Err(e) = backend::spawn_and_wait_ready(&app.handle()) {
+                return Err(format!("backend bootstrap failed: {e}").into());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             ping,
             native_player::open_pc_player,
@@ -43,8 +55,12 @@ pub fn run() {
             proxy::get_proxy_config,
             proxy::set_proxy_config,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|handle, event| {
+        backend::handle_run_event(handle, &event);
+    });
 }
 
 /// Sanity check command invoked by the frontend platform adapter to verify the

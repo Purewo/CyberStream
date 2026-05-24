@@ -54,3 +54,11 @@ pc/src-tauri/target/
 pc/src-tauri/gen/schemas/
 pc/src-tauri/Cargo.lock
 pc/src-tauri/.cargo/
+# PyInstaller staged sidecar — produced by `pyinstaller backend/cyber-backend.spec`
+# 28MB build artifact, rebuild不挂仓库
+pc/src-tauri/binaries/
+
+# backend PyInstaller build output
+build/
+dist/
+*.spec.bak
