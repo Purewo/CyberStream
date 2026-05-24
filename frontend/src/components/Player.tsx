@@ -1435,7 +1435,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                 onMouseLeave={() => setIsHoveringControls(false)}
                 className={`absolute inset-0 flex flex-col justify-end transition-opacity duration-300 ${showBottomControls ? 'opacity-100' : 'opacity-0'} ${showSubtitleSettings ? 'bg-transparent' : 'bg-gradient-to-t from-black/90 via-transparent to-transparent'} pointer-events-none`}
             > 
-                <div className={`w-full px-8 pb-8 pt-12 pointer-events-auto transition-colors duration-300 ${showSubtitleSettings ? 'bg-transparent' : 'bg-gradient-to-t from-black via-black/90 to-transparent'}`}> 
+                <div className={`w-full px-8 pb-8 pt-12 transition-colors duration-300 ${showBottomControls ? 'pointer-events-auto' : 'pointer-events-none'} ${showSubtitleSettings ? 'bg-transparent' : 'bg-gradient-to-t from-black via-black/90 to-transparent'}`}>
                     <div className={`transition-all duration-300 relative overflow-visible ${showSubtitleSettings ? 'bg-transparent shadow-none border-t-transparent backdrop-blur-none p-4 rounded-t-2xl' : 'backdrop-blur-md bg-black/40 border-t border-white/10 p-4 rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)]'}`}> 
                         <div className={`absolute top-0 left-0 w-full h-[1px] transition-opacity duration-300 ${showSubtitleSettings ? 'opacity-0' : 'bg-gradient-to-r from-transparent via-primary/50 to-transparent rounded-t-2xl'}`}></div> 
                         <div className={`flex items-center gap-4 mb-4 w-full transition-opacity duration-300 ${showSubtitleSettings ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}> 
