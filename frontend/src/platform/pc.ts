@@ -12,10 +12,13 @@ const STORAGE_KEYS = {
 } as const;
 
 /**
- * 桌面默认后端：测试期固定指向 `http://pioneer.fan:884/api`。用户在
- * 「设置 → 后端服务器」里改过后，localStorage 里的覆盖值优先。
+ * 桌面默认后端：空字符串。首次启动用户必须自己在「设置 → 后端服务器」
+ * 填后端 API 地址（lite 包没 sidecar），自定义后会写入 localStorage。
+ *
+ * full 包带 sidecar 的场景需要在 Rust 那边监听 sidecar 起来后写入
+ * localStorage 把这里覆盖掉，目前由用户首启时手动填同一个本地地址。
  */
-const PC_DEFAULT_API_BASE = 'http://pioneer.fan:884/api';
+const PC_DEFAULT_API_BASE = '';
 
 // In-memory cache backed by localStorage. The Tauri webview's localStorage is
 // scoped to the app data directory, so values survive across launches without
