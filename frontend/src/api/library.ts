@@ -1,5 +1,5 @@
 import { getApiBase } from '../platform';
-import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse, ApiMovieList } from './core';
+import { fetchApi, fetchApiRaw, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse, ApiMovieList } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 
 import { movieService } from './movie';
@@ -109,23 +109,26 @@ export const libraryService = {
     return data.map(mapApiMovieToUi);
   },
 
-  scanLibrary: async (libraryId: number, opts?: { refresh?: boolean }): Promise<boolean> => {
-    try {
-      const headers: Record<string, string> = {};
-      let body: BodyInit | undefined;
-      if (opts && opts.refresh === false) {
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify({ refresh: false });
-      }
-      const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/scan`, {
-        method: 'POST',
-        headers,
-        body,
-      });
-      return res.ok || res.status === 202;
-    } catch {
-      return false;
+  scanLibrary: async (libraryId: number, opts?: { refresh?: boolean }): Promise<{ ok: boolean; msg?: string }> => {
+    // 用 fetchApiRaw 是为了把后端 msg 透出来：未绑定目录时后端返 40013
+    // 「未配置任何媒体库的目录绑定…」，UI 直接弹这条提示，比之前笼统的
+    // 「扫描启动失败」对用户友好得多。202 在 fetchApiRaw 里也算 ok。
+    const headers: Record<string, string> = {};
+    let body: BodyInit | undefined;
+    if (opts && opts.refresh === false) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({ refresh: false });
+    } else {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({});
     }
+    const res = await fetchApiRaw<unknown>(`/v1/libraries/${libraryId}/scan`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    if (res.ok || res.status === 202) return { ok: true };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}` };
   },
 
   getMovieMemberships: async (libraryId: number, page = 1, limit = 20, mode?: string): Promise<any> => {

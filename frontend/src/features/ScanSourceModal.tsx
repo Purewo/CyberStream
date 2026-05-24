@@ -94,13 +94,13 @@ export const ScanSourceModal: React.FC<ScanSourceModalProps> = ({ sourceId, sour
       options.provider_order = selectedProviders;
     }
 
-    const success = await storageService.scanSource(sourceId, options);
-    if (success) {
+    const res = await storageService.scanSource(sourceId, options);
+    if (res.ok) {
       window.dispatchEvent(new CustomEvent("cyber:scan:started"));
       toast.success(`[${sourceName}] 定制扫描程序已推入队列`);
       onClose();
     } else {
-      toast.error('触发扫描指令被主机拒绝');
+      toast.error(res.msg || '触发扫描指令被主机拒绝');
     }
     setIsScanning(false);
   };

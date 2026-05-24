@@ -1,5 +1,5 @@
 import { getApiBase } from '../platform';
-import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
+import { fetchApi, fetchApiRaw, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 
 export const storageService = {
@@ -99,17 +99,17 @@ export const storageService = {
     }
   },
 
-  scanSource: async (id: number, options?: { target_path?: string, scrape_enabled?: boolean, scraper_policy?: any, provider_order?: string[] }): Promise<boolean> => {
-    try {
-      const res = await fetch(`${getApiBase()}/v1/storage/sources/${id}/scan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(options || {})
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
+  scanSource: async (id: number, options?: { target_path?: string, scrape_enabled?: boolean, scraper_policy?: any, provider_order?: string[] }): Promise<{ ok: boolean; msg?: string }> => {
+    // 用 fetchApiRaw 把后端 msg 透出来：未传 target_path 且这个存储源没被
+    // 任何媒体库绑定时，后端返 40013，UI 直接用这条提示，比之前笼统的
+    // 「触发扫描失败」对用户友好得多。202 也算 ok。
+    const res = await fetchApiRaw<unknown>(`/v1/storage/sources/${id}/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options || {}),
+    });
+    if (res.ok || res.status === 202) return { ok: true };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}` };
   }
 };
 

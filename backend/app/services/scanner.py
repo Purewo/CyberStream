@@ -846,6 +846,9 @@ class CyberScanner:
         library_source_id=None,
         scraper_policy=None,
     ):
+        # display_root 提前初始化，避免 _normalize_root_path 之前就抛异常时
+        # except 分支引用未定义变量。
+        display_root = ''
         try:
             display_root = self._normalize_root_path(root_path)
             media_type_hint = self._normalize_content_type_hint(content_type)
@@ -866,6 +869,14 @@ class CyberScanner:
             all_files = self._phase_1_index(provider, start_path=start_path)
             if not all_files:
                 logger.info("Scan source has no files name=%s root_path=%s", source_obj.name, display_root or '/')
+                # 把"索引到 0 个文件"也推到 recent_errors，否则前端 status 看
+                # 起来像"扫描秒结束"，根本不知道是路径没文件 / 路径不存在 /
+                # 远端 API 静默返空。带上 root_path 让用户能直接定位。
+                self._record_indexing_directory_skip(
+                    display_root or '/',
+                    f"索引完成但未发现任何媒体文件（root_path={display_root or '/'}, source={source_obj.name}）。"
+                    "可能原因：远端目录不存在、需要刷新 AList 缓存、或目录里没有支持的视频后缀。",
+                )
                 return
 
             if display_root:
@@ -897,6 +908,17 @@ class CyberScanner:
 
         except Exception as e:
             logger.exception("Scan source failed name=%s root_path=%s error=%s", source_obj.name, root_path, e)
+            # 异常本身也推到 recent_errors，免得前端 status 看着干净 / scanner
+            # 静默吞错。display_root 已经是规范化后的展示路径，未规范的原始
+            # root_path 用于排查时偶尔有用、但不强暴露。
+            try:
+                self._record_indexing_directory_skip(
+                    display_root or '/',
+                    f"扫描失败：{self._format_scan_error_message(e)}",
+                )
+            except Exception:
+                # _record_indexing_directory_skip 自身要再挂就别再挂了
+                pass
 
     def scan(
         self,

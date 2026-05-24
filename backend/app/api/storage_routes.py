@@ -277,6 +277,30 @@ def delete_source(id):
 
 @storage_bp.route('/storage/sources/<int:id>/scan', methods=['POST'])
 def scan_specific_source(id):
+    # 安全护栏（要早于 scanner_engine.try_start_scan，避免占着扫描锁不放）：
+    # 没传 root_path 时，必须存在指向这个 source 的 library_sources 绑定，
+    # 否则拒绝。否则 scanner_engine.scan_source(source) 会从存储源根开始
+    # 全盘扫，云盘场景下分分钟扫掉几万个文件。
+    payload = _get_json_payload()
+    root_path = _normalize_relative_path(payload.get('root_path') or payload.get('target_path'))
+    if not root_path:
+        from backend.app.models import LibrarySource
+        has_binding = (
+            db.session.query(LibrarySource.id)
+            .filter_by(source_id=id, is_enabled=True)
+            .first()
+            is not None
+        )
+        if not has_binding:
+            return api_error(
+                code=40013,
+                msg=(
+                    "该存储源未被任何媒体库绑定，且未指定要扫描的子目录。"
+                    "请先在「资源库」中把该存储源绑定到具体的媒体库目录，"
+                    "或在请求体里通过 root_path 字段显式指定要扫描的子路径。"
+                ),
+            )
+
     if not scanner_engine.try_start_scan():
         return api_error(code=42900, msg="Scanner is busy", http_status=429)
 
@@ -285,8 +309,6 @@ def scan_specific_source(id):
         scanner_engine.finish_scan()
         return api_error(code=40402, msg="Source not found", http_status=404)
 
-    payload = _get_json_payload()
-    root_path = _normalize_relative_path(payload.get('root_path') or payload.get('target_path'))
     content_type = payload.get('content_type')
     scrape_enabled, ok = _coerce_bool(payload.get('scrape_enabled'), default=True)
     if not ok:

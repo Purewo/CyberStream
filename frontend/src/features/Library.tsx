@@ -291,10 +291,11 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
           <button
             onClick={async () => {
               const res = await libraryService.scanLibrary(activeLibraryId);
-              if (res) {
+              if (res.ok) {
                  window.dispatchEvent(new CustomEvent("cyber:scan:started"));
               } else {
-                 toast.error('扫描启动失败');
+                 // 透出后端 msg：未绑定目录时是「未配置任何媒体库的目录绑定…」
+                 toast.error(res.msg || '扫描启动失败');
               }
             }}
             className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/50 text-primary hover:bg-primary/30 text-sm font-bold tracking-widest transition-colors font-mono uppercase"
