@@ -1,11 +1,33 @@
 import { getApiBase } from '../platform';
-import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
+import { fetchApi, fetchApiRaw, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
 import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
 import type { components } from './schema';
 
 type BackgroundJobListResponse = components["schemas"]["BackgroundJobListResponse"];
 type BackgroundJobResponse = components["schemas"]["BackgroundJobResponse"];
 type BackgroundJobPruneResponse = components["schemas"]["BackgroundJobPruneResponse"];
+
+/**
+ * TMDB 配置 GET 返回的形状。出于安全考虑后端永远不回明文 token，
+ * 只回 token_set:bool 让前端判定"已配置"。
+ */
+export interface TmdbConfig {
+  token_set: boolean;
+  proxy_enabled: boolean;
+  proxy_url: string;
+}
+
+/**
+ * PUT 提交时的 patch payload。三个字段都可选；只传部分字段即只更新那部分。
+ * - token: 空字符串或 null = 清空；undefined = 保留不动
+ * - proxy_enabled: bool
+ * - proxy_url: 必须 http(s)/socks5:// 开头
+ */
+export interface TmdbConfigPatch {
+  token?: string | null;
+  proxy_enabled?: boolean;
+  proxy_url?: string | null;
+}
 
 export const systemService = {
   getNotifications: async (): Promise<Notification[]> => {
@@ -72,5 +94,24 @@ export const systemService = {
   // 用作"关于"页里检查后端版本是否与前端同步。
   getDocsInfo: async (): Promise<{ version: string; openapi_version: string } | null> => {
     return await fetchApi<{ version: string; openapi_version: string }>('/v1/docs');
+  },
+
+  // ─── TMDB 配置 ───
+  // 桌面单机分发场景：用户没法手改 NAS 的 .env.local，必须在 UI 里配。
+  // 后端把这套配置直接写到 LOCALAPPDATA / 仓库根的 .env.local 里，下一次
+  // 扫描立刻生效（current_app.config 也会同步刷一遍，热更新）。
+
+  getTmdbConfig: async (): Promise<TmdbConfig | null> => {
+    return await fetchApi<TmdbConfig>('/v1/system/tmdb-config');
+  },
+
+  setTmdbConfig: async (patch: TmdbConfigPatch): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/system/tmdb-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}` };
   }
 };

@@ -90,6 +90,7 @@ import {
   Image as ImageIcon,
   ClipboardCheck,
   Film,
+  EyeOff,
   Pickaxe,
   MonitorPlay,
   Volume2,
@@ -355,6 +356,211 @@ const ProxySettingsCard: React.FC = () => {
           {saving ? '保存中…' : '保存'}
         </button>
       </div>
+    </div>
+  );
+};
+
+const TmdbSettingsCard: React.FC = () => {
+  // TMDB 配置面板：必须配 token 才能正经刮削；代理可选但国内基本必走代理
+  // 才能稳定访问 image.tmdb.org / api.themoviedb.org。
+  //
+  // 前后端只走 .env.local 这一个真值入口；UI 永远不显示明文 token，
+  // 后端 GET 也只回 token_set:bool。token 输入框 placeholder 在 token_set
+  // 时显示「已配置（输入新值可覆盖）」，避免用户以为没配。
+  const [tokenInput, setTokenInput] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [tokenSet, setTokenSet] = useState(false);
+  const [proxyEnabled, setProxyEnabled] = useState(true);
+  const [proxyUrl, setProxyUrl] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { systemService } = await import("../api");
+        const cfg = await systemService.getTmdbConfig();
+        if (cancelled) return;
+        if (cfg) {
+          setTokenSet(!!cfg.token_set);
+          setProxyEnabled(!!cfg.proxy_enabled);
+          setProxyUrl(cfg.proxy_url || "");
+        }
+        setLoaded(true);
+      } catch (e) {
+        console.error("读取 TMDB 配置失败", e);
+        setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const validateUrl = (s: string): boolean => /^(https?|socks5):\/\/.+/i.test(s.trim());
+
+  const persist = async () => {
+    // token 提交规则：只在用户真输入了新值时才带上 token 字段，否则保留
+    // 后端原值（避免空字符串误清空已配置的 token）。
+    const patch: any = {};
+    const newToken = tokenInput.trim();
+    if (newToken) {
+      patch.token = newToken;
+    }
+    patch.proxy_enabled = proxyEnabled;
+    if (proxyEnabled) {
+      const url = proxyUrl.trim();
+      if (!validateUrl(url)) {
+        toast.error("代理地址格式不对（应以 http://、https:// 或 socks5:// 开头）");
+        return;
+      }
+      patch.proxy_url = url;
+    }
+
+    setSaving(true);
+    try {
+      const { systemService } = await import("../api");
+      const res = await systemService.setTmdbConfig(patch);
+      if (!res.ok) {
+        toast.error(res.msg || "保存失败");
+        return;
+      }
+      const data = res.data || {};
+      if (data.token_set !== undefined) setTokenSet(!!data.token_set);
+      setTokenInput("");
+      toast.success("TMDB 配置已保存（下次扫描立刻生效）");
+    } catch (e) {
+      console.error(e);
+      toast.error("保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearToken = async () => {
+    setSaving(true);
+    try {
+      const { systemService } = await import("../api");
+      const res = await systemService.setTmdbConfig({ token: null });
+      if (!res.ok) {
+        toast.error(res.msg || "清除失败");
+        return;
+      }
+      setTokenSet(false);
+      setTokenInput("");
+      toast.success("TMDB token 已清除");
+    } catch (e) {
+      console.error(e);
+      toast.error("清除失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
+      <h3 className="text-lg font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-2">
+        <Film size={18} /> TMDB 元数据
+      </h3>
+      <p className="text-xs text-gray-500 font-['Rajdhani'] mb-5 leading-relaxed">
+        TMDB 是影视刮削的主力数据源。必须配置 v4 Bearer Token 才能拿到海报、
+        简介、评分；国内访问 themoviedb.org 一般要走代理。配置写入
+        .env.local，下次扫描立刻生效。
+      </p>
+
+      {/* Token */}
+      <div className="border border-white/5 bg-black/30 p-4 rounded mb-3">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-['Orbitron'] text-white tracking-wider">
+              TMDB Token
+              {tokenSet && !tokenInput && (
+                <span className="ml-2 text-[10px] text-primary font-['Rajdhani'] tracking-widest">
+                  ● 已配置
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-gray-500 font-['Rajdhani'] mt-1 leading-relaxed">
+              themoviedb.org → 设置 → API → API Read Access Token (v4)
+            </div>
+          </div>
+          {tokenSet && !tokenInput && (
+            <button
+              type="button"
+              onClick={clearToken}
+              disabled={saving}
+              className="shrink-0 px-2 py-1 text-[11px] font-['Rajdhani'] tracking-widest border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+            >
+              清除
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <input
+            type={showToken ? "text" : "password"}
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            placeholder={tokenSet ? "已配置（输入新值可覆盖）" : "粘贴你的 v4 Bearer Token…"}
+            spellCheck={false}
+            autoComplete="off"
+            className="flex-1 bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white focus:border-primary outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => setShowToken(!showToken)}
+            className="px-3 border border-white/10 text-gray-400 hover:text-white hover:border-white/30 transition-colors"
+            title={showToken ? "隐藏" : "显示"}
+          >
+            {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Proxy */}
+      <div className="border border-white/5 bg-black/30 p-4 rounded mb-4">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-['Orbitron'] text-white tracking-wider">TMDB 代理</div>
+            <div className="text-[11px] text-gray-500 font-['Rajdhani'] mt-1 leading-relaxed">
+              访问 themoviedb.org 用的代理。不影响其他流量，仅 TMDB API + 海报下载。
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setProxyEnabled(!proxyEnabled)}
+            className={`shrink-0 w-10 h-5 rounded-full relative transition-colors ${
+              proxyEnabled ? "bg-primary" : "bg-gray-700"
+            }`}
+          >
+            <div
+              className={`absolute top-1 w-3 h-3 bg-black rounded-full transition-all ${
+                proxyEnabled ? "left-6" : "left-1"
+              }`}
+            ></div>
+          </button>
+        </div>
+        {proxyEnabled && (
+          <input
+            type="text"
+            value={proxyUrl}
+            onChange={(e) => setProxyUrl(e.target.value)}
+            placeholder="http://127.0.0.1:10808 / socks5://127.0.0.1:10808"
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono text-white focus:border-primary outline-none"
+          />
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={persist}
+        disabled={!loaded || saving}
+        className="w-full px-4 py-2 text-sm font-bold border border-primary text-primary hover:bg-primary hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {saving ? "保存中…" : "保存"}
+      </button>
     </div>
   );
 };
@@ -1226,23 +1432,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   const handleScanSource = async (id: number) => {
     const { storageService } = await import("../api");
-    const success = await storageService.scanSource(id);
-    if (success) {
+    const res = await storageService.scanSource(id);
+    if (res.ok) {
       window.dispatchEvent(new CustomEvent("cyber:scan:started"));
       toast.success("全维度光学扫描已启动");
     } else {
-      toast.error("触发扫描失败。");
+      // 后端 40013 = 该存储源没被任何媒体库绑定，提示用户去绑定
+      toast.error(res.msg || "触发扫描失败。");
     }
   };
 
   const handleScanLibrary = async (libraryId: number, libraryName: string) => {
     const { libraryService } = await import("../api");
-    const success = await libraryService.scanLibrary(libraryId);
-    if (success) {
+    const res = await libraryService.scanLibrary(libraryId);
+    if (res.ok) {
       window.dispatchEvent(new CustomEvent("cyber:scan:started"));
       toast.success(`《${libraryName}》刮削任务已下发`);
     } else {
-      toast.error("扫描启动失败");
+      toast.error(res.msg || "扫描启动失败");
     }
   };
 
@@ -1970,6 +2177,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="space-y-8 animate-in slide-in-from-right-4 fade-in duration-300 max-w-2xl">
             <BackendServerCard />
             <ProxySettingsCard />
+            <TmdbSettingsCard />
           </div>
         );
       case "ABOUT":
