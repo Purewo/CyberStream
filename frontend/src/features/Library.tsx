@@ -96,7 +96,11 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
   const [filterOptions, setFilterOptions] = useState({
       genres: [] as string[],
       regions: [] as string[],
-      years: [] as string[]
+      years: [] as string[],
+      // "更早" 字面量翻译成 `0-<earlierYearMax>` 区间扔给后端 year=区间。
+      // null 表示当前显示的年份列表没有截断（"更早"实际无对应数据，
+      // 选了它就让后端返回 0 部，符合用户预期）。
+      earlierYearMax: null as number | null,
   });
   
   const observer = useRef<IntersectionObserver | null>(null);
@@ -146,18 +150,25 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
             // Limit display length
             const MAX_YEARS_DISPLAY = 25;
             const displayedYears = processedYears.slice(0, MAX_YEARS_DISPLAY);
+            // 被截断时，"更早" 含义是 displayedYears 末尾之前的所有年份；
+            // 没截断则没有可匹配的更早年份，传 null 让后端返回 0 部。
+            const earlierYearMax = processedYears.length > displayedYears.length
+              ? displayedYears[displayedYears.length - 1] - 1
+              : null;
 
             setFilterOptions({
                 genres: ["全部类型", ...processedGenres],
                 regions: ["全部地区", ...processedRegions],
-                years: ["全部年份", ...displayedYears.map(String), "更早"]
+                years: ["全部年份", ...displayedYears.map(String), "更早"],
+                earlierYearMax,
             });
         } else {
             // Fallback to static constants if API fails
             setFilterOptions({
                 genres: FILTERS.types,
                 regions: FILTERS.regions,
-                years: FILTERS.years
+                years: FILTERS.years,
+                earlierYearMax: null,
             });
         }
       } catch (e) {
@@ -165,7 +176,8 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
         setFilterOptions({
             genres: FILTERS.types,
             regions: FILTERS.regions,
-            years: FILTERS.years
+            years: FILTERS.years,
+            earlierYearMax: null,
         });
       }
     };
@@ -209,10 +221,25 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
            genreParam = filters.type;
         }
 
+        // 把 UI 的 year 字面量翻译成后端可识别的形态：
+        // - "全部年份" → undefined，不带过滤
+        // - "更早"     → 截断时翻成 `0-<earlierYearMax>` 区间；没截断时
+        //                没有可匹配的更早年份，给个不可能命中的 sentinel
+        //                确保后端返回 0 部（符合用户"按理说应该没有"的预期）
+        // - 其它具体年份 → 直接透传
+        let yearParam: string | undefined = undefined;
+        if (filters.year === "更早") {
+          yearParam = filterOptions.earlierYearMax !== null
+            ? `0-${filterOptions.earlierYearMax}`
+            : '0-0';
+        } else if (filters.year !== "全部年份") {
+          yearParam = filters.year;
+        }
+
         // Use server-side sorting if possible for better consistency
         const sortBy = filters.sort; // rating, year, update_time (id used in FILTERS)
         const order = 'desc';
-        
+
         let res;
         if (activeLibraryId && activeLibraryId !== -1) {
             res = await libraryService.getFilteredMovies(
@@ -223,18 +250,18 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
                 sortBy,
                 order,
                 filters.region,
-                filters.year
+                yearParam
             );
         } else {
             res = await movieService.getAll(
-                pageSize, 
-                page, 
+                pageSize,
+                page,
                 {
                   genre: genreParam,
                   sort_by: sortBy === 'update_time' ? 'date_added' : sortBy,
                   order: order,
                   country: filters.region !== '全部地区' ? filters.region : undefined,
-                  year: filters.year !== '全部年份' ? filters.year : undefined
+                  year: yearParam
                 }
             );
         }
