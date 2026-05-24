@@ -1171,7 +1171,7 @@
     "/api/v1/libraries/{id}/movies": {
       "get": {
         "summary": "✅ [验证通过] 按资源库获取影片列表",
-        "description": "按资源库最终内容集分页获取影片列表。最终内容为：公开影视的挂载路径自动命中 + 手动 include - 手动 exclude。raw/占位/缺海报/待人工处理影片不会因挂载点自动进入资源库，必须通过手动 include 拉入。支持 page/page_size 与 sort_by/order，返回项会带 library_membership=auto|manual|both。",
+        "description": "按资源库最终内容集分页获取影片列表。最终内容为：公开影视的挂载路径自动命中 + 手动 include - 手动 exclude。raw/占位/缺海报/待人工处理影片不会因挂载点自动进入资源库，必须通过手动 include 拉入。支持 page/page_size、genre/country/year 筛选与 sort_by/order，返回项会带 library_membership=auto|manual|both。",
         "operationId": "listLibraryMovies",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -1205,6 +1205,33 @@
               "default": 20,
               "minimum": 1,
               "maximum": 100
+            }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "description": "按类型/题材筛选。语义与 GET /api/v1/movies 的 genre 参数一致，会使用后端统一 genre 归一化别名。",
+            "schema": {
+              "type": "string",
+              "example": "动作"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "description": "按国家/地区精确筛选。取值来自资源库 filters.countries 的 name/code。",
+            "schema": {
+              "type": "string",
+              "example": "Japan"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "description": "按年份筛选，支持单一年份或闭区间，例如 2024 或 2020-2024。",
+            "schema": {
+              "type": "string",
+              "example": "2024"
             }
           },
           {

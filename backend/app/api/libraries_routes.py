@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, request
 
 from backend.app.api.helpers import build_pagination_meta, get_history_map
 from backend.app.api.library_helpers import (
+    apply_movie_filters,
     apply_public_movie_visibility_filter,
     attach_recommendation_payload,
     build_library_movie_id_context,
@@ -653,10 +654,20 @@ def list_library_movies(id):
     page, page_size = _normalize_page_args()
     sort_by = request.args.get('sort_by', 'updated_at')
     order = request.args.get('order', 'desc')
+    genre = request.args.get('genre')
+    country = request.args.get('country')
+    year_param = request.args.get('year')
 
     query, context = _build_library_movie_query(library)
     if query is None:
         return api_response(data=_empty_movie_list_payload(page, page_size))
+
+    query = apply_movie_filters(
+        query,
+        genre=genre,
+        country=country,
+        year_param=year_param,
+    )
 
     sort_column = resolve_movie_sort_column(sort_by)
     query = query.order_by(sort_column.asc() if order == 'asc' else sort_column.desc())

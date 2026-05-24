@@ -254,6 +254,15 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("is_virtual", schemas["Library"]["properties"])
         self.assertIn("actions", schemas["Library"]["properties"])
 
+    def test_library_movies_openapi_documents_filter_contract(self):
+        openapi = self._load_openapi()
+        operation = openapi["paths"]["/api/v1/libraries/{id}/movies"]["get"]
+        parameters = {param["name"]: param for param in operation["parameters"]}
+
+        self.assertIn("genre", parameters)
+        self.assertIn("country", parameters)
+        self.assertIn("year", parameters)
+
     def test_metadata_quality_workbench_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]

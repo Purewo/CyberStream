@@ -56,14 +56,15 @@ class LibraryMovieMembershipTests(unittest.TestCase):
         db.drop_all()
         self.ctx.pop()
 
-    def _movie(self, title, category=None, scraper_source="TMDB", cover=None):
+    def _movie(self, title, category=None, scraper_source="TMDB", cover=None, year=2026, country="China"):
         movie = Movie(
             tmdb_id=f"movie/{title}",
             title=title,
             original_title=title,
-            year=2026,
+            year=year,
             cover=cover if cover is not None else f"https://img.example/{title}.jpg",
             category=category or ["动作"],
+            country=country,
             scraper_source=scraper_source,
         )
         db.session.add(movie)
@@ -153,6 +154,42 @@ class LibraryMovieMembershipTests(unittest.TestCase):
 
         self.assertEqual(["Charlie"], [item["title"] for item in data["items"]])
         self.assertEqual(3, data["total"])
+
+    def test_library_movies_support_genre_country_and_year_filters(self):
+        japan_action = self._movie("Japan Action 2024", ["动作"], year=2024, country="Japan")
+        japan_drama = self._movie("Japan Drama 2025", ["剧情"], year=2025, country="Japan")
+        china_action = self._movie("China Action 2024", ["动作"], year=2024, country="China")
+        outside = self._movie("Outside Action 2024", ["动作"], year=2024, country="Japan")
+        for movie in [japan_action, japan_drama, china_action]:
+            self._resource(movie, self.source_a, f"movies/{movie.title.lower().replace(' ', '-')}.mkv")
+        self._resource(outside, self.source_a, "other/outside-action.mkv")
+
+        country_response = self.client.get(
+            f"/api/v1/libraries/{self.library.id}/movies?country=Japan&page_size=20&sort_by=title&order=asc"
+        )
+        self.assertEqual(200, country_response.status_code)
+        country_data = country_response.get_json()["data"]
+        self.assertEqual(2, country_data["total"])
+        self.assertEqual(
+            ["Japan Action 2024", "Japan Drama 2025"],
+            [item["title"] for item in country_data["items"]],
+        )
+
+        year_response = self.client.get(f"/api/v1/libraries/{self.library.id}/movies?year=2024&page_size=20")
+        self.assertEqual(200, year_response.status_code)
+        self.assertEqual(2, year_response.get_json()["data"]["total"])
+
+        genre_response = self.client.get(f"/api/v1/libraries/{self.library.id}/movies?genre=动作&page_size=20")
+        self.assertEqual(200, genre_response.status_code)
+        self.assertEqual(2, genre_response.get_json()["data"]["total"])
+
+        combined_response = self.client.get(
+            f"/api/v1/libraries/{self.library.id}/movies?country=Japan&year=2024&genre=动作&page_size=20"
+        )
+        self.assertEqual(200, combined_response.status_code)
+        combined_data = combined_response.get_json()["data"]
+        self.assertEqual(1, combined_data["total"])
+        self.assertEqual(["Japan Action 2024"], [item["title"] for item in combined_data["items"]])
 
     def test_media_resource_source_path_is_unique(self):
         first_movie = self._movie("Unique A")

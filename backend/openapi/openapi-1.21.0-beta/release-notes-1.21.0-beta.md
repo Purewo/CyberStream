@@ -7,6 +7,11 @@
 - 后端播放、音频转码和字幕 URL 不再用 `PREFERRED_URL_SCHEME=https` 把公开 HTTP 请求隐式改写成 HTTPS。
 - `PREFERRED_URL_SCHEME` 仅保留 Flask 原生语义；需要固定外部入口时使用 `CYBER_BACKEND_PUBLIC_BASE_URL=http://...` 或 `https://...`，scheme 会原样保留。
 
+## 资源库影片筛选
+
+- `GET /api/v1/libraries/{id}/movies` 现在会正确应用 `genre`、`country`、`year` 查询参数，语义与全局 `GET /api/v1/movies` 保持一致。
+- `year` 支持单一年份或 `2020-2024` 这种闭区间。
+
 ## 其他视频归档
 
 新增接口：

@@ -251,6 +251,9 @@ X-Cyber-API-Token: <token>
 支持查询参数：
 - `page`
 - `page_size`
+- `genre`
+- `country`
+- `year`：支持单一年份或 `2020-2024` 这种闭区间
 - `sort_by=date_added|updated_at|year|rating|title`
 - `order=asc|desc`
 
