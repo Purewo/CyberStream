@@ -1,0 +1,39 @@
+{
+  "product": "CyberStream",
+  "channel": "stable",
+  "latest": {
+    "version": "1.21.1",
+    "release": "1.21.1-pc.2",
+    "tag": "v1.21.1-pc.2",
+    "title": "CyberStream PC 1.21.1-pc.2",
+    "released_at": "2026-05-24T16:30:38Z",
+    "notes": "PC desktop installer release with lite and full packages.",
+    "release_page_url": "https://github.com/Purewo/CyberStream/releases/tag/v1.21.1-pc.2",
+    "mandatory": false,
+    "minimum_supported_version": null
+  },
+  "downloads": [
+    {
+      "variant": "lite",
+      "label": "Lite installer",
+      "platform": "windows",
+      "arch": "x64",
+      "name": "CyberStream_1.21.1-pc.2_lite_x64.msi",
+      "url": "https://cdn.example.com/a/cyberstream-releases/pc/v1.21.1-pc.2/CyberStream_1.21.1-pc.2_lite_x64.msi",
+      "size": 97349632,
+      "sha256": "17bdb10f89740dc696d69807d8dcb08ddf6c2b4b8890f6e1c96bada978fc0b10",
+      "content_type": "application/octet-stream"
+    },
+    {
+      "variant": "full",
+      "label": "Full installer with local backend",
+      "platform": "windows",
+      "arch": "x64",
+      "name": "CyberStream_1.21.1-pc.2_full_x64.msi",
+      "url": "https://cdn.example.com/a/cyberstream-releases/pc/v1.21.1-pc.2/CyberStream_1.21.1-pc.2_full_x64.msi",
+      "size": 128782336,
+      "sha256": "901393efc16dff4ad20c5e2d8b6020623e3fb4c2f2b6bb60ffd68695b02ac522",
+      "content_type": "application/octet-stream"
+    }
+  ]
+}

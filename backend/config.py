@@ -169,6 +169,12 @@ SUPERCDN_WARMUP_METHOD = _env('CYBER_SUPERCDN_WARMUP_METHOD', 'HEAD')
 SUPERCDN_TIMEOUT_SECONDS = _env_float('CYBER_SUPERCDN_TIMEOUT_SECONDS', 20)
 SUPERCDN_MAX_FILE_SIZE_BYTES = _env_int('CYBER_SUPERCDN_MAX_FILE_SIZE_BYTES', 100 * 1024 * 1024)
 
+# --- 官方客户端更新检查 ---
+# 后端只暴露只读更新检查接口；真实下载地址由运行时发布清单提供，且必须是 CDN URL。
+UPDATE_DEFAULT_CHANNEL = _env('CYBER_UPDATE_DEFAULT_CHANNEL', 'stable')
+UPDATE_MANIFEST_PATH = _env('CYBER_UPDATE_MANIFEST_PATH', os.path.join(DATA_DIR, "update-manifest.json"))
+UPDATE_CDN_URL_PREFIXES = _env('CYBER_UPDATE_CDN_URL_PREFIXES', SUPERCDN_URL or '')
+
 # --- 反向代理 / 外部 URL ---
 # 后端通常运行在反向代理之后。ProxyFix 让 Flask 信任标准 X-Forwarded-* 头，
 # 避免 url_for(..., _external=True) 在 HTTPS 站点后面错误生成 http:// 链接。

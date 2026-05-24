@@ -56,6 +56,33 @@ X-Cyber-API-Token: <token>
 
 ---
 
+## 1.0 官方客户端更新检查
+
+### `GET /api/v1/system/update-check`
+
+公开只读接口，用于 PC 客户端检查当前官方发行版和安装包下载地址。该接口不需要登录，也不需要 `CYBER_API_TOKEN`，保证客户端在首次启动、未配置后端或登录态失效时仍能检查更新。
+
+查询参数：
+- `current_version`：可选，客户端当前应用版本，例如 `1.21.0`
+- `current_release`：可选，客户端当前发行标识，例如 `1.21.0-pc.0`；用于区分同版本号下的 PC 打包修订
+- `channel`：可选，默认 `stable`
+- `platform`：可选，默认 `windows`
+- `arch`：可选，默认 `x64`
+- `variant`：可选，`lite` 或 `full`；不传时返回该平台/架构的全部安装包，并默认选择 `full`
+
+响应重点字段：
+- `latest.version`：最新客户端版本号
+- `latest.release`：最新发行标识，当前示例为 `1.21.1-pc.2`
+- `update_available`：根据 `current_version/current_release` 与最新版本比较得出
+- `downloads`：可用下载列表，只包含后端认可的 CDN URL
+- `selected_download`：推荐下载项；前端可直接用它做主按钮，也可以展示 `downloads` 让用户选择 `lite/full`
+- `warnings`：如发布清单缺失、下载未配置或非 CDN URL 被忽略
+
+边界：
+- 前端只对接该官方接口，不对接 Super CDN 控制面。
+- 后端不会从接口里临时拼 GitHub 下载地址；发布清单没有 CDN 地址时，`downloads` 返回空并带 warning。
+- CDN 上传、建桶、替换下载地址属于后端发布运维流程，不作为开源 API 暴露。
+
 ## 1.1 文档与契约入口
 
 这些接口是给前端开发者自助联调用的公开只读入口，不需要猜线上 Swagger 地址。

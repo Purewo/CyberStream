@@ -10,6 +10,7 @@ from backend.app import config as backend_config
 from backend.app.extensions import db
 from backend.app.models import LibrarySource
 from backend.app.services.scanner import scanner_engine
+from backend.app.services.update_check import get_update_check_payload
 from backend.app.utils.response import api_error, api_response
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,28 @@ def trigger_scan():
     thread = threading.Thread(target=_scan_background_task, args=(app,))
     thread.start()
     return api_response(msg="Scan task accepted", http_status=202)
+
+
+# ---- Official client update check ----------------------------------------
+
+
+@system_bp.route('/system/update-check', methods=['GET'])
+def get_system_update_check():
+    """Return the current official desktop release and CDN-only downloads.
+
+    This is intentionally read-only and public: a desktop client must be able
+    to check for an installer update before login or backend configuration.
+    CDN publication remains an operational concern; the API only exposes
+    URLs already present in the controlled release manifest.
+    """
+    return api_response(data=get_update_check_payload(
+        current_version=request.args.get("current_version"),
+        current_release=request.args.get("current_release"),
+        channel=request.args.get("channel"),
+        platform=request.args.get("platform"),
+        arch=request.args.get("arch"),
+        variant=request.args.get("variant"),
+    ))
 
 
 # ---- TMDB config ---------------------------------------------------------

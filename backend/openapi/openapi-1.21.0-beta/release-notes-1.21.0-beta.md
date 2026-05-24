@@ -124,6 +124,13 @@
 - 新增 `GET /api/v1/system/tmdb-config`，返回 `token_set`、`proxy_enabled`、`proxy_url`，不会返回 TMDB token 明文。
 - 新增 `PUT /api/v1/system/tmdb-config`，支持写入或清空 `TMDB_TOKEN`，以及更新 `TMDB_PROXY_ENABLED` / `TMDB_PROXY_URL`。写入 `.env.local` 后会尽量热更新运行时配置，响应包含 `hot_reload`。
 
+## 官方客户端更新检查
+
+- 新增公开只读 `GET /api/v1/system/update-check`，用于 PC 客户端检查最新官方发行版。
+- 响应返回 `latest.version`、`latest.release`、`update_available`、`downloads` 和 `selected_download`。
+- 下载项只来自后端发布清单中的 CDN URL；非 CDN URL 会被忽略并写入 `warnings`。
+- 前端只消费该官方接口，不对接 CDN 控制面；CDN 上传、建桶和清理属于后端发布运维流程。
+
 ## 在线字幕搜索稳定性
 
 - 默认在线字幕搜索继续只跑 `subhd`，`srtku` 保持显式慢备用源。

@@ -4726,6 +4726,93 @@
         }
       }
     },
+    "/api/v1/system/update-check": {
+      "get": {
+        "summary": "✅ [验证通过] 官方客户端更新检查",
+        "description": "公开只读接口，用于 PC 客户端检查当前官方发行版、是否有更新以及可下载的 CDN 安装包。前端只消费该接口，不对接 CDN 控制面。",
+        "operationId": "getSystemUpdateCheck",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "System"
+        ],
+        "parameters": [
+          {
+            "name": "current_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "客户端当前应用版本，例如 1.21.0。"
+          },
+          {
+            "name": "current_release",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "客户端当前发行标识，例如 1.21.0-pc.0。用于区分同版本号下的 PC 打包修订。"
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "stable"
+            },
+            "description": "发布渠道，默认 stable。"
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "windows"
+            },
+            "description": "客户端平台，默认 windows。"
+          },
+          {
+            "name": "arch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "x64"
+            },
+            "description": "客户端架构，默认 x64。"
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "lite",
+                "full"
+              ]
+            },
+            "description": "可选安装包类型。不传时返回全部匹配下载项，并默认选择 full。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前官方发行版和 CDN 下载项",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemUpdateCheckResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/v1/storage/capabilities": {
       "get": {
         "summary": "✅ [验证通过] 获取存储协议能力矩阵",
@@ -18335,6 +18422,279 @@
             "required": [
               "hot_reload"
             ]
+          }
+        ]
+      },
+      "SystemUpdateCurrent": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "nullable": true,
+            "description": "客户端当前应用版本。",
+            "example": "1.21.0"
+          },
+          "release": {
+            "type": "string",
+            "nullable": true,
+            "description": "客户端当前发行标识。",
+            "example": "1.21.0-pc.0"
+          },
+          "backend_version": {
+            "type": "string",
+            "description": "当前后端运行版本。",
+            "example": "1.21.0"
+          }
+        },
+        "required": [
+          "version",
+          "release",
+          "backend_version"
+        ]
+      },
+      "SystemUpdateLatest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "最新客户端版本号。",
+            "example": "1.21.1"
+          },
+          "release": {
+            "type": "string",
+            "description": "最新发行标识。",
+            "example": "1.21.1-pc.2"
+          },
+          "tag": {
+            "type": "string",
+            "nullable": true,
+            "description": "对应 Git tag 或发布标识。",
+            "example": "v1.21.1-pc.2"
+          },
+          "title": {
+            "type": "string",
+            "description": "发布标题。",
+            "example": "CyberStream PC 1.21.1-pc.2"
+          },
+          "released_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes_url": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri"
+          },
+          "release_page_url": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri"
+          },
+          "mandatory": {
+            "type": "boolean",
+            "description": "是否强制升级。"
+          },
+          "minimum_supported_version": {
+            "type": "string",
+            "nullable": true,
+            "description": "最低受支持客户端版本。"
+          }
+        },
+        "required": [
+          "version",
+          "release",
+          "title",
+          "mandatory"
+        ]
+      },
+      "SystemUpdateDownload": {
+        "type": "object",
+        "description": "官方安装包下载项。url 必须是后端认可的 CDN URL。",
+        "properties": {
+          "variant": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "lite",
+              "full"
+            ],
+            "description": "安装包类型。"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "example": "CyberStream_1.21.1-pc.2_full_x64.msi"
+          },
+          "platform": {
+            "type": "string",
+            "example": "windows"
+          },
+          "arch": {
+            "type": "string",
+            "example": "x64"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "公开 CDN 下载地址。"
+          },
+          "cdn": {
+            "type": "boolean",
+            "description": "固定为 true，表示该下载地址已通过 CDN 前缀校验。"
+          },
+          "size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "安装包字节数。"
+          },
+          "sha256": {
+            "type": "string",
+            "nullable": true,
+            "description": "安装包 SHA-256。"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "application/octet-stream"
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "platform",
+          "arch",
+          "url",
+          "cdn"
+        ]
+      },
+      "SystemUpdateCdnStatus": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "type": "boolean",
+            "example": true
+          },
+          "validated": {
+            "type": "boolean",
+            "description": "当前响应中是否存在通过 CDN 校验的下载项。"
+          }
+        },
+        "required": [
+          "required",
+          "validated"
+        ]
+      },
+      "SystemUpdateCheck": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "example": "CyberStream"
+          },
+          "channel": {
+            "type": "string",
+            "example": "stable"
+          },
+          "platform": {
+            "type": "string",
+            "example": "windows"
+          },
+          "arch": {
+            "type": "string",
+            "example": "x64"
+          },
+          "variant": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "lite",
+              "full"
+            ]
+          },
+          "current": {
+            "$ref": "#/components/schemas/SystemUpdateCurrent"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/SystemUpdateLatest"
+          },
+          "update_available": {
+            "type": "boolean"
+          },
+          "downloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUpdateDownload"
+            }
+          },
+          "selected_download": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SystemUpdateDownload"
+              }
+            ]
+          },
+          "cdn": {
+            "$ref": "#/components/schemas/SystemUpdateCdnStatus"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manifest",
+              "source_tree"
+            ],
+            "description": "manifest 表示读取运行时发布清单；source_tree 表示清单缺失时只返回源码版本信息。"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "product",
+          "channel",
+          "platform",
+          "arch",
+          "current",
+          "latest",
+          "update_available",
+          "downloads",
+          "selected_download",
+          "cdn",
+          "source",
+          "warnings",
+          "checked_at"
+        ]
+      },
+      "SystemUpdateCheckResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SystemUpdateCheck"
+              }
+            }
           }
         ]
       }

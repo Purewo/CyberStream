@@ -21,6 +21,10 @@ PUBLIC_DOCUMENTATION_GET_PATH_PATTERNS = (
     re.compile(r"^/api/v1/docs(?:/[^/]+)?$"),
 )
 
+PUBLIC_SYSTEM_GET_PATH_PATTERNS = (
+    re.compile(r"^/api/v1/system/update-check$"),
+)
+
 AUTH_PUBLIC_PATHS = {
     "/",
     "/api/v1/auth/login",
@@ -101,6 +105,8 @@ def _is_public_request():
         return True
     if request.method == "GET" and any(pattern.match(request.path) for pattern in PUBLIC_DOCUMENTATION_GET_PATH_PATTERNS):
         return True
+    if request.method == "GET" and any(pattern.match(request.path) for pattern in PUBLIC_SYSTEM_GET_PATH_PATTERNS):
+        return True
     if request.method == "GET" and current_app.config.get("AUTH_EXEMPT_MEDIA_GET", True):
         return any(pattern.match(request.path) for pattern in PUBLIC_GET_PATH_PATTERNS)
     return False
@@ -110,7 +116,10 @@ def _is_user_management_public_request():
     if request.method == "OPTIONS" or request.path in AUTH_PUBLIC_PATHS:
         return True
     if request.method == "GET":
-        return any(pattern.match(request.path) for pattern in PUBLIC_DOCUMENTATION_GET_PATH_PATTERNS)
+        return (
+            any(pattern.match(request.path) for pattern in PUBLIC_DOCUMENTATION_GET_PATH_PATTERNS)
+            or any(pattern.match(request.path) for pattern in PUBLIC_SYSTEM_GET_PATH_PATTERNS)
+        )
     return False
 
 

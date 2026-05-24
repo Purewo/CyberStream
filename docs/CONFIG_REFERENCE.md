@@ -222,7 +222,30 @@ CYBER_SUPERCDN_SERVE_ASSET_URLS=true
 #### `CYBER_SUPERCDN_TIMEOUT_SECONDS` / `CYBER_SUPERCDN_MAX_FILE_SIZE_BYTES`
 Super CDN API 超时默认 `20` 秒；非视频资产单文件上限默认 `104857600` 字节（100MB）。
 
-### 2.9 反向代理与外部 URL 配置
+### 2.9 官方客户端更新检查配置
+
+#### `CYBER_UPDATE_DEFAULT_CHANNEL`
+官方更新检查默认渠道，默认 `stable`。
+
+#### `CYBER_UPDATE_MANIFEST_PATH`
+官方发布清单路径，默认 `DATA_DIR/update-manifest.json`。源码模式下 `DATA_DIR` 是仓库根目录，冻结模式下是 `%LOCALAPPDATA%\CyberStream\`。
+
+发布清单只保存公开发行信息和 CDN 下载 URL，不保存 CDN token，也不暴露上传/建桶控制面。参考模板：`backend/release/update-manifest.example.json`。
+
+#### `CYBER_UPDATE_CDN_URL_PREFIXES`
+允许作为安装包下载地址返回的 CDN URL 前缀，多个前缀用逗号分隔。未配置该值且没有 `CYBER_SUPERCDN_URL` 时，更新检查接口不会返回任何下载项。
+
+示例：
+
+```bash
+CYBER_UPDATE_DEFAULT_CHANNEL=stable
+CYBER_UPDATE_MANIFEST_PATH=update-manifest.json
+CYBER_UPDATE_CDN_URL_PREFIXES=https://qwk.ccwu.cc
+```
+
+对应接口：`GET /api/v1/system/update-check`。该接口公开只读，前端只消费版本和下载 URL；CDN 上传、建桶和清理流程由后端发布运维单独维护，不属于前端/OpenAPI 控制面。
+
+### 2.10 反向代理与外部 URL 配置
 
 #### `CYBER_TRUST_PROXY_HEADERS`
 是否信任反向代理传入的 `X-Forwarded-*` 请求头，默认 `true`。启用后，后端生成的 `playback.stream_url`、`audio.server_transcode.url`、字幕 URL 等绝对地址会根据 `X-Forwarded-Proto` / `X-Forwarded-Host` 使用反向代理声明的外部地址。
@@ -243,7 +266,7 @@ CYBER_BACKEND_PUBLIC_BASE_URL=https://pw.pioneer.fan:84
 
 设置后，资源播放、音频转码和字幕等后端生成 URL 会返回 `https://pw.pioneer.fan:84/api/v1/...`。
 
-### 2.10 最小 API 鉴权配置
+### 2.11 最小 API 鉴权配置
 
 #### `CYBER_API_TOKEN`
 单机私有部署的最低保护 token。设置后，后端会要求管理类 API 携带：
@@ -274,7 +297,7 @@ X-Cyber-API-Token: <token>
 
 管理、扫描、元数据修改、字幕绑定、资源治理 job 等接口仍会要求 token。
 
-### 2.11 在线字幕配置
+### 2.12 在线字幕配置
 
 #### `CYBER_ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS`
 SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源。
@@ -282,7 +305,7 @@ SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源
 #### `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS`
 SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用源；如果网络侧访问 `srtku.com` 不稳定，后端会在超时后返回 `providers.errors`，其中 `reason=timeout`，避免前端把慢源超时误判成整体故障。
 
-### 2.12 用户管理配置
+### 2.13 用户管理配置
 
 #### `CYBER_USER_MANAGEMENT_ENABLED`
 用户管理总开关，默认 `false`。关闭时不改变现有业务行为；开启后网页端通过 Cookie 会话登录，`CYBER_API_TOKEN` 仍保留为管理员后门。
@@ -302,7 +325,7 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 #### `CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` / `CYBER_LOGIN_RATE_LIMIT_WINDOW_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_LOCK_SECONDS`
 登录限流参数，默认 5 分钟内失败 `5` 次后锁定 `900` 秒。限流按客户端 IP + 用户名在当前后端进程内记录。
 
-### 2.13 维护任务持久化配置
+### 2.14 维护任务持久化配置
 
 #### `CYBER_MAINTENANCE_JOB_RESULT_ITEM_LIMIT`
 维护任务写入 `maintenance_jobs` 时，`result.items` 最多保留的条数，默认 `20`。内存中的刚执行结果仍保持完整；持久化结果会附加 `result_truncated`、`result_item_count` 和 `persisted_item_limit`。

@@ -134,6 +134,21 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("SystemTmdbConfigUpdateRequest", schemas)
         self.assertNotIn("token", schemas["SystemTmdbConfig"]["properties"])
 
+    def test_update_check_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        operation = openapi["paths"]["/api/v1/system/update-check"]["get"]
+        parameters = {param["name"]: param for param in operation["parameters"]}
+
+        self.assertEqual([], operation["security"])
+        self.assertIn("current_version", parameters)
+        self.assertIn("current_release", parameters)
+        self.assertIn("variant", parameters)
+        self.assertIn("SystemUpdateCheckResponse", schemas)
+        self.assertIn("SystemUpdateCheck", schemas)
+        self.assertIn("SystemUpdateDownload", schemas)
+        self.assertIn("selected_download", schemas["SystemUpdateCheck"]["properties"])
+
     def test_catalog_visibility_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]
