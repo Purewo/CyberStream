@@ -106,6 +106,13 @@
 - `POST /api/v1/libraries/{id}/scan` 默认会在扫描前刷新支持该能力的 `alist/openlist` 绑定目录。
 - 前端可传 `{"refresh": false}` 跳过上游刷新，维持纯扫描行为。
 - 目录刷新失败只写入扫描状态和后端日志，不会阻断后续扫描与刮削。
+- `POST /api/v1/scan` 在没有任何启用的资源库目录绑定时会返回 `40013`，避免旧全库扫描入口误扫存储源根目录。
+- `POST /api/v1/storage/sources/{id}/scan` 在没有显式 `root_path` 且该存储源未绑定任何资源库时会返回 `40013`，避免误触发存储源根目录扫描。
+
+## TMDB 本机配置
+
+- 新增 `GET /api/v1/system/tmdb-config`，返回 `token_set`、`proxy_enabled`、`proxy_url`，不会返回 TMDB token 明文。
+- 新增 `PUT /api/v1/system/tmdb-config`，支持写入或清空 `TMDB_TOKEN`，以及更新 `TMDB_PROXY_ENABLED` / `TMDB_PROXY_URL`。写入 `.env.local` 后会尽量热更新运行时配置，响应包含 `hot_reload`。
 
 ## 在线字幕搜索稳定性
 

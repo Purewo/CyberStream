@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
-from backend.app.models import StorageSource
+from backend.app.models import Library, LibrarySource, StorageSource
 from backend.app.services.scanner import CyberScanner
 
 
@@ -49,6 +49,20 @@ class StorageSourceScanScopeTests(unittest.TestCase):
         )
         db.session.add(self.source)
         db.session.commit()
+
+    def _bind_source_to_library(self):
+        library = Library(name="Movies", slug="movies")
+        db.session.add(library)
+        db.session.flush()
+        binding = LibrarySource(
+            library_id=library.id,
+            source_id=self.source.id,
+            root_path="movies",
+            is_enabled=True,
+        )
+        db.session.add(binding)
+        db.session.commit()
+        return binding
 
     def tearDown(self):
         db.session.remove()
@@ -107,6 +121,7 @@ class StorageSourceScanScopeTests(unittest.TestCase):
         )
 
     def test_scan_source_route_rejects_when_scanner_lock_is_busy(self):
+        self._bind_source_to_library()
         with patch("backend.app.api.storage_routes.scanner_engine") as scanner_mock:
             scanner_mock.try_start_scan.return_value = False
 
@@ -116,12 +131,33 @@ class StorageSourceScanScopeTests(unittest.TestCase):
         scanner_mock.scan.assert_not_called()
 
     def test_global_scan_route_rejects_when_scanner_lock_is_busy(self):
+        self._bind_source_to_library()
         with patch("backend.app.api.system_routes.scanner_engine") as scanner_mock:
             scanner_mock.try_start_scan.return_value = False
 
             response = self.client.post("/api/v1/scan")
 
         self.assertEqual(429, response.status_code)
+        scanner_mock.scan.assert_not_called()
+
+    def test_scan_source_route_rejects_unbound_root_scan(self):
+        with patch("backend.app.api.storage_routes.scanner_engine") as scanner_mock:
+            response = self.client.post(f"/api/v1/storage/sources/{self.source.id}/scan")
+
+        self.assertEqual(400, response.status_code)
+        payload = response.get_json()
+        self.assertEqual(40013, payload["code"])
+        scanner_mock.try_start_scan.assert_not_called()
+        scanner_mock.scan.assert_not_called()
+
+    def test_global_scan_route_rejects_when_no_library_bindings(self):
+        with patch("backend.app.api.system_routes.scanner_engine") as scanner_mock:
+            response = self.client.post("/api/v1/scan")
+
+        self.assertEqual(400, response.status_code)
+        payload = response.get_json()
+        self.assertEqual(40013, payload["code"])
+        scanner_mock.try_start_scan.assert_not_called()
         scanner_mock.scan.assert_not_called()
 
     def test_scanner_scan_passes_scope_for_specific_source(self):

@@ -123,6 +123,17 @@ class OpenApiContractTests(unittest.TestCase):
         )
         self.assertIn("refresh", schemas["LibraryScanRequest"]["properties"])
 
+    def test_tmdb_config_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        operation = openapi["paths"]["/api/v1/system/tmdb-config"]
+
+        self.assertIn("get", operation)
+        self.assertIn("put", operation)
+        self.assertIn("SystemTmdbConfig", schemas)
+        self.assertIn("SystemTmdbConfigUpdateRequest", schemas)
+        self.assertNotIn("token", schemas["SystemTmdbConfig"]["properties"])
+
     def test_catalog_visibility_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]

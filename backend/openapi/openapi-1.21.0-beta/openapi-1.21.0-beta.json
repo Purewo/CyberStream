@@ -5702,7 +5702,7 @@
             }
           },
           "403": {
-          "description": "保险库未解锁、未配置、非管理员访问，或当前用户不可访问此影视"
+            "description": "保险库未解锁、未配置、非管理员访问，或当前用户不可访问此影视"
           },
           "404": {
             "description": "影视不存在"
@@ -6694,6 +6694,120 @@
           }
         },
         "security": []
+      }
+    },
+    "/api/v1/system/tmdb-config": {
+      "get": {
+        "summary": "🔵 [新增] 获取 TMDB 配置状态",
+        "description": "返回 TMDB token 是否已配置、代理开关和代理地址。出于安全考虑，接口永远不会返回 token 明文。",
+        "operationId": "getSystemTmdbConfig",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "当前 TMDB 配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SystemTmdbConfig"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "🔵 [新增] 更新 TMDB 配置",
+        "description": "将 TMDB token、代理开关和代理地址写入后端 .env.local，并尽量热更新运行时配置。token 可写入或清空，但响应只返回 token_set，不返回明文。",
+        "operationId": "updateSystemTmdbConfig",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "System"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemTmdbConfigUpdateRequest"
+              },
+              "examples": {
+                "enable_proxy": {
+                  "summary": "设置 token 和代理",
+                  "value": {
+                    "token": "eyJhbGciOiJIUzI1NiJ9...",
+                    "proxy_enabled": true,
+                    "proxy_url": "http://127.0.0.1:17890"
+                  }
+                },
+                "clear_token": {
+                  "summary": "清空 token",
+                  "value": {
+                    "token": ""
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "配置已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SystemTmdbConfigUpdateResult"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段为空、类型错误、token 过长或代理地址格式错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": ".env.local 写入失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -18125,6 +18239,75 @@
                 "$ref": "#/components/schemas/VaultAccessState"
               }
             }
+          }
+        ]
+      },
+      "SystemTmdbConfig": {
+        "type": "object",
+        "description": "TMDB runtime configuration status. The token value is never returned by this API.",
+        "properties": {
+          "token_set": {
+            "type": "boolean",
+            "description": "Whether TMDB_TOKEN is currently configured.",
+            "example": true
+          },
+          "proxy_enabled": {
+            "type": "boolean",
+            "description": "Whether TMDB requests use the configured proxy.",
+            "example": true
+          },
+          "proxy_url": {
+            "type": "string",
+            "description": "Configured TMDB proxy URL. Empty string means the default proxy URL is not explicitly configured.",
+            "example": "http://127.0.0.1:17890"
+          }
+        },
+        "required": [
+          "token_set",
+          "proxy_enabled",
+          "proxy_url"
+        ]
+      },
+      "SystemTmdbConfigUpdateRequest": {
+        "type": "object",
+        "description": "Fields to update in .env.local for TMDB metadata access. Omitted fields are preserved.",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "New TMDB bearer token. Send an empty string to clear the token; omitted means unchanged.",
+            "maxLength": 4096,
+            "example": "eyJhbGciOiJIUzI1NiJ9..."
+          },
+          "proxy_enabled": {
+            "type": "boolean",
+            "description": "Enable or disable TMDB proxy usage.",
+            "example": true
+          },
+          "proxy_url": {
+            "type": "string",
+            "description": "TMDB proxy URL. Must start with http://, https:// or socks5://. Send empty string to clear the explicit value.",
+            "example": "http://127.0.0.1:17890"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SystemTmdbConfigUpdateResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SystemTmdbConfig"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "hot_reload": {
+                "type": "boolean",
+                "description": "Whether the runtime Flask/config module values were refreshed without restarting the backend.",
+                "example": true
+              }
+            },
+            "required": [
+              "hot_reload"
+            ]
           }
         ]
       }
