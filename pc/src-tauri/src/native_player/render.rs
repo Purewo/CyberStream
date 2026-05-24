@@ -72,6 +72,26 @@ impl MpvPlayer {
             ("input-vo-keyboard", "no"),
             ("input-cursor", "no"),
             ("osc", "no"),            // We draw our own controls
+            // 4K HDR HEVC REMUX 启动优化：
+            //   - cache-pause-initial=no：mpv 默认 yes 时会等 demuxer 缓到
+            //     约 2s 才开始播；4K REMUX 100Mbps，解第一帧已经够慢，再
+            //     叠加缓冲等待让"画面卡住但声音先出"的体感延长到 30~60s。
+            //   - demuxer-max-bytes=1GiB：4K REMUX 默认 150MB ≈ 12s 太紧，
+            //     一旦视频解码慢于 audio 推进，缓冲容易反复 underrun。
+            //   - vd-lavc-threads=0：libavcodec 自动选并行度（默认会按 CPU
+            //     核数走但有上限），4K HEVC 解码瓶颈在这里。
+            //   - video-latency-hacks=yes：mpv 内部的低延迟启动开关，跳过
+            //     一些"先看几帧再决定渲染节奏"的协商。
+            ("cache", "yes"),
+            ("cache-pause-initial", "no"),
+            ("demuxer-max-bytes", "1GiB"),
+            ("demuxer-max-back-bytes", "256MiB"),
+            ("network-timeout", "30"),
+            ("vd-lavc-threads", "0"),
+            ("video-latency-hacks", "yes"),
+            // mpv 日志拉到 v 级，让 hwdec 初始化 / 第一帧解码细节进 stderr。
+            // 后续如果还有"画面卡 N 秒"的报障，cargo tauri dev 的终端能看到
+            // 是 d3d11va init 卡了还是 libavcodec 等线程开起来了。
         ];
 
         for (k, v) in presets {
@@ -85,8 +105,9 @@ impl MpvPlayer {
             }
         }
 
-        // Surface mpv log messages at warn+ to stderr so we can see them
-        // in dev runs without managing a separate file.
+        // mpv 日志：warn+ 已经覆盖了 hwdec init 失败 / 网络超时等关键消息，
+        // v 级太啰嗦（每帧 video-margin 设属性都打），跑着跑着就刷屏了。
+        // 排障时手动调到 v 即可。
         let _ = mp::mpv_request_log_messages(handle, c"warn".as_ptr() as _);
 
         let r = mp::mpv_initialize(handle);

@@ -370,14 +370,12 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                     })
                     .map(|s| s.url.clone());
                 if let Some(url) = bound_default {
-                    let curl = std::ffi::CString::new(url).unwrap_or_default();
-                    let cmd = [
-                        c"sub-add".as_ptr(),
-                        curl.as_ptr(),
-                        c"select".as_ptr(),
-                        std::ptr::null(),
-                    ];
-                    mp::mpv_command(player.handle(), cmd.as_ptr() as *mut _);
+                    // sub-add 派到后台线程，避免 https URL TLS 握手在 GL 主
+                    // 循环里阻塞导致 30+ 秒画面冻结。详见 dispatch_mpv_command_async。
+                    dispatch_mpv_command_async(
+                        player.handle(),
+                        vec!["sub-add".into(), url, "select".into()],
+                    );
                     state.auto_subtitle_done = true;
                 } else if !mpv_picked_internal {
                     if let Some(t) = state
@@ -570,6 +568,18 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                         }
                         state.pending_delete_sid = None;
                     }
+                    crate::native_player::controller::Action::SetSubtitle(opt) => {
+                        // 用户从 HUD 手动选已绑定字幕：URL 是后端 https，跟启动
+                        // 自动加载同样的 TLS 卡顿风险，必须异步派发。关闭时 sid=no
+                        // 是同步 set_property 不阻塞，沿用原 apply。
+                        match opt {
+                            None => action.apply(player.handle()),
+                            Some(url) => dispatch_mpv_command_async(
+                                player.handle(),
+                                vec!["sub-add".into(), url.clone(), "select".into()],
+                            ),
+                        }
+                    }
                     _ => action.apply(player.handle()),
                 }
             }
@@ -578,15 +588,12 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
             // 主循环消化。预览：mpv sub-add <tmp_path> select；同时把这条 PreviewSub
             // 记进 state，HUD 字幕菜单第三段「在线 · 临时预览」据此渲染。
             while let Ok(p) = preview_rx.try_recv() {
-                let cmd_url = std::ffi::CString::new(p.path.as_str()).unwrap_or_default();
-                let select = std::ffi::CString::new("select").unwrap();
-                let cmd = [
-                    c"sub-add".as_ptr(),
-                    cmd_url.as_ptr(),
-                    select.as_ptr(),
-                    std::ptr::null(),
-                ];
-                mp::mpv_command(player.handle(), cmd.as_ptr() as *mut _);
+                // 临时文件路径是本地，握手快，但仍统一走异步派发以避免大字
+                // 幕文件加载阻塞主循环。
+                dispatch_mpv_command_async(
+                    player.handle(),
+                    vec!["sub-add".into(), p.path.clone(), "select".into()],
+                );
                 // 同 candidate_id 的旧 PreviewSub（用户对一条候选反复点预览）替换掉，
                 // 避免菜单出现重复条目。label 用最新一次传入的。
                 let label = state
@@ -640,15 +647,11 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                 if let Some(label) = b.label.as_ref() {
                     state.preview_subtitles.retain(|s| &s.label != label);
                 }
-                let cmd_url = std::ffi::CString::new(b.url.as_str()).unwrap_or_default();
-                let select = std::ffi::CString::new("select").unwrap();
-                let cmd = [
-                    c"sub-add".as_ptr(),
-                    cmd_url.as_ptr(),
-                    select.as_ptr(),
-                    std::ptr::null(),
-                ];
-                mp::mpv_command(player.handle(), cmd.as_ptr() as *mut _);
+                // bind 后用后端 URL sub-add；TLS 握手务必异步，避免阻塞主循环。
+                dispatch_mpv_command_async(
+                    player.handle(),
+                    vec!["sub-add".into(), b.url.clone(), "select".into()],
+                );
             }
 
             // 删除完成：worker 走 DELETE /resources/{rid}/subtitles/{sid}。成功的时候
@@ -692,13 +695,10 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                             })
                         {
                             let s = track.id.to_string();
-                            let cval = std::ffi::CString::new(s).unwrap_or_default();
-                            let cmd = [
-                                c"sub-remove".as_ptr(),
-                                cval.as_ptr(),
-                                std::ptr::null(),
-                            ];
-                            mp::mpv_command(player.handle(), cmd.as_ptr() as *mut _);
+                            dispatch_mpv_command_async(
+                                player.handle(),
+                                vec!["sub-remove".into(), s],
+                            );
                         }
                     }
                 }
@@ -780,6 +780,18 @@ unsafe fn drain_mpv_events(player: &MpvPlayer, state: &mut PlayerState) -> bool 
             if id == mp::MPV_EVENT_PROPERTY_CHANGE {
                 state.apply_property_change(ev);
             }
+            if id == mp::MPV_EVENT_LOG_MESSAGE {
+                let lm = (*ev).data as *const mp::mpv_event_log_message;
+                if !lm.is_null() {
+                    let prefix = std::ffi::CStr::from_ptr((*lm).prefix)
+                        .to_string_lossy();
+                    let level = std::ffi::CStr::from_ptr((*lm).level)
+                        .to_string_lossy();
+                    let text = std::ffi::CStr::from_ptr((*lm).text)
+                        .to_string_lossy();
+                    eprint!("[mpv {level} {prefix}] {text}");
+                }
+            }
             // 注意：mpv 在 keep-open=yes 模式下不会发 END_FILE 事件——它停在
             // 最后一帧暂停，所以"自动下一集"不能依赖 END_FILE。我们改观察
             // `eof-reached` 属性（PROP_EOF_REACHED），由 apply_property_change
@@ -853,6 +865,41 @@ pub async fn open_pc_player(options: PlayOptions) -> Result<(), String> {
         let _ = tx.send(result);
     });
     rx.await.map_err(|e| format!("native player worker dropped: {e}"))?
+}
+
+/// 跨线程派发 mpv 命令的 helper。
+///
+/// 背景：libmpv 文档明确 mpv_command 是跨线程安全的。但 sub-add 在
+/// mpv 内部会同步打开外挂字幕的 stream（包括 https TLS 握手），URL 不
+/// 通时会卡到 network-timeout（默认 30s）。如果在 GL 主线程调用，主循环
+/// 这段时间没法 render → 画面冻在最后一帧、声音继续 → 「先有声后有画
+/// 30+ 秒」用户体感（实测 50G HDR Remux 复现稳定）。
+///
+/// 策略：把 sub-add / sub-remove 这类「mpv 内部要做 IO」的命令派到
+/// detach 线程上去执行；GL 主循环立刻继续 render。失败用 eprintln 打到
+/// stderr，不阻塞 UI（用户也无感——已经播起来了）。
+fn dispatch_mpv_command_async(handle: *mut mp::mpv_handle, args: Vec<String>) {
+    // raw 指针不 Send；Rust 2021 字段级闭包捕获即使包了 newtype 也可能
+    // 只捕获里层 *mut。最稳的办法：把指针转成 usize（Send），线程里再
+    // 还原。mpv 文档保证 mpv_command 跨线程安全，多线程同时调用同一
+    // handle 也可以（mpv 内部加锁），这里转换是安全的。
+    let handle_addr = handle as usize;
+    std::thread::spawn(move || {
+        let h = handle_addr as *mut mp::mpv_handle;
+        let owned: Vec<std::ffi::CString> = args
+            .iter()
+            .map(|s| std::ffi::CString::new(s.as_str()).unwrap_or_default())
+            .collect();
+        let mut ptrs: Vec<*const std::os::raw::c_char> =
+            owned.iter().map(|c| c.as_ptr()).collect();
+        ptrs.push(std::ptr::null());
+        unsafe {
+            let r = mp::mpv_command(h, ptrs.as_mut_ptr());
+            if r < 0 {
+                eprintln!("[native_player] async mpv_command {args:?} failed: {}", mp::err_string(r));
+            }
+        }
+    });
 }
 
 /// Restore the OpenGL state mpv expects before each render() call.

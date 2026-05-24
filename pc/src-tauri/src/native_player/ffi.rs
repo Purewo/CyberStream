@@ -83,6 +83,17 @@ pub struct mpv_event_property {
     pub data: *mut c_void,
 }
 
+/// LOG_MESSAGE 事件 data 指向的结构（mpv client.h `mpv_event_log_message`）。
+/// prefix 是模块名（"vd"/"d3d11va"/"cache"…），level 是字符串等级
+/// （"v"/"info"/"warn"/"error"），text 是带换行的人类可读消息。
+#[repr(C)]
+pub struct mpv_event_log_message {
+    pub prefix: *const c_char,
+    pub level: *const c_char,
+    pub text: *const c_char,
+    pub log_level: c_int,
+}
+
 /// END_FILE 事件的 data 指向的结构（mpv client.h `mpv_event_end_file`）。
 /// 我们只读 `reason` —— 0=EOF（自然播完）触发"自动下一集"。后面三个
 /// playlist_* 字段 mpv 0.36+ 才有，非空 playlist 才有意义；CyberStream
