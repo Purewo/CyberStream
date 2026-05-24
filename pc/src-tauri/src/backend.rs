@@ -62,18 +62,21 @@ impl BackendState {
     }
 }
 
-/// 启动后端 sidecar，阻塞到健康检查 200 或超时；超时返回 Err 让上层决定
-/// 是直接 panic 还是降级。
+/// 启动后端 sidecar 并立刻返回 —— 探活搬到后台线程，**不阻塞 setup()**。
+///
+/// 之前版本在主线程同步阻塞 30 秒等健康检查，会把 Tauri webview 创建推后，
+/// `__TAURI_INTERNALS__` 注入也跟着滞后；现在 setup 立刻返回，探活在
+/// 后台线程里慢慢跑，没就绪只 log 一行 warn，前端首请求会自然 5xx。
 ///
 /// **必须在 Tauri AppHandle setup 之后调用** —— ShellExt 依赖 plugin 已
 /// init；lib.rs 里我们在 .setup() 闭包里调它。
 ///
 /// 三种运行形态都要支持：
 /// 1. **全套版 MSI**：tauri.conf.json 声明了 externalBin，sidecar exe 跟
-///    主程序一起装到 Program Files；这里 spawn 它然后等就绪。
+///    主程序一起装到 Program Files；spawn 后立刻返回，探活在后台。
 /// 2. **纯前端版 MSI**：没有 sidecar exe（用户连自己的 NAS 后端）。
-///    `app.shell().sidecar(...)` 会返回 Err，我们识别后直接 Ok 退出，
-///    让 shell 继续启动；前端连用户在设置里配的后端地址。
+///    `app.shell().sidecar(...)` 或 spawn 返回 Err 时降级到 webview-only
+///    模式，前端连用户在设置里配的远程后端。
 /// 3. **dev 调试**：设 `CYBER_SKIP_BACKEND_SIDECAR=1` 跳过 spawn 直连
 ///    外部后端（手动起的 sidecar exe / waitress dev）。
 pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
@@ -85,89 +88,116 @@ pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
 
     if skip_spawn {
         log::info!("[backend] CYBER_SKIP_BACKEND_SIDECAR set, skipping spawn; expecting backend on {HEALTH_URL}");
-    } else {
-        // tauri-plugin-shell 的 sidecar API 按 tauri.conf.json 里 externalBin
-        // 注册过的"二进制名"找文件。我们填的 "binaries/cyber-backend"，所以
-        // sidecar("cyber-backend") 就能解析到 binaries/cyber-backend-<triple>.exe。
-        //
-        // 纯前端版 MSI 没把 sidecar 打进去 —— sidecar() 会返回 Err。这种
-        // 情况下不要 panic，直接 Ok 让 shell 继续；前端会连用户配置的远程
-        // 后端（默认 127.0.0.1:49152，但用户能在设置里改）。
-        let cmd = match app.shell().sidecar("cyber-backend") {
-            Ok(cmd) => cmd,
-            Err(e) => {
-                log::info!(
-                    "[backend] sidecar not bundled (lite build), running webview-only mode: {e}"
-                );
-                return Ok(());
-            }
-        };
-
-        let (mut rx, child) = cmd
-            .spawn()
-            .map_err(|e| format!("sidecar spawn failed: {e}"))?;
-        log::info!("[backend] sidecar spawned, pid={}", child.pid());
-        state.store(child);
-
-        // 后台线程吸 stdout / stderr / exit code 喂到 log。不读会让 OS pipe
-        // buffer 满后导致后端 print 阻塞。
-        tauri::async_runtime::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                match event {
-                    CommandEvent::Stdout(line) => {
-                        log::info!("[backend stdout] {}", String::from_utf8_lossy(&line));
-                    }
-                    CommandEvent::Stderr(line) => {
-                        log::warn!("[backend stderr] {}", String::from_utf8_lossy(&line));
-                    }
-                    CommandEvent::Error(err) => {
-                        log::error!("[backend] runtime error: {err}");
-                    }
-                    CommandEvent::Terminated(payload) => {
-                        log::warn!(
-                            "[backend] sidecar terminated code={:?} signal={:?}",
-                            payload.code,
-                            payload.signal
-                        );
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        });
+        spawn_health_probe();
+        return Ok(());
     }
 
-    // 探活：blocking 调 reqwest 走 rustls，桌面端没装 OpenSSL 也能跑。
-    let started = Instant::now();
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .map_err(|e| format!("probe client build failed: {e}"))?;
+    // tauri-plugin-shell 的 sidecar API 按 tauri.conf.json 里 externalBin
+    // 注册过的"二进制名"找文件。我们填的 "binaries/cyber-backend"，所以
+    // sidecar("cyber-backend") 就能解析到 binaries/cyber-backend-<triple>.exe。
+    //
+    // 纯前端版 MSI 没把 sidecar 打进去 —— sidecar() 会返回 Err。这种
+    // 情况下不要 panic，直接 Ok 让 shell 继续；前端会连用户配置的远程
+    // 后端（默认 127.0.0.1:49152，但用户能在设置里改）。
+    let cmd = match app.shell().sidecar("cyber-backend") {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            log::info!(
+                "[backend] sidecar not bundled (lite build), running webview-only mode: {e}"
+            );
+            return Ok(());
+        }
+    };
 
-    while started.elapsed() < STARTUP_TIMEOUT {
-        match client.get(HEALTH_URL).send() {
-            Ok(resp) if resp.status().is_success() => {
-                log::info!(
-                    "[backend] ready in {:?}, status={}",
-                    started.elapsed(),
-                    resp.status()
-                );
-                return Ok(());
-            }
-            Ok(resp) => {
-                log::debug!("[backend] probe non-2xx: {}", resp.status());
-            }
-            Err(_) => {
-                // 后端还没起来，连接会被 refuse —— 这是预期，继续轮询。
+    let (mut rx, child) = match cmd.spawn() {
+        Ok(pair) => pair,
+        Err(e) => {
+            // spawn 失败的两种典型场景：
+            //   1. lite 构建残留：tauri 嵌入式 manifest 注册了 sidecar
+            //      但 MSI 实际没打 exe。OS 报 "找不到指定的文件"。
+            //   2. 缺 DLL / 杀软拦截 / 防火墙拦截。
+            // 两种情况都不应该 panic 让窗口闪退；降级到 webview-only 模式，
+            // 让用户在「设置 → 后端服务器」里改成自己的远程后端。
+            log::warn!(
+                "[backend] sidecar spawn failed, falling back to webview-only mode: {e}"
+            );
+            return Ok(());
+        }
+    };
+
+    log::info!("[backend] sidecar spawned, pid={}", child.pid());
+    state.store(child);
+
+    // 后台线程吸 stdout / stderr / exit code 喂到 log。不读会让 OS pipe
+    // buffer 满后导致后端 print 阻塞。
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) => {
+                    log::info!("[backend stdout] {}", String::from_utf8_lossy(&line));
+                }
+                CommandEvent::Stderr(line) => {
+                    log::warn!("[backend stderr] {}", String::from_utf8_lossy(&line));
+                }
+                CommandEvent::Error(err) => {
+                    log::error!("[backend] runtime error: {err}");
+                }
+                CommandEvent::Terminated(payload) => {
+                    log::warn!(
+                        "[backend] sidecar terminated code={:?} signal={:?}",
+                        payload.code,
+                        payload.signal
+                    );
+                    break;
+                }
+                _ => {}
             }
         }
-        std::thread::sleep(PROBE_INTERVAL);
-    }
+    });
 
-    Err(format!(
-        "backend did not become ready within {:?}",
-        STARTUP_TIMEOUT
-    ))
+    // 探活搬到后台 —— 现在 setup 立刻返回，webview 同步初始化，
+    // __TAURI_INTERNALS__ 注入及时，前端 detectKind() 不会再误判 web。
+    spawn_health_probe();
+    Ok(())
+}
+
+fn spawn_health_probe() {
+    std::thread::Builder::new()
+        .name("cyber-backend-probe".into())
+        .spawn(|| {
+            let started = Instant::now();
+            let client = match reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("[backend] probe client build failed: {e}");
+                    return;
+                }
+            };
+            while started.elapsed() < STARTUP_TIMEOUT {
+                match client.get(HEALTH_URL).send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        log::info!(
+                            "[backend] ready in {:?}, status={}",
+                            started.elapsed(),
+                            resp.status()
+                        );
+                        return;
+                    }
+                    Ok(resp) => {
+                        log::debug!("[backend] probe non-2xx: {}", resp.status());
+                    }
+                    Err(_) => {}
+                }
+                std::thread::sleep(PROBE_INTERVAL);
+            }
+            log::warn!(
+                "[backend] sidecar not ready within {STARTUP_TIMEOUT:?}, frontend will surface 5xx"
+            );
+        })
+        .expect("spawn cyber-backend probe thread");
 }
 
 /// Tauri RunEvent::Exit 时调，杀掉 sidecar。
