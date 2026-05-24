@@ -70,7 +70,8 @@ export interface PlatformStorage {
  */
 function detectKind(): 'web' | 'pc' {
   const w = globalThis as { __TAURI_INTERNALS__?: unknown; __TAURI__?: unknown };
-  return w.__TAURI_INTERNALS__ || w.__TAURI__ ? 'pc' : 'web';
+  if (w.__TAURI_INTERNALS__ || w.__TAURI__) return 'pc';
+  return 'web';
 }
 
 let cached: Platform | null = null;
