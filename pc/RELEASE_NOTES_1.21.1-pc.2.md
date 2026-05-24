@@ -6,7 +6,7 @@
 
 | 安装包 | 适合谁 | 大小 |
 |---|---|---|
-| **`CyberStream_1.21.1-pc.2_lite_x64.msi`** | 已经有自部署后端（NAS / VPS / docker）的用户 | ~14 MB |
+| **`CyberStream_1.21.1-pc.2_lite_x64.msi`** | 已经有自部署后端（NAS / VPS / docker）的用户 | ~93 MB |
 | **`CyberStream_1.21.1-pc.2_full_x64.msi`** | 想开箱即用的小白用户、单机自用 | ~120 MB |
 
 `full` 把后端打成 sidecar 进程一起捆绑进来，双击安装就有完整本地后端，不需要单独装 Python / 配 systemd。`lite` 是纯 webview shell，连远程 API。

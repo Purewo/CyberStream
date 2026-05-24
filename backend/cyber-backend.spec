@@ -9,8 +9,10 @@
 # 设计决策：
 # - onefile：分发简单（一个 exe），代价是每次启动 PyInstaller 解压 ~15s
 #   的首启延迟（第二次起命中 _MEIPASS 缓存会快）。后续若启动慢可以改 onedir。
-# - collect_all('ddddocr'/'OpenCC')：这两个库带本地模型/字典文件，
-#   PyInstaller 静态分析看不到 .onnx / .json 资源，必须 collect-all 兜底。
+# - ddddocr / OpenCC 这两个库虽然在 requirements.txt 里，但 backend/ 代码
+#   实际从未 import 过它们。早期 collect_all 把 ddddocr 的 onnx 模型 (~88MB)
+#   + onnxruntime (~50MB) 全打进来，exe 175MB；剔除后回到 ~28MB。如果
+#   后续真的要用，再放回 collect_all 即可。
 # - datas 显式包了 backend/openapi/ 和 docs/，docs_routes 运行时按 BASE_DIR
 #   读它们；冻结时 BASE_DIR == sys._MEIPASS（spec 把这两个目录放进去后
 #   PyInstaller 会自动解到 _MEIPASS 下保留原相对路径）。
@@ -18,17 +20,13 @@
 # ruff: noqa: F821 — Analysis/PYZ/EXE 等都是 PyInstaller 在 spec 上下文注入的内置名
 
 import os
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_submodules
 
 
 # spec 文件不一定跟 cwd 对齐；用 SPECPATH（PyInstaller 注入）兜回仓库根。
 REPO_ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 ENTRY = os.path.join(REPO_ROOT, "backend", "run.py")
 
-
-# 带模型/字典数据的库 → 整库收
-ddddocr_datas, ddddocr_binaries, ddddocr_hidden = collect_all("ddddocr")
-opencc_datas, opencc_binaries, opencc_hidden = collect_all("OpenCC")
 
 # 后端自己的子模块全部显式收一遍——provider/factory 是 static import，但
 # 后端有动态 importlib 用法（online_subtitles 加载用户安装的 skill 脚本，
@@ -42,14 +40,11 @@ datas = [
     (os.path.join(REPO_ROOT, "backend", "openapi"), "backend/openapi"),
     (os.path.join(REPO_ROOT, "docs"), "docs"),
 ]
-datas += ddddocr_datas + opencc_datas
 
-binaries = ddddocr_binaries + opencc_binaries
+binaries = []
 
 hiddenimports = (
     backend_submodules
-    + ddddocr_hidden
-    + opencc_hidden
     + [
         # waitress 通过 setuptools entry-point 加载；PyInstaller 静态分析
         # 时偶尔漏掉，显式列出以防万一。
@@ -66,7 +61,7 @@ hiddenimports = (
 
 excludes = [
     "tkinter",      # 后端不用 GUI 工具包
-    "matplotlib",   # ddddocr 偶尔会拉它；后端没用到，砍掉省 30+MB
+    "matplotlib",
     "PyQt5",
     "PyQt6",
     "PySide2",
@@ -77,6 +72,15 @@ excludes = [
     "ipython",
     "notebook",
     "jupyter",
+    # 后端代码无 import，requirements.txt 里有但 spec 不再 collect_all
+    "ddddocr",
+    "OpenCC",
+    "opencc",
+    "onnxruntime",
+    "onnx",
+    "numpy",        # 只有 ddddocr/onnx 拖进来用，后端无 import
+    "Pillow",       # 同上，只 ddddocr 用
+    "PIL",
 ]
 
 
