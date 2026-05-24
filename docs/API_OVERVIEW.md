@@ -870,7 +870,7 @@ X-Cyber-API-Token: <token>
   - `flag_is_4k/flag_is_1080p/flag_is_hdr/flag_is_hdr10/flag_is_hdr10_plus/flag_is_hlg/flag_is_dolby_vision/flag_is_remux/flag_is_uhd_bluray/flag_is_lossless_audio/flag_is_original_quality/flag_is_movie_feature/flag_imax/flag_ten_bit`：解析得到的布尔辅助特征
   - `extra_tags`：仅放结构化字段覆盖不了的额外标签，例如 `IMAX`
 - `playback.stream_url` 是后端播放入口；外部播放器也可以使用该地址，AList/OpenList 会继续由该入口 302 到上游 `/d/...` 直链
-- 后端生成的播放、音频转码和字幕绝对 URL 会信任反向代理 `X-Forwarded-Proto` / `X-Forwarded-Host`；HTTPS 部署若反代未传这些头，可设置 `CYBER_BACKEND_PUBLIC_BASE_URL=https://<domain>` 强制返回 HTTPS 地址
+- 后端生成的播放、音频转码和字幕绝对 URL 会信任反向代理 `X-Forwarded-Proto` / `X-Forwarded-Host`；若反代未传这些头，可设置 `CYBER_BACKEND_PUBLIC_BASE_URL=http://<domain>` 或 `https://<domain>` 明确外部地址，后端会原样保留该 scheme
 - `playback.subtitles.items` 当前会发现与视频同目录、同文件名前缀的外挂字幕，也会包含用户确认后绑定的在线字幕缓存；支持 `srt/ass/ssa/vtt/sub/sup`，每个字幕项包含 `id`、`source`、`filename`、`display_name`、`format`、`language`、`is_default`、`url` 和 `web_player` 等字段；前端展示字幕名称优先使用 `display_name`，`filename` 保留为实际文件名/缓存文件名
 - 字幕项的 `url` 保留原始字幕流，主要给外部播放器使用；网页播放器应优先读取 `web_player.url`。当原始字幕为 `srt/ass/ssa` 时，`web_player.url` 会自动追加 `format=vtt`，后端动态转成 HTML5 `<track>` 可加载的 WebVTT；启用 Super CDN 后，用户绑定的在线/手动字幕会优先返回 `china_all` 桶中的原始字幕和 WebVTT CDN URL；`sub/sup` 当前不支持浏览器字幕
 - `playback.subtitles.settings` 返回当前资源的字幕显示设置，统一字段为 `zhSize`、`zhColor`、`enSize`、`enColor`、`gap`、`offset`；前端打开播放页可直接使用该结构初始化播放器字幕样式

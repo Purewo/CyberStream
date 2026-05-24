@@ -225,15 +225,15 @@ Super CDN API 超时默认 `20` 秒；非视频资产单文件上限默认 `1048
 ### 2.9 反向代理与外部 URL 配置
 
 #### `CYBER_TRUST_PROXY_HEADERS`
-是否信任反向代理传入的 `X-Forwarded-*` 请求头，默认 `true`。启用后，后端生成的 `playback.stream_url`、`audio.server_transcode.url`、字幕 URL 等绝对地址会根据 `X-Forwarded-Proto` / `X-Forwarded-Host` 使用公网 HTTPS 地址。
+是否信任反向代理传入的 `X-Forwarded-*` 请求头，默认 `true`。启用后，后端生成的 `playback.stream_url`、`audio.server_transcode.url`、字幕 URL 等绝对地址会根据 `X-Forwarded-Proto` / `X-Forwarded-Host` 使用反向代理声明的外部地址。
 
-如果公网反代未正确传 `X-Forwarded-Proto`，后端生成 URL 时会对非本地主机按 `PREFERRED_URL_SCHEME=https` 兜底修正，避免公网响应里出现 `http://pw.pioneer.fan:84/...`。
+后端不会再用 `PREFERRED_URL_SCHEME=https` 把请求里的 `http://` 隐式改写成 `https://`。`PREFERRED_URL_SCHEME` 只保留 Flask 原生语义，用于没有请求上下文时 `url_for(..., _external=True)` 的默认 scheme。
 
 #### `CYBER_PROXY_FIX_X_FOR` / `CYBER_PROXY_FIX_X_PROTO` / `CYBER_PROXY_FIX_X_HOST` / `CYBER_PROXY_FIX_X_PORT` / `CYBER_PROXY_FIX_X_PREFIX`
 传给 Flask `ProxyFix` 的信任层数，默认均为 `1`。当前部署如果只有一层 Nginx/Caddy/网关反代，保持默认即可。
 
 #### `CYBER_BACKEND_PUBLIC_BASE_URL`
-后端 API 的强制外部 base URL，默认不设置。设置后会覆盖请求头推断结果，用于反代没有正确传 `X-Forwarded-Proto` 的部署。
+后端 API 的强制外部 base URL，默认不设置。设置后会覆盖请求头推断结果，用于反代没有正确传 `X-Forwarded-Proto` 的部署。该值中的 scheme 会被原样使用：填 `http://...` 就返回 HTTP，填 `https://...` 就返回 HTTPS。
 
 示例：
 

@@ -62,13 +62,13 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 ### 公网验收
 
 ```bash
-curl -i https://pw.pioneer.fan:84/
-curl -k -i https://pw.pioneer.fan:84/
+curl -i http://pioneer.fan:884/
+curl -i http://pioneer.fan:884/api/v1/openapi.json
 ```
 
 ## 4. 当前已知运行事实
 
-- Lucky 已将公网 `84` 端口映射到本机 `5004`
+- 当前 IPv4 公网入口为 `http://pioneer.fan:884`，映射到本机 `5004`
 - 后台运行优先使用 `./scripts/backend_service.sh`，脚本会加载项目根目录 `.env.local`
 - 服务脚本优先使用 gunicorn，缺失时自动回退 Flask 内置服务器
 - `.env.local` 存放 token 等本机私密配置，已加入 git 忽略；提交前只维护 `.env.local.example`
@@ -139,7 +139,7 @@ python -m backend.run
 
 1. 本地 `5004` 是否已启动
 2. Lucky 是否正常运行
-3. Lucky 的 `84 -> 5004` 映射是否还在
+3. Lucky/反代的 `884 -> 5004` 映射是否还在
 
 ### 5.3 WebDAV 无法播放
 重点排查：

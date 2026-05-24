@@ -122,7 +122,30 @@ class ProxyExternalUrlTests(unittest.TestCase):
             playback["stream_url"],
         )
 
-    def test_public_host_without_forwarded_proto_uses_preferred_https_scheme(self):
+    def test_public_base_url_preserves_configured_http_scheme(self):
+        self.app.config["BACKEND_PUBLIC_BASE_URL"] = "http://pioneer.fan:884"
+        movie, resource = self._movie_with_resource()
+        self._write_file("Movies/Proxy.URL.Test.2026.zh-Hans.srt", "1\n00:00:00,000 --> 00:00:01,000\n你好\n")
+
+        response = self.client.get(
+            f"/api/v1/movies/{movie.id}/resources",
+            base_url="https://ignored.example.test",
+        )
+
+        self.assertEqual(200, response.status_code)
+        playback = response.get_json()["data"]["items"][0]["playback"]
+        subtitle = playback["subtitles"]["items"][0]
+        expected_prefix = f"http://pioneer.fan:884/api/v1/resources/{resource.id}"
+
+        self.assertEqual(f"{expected_prefix}/stream", playback["stream_url"])
+        self.assertEqual(f"{expected_prefix}/stream?subtitle_id={subtitle['id']}", subtitle["url"])
+        self.assertEqual(
+            f"{expected_prefix}/stream?subtitle_id={subtitle['id']}&format=vtt",
+            subtitle["web_player"]["url"],
+        )
+
+    def test_public_host_without_forwarded_proto_keeps_request_scheme_even_when_preferred_https(self):
+        self.app.config["PREFERRED_URL_SCHEME"] = "https"
         movie, resource = self._movie_with_resource()
         self._write_file("Movies/Proxy.URL.Test.2026.zh-Hans.srt", "1\n00:00:00,000 --> 00:00:01,000\n你好\n")
 
@@ -134,7 +157,7 @@ class ProxyExternalUrlTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         playback = response.get_json()["data"]["items"][0]["playback"]
         subtitle = playback["subtitles"]["items"][0]
-        expected_prefix = f"https://pw.pioneer.fan:84/api/v1/resources/{resource.id}"
+        expected_prefix = f"http://pw.pioneer.fan:84/api/v1/resources/{resource.id}"
 
         self.assertEqual(f"{expected_prefix}/stream", playback["stream_url"])
         self.assertEqual(f"{expected_prefix}/audio-transcode", playback["audio"]["server_transcode"]["endpoint"])

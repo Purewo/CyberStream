@@ -2,6 +2,11 @@
 
 本文档记录 `1.21.0-beta` 的接口变化，作为其他视频归档联调基线。
 
+## 外部 URL scheme
+
+- 后端播放、音频转码和字幕 URL 不再用 `PREFERRED_URL_SCHEME=https` 把公开 HTTP 请求隐式改写成 HTTPS。
+- `PREFERRED_URL_SCHEME` 仅保留 Flask 原生语义；需要固定外部入口时使用 `CYBER_BACKEND_PUBLIC_BASE_URL=http://...` 或 `https://...`，scheme 会原样保留。
+
 ## 其他视频归档
 
 新增接口：
