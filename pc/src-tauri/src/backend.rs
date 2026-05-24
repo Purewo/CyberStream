@@ -68,9 +68,14 @@ impl BackendState {
 /// **必须在 Tauri AppHandle setup 之后调用** —— ShellExt 依赖 plugin 已
 /// init；lib.rs 里我们在 .setup() 闭包里调它。
 ///
-/// 调试逃生口：设环境变量 `CYBER_SKIP_BACKEND_SIDECAR=1` 时跳过 spawn，
-/// 直接进入探活循环。这样调试时可以在外面的终端单独跑 backend（dev or
-/// frozen exe），看完整 stdout/stderr，Tauri 壳跟那个外部后端连上即可。
+/// 三种运行形态都要支持：
+/// 1. **全套版 MSI**：tauri.conf.json 声明了 externalBin，sidecar exe 跟
+///    主程序一起装到 Program Files；这里 spawn 它然后等就绪。
+/// 2. **纯前端版 MSI**：没有 sidecar exe（用户连自己的 NAS 后端）。
+///    `app.shell().sidecar(...)` 会返回 Err，我们识别后直接 Ok 退出，
+///    让 shell 继续启动；前端连用户在设置里配的后端地址。
+/// 3. **dev 调试**：设 `CYBER_SKIP_BACKEND_SIDECAR=1` 跳过 spawn 直连
+///    外部后端（手动起的 sidecar exe / waitress dev）。
 pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<BackendState>();
 
@@ -84,10 +89,19 @@ pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
         // tauri-plugin-shell 的 sidecar API 按 tauri.conf.json 里 externalBin
         // 注册过的"二进制名"找文件。我们填的 "binaries/cyber-backend"，所以
         // sidecar("cyber-backend") 就能解析到 binaries/cyber-backend-<triple>.exe。
-        let cmd = app
-            .shell()
-            .sidecar("cyber-backend")
-            .map_err(|e| format!("sidecar lookup failed: {e}"))?;
+        //
+        // 纯前端版 MSI 没把 sidecar 打进去 —— sidecar() 会返回 Err。这种
+        // 情况下不要 panic，直接 Ok 让 shell 继续；前端会连用户配置的远程
+        // 后端（默认 127.0.0.1:49152，但用户能在设置里改）。
+        let cmd = match app.shell().sidecar("cyber-backend") {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                log::info!(
+                    "[backend] sidecar not bundled (lite build), running webview-only mode: {e}"
+                );
+                return Ok(());
+            }
+        };
 
         let (mut rx, child) = cmd
             .spawn()
