@@ -2927,7 +2927,7 @@ fn draw_badges_manual_wrap(ui: &mut egui::Ui, badges: &[String], max_w: f32) {
 ///   - 4K / 1080p / 720p：青色
 ///   - SDR / HDR / Dolby Vision：黄色（动态范围一类，不歧视 SDR）
 ///   - HEVC / H.265：青色弱
-///   - Atmos / Dolby：紫色
+///   - 音频编码（Atmos / Dolby / DTS / TrueHD / AAC / AC3 / FLAC / Opus）：紫色
 ///   - Bluray / WEB-DL / REMUX：蓝色弱
 ///   - 其他：灰色
 fn draw_badge(ui: &mut egui::Ui, raw: &str) {
@@ -2951,7 +2951,19 @@ fn draw_badge(ui: &mut egui::Ui, raw: &str) {
             yellow.gamma_multiply(0.10),
             egui::Stroke::new(1.0, yellow.gamma_multiply(0.4)),
         )
-    } else if upper.contains("ATMOS") || upper.contains("DOLBY") {
+    } else if upper.contains("ATMOS")
+        || upper.contains("DOLBY")
+        || upper.contains("DTS")
+        || upper.contains("TRUEHD")
+        || upper.contains("AAC")
+        || upper.contains("AC3")
+        || upper.contains("EAC3")
+        || upper.contains("E-AC3")
+        || upper.contains("FLAC")
+        || upper.contains("OPUS")
+        || upper.contains("PCM")
+        || upper.contains("MP3")
+    {
         (
             purple,
             purple.gamma_multiply(0.10),
