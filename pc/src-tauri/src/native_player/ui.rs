@@ -2928,6 +2928,7 @@ fn draw_badges_manual_wrap(ui: &mut egui::Ui, badges: &[String], max_w: f32) {
 ///   - SDR / HDR / Dolby Vision：黄色（动态范围一类，不歧视 SDR）
 ///   - HEVC / H.265：青色弱
 ///   - 音频编码（Atmos / Dolby / DTS / TrueHD / AAC / AC3 / FLAC / Opus）：紫色
+///   - 特殊厅 / 剪辑版（IMAX / Director's Cut 等 extra tags）：紫色
 ///   - Bluray / WEB-DL / REMUX：蓝色弱
 ///   - 其他：灰色
 fn draw_badge(ui: &mut egui::Ui, raw: &str) {
@@ -2963,6 +2964,12 @@ fn draw_badge(ui: &mut egui::Ui, raw: &str) {
         || upper.contains("OPUS")
         || upper.contains("PCM")
         || upper.contains("MP3")
+        || upper.contains("IMAX")
+        || upper.contains("DIRECTOR")
+        || upper.contains("CUT")
+        || upper.contains("EXTENDED")
+        || upper.contains("UNCUT")
+        || upper.contains("REMASTER")
     {
         (
             purple,

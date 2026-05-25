@@ -325,6 +325,11 @@ const App = () => {
       // 与详情页顶部技术规格行保持一致。
       push(tech.audio_summary_label || tech.audio_codec_label || r.media_info?.audio_codec);
       push(tech.source_label);
+      // 额外标签 (IMAX / Director's Cut 等)：详情页顶部规格行已展示；
+      // 原生播放器右侧也补上，跟外面一致。
+      if (Array.isArray(tech.extra_tags)) {
+        tech.extra_tags.forEach((t: string) => push(t));
+      }
       // 字幕：后端 resource_info.playback.subtitles 形态多变——
       //   - 老接口偶尔是 { items: [...] } 包裹
       //   - 新接口直接 array
