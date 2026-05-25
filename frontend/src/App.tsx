@@ -274,6 +274,15 @@ const App = () => {
       let n: number | string | undefined =
         info?.display?.episode ?? r.episode;
       if (n != null && n !== '') return String(n);
+      // 后端明确标了"电影正片"或 media_type_hint = movie 时直接返回 undefined。
+      // filename 兜底正则会把 [106.24GB] 这种文件大小标签当成集号抠出来，
+      // 导致单部电影被分成"正片 / 106"两个 tab（filename 里凡有方括号
+      // 数字都会触发，包括 [www.xxx][1080p] 这类站点 / 画质标签）。
+      const tech = info?.technical || {};
+      const editCtx = info?.metadata?.edit_context || {};
+      if (tech.flag_is_movie_feature || editCtx.media_type_hint === 'movie') {
+        return undefined;
+      }
       const fn: string = info?.file?.filename || r.filename || '';
       const reSxE = fn.match(/[Ss](\d+)[Ee](\d+)/);
       if (reSxE) return reSxE[2];
