@@ -2925,7 +2925,7 @@ fn draw_badges_manual_wrap(ui: &mut egui::Ui, badges: &[String], max_w: f32) {
 
 /// 画一个 badge — 颜色按内容分类（参考 web Player.tsx 1944~1965 行）：
 ///   - 4K / 1080p / 720p：青色
-///   - HDR / Dolby Vision：黄色
+///   - SDR / HDR / Dolby Vision：黄色（动态范围一类，不歧视 SDR）
 ///   - HEVC / H.265：青色弱
 ///   - Atmos / Dolby：紫色
 ///   - Bluray / WEB-DL / REMUX：蓝色弱
@@ -2945,7 +2945,7 @@ fn draw_badge(ui: &mut egui::Ui, raw: &str) {
             cyan.gamma_multiply(0.12),
             egui::Stroke::new(1.0, cyan.gamma_multiply(0.45)),
         )
-    } else if upper.contains("HDR") || upper.contains("VISION") || upper.contains("DV") {
+    } else if upper.contains("HDR") || upper.contains("VISION") || upper.contains("DV") || upper == "SDR" {
         (
             yellow,
             yellow.gamma_multiply(0.10),
