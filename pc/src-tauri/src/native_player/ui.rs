@@ -1619,6 +1619,7 @@ fn draw_subtitle_menu(
                                 cyan,
                                 icons::DELETE,
                             );
+                            let row = row.on_hover_text(&display);
                             if del.clicked() {
                                 actions.push(Action::RequestDeleteSubtitle(
                                     sub.id.clone(),
@@ -1650,7 +1651,9 @@ fn draw_subtitle_menu(
                             .or_else(|| t.lang.clone())
                             .unwrap_or_else(|| format!("内嵌 #{}", t.id));
                         let active = active_internal_id == Some(t.id);
-                        if menu_row(ui, &display, active, cyan).clicked() {
+                        let resp = menu_row(ui, &display, active, cyan)
+                            .on_hover_text(&display);
+                        if resp.clicked() {
                             actions.push(Action::SetSubtitleTrack(t.id));
                             ui.close();
                         }
@@ -1680,6 +1683,7 @@ fn draw_subtitle_menu(
                                 cyan,
                                 "绑定",
                             );
+                            let row = row.on_hover_text(&prev.label);
                             if btn.clicked() {
                                 actions.push(Action::BindOnlineSubtitle {
                                     candidate_id: prev.candidate_id.clone(),
@@ -1695,7 +1699,10 @@ fn draw_subtitle_menu(
                                 )));
                                 ui.close();
                             }
-                        } else if menu_row(ui, &prev.label, false, cyan).clicked() {
+                        } else if menu_row(ui, &prev.label, false, cyan)
+                            .on_hover_text(&prev.label)
+                            .clicked()
+                        {
                             // 未在播的预览条目：点击 = sub-add+select 切回它。
                             actions.push(Action::SetSubtitle(Some(
                                 prev.tmp_path.clone(),
@@ -1746,7 +1753,11 @@ fn draw_subtitle_menu(
                         } else {
                             c.label.clone()
                         };
-                        if menu_row(ui, &display, false, cyan).clicked() && !busy {
+                        if menu_row(ui, &display, false, cyan)
+                            .on_hover_text(&c.label)
+                            .clicked()
+                            && !busy
+                        {
                             actions.push(Action::PreviewOnlineSubtitle {
                                 candidate_id: c.candidate_id.clone(),
                                 label: c.label.clone(),
@@ -1840,7 +1851,7 @@ fn draw_audio_menu(
     ui.scope(|ui| {
         install_chip_style(ui, cyan);
         let _ = menu::menu_button(ui, pill_text(&label, cyan, false), |ui| {
-        ui.set_min_width(220.0);
+        ui.set_min_width(360.0);
         let audios: Vec<_> = state.audio_tracks().collect();
         if audios.is_empty() {
             ui.label(
@@ -1849,20 +1860,77 @@ fn draw_audio_menu(
             return;
         }
         for t in audios {
-            let display = t
-                .title
-                .clone()
-                .or_else(|| t.lang.clone())
-                .or_else(|| t.codec.clone())
-                .unwrap_or_else(|| format!("音轨 #{}", t.id));
-            let row_label = format!("#{} · {display}", t.id);
-            if menu_row(ui, &row_label, t.selected, cyan).clicked() {
+            // 蓝光 mkv 的轨道 title 大多是 release 全名（每条音轨都一样的
+            // "Transformers.Age.of.Extinction.2014.2160p.BluRay..."），完全没区分度。
+            // PotPlayer 也是优先 lang+codec+声道+采样率+码率 来描述音轨。
+            // 这里同样把"语言+技术细节"作主显示位，title 降级到 tooltip。
+            let lang_label = t
+                .lang
+                .as_deref()
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty() && s != "und");
+            let tech = format_audio_tech(t);
+            let row_label = match (lang_label, tech.is_empty()) {
+                (Some(lang), false) => format!("#{} · {} · {}", t.id, lang, tech),
+                (Some(lang), true) => format!("#{} · {}", t.id, lang),
+                (None, false) => format!("#{} · {}", t.id, tech),
+                (None, true) => {
+                    // 啥都没有，退到 title / "音轨 #N"。
+                    let primary = t
+                        .title
+                        .clone()
+                        .or_else(|| t.codec.clone())
+                        .unwrap_or_else(|| format!("音轨 #{}", t.id));
+                    format!("#{} · {}", t.id, primary)
+                }
+            };
+            // tooltip 给 release 全称（如果有 title），让用户在需要时看完整名。
+            let hover_text = match &t.title {
+                Some(title) if !title.is_empty() => format!("{}\n{}", row_label, title),
+                _ => row_label.clone(),
+            };
+            let resp = menu_row(ui, &row_label, t.selected, cyan)
+                .on_hover_text(&hover_text);
+            if resp.clicked() {
                 actions.push(Action::SetAudioTrack(t.id));
                 ui.close();
             }
         }
         });
     });
+}
+
+/// 按 PotPlayer 的格式拼音轨技术细节："TrueHD · 7.1 · 48.0 kHz · 1.51 Mbps"。
+/// 缺哪个跳过哪个；全缺时返回空串，调用方据此降级。
+fn format_audio_tech(t: &crate::native_player::controller::TrackInfo) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(c) = &t.codec {
+        parts.push(c.to_uppercase());
+    }
+    if let Some(ch) = t.audio_channels {
+        parts.push(match ch {
+            1 => "Mono".into(),
+            2 => "Stereo".into(),
+            6 => "5.1".into(),
+            8 => "7.1".into(),
+            n => format!("{n} Ch"),
+        });
+    }
+    if let Some(sr) = t.samplerate {
+        // 48000 → "48.0 kHz"，44100 → "44.1 kHz"
+        let khz = sr as f64 / 1000.0;
+        parts.push(format!("{khz:.1} kHz"));
+    }
+    if let Some(br) = t.bitrate {
+        // mpv demux-bitrate 是 bps；>=1Mbps 用 Mbps，否则 kbps
+        let bps = br as f64;
+        if bps >= 1_000_000.0 {
+            parts.push(format!("{:.2} Mbps", bps / 1_000_000.0));
+        } else if bps > 0.0 {
+            parts.push(format!("{} kbps", (bps / 1000.0).round() as i64));
+        }
+    }
+    parts.join(" · ")
 }
 
 fn audio_button_label(_state: &PlayerState) -> String {

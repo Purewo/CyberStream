@@ -162,6 +162,11 @@ pub struct TrackInfo {
     /// mpv 给外挂字幕的来源——预览字幕通过临时文件路径回填，绑定字幕通过
     /// 网络 URL 回填。HUD 用它把当前选中的轨道反查回 PreviewSub / SubtitleMeta。
     pub external_filename: Option<String>,
+    /// 以下仅对音轨/视频轨有意义——mpv `track-list` 在轨道有 demux 元数据时回填。
+    /// 比如 PotPlayer 那种"7.1 Ch · 48.0 kHz · 1.51 Mbps"细节，菜单上挑轨更直观。
+    pub audio_channels: Option<i64>,
+    pub samplerate: Option<i64>,
+    pub bitrate: Option<i64>,
 }
 
 /// 「在线 · 临时预览」字幕条目。生命周期 = 当前播放器进程；切集 / 退出后丢弃。
@@ -227,6 +232,16 @@ impl PlayerState {
                 .get("external-filename")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+            // demux 元数据：仅在 mpv 解出来时有；外挂字幕一般没有这些。
+            let audio_channels = item
+                .get("audio-channels")
+                .and_then(|v| v.as_i64());
+            let samplerate = item
+                .get("demux-samplerate")
+                .and_then(|v| v.as_i64());
+            let bitrate = item
+                .get("demux-bitrate")
+                .and_then(|v| v.as_i64());
             out.push(TrackInfo {
                 id,
                 kind,
@@ -236,6 +251,9 @@ impl PlayerState {
                 codec,
                 external,
                 external_filename,
+                audio_channels,
+                samplerate,
+                bitrate,
             });
         }
         self.tracks = out;
