@@ -51,6 +51,7 @@ ONLINE_LANGUAGE_LABELS = {
     "ko": "Korean",
 }
 ONLINE_LANGUAGE_PRIORITY = ("zh-Hans", "zh-Hant", "zh", "en", "ja", "ko")
+BUNDLED_ONLINE_SUBTITLE_PROVIDER_DIR = Path(__file__).resolve().parent / "online_subtitle_providers"
 
 
 class OnlineSubtitleError(ValueError):
@@ -61,23 +62,30 @@ class OnlineSubtitleError(ValueError):
         self.http_status = http_status
 
 
-def _skill_dir():
+def _provider_dir():
     configured = current_app.config.get("GET_SUBTITLES_SKILL_DIR") if has_app_context() else None
-    return Path(configured or config.GET_SUBTITLES_SKILL_DIR).expanduser()
+    configured = configured or getattr(config, "GET_SUBTITLES_SKILL_DIR", None)
+    if configured:
+        return Path(configured).expanduser() / "scripts"
+    return BUNDLED_ONLINE_SUBTITLE_PROVIDER_DIR
+
+
+def _provider_script_path(module_name):
+    return _provider_dir() / f"{module_name}.py"
 
 
 def _load_skill_module(module_name):
-    script_path = _skill_dir() / "scripts" / f"{module_name}.py"
+    script_path = _provider_script_path(module_name)
     if not script_path.exists():
         raise OnlineSubtitleError(
-            f"Subtitle skill script missing: {module_name}",
+            f"Online subtitle provider script missing: {module_name}",
             code=50060,
             http_status=500,
         )
     spec = importlib.util.spec_from_file_location(f"codex_get_subtitles_{module_name}", script_path)
     if not spec or not spec.loader:
         raise OnlineSubtitleError(
-            f"Subtitle skill script cannot be loaded: {module_name}",
+            f"Online subtitle provider script cannot be loaded: {module_name}",
             code=50061,
             http_status=500,
         )

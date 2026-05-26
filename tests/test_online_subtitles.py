@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.models import MediaResource, Movie, ResourceSubtitle, StorageSource
+from backend.app.services import online_subtitles
 from backend.app.services.online_subtitles import normalize_downloaded_subtitle_file
 
 
@@ -248,6 +249,37 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
             return module
 
         raise AssertionError(module_name)
+
+    def test_online_provider_modules_are_loaded_from_backend_by_default(self):
+        self.app.config["GET_SUBTITLES_SKILL_DIR"] = None
+
+        subhd_path = online_subtitles._provider_script_path("subhd_core")
+        srtku_path = online_subtitles._provider_script_path("srtku_core")
+
+        self.assertIn("online_subtitle_providers", str(subhd_path))
+        self.assertNotIn(".codex", str(subhd_path))
+        self.assertTrue(subhd_path.is_file())
+        self.assertTrue(srtku_path.is_file())
+        self.assertEqual("https://subhd.tv", online_subtitles._load_skill_module("subhd_core").BASE)
+        self.assertEqual("https://srtku.com", online_subtitles._load_skill_module("srtku_core").BASE)
+
+    def test_online_provider_explicit_legacy_skill_override_is_still_supported(self):
+        with tempfile.TemporaryDirectory() as skill_dir:
+            scripts_dir = Path(skill_dir) / "scripts"
+            scripts_dir.mkdir()
+            (scripts_dir / "subhd_core.py").write_text("MARKER = 'override'\n", encoding="utf-8")
+            self.app.config["GET_SUBTITLES_SKILL_DIR"] = skill_dir
+
+            module = online_subtitles._load_skill_module("subhd_core")
+
+        self.assertEqual("override", module.MARKER)
+
+    def test_pc_backend_bundle_includes_online_providers_and_ocr_runtime(self):
+        spec = (PROJECT_ROOT / "backend" / "cyber-backend.spec").read_text(encoding="utf-8")
+
+        self.assertIn("online_subtitle_providers", spec)
+        self.assertIn('collect_all("ddddocr")', spec)
+        self.assertNotIn('    "ddddocr",', spec)
 
     def test_online_search_uses_subhd_and_srtku_but_ignores_opensubtitles(self):
         resource = self._resource()
