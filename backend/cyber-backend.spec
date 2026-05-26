@@ -10,8 +10,8 @@
 # - onefile：分发简单（一个 exe），代价是每次启动 PyInstaller 解压 ~15s
 #   的首启延迟（第二次起命中 _MEIPASS 缓存会快）。后续若启动慢可以改 onedir。
 # - 在线字幕 provider 现在随后端一起打包。SubHD/SrtKu 的验证码/WAF 路径
-#   需要 ddddocr/Pillow/onnxruntime，完整版必须收进去，否则 PC 端会能搜但
-#   绑定/下载字幕不稳定。代价是 exe 明显增大。
+#   需要 ddddocr/Pillow/onnxruntime/numpy/opencv，完整版必须收进去，否则
+#   PC 端会能搜但绑定/下载字幕不稳定。代价是 exe 明显增大。
 # - datas 显式包了 backend/openapi/ 和 docs/，docs_routes 运行时按 BASE_DIR
 #   读它们；冻结时 BASE_DIR == sys._MEIPASS（spec 把这两个目录放进去后
 #   PyInstaller 会自动解到 _MEIPASS 下保留原相对路径）。
@@ -33,6 +33,10 @@ ENTRY = os.path.join(REPO_ROOT, "backend", "run.py")
 # PyInstaller 漏掉某个 lazy import 的服务模块。
 backend_submodules = collect_submodules("backend")
 ddddocr_datas, ddddocr_binaries, ddddocr_hiddenimports = collect_all("ddddocr")
+onnxruntime_datas, onnxruntime_binaries, onnxruntime_hiddenimports = collect_all("onnxruntime")
+pillow_datas, pillow_binaries, pillow_hiddenimports = collect_all("PIL")
+numpy_datas, numpy_binaries, numpy_hiddenimports = collect_all("numpy")
+opencv_datas, opencv_binaries, opencv_hiddenimports = collect_all("cv2")
 
 datas = [
     # docs_routes 运行时按 BASE_DIR/backend/openapi/ 读规范；冻结后 BASE_DIR
@@ -44,13 +48,27 @@ datas = [
         "backend/app/services/online_subtitle_providers",
     ),
     *ddddocr_datas,
+    *onnxruntime_datas,
+    *pillow_datas,
+    *numpy_datas,
+    *opencv_datas,
 ]
 
-binaries = [*ddddocr_binaries]
+binaries = [
+    *ddddocr_binaries,
+    *onnxruntime_binaries,
+    *pillow_binaries,
+    *numpy_binaries,
+    *opencv_binaries,
+]
 
 hiddenimports = (
     backend_submodules
     + ddddocr_hiddenimports
+    + onnxruntime_hiddenimports
+    + pillow_hiddenimports
+    + numpy_hiddenimports
+    + opencv_hiddenimports
     + [
         # waitress 通过 setuptools entry-point 加载；PyInstaller 静态分析
         # 时偶尔漏掉，显式列出以防万一。

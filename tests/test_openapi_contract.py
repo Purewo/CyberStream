@@ -64,6 +64,9 @@ class OpenApiContractTests(unittest.TestCase):
         )
         self.assertIn("candidate_id", candidate_schema["properties"])
         self.assertIn("source_key", candidate_schema["properties"])
+        self.assertIn("downloads", candidate_schema["properties"])
+        download_schema = candidate_schema["properties"]["downloads"]["items"]
+        self.assertIn("download_index", download_schema["properties"])
         self.assertIn("skipped", schemas["OnlineSubtitleProviderStatus"]["properties"])
         provider_error = schemas["OnlineSubtitleProviderStatus"]["properties"]["errors"]["items"]
         self.assertIn("reason", provider_error["properties"])

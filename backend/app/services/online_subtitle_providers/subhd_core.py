@@ -257,11 +257,24 @@ def download_subtitle(
             },
             timeout=30,
         )
-        data = r2.json()
+        try:
+            data = r2.json()
+        except ValueError:
+            return {
+                "success": False,
+                "reason": f"invalid_json_status_{r2.status_code}",
+                "attempts": attempt + 1,
+            }
 
         if data.get("success") and data.get("pass"):
             url = data["url"]
             r3 = s.get(url, timeout=30)
+            if r3.status_code >= 400:
+                return {
+                    "success": False,
+                    "reason": f"download_http_{r3.status_code}",
+                    "attempts": attempt + 1,
+                }
             ext = url.split(".")[-1]
             return {
                 "success": True,

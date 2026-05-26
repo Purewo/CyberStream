@@ -200,6 +200,8 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
                         "ext": "srt",
                         "attempts": 1,
                     }
+                if source_key == "explode":
+                    raise RuntimeError("provider exploded")
                 return {
                     "success": True,
                     "content": b"1\n00:00:00,000 --> 00:00:01,000\nHello\n",
@@ -279,6 +281,10 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
 
         self.assertIn("online_subtitle_providers", spec)
         self.assertIn('collect_all("ddddocr")', spec)
+        self.assertIn('collect_all("onnxruntime")', spec)
+        self.assertIn('collect_all("PIL")', spec)
+        self.assertIn('collect_all("numpy")', spec)
+        self.assertIn('collect_all("cv2")', spec)
         self.assertNotIn('    "ddddocr",', spec)
 
     def test_online_search_uses_subhd_and_srtku_but_ignores_opensubtitles(self):
@@ -307,9 +313,12 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual("subhd:abc123", data["items"][0]["id"])
         self.assertEqual("subhd:abc123", data["items"][0]["candidate_id"])
         self.assertEqual("abc123", data["items"][0]["source_key"])
+        self.assertEqual(0, data["items"][0]["downloads"][0]["download_index"])
+        self.assertEqual("subhd:abc123", data["items"][0]["downloads"][0]["candidate_id"])
         self.assertEqual("srtku:srt987", data["items"][1]["id"])
         self.assertEqual("srtku:srt987", data["items"][1]["candidate_id"])
         self.assertEqual("srt987", data["items"][1]["source_key"])
+        self.assertEqual(0, data["items"][1]["downloads"][0]["download_index"])
 
     def test_online_search_defaults_to_subhd_primary_provider(self):
         resource = self._resource()
@@ -753,6 +762,23 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual(413, response.status_code)
         self.assertEqual(41369, response.get_json()["code"])
         self.assertIn("too large", response.get_json()["msg"])
+
+    def test_online_download_provider_exception_returns_diagnostic_bad_gateway(self):
+        resource = self._resource()
+
+        with patch(
+            "backend.app.services.online_subtitles._load_skill_module",
+            side_effect=self._fake_skill_module,
+        ):
+            response = self.client.post(
+                f"/api/v1/resources/{resource.id}/subtitles/online/download",
+                json={"candidate_id": "subhd:explode"},
+            )
+
+        self.assertEqual(502, response.status_code)
+        payload = response.get_json()
+        self.assertEqual(50260, payload["code"])
+        self.assertIn("SubHD download failed: RuntimeError", payload["msg"])
 
     def test_online_subtitle_normalization_has_no_default_size_limit(self):
         resource = self._resource()

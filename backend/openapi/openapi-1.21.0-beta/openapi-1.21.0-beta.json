@@ -8208,7 +8208,7 @@
       },
       "OnlineSubtitleCandidate": {
         "type": "object",
-        "description": "在线字幕候选。前端展示 title/language/format/download_number 等字段，用户选择后优先将 candidate_id 作为 download/bind 接口的 candidate_id；id 与 candidate_id 保持一致用于兼容。web_player 用于判断该候选是否适合 HTML5 播放器字幕轨道。",
+        "description": "在线字幕候选。前端展示 title/language/format/download_number 等字段，用户选择后优先将 candidate_id 作为 download/bind 接口的 candidate_id；id 与 candidate_id 保持一致用于兼容。downloads 始终给出可传给下载/绑定接口的 download_index；SubHD 只有默认线路 0，SrtKu 当前搜索阶段也只暴露默认线路 0。web_player 用于判断该候选是否适合 HTML5 播放器字幕轨道。",
         "properties": {
           "id": {
             "type": "string",
@@ -8327,6 +8327,45 @@
           },
           "uploader": {
             "type": "string"
+          },
+          "downloads": {
+            "type": "array",
+            "description": "候选可用下载入口。当前 SubHD/SrtKu 搜索阶段都至少返回默认入口 download_index=0；前端提交 download/bind 时使用同一 candidate_id，并可传选中的 download_index。",
+            "items": {
+              "type": "object",
+              "required": [
+                "candidate_id",
+                "download_index"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "example": "subhd:OyBIWJ:0"
+                },
+                "candidate_id": {
+                  "type": "string",
+                  "example": "subhd:OyBIWJ"
+                },
+                "provider_id": {
+                  "type": "string",
+                  "example": "subhd"
+                },
+                "download_index": {
+                  "type": "integer",
+                  "example": 0
+                },
+                "index": {
+                  "type": "integer",
+                  "description": "download_index 的兼容别名。",
+                  "example": 0
+                },
+                "label": {
+                  "type": "string",
+                  "example": "SubHD default"
+                }
+              },
+              "additionalProperties": true
+            }
           },
           "details": {
             "type": "object",

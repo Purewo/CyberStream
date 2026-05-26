@@ -585,6 +585,17 @@ def _annotate_candidate_compatibility(item):
     return item
 
 
+def _default_candidate_download(candidate_id, provider_id, label):
+    return {
+        "id": f"{candidate_id}:0",
+        "candidate_id": candidate_id,
+        "provider_id": provider_id,
+        "download_index": 0,
+        "index": 0,
+        "label": label,
+    }
+
+
 def _candidate_sort_key(item, resource=None):
     provider_rank = {"subhd": 0, "srtku": 1}.get(item.get("provider_id"), 9)
     return (
@@ -617,6 +628,7 @@ def _normalize_subhd_item(item):
         "format": item.get("format") or "",
         "file_size": item.get("file_size") or "",
         "uploader": item.get("uploader") or "",
+        "downloads": [_default_candidate_download(candidate_id, "subhd", "SubHD default")],
         "details": {
             "source_key": sub_hash,
         },
@@ -644,6 +656,7 @@ def _normalize_srtku_item(item, film_title=None):
         "format": "",
         "file_size": "",
         "uploader": "",
+        "downloads": [_default_candidate_download(candidate_id, "srtku", "SrtKu default")],
         "details": {
             "source_key": detail_id,
         },
@@ -818,6 +831,14 @@ def _parse_candidate_id(candidate_id):
     if not source_key or not re.match(r"^[A-Za-z0-9_.-]+$", source_key):
         raise OnlineSubtitleError("Invalid subtitle candidate key", code=40063)
     return provider_id, source_key
+
+
+def _download_exception_message(provider_name, exc):
+    detail = str(exc).strip()
+    if len(detail) > 240:
+        detail = f"{detail[:237]}..."
+    suffix = f": {detail}" if detail else ""
+    return f"{provider_name} download failed: {exc.__class__.__name__}{suffix}"
 
 
 def _safe_download_filename(resource, provider_id, source_key, extension):
@@ -1196,7 +1217,16 @@ def normalize_downloaded_subtitle_file(resource, provider_id, source_key, filena
 def _download_subhd(resource, source_key):
     module = _load_skill_module("subhd_core")
     session = module.make_session()
-    result = module.download_subtitle(source_key, session=session, max_retries=5)
+    try:
+        result = module.download_subtitle(source_key, session=session, max_retries=5)
+    except OnlineSubtitleError:
+        raise
+    except Exception as exc:
+        raise OnlineSubtitleError(
+            _download_exception_message("SubHD", exc),
+            code=50260,
+            http_status=502,
+        ) from exc
     if not result.get("success"):
         raise OnlineSubtitleError(
             f"SubHD download failed: {result.get('reason') or 'unknown'}",
@@ -1218,7 +1248,16 @@ def _download_srtku(resource, source_key, download_index=0):
     module = _load_skill_module("srtku_core")
     session = module.make_session()
     detail_url = f"{module.BASE}/detail/{source_key}"
-    links = module.get_download_links(detail_url, session=session)
+    try:
+        links = module.get_download_links(detail_url, session=session)
+    except OnlineSubtitleError:
+        raise
+    except Exception as exc:
+        raise OnlineSubtitleError(
+            _download_exception_message("SrtKu", exc),
+            code=50263,
+            http_status=502,
+        ) from exc
     if not links:
         raise OnlineSubtitleError("SrtKu download links not found", code=50261, http_status=502)
 
@@ -1233,7 +1272,16 @@ def _download_srtku(resource, source_key, download_index=0):
         raise OnlineSubtitleError("SrtKu download link missing", code=50262, http_status=502)
 
     with tempfile.TemporaryDirectory(prefix="cyber-subtitle-") as tmpdir:
-        result = module.download_subtitle(download_url, outdir=tmpdir, session=session)
+        try:
+            result = module.download_subtitle(download_url, outdir=tmpdir, session=session)
+        except OnlineSubtitleError:
+            raise
+        except Exception as exc:
+            raise OnlineSubtitleError(
+                _download_exception_message("SrtKu", exc),
+                code=50263,
+                http_status=502,
+            ) from exc
         if not result.get("ok"):
             raise OnlineSubtitleError(
                 f"SrtKu download failed: {result.get('error') or 'unknown'}",

@@ -138,6 +138,8 @@
 - 显式传入 `srtku` 时后端会实际尝试该备用源，但受独立超时预算限制；超时会记录到 `providers.errors`，并返回 `reason=timeout`。
 - `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS` 默认改为 `5` 秒。
 - 字幕下载、手动上传和 WebVTT 预览转换默认不限制字幕文件大小；如需限制，可显式设置 `CYBER_ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES`、`CYBER_SUBTITLE_MANUAL_UPLOAD_MAX_BYTES` 或 `CYBER_SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES`。
+- 搜索候选现在固定带 `downloads` 数组，前端可使用 `items[].downloads[].download_index` 调用下载或绑定；SubHD 只有默认入口 `0`。
+- Provider 下载运行时异常会收敛成 `502` 来源错误并返回可读 `msg`，不再统一落到泛化 `50061`。
 
 ## 手动元数据匹配防幽灵数据
 
