@@ -346,18 +346,28 @@ const App = () => {
         ? rawCandidate.items
         : [];
       // mpv 在 native 进程里 sub-add 必须能直接 GET 到字幕文件，
-      // 后端给的 stream_url 通常是 `/api/v1/resources/.../stream?...`
-      // 这种相对路径——webview 里浏览器自己拼 origin 没问题，丢给 Rust
-      // 后 mpv 会因为不带 host 直接拒绝。这里统一拼成 `${apiBaseHost}/api/v1/...`：
-      // - http(s) 开头：直通
-      // - /api/* → 去掉 /api 前缀后接到 apiBase 上（apiBase 末尾就是 /api）
-      // - /v1/*  → 直接接到 apiBase 上
+      // 后端给的 url 形态有三种：
+      //   - 相对路径 `/api/v1/...` 或 `/v1/...`：webview 自己拼 origin 没问题，
+      //     丢给 Rust 后 mpv 不带 host 会拒，这里要拼成 `${apiBaseHost}/api/v1/...`
+      //   - 绝对 URL 命中 /api/v1/... 路径：后端在反代后面时可能 scheme 错（实际
+      //     对外 https，Flask 内部 http），URL 直接交给 mpv 会因 scheme 不一致
+      //     连不上。这种情况只取 pathname+search，丢弃 origin，跟当前 apiBaseHost
+      //     重新拼。仅本后端 /api/v1/ 路径处理；CDN / 外部 URL 原样返回。
+      //   - 其他非 / 开头的奇怪输入：原样返回不动。
       // 注意走 getApiBase()，让用户在「系统配置 → 后端服务器」改的 URL 立即生效
       // （走 platform.getApiBase()，PC 端会读 localStorage 里的 cyber_pc_api_base）。
       const apiBaseHost = getApiBase().replace(/\/api\/?$/, '');
       const resolveSubUrl = (u: string): string => {
         if (!u) return '';
-        if (/^https?:\/\//i.test(u)) return u;
+        if (/^https?:\/\//i.test(u)) {
+          try {
+            const parsed = new URL(u);
+            if (parsed.pathname.startsWith('/api/v1/')) {
+              return `${apiBaseHost}${parsed.pathname}${parsed.search}`;
+            }
+          } catch { /* malformed URL, fall through */ }
+          return u;
+        }
         if (u.startsWith('/api/')) return `${apiBaseHost}${u.substring(4)}`;
         if (u.startsWith('/v1/')) return `${apiBaseHost}${u}`;
         if (u.startsWith('/')) return `${apiBaseHost}${u}`;

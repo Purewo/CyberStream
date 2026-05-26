@@ -173,10 +173,29 @@ const parseDuration = (val: string | number | undefined): number => {
 };
 
 // Helper to fix asset urls relative to the current backend base.
+//
+// 三种输入：
+//   1. 相对 /api/... 或 /v1/... 路径 —— 拿当前 API_BASE origin 拼。
+//   2. 绝对 URL 命中本后端 /api/v1/... —— 后端可能因反代 scheme 处理不一致
+//      返回错的 scheme（比如对外 https，但 Flask 里 url_for 拼成 http），
+//      这时只取 pathname + search，丢弃 origin，跟当前 API_BASE 重新拼。
+//   3. 其他绝对 URL（CDN、外部站点）—— 原样返回，不动。
 const resolveAssetUrl = (url?: string) => {
   if (!url) return undefined;
-  if (url.startsWith('http')) return url;
   const base = getApiBase();
+  if (url.startsWith('http')) {
+    try {
+      const u = new URL(url);
+      // 仅当路径形如 /api/v1/... 时认作"本后端的资源 URL"。CDN 通常路径是
+      // /movies/poster/... 这类，不会撞上 /api/v1/，安全。
+      if (u.pathname.startsWith('/api/v1/')) {
+        return `${base}${u.pathname.substring(4)}${u.search}`;
+      }
+    } catch {
+      // URL 解析失败（极少见），退回原值。
+    }
+    return url;
+  }
   if (url.startsWith('/api/')) {
     return `${base}${url.substring(4)}`; // Replace /api with API_BASE
   }
@@ -324,5 +343,5 @@ const getDeviceId = () => {
 };
 
 
-export { fetchApi, fetchApiRaw, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId };
+export { fetchApi, fetchApiRaw, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, resolveAssetUrl };
 export type { ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse, ApiMovieList, RawApiResult };

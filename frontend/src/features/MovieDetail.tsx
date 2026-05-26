@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText, FolderSync } from 'lucide-react';
 import { Movie, PlayOptions, HistoryItem } from '../types';
-import { movieService } from '../api';
+import { movieService, resolveAssetUrl } from '../api';
 import { shellOpen, platform } from '../platform';
 import { launchExternalPlayerNative } from '../platform/nativePlayer';
 import { formatBytes, formatDuration } from '../utils';
@@ -434,8 +434,12 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
 
   const targetPlayResource = resumeRecord?.resourceId ? resourceGroups?.items?.find(r => r.id === resumeRecord.resourceId) : defaultPlayResource;
 
-  const externalVideoUrl = (targetPlayResource as any)?.playback?.external_player?.url
-    || (targetPlayResource as any)?.playback?.stream_url
+  // 后端在反代后面时，stream_url / external_player.url 可能带错 scheme（实际
+  // 对外 https，Flask 内部 http 拼出 http URL）。resolveAssetUrl 会把命中本后端
+  // /api/v1/ 的绝对 URL 重新按当前 API_BASE 的 origin 拼，避免 mpv / 外部播放器
+  // 拿到错的 scheme 直接连不上。
+  const externalVideoUrl = resolveAssetUrl((targetPlayResource as any)?.playback?.external_player?.url)
+    || resolveAssetUrl((targetPlayResource as any)?.playback?.stream_url)
     || (targetPlayResource ? movieService.getStreamUrl(targetPlayResource.id) : "");
 
   // PC 端外部播放器要预加载的默认字幕 URL。优先级：
