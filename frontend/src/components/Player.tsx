@@ -1067,15 +1067,22 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
       // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSubtitleId, currentEpisode?.id]);
 
-  const handlePreviewSubtitle = async (candidateId: string) => {
+  const handlePreviewSubtitle = async (candidate: any) => {
     if (!currentEpisode) return;
+    const candidateId = candidate?.id || candidate?.candidate_id;
+    if (!candidateId) return;
     setPreviewLoadingId(candidateId);
     try {
-        const downloadIndex = candidateId.startsWith('srtku:') ? 0 : undefined;
-        const blob = await movieService.previewOnlineSubtitle(currentEpisode.id, candidateId, downloadIndex);
-        if (blob) {
-            let text = await blob.text();
-            
+        // 后端 b1fd8be 起：candidate.downloads[0].download_index 是该候选默认的
+        // 下载选项。SubHD 当前固定 0；srtku 历来要 0；其他 provider 直接读
+        // candidate 自己声明的，不再按 provider 名字写死。fallback undefined 让
+        // 后端自己选默认。
+        const downloadIndex = (Array.isArray(candidate?.downloads) && candidate.downloads.length > 0)
+          ? candidate.downloads[0]?.download_index
+          : (candidateId.startsWith('srtku:') ? 0 : undefined);
+        const result = await movieService.previewOnlineSubtitle(currentEpisode.id, candidateId, downloadIndex);
+        if (result?.blob) {
+            const text = await result.blob.text();
             const vttBlob = processSubtitleText(text);
             if (previewSubtitleBlobUrl) {
                 URL.revokeObjectURL(previewSubtitleBlobUrl);
@@ -1084,7 +1091,8 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
             setPreviewSubtitleBlobUrl(url);
             setPreviewSubtitleCandidateId(candidateId);
         } else {
-            alert('获取预览字幕失败');
+            // 502/500 时透出后端 msg，便于诊断是 provider 哪一步挂了
+            alert(result?.errorMsg || '获取预览字幕失败');
         }
     } catch (e) {
         console.error(e);
@@ -1094,10 +1102,14 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
     }
   };
 
-  const handleBindSubtitle = async (candidateId: string) => {
+  const handleBindSubtitle = async (candidate: any) => {
     if (!currentEpisode) return;
+    const candidateId = candidate?.id || candidate?.candidate_id;
+    if (!candidateId) return;
     try {
-        const downloadIndex = candidateId.startsWith('srtku:') ? 0 : undefined;
+        const downloadIndex = (Array.isArray(candidate?.downloads) && candidate.downloads.length > 0)
+          ? candidate.downloads[0]?.download_index
+          : (candidateId.startsWith('srtku:') ? 0 : undefined);
         await movieService.bindOnlineSubtitle(currentEpisode.id, candidateId, downloadIndex);
         // Refresh episode resources to get the new subtitle
         const resData = await movieService.getResources(movie.id);
@@ -1632,15 +1644,15 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                                                                     <div className="flex justify-between items-center mt-1">
                                                                         <span className="text-[9px] text-gray-500">{Array.isArray(res.language) ? res.language.join(', ') : (typeof res.language === 'string' ? res.language : (res.language?.label || res.language?.name || res.language?.code || ''))}</span>
                                                                         <div className="flex gap-2">
-                                                                            <button 
-                                                                                onClick={() => handlePreviewSubtitle(res.id)}
+                                                                            <button
+                                                                                onClick={() => handlePreviewSubtitle(res)}
                                                                                 disabled={previewLoadingId === res.id}
                                                                                 className={`text-[9px] px-2 py-0.5 rounded border transition-colors ${previewSubtitleCandidateId === res.id ? 'bg-green-500/20 text-green-400 border-green-500/30 font-bold' : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'}`}
                                                                             >
                                                                                 {previewLoadingId === res.id ? '...' : (previewSubtitleCandidateId === res.id ? 'USING' : 'PREVIEW')}
                                                                             </button>
-                                                                            <button 
-                                                                                onClick={() => handleBindSubtitle(res.id)}
+                                                                            <button
+                                                                                onClick={() => handleBindSubtitle(res)}
                                                                                 className="text-[9px] bg-primary/20 text-primary px-2 py-0.5 rounded border border-primary/30 hover:bg-primary/40"
                                                                             >
                                                                                 BIND

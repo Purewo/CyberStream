@@ -146,7 +146,7 @@ export const movieService = {
     });
   },
 
-  previewOnlineSubtitle: async (resourceId: string, candidateId: string, downloadIndex?: number): Promise<Blob | null> => {
+  previewOnlineSubtitle: async (resourceId: string, candidateId: string, downloadIndex?: number): Promise<{ blob: Blob | null; errorMsg?: string }> => {
     try {
       const payload: any = { candidate_id: candidateId };
       if (downloadIndex !== undefined) {
@@ -159,10 +159,19 @@ export const movieService = {
         },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) return null;
-      return await res.blob();
-    } catch {
-      return null;
+      if (!res.ok) {
+        // 后端 b1fd8be 起 502/500 的失败 body 是 { code, msg }，把 msg 透出来给
+        // UI 提示用户具体是 provider 哪一步挂了，不再笼统 50061。
+        let errorMsg: string | undefined;
+        try {
+          const errBody = await res.json();
+          errorMsg = errBody?.msg;
+        } catch { /* 不是 JSON 就放弃，留空 */ }
+        return { blob: null, errorMsg };
+      }
+      return { blob: await res.blob() };
+    } catch (e: any) {
+      return { blob: null, errorMsg: e?.message };
     }
   },
 

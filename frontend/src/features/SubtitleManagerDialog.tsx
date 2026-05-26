@@ -56,10 +56,16 @@ export const SubtitleManagerDialog: React.FC<SubtitleManagerDialogProps> = ({
     }
   };
 
-  const handleBind = async (candidateId: string) => {
+  const handleBind = async (candidate: any) => {
+    const candidateId = candidate?.id || candidate?.candidate_id;
+    if (!candidateId) return;
     setIsProcessing(candidateId);
     try {
-      const res = await movieService.bindOnlineSubtitle(resourceId, candidateId);
+      // 后端 b1fd8be：candidate.downloads[0].download_index 是该候选默认下载选项。
+      const downloadIndex = (Array.isArray(candidate?.downloads) && candidate.downloads.length > 0)
+        ? candidate.downloads[0]?.download_index
+        : (candidateId.startsWith('srtku:') ? 0 : undefined);
+      const res = await movieService.bindOnlineSubtitle(resourceId, candidateId, downloadIndex);
       // Backend returns updated playback.subtitles
       if (res && res.items) {
           setSubtitles(res.items);
@@ -335,7 +341,7 @@ export const SubtitleManagerDialog: React.FC<SubtitleManagerDialogProps> = ({
                                     </div>
                                 </div>
                                 <button 
-                                    onClick={() => handleBind(res.id)}
+                                    onClick={() => handleBind(res)}
                                     disabled={isProcessing === res.id}
                                     className="self-end sm:self-auto shrink-0 flex items-center justify-center gap-2 bg-transparent border border-[#ffff00]/60 hover:bg-[#ffff00]/10 text-[#ffff00] px-6 py-2.5 text-xs font-['Orbitron'] font-bold tracking-[0.2em] transition-all disabled:opacity-50 min-w-[120px]"
                                 >
