@@ -577,10 +577,25 @@ const AboutCard: React.FC = () => {
   const [openapiVersion, setOpenapiVersion] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 后端官方更新检查结果。null = 还没查 / 不可用；对象 = 拿到了响应。
+  const [updateInfo, setUpdateInfo] = useState<import('../api/system').UpdateCheckResponse | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [pcRelease, setPcRelease] = useState<string | null>(null);
+  const isPc = platform().kind === 'pc';
+
+  useEffect(() => {
+    if (!isPc) return;
+    let cancelled = false;
+    import('../platform/pc').then(({ getPcRelease }) => {
+      if (!cancelled) setPcRelease(getPcRelease());
+    }).catch(() => { /* web 模式动态 import 失败，忽略 */ });
+    return () => { cancelled = true; };
+  }, [isPc]);
 
   const fetchBackend = async () => {
     setChecking(true);
     setError(null);
+    setUpdateError(null);
     try {
       const { systemService } = await import('../api');
       const info = await systemService.getDocsInfo();
@@ -589,6 +604,29 @@ const AboutCard: React.FC = () => {
         setOpenapiVersion(info.openapi_version || null);
       } else {
         setError('未能获取后端版本');
+      }
+      // 顺带拉一次后端官方"是否有更新"。失败不阻塞前后端版本对比展示。
+      // current_release 仅 PC 有意义，web 端不传走 web 默认。
+      try {
+        let currentRelease: string | undefined;
+        if (isPc) {
+          const { getPcRelease } = await import('../platform/pc');
+          currentRelease = getPcRelease();
+        }
+        const upd = await systemService.checkUpdate({
+          currentVersion: FRONTEND_VERSION,
+          currentRelease,
+          platform: isPc ? 'windows' : undefined,
+          arch: isPc ? 'x64' : undefined,
+        });
+        if (upd) {
+          setUpdateInfo(upd);
+        } else {
+          setUpdateError('后端未返回更新检查结果');
+        }
+      } catch (e) {
+        console.warn('checkUpdate failed', e);
+        setUpdateError('更新检查失败');
       }
     } catch (e) {
       console.error(e);
@@ -602,14 +640,14 @@ const AboutCard: React.FC = () => {
     fetchBackend();
   }, []);
 
-  // 简单语义化对比：相同视为同步；不同就提示。后端没有官方"latest"端点，所以
-  // "检查更新"只能告诉你"前端 vs 当前连接的后端"是否一致，不是和上游 GitHub 比。
+  // 简单语义化对比：相同视为同步；不同就提示。这是前端 vs 当前连接的后端，
+  // 不是和上游 GitHub 比；GitHub 那边的对比由 updateInfo 单独显示。
   const inSync = backendVersion !== null && backendVersion === FRONTEND_VERSION;
 
   const openExternal = async (url: string) => {
     try {
-      const { platform } = await import('../platform');
-      if (platform().kind === 'pc') {
+      const { platform: p } = await import('../platform');
+      if (p().kind === 'pc') {
         const mod = await import('@tauri-apps/plugin-shell');
         await mod.open(url);
         return;
@@ -619,6 +657,25 @@ const AboutCard: React.FC = () => {
     }
     window.open(url, '_blank', 'noopener,noreferrer');
   };
+
+  const downloadUpdate = async () => {
+    const dl = updateInfo?.selected_download;
+    if (!dl?.url) {
+      toast.error('当前没有推荐的下载项');
+      return;
+    }
+    await openExternal(dl.url);
+  };
+
+  // 后端不直接返 update_available，靠 current.release vs latest.release 判定。
+  // 两者都缺时退回 version 比较；都缺就当作"无信息可判断"，按最新处理。
+  const updateAvailable = (() => {
+    if (!updateInfo?.latest) return false;
+    const cur = updateInfo.current?.release || updateInfo.current?.version;
+    const lat = updateInfo.latest.release || updateInfo.latest.version;
+    if (!cur || !lat) return false;
+    return cur !== lat;
+  })();
 
   return (
     <div className="bg-[#0a0a12]/80 border border-white/10 p-6">
@@ -689,6 +746,18 @@ const AboutCard: React.FC = () => {
           <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
           {checking ? '检测中…' : '检查更新'}
         </button>
+        {updateAvailable && updateInfo?.selected_download?.url && (
+          <button
+            type="button"
+            onClick={downloadUpdate}
+            className="px-4 py-2 text-xs font-bold border border-amber-400 bg-amber-400/10 text-amber-300 hover:bg-amber-400 hover:text-black transition-colors flex items-center gap-2"
+          >
+            <ExternalLink size={14} /> 下载新版本
+            {updateInfo.latest?.release || updateInfo.latest?.version
+              ? ` ${updateInfo.latest.release || updateInfo.latest.version}`
+              : ''}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => openExternal(RELEASES_URL)}
@@ -712,10 +781,69 @@ const AboutCard: React.FC = () => {
         </button>
       </div>
 
+      {/* 后端官方更新检查结果 —— 后端发布系统只回认可的 CDN 地址，前端不再自拼 */}
+      {updateInfo && (
+        <div
+          className={`text-xs px-3 py-2 rounded mb-4 border ${
+            updateAvailable
+              ? 'border-amber-500/30 bg-amber-500/5 text-amber-300'
+              : 'border-green-500/30 bg-green-500/5 text-green-400'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            {updateAvailable ? (
+              <>
+                <Info size={14} />
+                <span>
+                  发现新版本：{updateInfo.latest?.release || updateInfo.latest?.version}
+                  {updateInfo.latest?.released_at && (
+                    <span className="ml-2 text-[10px] text-gray-500">
+                      （{new Date(updateInfo.latest.released_at).toLocaleDateString('zh-CN')}）
+                    </span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <>
+                <Check size={14} /> 当前已是最新版本
+              </>
+            )}
+          </div>
+          {updateAvailable && updateInfo.selected_download && (
+            <div className="text-[10px] text-gray-500 font-['Rajdhani'] leading-relaxed">
+              推荐下载：{updateInfo.selected_download.label || updateInfo.selected_download.variant} ·{' '}
+              {updateInfo.selected_download.name || updateInfo.selected_download.url}
+              {updateInfo.selected_download.size && (
+                <span className="ml-1">（{formatBytes(updateInfo.selected_download.size)}）</span>
+              )}
+            </div>
+          )}
+          {updateAvailable && updateInfo.latest?.notes && (
+            <div className="text-[10px] text-gray-500 font-['Rajdhani'] mt-1 leading-relaxed">
+              {updateInfo.latest.notes}
+            </div>
+          )}
+          {updateInfo.warnings && updateInfo.warnings.length > 0 && (
+            <div className="text-[10px] text-gray-500 font-['Rajdhani'] mt-1">
+              {updateInfo.warnings.map((w, i) => (
+                <div key={i}>· {w}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {!updateInfo && updateError && (
+        <div className="text-[11px] text-gray-500 font-['Rajdhani'] mb-4">
+          {updateError}（仅前后端版本对比可用）
+        </div>
+      )}
 
       <div className="mt-5 pt-4 border-t border-white/5 text-[11px] text-gray-500 font-['Rajdhani'] leading-relaxed">
-          当前没有官方升级 CDN，也没有内置一键更新（GitHub 在国内访问受限）。
-          新版本发布后请到「发布列表」手动下载替换，或自行从仓库拉取构建。
+          {isPc ? (
+            <>当前 PC 发行：{pcRelease || FRONTEND_VERSION}。下载链接由后端发布系统筛选，仅返回认可的 CDN 安装包地址。</>
+          ) : (
+            <>新版本发布后请到「发布列表」手动下载替换，或自行从仓库拉取构建。</>
+          )}
       </div>
     </div>
   );

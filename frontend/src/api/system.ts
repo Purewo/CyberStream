@@ -29,6 +29,77 @@ export interface TmdbConfigPatch {
   proxy_url?: string | null;
 }
 
+/** 更新检查请求参数 —— 详见后端 GET /v1/system/update-check 文档。 */
+export interface UpdateCheckParams {
+  /** 客户端主版本号，如 "1.21.1"。 */
+  currentVersion: string;
+  /** PC 发行标识，如 "1.21.1-pc.1"。**强烈建议传**，否则同主版本下 pc.1→pc.2 漏判。 */
+  currentRelease?: string;
+  /** 默认 windows。 */
+  platform?: 'windows' | 'macos' | 'linux';
+  /** 默认 x64。 */
+  arch?: 'x64' | 'arm64' | 'x86';
+  /** 不传时返回所有可用安装包并默认推荐 full。 */
+  variant?: 'lite' | 'full';
+}
+
+/** 单个可下载安装包条目（后端 GET /v1/system/update-check 真实形态）。 */
+export interface UpdateDownloadItem {
+  variant: 'lite' | 'full';
+  url: string;
+  /** 包文件名，如 "CyberStream_1.21.1-pc.2_full_x64.msi"。 */
+  name?: string;
+  /** 字节数。后端字段名是 `size`，不是 size_bytes。 */
+  size?: number;
+  sha256?: string;
+  /** 中文展示标签，如 "完整版 · 含本地后端 · 双击即用"。 */
+  label?: string;
+  /** Release notes 单条；通常为 null，由 latest.notes 兜底。 */
+  notes?: string | null;
+  platform?: string;
+  arch?: string;
+  /** true 表示链接是 CDN，发布系统已校验。 */
+  cdn?: boolean;
+  content_type?: string;
+}
+
+/** /v1/system/update-check 响应主体（v1 后端实测形态）。 */
+export interface UpdateCheckResponse {
+  channel?: string;
+  product?: string;
+  platform?: string;
+  arch?: string;
+  /** 后端处理这次请求的时间戳；用作 UI"上次检查"展示。 */
+  checked_at?: string;
+  /** 后端发布系统对当前安装的版本回显，含其感知到的后端运行版本。 */
+  current?: {
+    version: string;
+    release?: string | null;
+    backend_version?: string;
+  };
+  /** 后端发布系统标记的最新版本。 */
+  latest?: {
+    version: string;
+    release?: string;
+    tag?: string;
+    title?: string;
+    notes?: string | null;
+    notes_url?: string | null;
+    released_at?: string;
+    mandatory?: boolean;
+    minimum_supported_version?: string | null;
+    release_page_url?: string;
+  };
+  /** 该平台/架构下所有可用安装包。 */
+  downloads?: UpdateDownloadItem[];
+  /** 推荐的下载项；variant 不传时默认 full。 */
+  selected_download?: UpdateDownloadItem;
+  /** CDN 健康提示。 */
+  cdn?: { required?: boolean; validated?: boolean };
+  /** 发布清单缺失、非 CDN 地址被过滤等提示。 */
+  warnings?: string[];
+}
+
 export const systemService = {
   getNotifications: async (): Promise<Notification[]> => {
     // Not in OpenAPI, return empty
@@ -94,6 +165,19 @@ export const systemService = {
   // 用作"关于"页里检查后端版本是否与前端同步。
   getDocsInfo: async (): Promise<{ version: string; openapi_version: string } | null> => {
     return await fetchApi<{ version: string; openapi_version: string }>('/v1/docs');
+  },
+
+  // 后端官方更新检查接口。下载 URL 已由后端发布系统筛选，只会返回认可的 CDN
+  // 安装包地址；前端不要自行拼 GitHub/CDN 地址。current_release 必须传，否则
+  // 同主版本号下的 pc.1 → pc.2 更新会漏判。
+  checkUpdate: async (params: UpdateCheckParams): Promise<UpdateCheckResponse | null> => {
+    const qs = new URLSearchParams();
+    qs.set('current_version', params.currentVersion);
+    if (params.currentRelease) qs.set('current_release', params.currentRelease);
+    if (params.platform) qs.set('platform', params.platform);
+    if (params.arch) qs.set('arch', params.arch);
+    if (params.variant) qs.set('variant', params.variant);
+    return await fetchApi<UpdateCheckResponse>(`/v1/system/update-check?${qs.toString()}`);
   },
 
   // ─── TMDB 配置 ───

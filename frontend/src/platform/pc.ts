@@ -12,14 +12,16 @@ const STORAGE_KEYS = {
 } as const;
 
 /**
- * 桌面默认后端：测试期回到 https://pw.pioneer.fan:84/api（IPv6，TLS）。
- * 用户在「设置 → 后端服务器」填过的 localStorage 覆盖值优先生效；改默认
- * 不会动用户已配置的地址。
+ * 桌面默认后端：localhost 占位。
+ * - 完整版：Rust 起 sidecar 后会把这值覆盖成实际监听的 127.0.0.1:49152。
+ * - lite 版：用户必须自己进「设置 → 后端服务器」填后端地址。
  *
- * full 包带 sidecar 的场景需要在 Rust 那边监听 sidecar 起来后写入
- * localStorage 把这里覆盖掉。
+ * 用户在「设置 → 后端服务器」填过的 localStorage 覆盖值优先生效。
+ *
+ * 重要：发布到 GitHub 的代码这里必须保持 localhost 占位，不能写任何
+ * 真实后端地址（公网域名 / IP）——release 包一旦上传，会暴露私人服务。
  */
-const PC_DEFAULT_API_BASE = 'https://pw.pioneer.fan:84/api';
+const PC_DEFAULT_API_BASE = 'http://127.0.0.1:49152/api';
 
 // In-memory cache backed by localStorage. The Tauri webview's localStorage is
 // scoped to the app data directory, so values survive across launches without
@@ -79,6 +81,19 @@ export function createPcPlatform(): Platform {
 }
 
 /**
+ * PC 发行标识，对应后端 `/v1/system/update-check` 的 `current_release`。
+ *
+ * 注意它跟主版本号 1.21.1 区分：同一个主版本号下 PC 客户端可能多次出包
+ * （pc.1 / pc.2 ...），同主版本下也能升级。发版时同步改这里和 GitHub
+ * release tag —— 没有什么自动注入机制，最朴素的硬编码就是答案。
+ */
+const PC_RELEASE = '1.21.1-pc.2';
+
+export function getPcRelease(): string {
+  return PC_RELEASE;
+}
+
+/**
  * Update the persisted backend URL. Used by the M2 settings panel; exported
  * here (rather than on the Platform interface) because only PC has a
  * configurable backend — the Web build's API_BASE is baked in at build time.
@@ -86,6 +101,8 @@ export function createPcPlatform(): Platform {
 export function setApiBase(value: string): void {
   pcStorage.set(STORAGE_KEYS.apiBase, value.replace(/\/+$/, ''));
 }
+
+
 
 // ─── Proxy settings ───
 //
