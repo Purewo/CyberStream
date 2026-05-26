@@ -87,7 +87,7 @@ export function createPcPlatform(): Platform {
  * （pc.1 / pc.2 ...），同主版本下也能升级。发版时同步改这里和 GitHub
  * release tag —— 没有什么自动注入机制，最朴素的硬编码就是答案。
  */
-const PC_RELEASE = '1.21.1-pc.2';
+const PC_RELEASE = '1.21.1-pc.3';
 
 export function getPcRelease(): string {
   return PC_RELEASE;
