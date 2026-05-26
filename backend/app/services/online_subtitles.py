@@ -51,7 +51,6 @@ ONLINE_LANGUAGE_LABELS = {
     "ko": "Korean",
 }
 ONLINE_LANGUAGE_PRIORITY = ("zh-Hans", "zh-Hant", "zh", "en", "ja", "ko")
-BUNDLED_ONLINE_SUBTITLE_PROVIDER_DIR = Path(__file__).resolve().parent / "online_subtitle_providers"
 
 
 class OnlineSubtitleError(ValueError):
@@ -67,7 +66,13 @@ def _provider_dir():
     configured = configured or getattr(config, "GET_SUBTITLES_SKILL_DIR", None)
     if configured:
         return Path(configured).expanduser() / "scripts"
-    return BUNDLED_ONLINE_SUBTITLE_PROVIDER_DIR
+    for candidate in (
+        Path(__file__).resolve().parent / "online_subtitle_providers",
+        Path(config.BASE_DIR) / "backend" / "app" / "services" / "online_subtitle_providers",
+    ):
+        if candidate.exists():
+            return candidate
+    return Path(__file__).resolve().parent / "online_subtitle_providers"
 
 
 def _provider_script_path(module_name):
