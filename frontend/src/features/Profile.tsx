@@ -1303,6 +1303,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     message: string;
     desc?: string;
     onConfirm: () => void;
+    confirmLabel?: string;
+    tone?: 'danger' | 'info';
   } | null>(null);
   const [providerTypes, setProviderTypes] = useState<
     import("../types").StorageProviderType[]
@@ -1558,27 +1560,57 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     });
   };
 
-  const handleScanSource = async (id: number) => {
-    const { storageService } = await import("../api");
-    const res = await storageService.scanSource(id);
-    if (res.ok) {
-      window.dispatchEvent(new CustomEvent("cyber:scan:started"));
-      toast.success("全维度光学扫描已启动");
-    } else {
-      // 后端 40013 = 该存储源没被任何媒体库绑定，提示用户去绑定
-      toast.error(res.msg || "触发扫描失败。");
+  // 扫描前的 TMDB token 守门员：未配置就拦下来引导去「系统配置」，
+  // 不然 scanner 会以原始文件名建条目，关键词撞库刮到错电影 —— 完整版
+  // 全新装机的小白几乎必踩。已配置时静默放行。
+  const ensureTmdbConfiguredBeforeScan = async (proceed: () => void) => {
+    try {
+      const { systemService } = await import("../api");
+      const cfg = await systemService.getTmdbConfig();
+      if (cfg?.token_set) {
+        proceed();
+        return;
+      }
+    } catch (e) {
+      // 拿不到配置（比如 sidecar 还没起来）就先放行，让后端的真实错误反馈
+      console.warn("TMDB config probe failed, skipping guard", e);
+      proceed();
+      return;
     }
+    setConfirmAction({
+      message: "TMDB Token 还没配置，扫描会以文件名建条目，刮不到海报和正确的元数据。",
+      desc: "前往「系统配置」面板填入 v4 Bearer Token，保存即生效。",
+      confirmLabel: "前往配置",
+      tone: 'info',
+      onConfirm: () => setActiveTab("SYSTEM"),
+    });
+  };
+
+  const handleScanSource = async (id: number) => {
+    ensureTmdbConfiguredBeforeScan(async () => {
+      const { storageService } = await import("../api");
+      const res = await storageService.scanSource(id);
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent("cyber:scan:started"));
+        toast.success("全维度光学扫描已启动");
+      } else {
+        // 后端 40013 = 该存储源没被任何媒体库绑定，提示用户去绑定
+        toast.error(res.msg || "触发扫描失败。");
+      }
+    });
   };
 
   const handleScanLibrary = async (libraryId: number, libraryName: string) => {
-    const { libraryService } = await import("../api");
-    const res = await libraryService.scanLibrary(libraryId);
-    if (res.ok) {
-      window.dispatchEvent(new CustomEvent("cyber:scan:started"));
-      toast.success(`《${libraryName}》刮削任务已下发`);
-    } else {
-      toast.error(res.msg || "扫描启动失败");
-    }
+    ensureTmdbConfiguredBeforeScan(async () => {
+      const { libraryService } = await import("../api");
+      const res = await libraryService.scanLibrary(libraryId);
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent("cyber:scan:started"));
+        toast.success(`《${libraryName}》刮削任务已下发`);
+      } else {
+        toast.error(res.msg || "扫描启动失败");
+      }
+    });
   };
 
   const handleEditLibrarySubmit = async () => {
@@ -2344,6 +2376,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       <h4 className="font-['Orbitron'] font-bold text-white text-lg">
                         {lib.name}
                       </h4>
+                      <button
+                        onClick={() => handleDeleteLibrary(lib.id)}
+                        className="text-white/30 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded transition-all border border-transparent hover:border-red-500/30"
+                        title="删除媒体库（不影响存储资源）"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                     <p className="text-sm text-gray-400 mb-4">
                       {lib.description || "无描述 / No description."}
@@ -2484,45 +2523,55 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       </div>
       </div>
 
-      {confirmAction && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-          <div
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={() => setConfirmAction(null)}
-          ></div>
-          <div className="relative bg-[#0a0a12] border border-white/10 rounded-2xl w-full max-w-sm shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-8 animate-in zoom-in-95 duration-200 transition-all border-t-2 border-t-red-500/50">
-            <h3 className="text-xl font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-3">
-              <AlertTriangle className="text-red-500" size={24} />
-              确认执行
-            </h3>
-            <p className="text-gray-300 font-['Rajdhani'] mt-4 text-base">
-              {confirmAction.message}
-            </p>
-            {confirmAction.desc && (
-              <p className="text-xs text-gray-500 font-sans mt-2">
-                {confirmAction.desc}
+      {confirmAction && (() => {
+        const isInfo = confirmAction.tone === 'info';
+        const accentBorder = isInfo ? 'border-t-cyan-400/60' : 'border-t-red-500/50';
+        const accentIconColor = isInfo ? 'text-cyan-400' : 'text-red-500';
+        const accentBtn = isInfo
+          ? 'bg-cyan-400/10 border-cyan-400/40 text-cyan-300 hover:bg-cyan-400 hover:text-black'
+          : 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500 hover:text-black';
+        const heading = isInfo ? '需要先配置' : '确认执行';
+        const cancelLabel = isInfo ? '稍后' : 'ABORT';
+        return (
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+              onClick={() => setConfirmAction(null)}
+            ></div>
+            <div className={`relative bg-[#0a0a12] border border-white/10 rounded-2xl w-full max-w-sm shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-8 animate-in zoom-in-95 duration-200 transition-all border-t-2 ${accentBorder}`}>
+              <h3 className="text-xl font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-3">
+                <AlertTriangle className={accentIconColor} size={24} />
+                {heading}
+              </h3>
+              <p className="text-gray-300 font-['Rajdhani'] mt-4 text-base">
+                {confirmAction.message}
               </p>
-            )}
-            <div className="mt-8 flex gap-4">
-              <button
-                onClick={() => setConfirmAction(null)}
-                className="px-5 py-2.5 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-['Orbitron'] text-sm tracking-wider flex-1 transition-all"
-              >
-                ABORT
-              </button>
-              <button
-                onClick={() => {
-                  confirmAction.onConfirm();
-                  setConfirmAction(null);
-                }}
-                className="px-5 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-black font-['Orbitron'] text-sm tracking-wider transition-all flex items-center justify-center gap-2 flex-1"
-              >
-                PROCEED
-              </button>
+              {confirmAction.desc && (
+                <p className="text-xs text-gray-500 font-sans mt-2">
+                  {confirmAction.desc}
+                </p>
+              )}
+              <div className="mt-8 flex gap-4">
+                <button
+                  onClick={() => setConfirmAction(null)}
+                  className="px-5 py-2.5 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-['Orbitron'] text-sm tracking-wider flex-1 transition-all"
+                >
+                  {cancelLabel}
+                </button>
+                <button
+                  onClick={() => {
+                    confirmAction.onConfirm();
+                    setConfirmAction(null);
+                  }}
+                  className={`px-5 py-2.5 rounded-lg border font-['Orbitron'] text-sm tracking-wider transition-all flex items-center justify-center gap-2 flex-1 ${accentBtn}`}
+                >
+                  {confirmAction.confirmLabel || 'PROCEED'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {isAddingLibrary && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">

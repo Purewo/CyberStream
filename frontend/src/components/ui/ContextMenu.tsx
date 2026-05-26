@@ -68,15 +68,40 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ visible, x, y, movie, 
     { id: 'delete', icon: <Trash2 size={15} />, label: '覆写销毁', color: 'hover:text-red-500 hover:bg-red-500/10' },
   ];
 
+  // 海报作为标题区背景，给右键菜单顶部一点层次感。优先 backdrop（横图），
+  // 退而求其次 cover/poster。背景重模糊到只剩主色块，避免压住标题文字。
+  const headerBg = movie.backdrop_url || movie.cover_url || movie.poster_url || '';
+
   return (
-    <div 
+    <div
       ref={menuRef}
-      className="fixed z-[100] w-52 bg-[#12121A]/80 backdrop-blur-2xl border border-white/10 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.7)] flex flex-col p-1 animate-in fade-in zoom-in-95 duration-150 transform-gpu"
+      className="fixed z-[100] w-52 bg-[#12121A]/80 backdrop-blur-2xl border border-white/10 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.7)] flex flex-col p-1 animate-in fade-in zoom-in-95 duration-150 transform-gpu overflow-hidden"
       style={{ left: px, top: py, transformOrigin: 'top left' }}
     >
-      <div className="px-3 pt-2 pb-3 mb-1 border-b border-white/5 mx-1">
-        <h4 className="text-white font-bold text-sm truncate">{movie.title}</h4>
-        <p className="text-[10px] tracking-wider text-gray-500 font-['Orbitron'] mt-0.5">SYS_ID: {String(movie.id).substring(0,8).toUpperCase()}</p>
+      {headerBg && (
+        <>
+          <div
+            aria-hidden
+            className="absolute top-0 left-0 right-0 h-[58px] pointer-events-none"
+            style={{
+              backgroundImage: `url(${headerBg})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              opacity: 0.55,
+              filter: 'blur(28px) saturate(1.6)',
+              transform: 'scale(1.4)',
+              transformOrigin: 'center top',
+            }}
+          />
+          <div
+            aria-hidden
+            className="absolute top-0 left-0 right-0 h-[58px] pointer-events-none bg-gradient-to-t from-[#12121A]/70 via-[#12121A]/20 to-transparent"
+          />
+        </>
+      )}
+      <div className="relative px-3 pt-2 pb-3 mb-1 border-b border-white/5">
+        <h4 className="text-white font-bold text-sm truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">{movie.title}</h4>
+        <p className="text-[10px] tracking-wider text-gray-300 font-['Orbitron'] mt-0.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">SYS_ID: {String(movie.id).substring(0,8).toUpperCase()}</p>
       </div>
 
       <div className="flex flex-col gap-0.5">

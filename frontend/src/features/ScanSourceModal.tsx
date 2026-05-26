@@ -84,6 +84,18 @@ export const ScanSourceModal: React.FC<ScanSourceModalProps> = ({ sourceId, sour
   };
 
   const handleScan = async () => {
+    // 用户开了刮削但 TMDB 还没配 → 拦下来。关掉刮削是合法路径，不拦。
+    if (scrapeEnabled) {
+      try {
+        const { systemService } = await import('../api');
+        const cfg = await systemService.getTmdbConfig();
+        if (!cfg?.token_set) {
+          toast.error('已开启刮削但 TMDB Token 未配置。请先去「我的 → 系统配置」填入 v4 Bearer Token，或关闭本次扫描的刮削开关。');
+          return;
+        }
+      } catch { /* 探活失败放行，让后端给真实错误 */ }
+    }
+
     setIsScanning(true);
     const options: any = {
       scrape_enabled: scrapeEnabled,

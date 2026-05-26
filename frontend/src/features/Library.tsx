@@ -317,6 +317,15 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
         {activeLibraryId && activeLibraryId !== -1 && (
           <button
             onClick={async () => {
+              // TMDB 守门员：未配置就先 toast 引导，避免扫描跑出一堆错条目。
+              try {
+                const { systemService } = await import('../api');
+                const cfg = await systemService.getTmdbConfig();
+                if (!cfg?.token_set) {
+                  toast.error('TMDB Token 还没配置，请先去「我的 → 系统配置」填入 v4 Bearer Token，再触发扫描。');
+                  return;
+                }
+              } catch { /* 探活失败放行，让后端给真实错误 */ }
               const res = await libraryService.scanLibrary(activeLibraryId);
               if (res.ok) {
                  window.dispatchEvent(new CustomEvent("cyber:scan:started"));
