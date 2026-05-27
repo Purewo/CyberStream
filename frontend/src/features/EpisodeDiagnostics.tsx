@@ -1,9 +1,92 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, CheckCircle, Database, Server, Loader2, Play, FileJson } from 'lucide-react';
+import { ShieldAlert, CheckCircle, Database, Server, Loader2, Play, FileJson, AlertTriangle } from 'lucide-react';
 import { movieService, systemService } from '../api';
-import { MovieCard } from '../components/movies/Cards';
+import { resolveAssetUrl } from '../api/core';
+import { Movie } from '../types';
 
-export const EpisodeDiagnostics = ({ taxonomy }: { taxonomy?: any }) => {
+// 诊断卡片：跟 MovieCard 不一样的是这里要把 issue 信息当一等公民显示，
+// 海报 + 标题 + 问题 chip 放到一个无缝卡片里。MovieCard 本身已经是完整组件
+// （自带 hover、play 按钮、tech badge 蒙层），叠一层会层级混乱，所以重写。
+const DiagnosticCard: React.FC<{
+  item: any;
+  taxonomy?: any;
+  onMovieSelect?: (m: Movie) => void;
+}> = ({ item, taxonomy, onMovieSelect }) => {
+  const cover = item.poster_url ? resolveAssetUrl(item.poster_url) : '';
+  const issueChips = (item.metadata_issues || []).slice(0, 2).map((issue: any) => {
+    const t = taxonomy?.issue_codes?.find((c: any) => c.code === issue.code);
+    return t?.label || t?.label_en || issue.label || issue.code;
+  });
+
+  const handleClick = () => {
+    if (!onMovieSelect) return;
+    onMovieSelect({
+      id: item.movie_id,
+      title: item.title,
+      year: item.year,
+      poster_url: item.poster_url,
+      added_at: '',
+    } as unknown as Movie);
+  };
+
+  return (
+    <div
+      onClick={handleClick}
+      className="group/card relative cursor-pointer transition-transform duration-300 hover:scale-[1.04]"
+    >
+      <div className="relative bg-[#0a0a12] border border-white/10 group-hover/card:border-primary group-hover/card:shadow-[0_0_20px_rgba(var(--color-primary-rgb),0.2)] transition-all duration-300 overflow-hidden">
+        <div className="aspect-[2/3] w-full relative overflow-hidden">
+          {cover ? (
+            <img
+              src={cover}
+              alt={item.title}
+              referrerPolicy="no-referrer"
+              className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover/card:opacity-100 transition-opacity"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#15151c] to-black">
+              <div className="text-5xl font-black text-white/10 group-hover/card:text-primary/30 font-['Orbitron'] transition-colors px-4 text-center break-words">
+                {item.title?.charAt(0) || '?'}
+              </div>
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/85"></div>
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-red-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm border border-red-400/40 shadow-[0_0_10px_rgba(239,68,68,0.3)] pointer-events-none">
+            <AlertTriangle size={10} />
+            <span className="tracking-wider">待修复</span>
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
+            <div className="text-white text-sm font-bold leading-tight line-clamp-2 group-hover/card:text-primary transition-colors">
+              {item.title || 'Unknown'}
+            </div>
+            {item.year ? (
+              <div className="text-[11px] text-gray-400 mt-0.5 font-['Rajdhani']">{item.year}</div>
+            ) : null}
+          </div>
+        </div>
+        <div className="px-3 py-2 flex items-center justify-between text-[10px] text-primary-50 bg-black/40 border-t border-white/5">
+          <span>S {item.season_count || 0}</span>
+          <span>已修 {item.auto_update_count || 0}</span>
+        </div>
+        {issueChips.length > 0 && (
+          <div className="px-3 pb-3 pt-2 space-y-1">
+            {issueChips.map((label: string, idx: number) => (
+              <div
+                key={idx}
+                className="text-[10px] bg-red-500/15 text-red-300 px-2 py-1 rounded-sm border border-red-500/20 truncate text-center"
+                title={label}
+              >
+                {label}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const EpisodeDiagnostics = ({ taxonomy, onMovieSelect }: { taxonomy?: any; onMovieSelect?: (m: Movie) => void }) => {
   const [summary, setSummary] = useState<any>(null);
 
   // Helper to safely get counts from issues array
@@ -143,31 +226,7 @@ export const EpisodeDiagnostics = ({ taxonomy }: { taxonomy?: any }) => {
         {loading ? (
              <div className="col-span-full flex justify-center items-center h-48"><Loader2 className="animate-spin text-primary w-8 h-8" /></div>
         ) : items.map((item: any) => (
-            <div key={item.movie_id} className="relative group border border-primary-30 hover:border-primary transition-colors bg-[#0a0a12]">
-                <div className="absolute top-0 right-0 z-10 bg-red-500 text-white text-[10px] px-2 py-1 font-bold">
-                    待修复
-                </div>
-                <MovieCard movie={{ id: item.movie_id, title: item.title || 'Unknown', year: item.year || 0, added_at: '', poster_url: item.poster_url || '' } as any} />
-                <div className="p-3">
-                   <div className="text-xs text-primary-50 mb-1 break-all flex justify-between">
-                       <span>S: {item.season_count || 0}</span>
-                       <span>部分修复: {item.auto_update_count || 0}</span>
-                   </div>
-                   {item.metadata_issues?.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                          {item.metadata_issues.slice(0, 2).map((issue: any, idx: number) => {
-                             const taxonomyIssue = taxonomy?.issue_codes?.find((c: any) => c.code === issue.code);
-                             const label = taxonomyIssue?.label || taxonomyIssue?.label_en || issue.label || issue.code;
-                             return (
-                               <div key={idx} className="text-[10px] bg-red-500/20 text-red-400 px-1 py-0.5 whitespace-nowrap overflow-hidden text-ellipsis text-center" title={label}>
-                                  {label}
-                               </div>
-                             );
-                          })}
-                      </div>
-                   )}
-                </div>
-            </div>
+            <DiagnosticCard key={item.movie_id} item={item} taxonomy={taxonomy} onMovieSelect={onMovieSelect} />
         ))}
         {!loading && items.length === 0 && (
             <div className="col-span-full py-12 text-center text-primary-50">

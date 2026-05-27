@@ -35,6 +35,21 @@ export const storageService = {
     }
   },
 
+  // 刷新已保存存储源的目录缓存（AList/OpenList/光鸭走 alist 内核都吃这个）。
+  // 底层调上游 fs/list?refresh=true，不触发扫描和刮削。云盘新增文件但 alist
+  // 还没同步时调一次能立刻拿到最新列表。path 为空 = 刷新根目录。
+  refreshSourcePath: async (id: number, path?: string, dirsOnly: boolean = false): Promise<{ ok: boolean; msg?: string; items?: import('../types/index').FileItem[] }> => {
+    const body: any = { dirs_only: dirsOnly };
+    if (path && path !== '/') body.path = path;
+    const res = await fetchApiRaw<any>(`/v1/storage/sources/${id}/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return { ok: true, items: res.data?.items || [] };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}` };
+  },
+
   checkHealth: async (id: number): Promise<import('../types/index').StorageSourceHealth | null> => {
     const data = await fetchApi<import('../types/index').StorageSource>(`/v1/storage/sources/${id}/health`);
     return data?.health || null;
@@ -66,15 +81,28 @@ export const storageService = {
     }
   },
 
-  deleteSource: async (id: number, keepMetadata: boolean = false): Promise<boolean> => {
-    try {
-      const res = await fetch(`${getApiBase()}/v1/storage/sources/${id}?keep_metadata=${keepMetadata}`, {
-        method: 'DELETE'
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
+  // 删除存储源。
+  // - keepMetadata=true 是旧的「软断连」语义，资源记录留下变离线
+  // - keepMetadata=false 是「连根清空」，会级联删 media_resources / 库绑定 / 历史 / 字幕等
+  //   后端要求带保险柜 PIN（body.pin），前端拿到 40341/40344 自行决定怎么引导
+  // 返回 { ok, code, msg }，调用方按业务码做分支。
+  deleteSource: async (
+    id: number,
+    options: { keepMetadata?: boolean; pin?: string } = {},
+  ): Promise<{ ok: boolean; code?: number; msg?: string }> => {
+    const keepMetadata = options.keepMetadata === true;
+    const body: Record<string, unknown> = {};
+    if (options.pin) body.pin = options.pin;
+    const res = await fetchApiRaw<unknown>(
+      `/v1/storage/sources/${id}?keep_metadata=${keepMetadata}`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+    if (res.ok) return { ok: true, code: res.code };
+    return { ok: false, code: res.code, msg: res.msg };
   },
 
   previewStorage: async (type: string, config: any, targetPath: string = '/'): Promise<{ items: import('../types/index').FileItem[] | null, error?: string }> => {
@@ -110,6 +138,148 @@ export const storageService = {
     });
     if (res.ok || res.status === 202) return { ok: true };
     return { ok: false, msg: res.msg || `HTTP ${res.status}` };
-  }
+  },
+
+  // ─── 托管光鸭云盘 (GuangYaPan) ───
+  //
+  // 与普通 alist/webdav/local 不同——光鸭走 SMS 登录两步流程：
+  //   1. start: 发短信验证码，后端创建 source（auth_state=sms_pending）
+  //   2. verify: 提交 6 位验证码，source 翻成 ready，actions 全开
+  // 用户不接触 AList 内部参数；前端只保存 source.id 跟 auth_state。
+  // 完整契约：GET /v1/docs/frontend-managed-guangyapan
+  startGuangyapanSms: async (params: {
+    phone_number: string;
+    name?: string;
+    root_path?: string;
+    captcha_token?: string;
+  }): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/guangyapan/sms/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  verifyGuangyapanSms: async (sourceId: number, verifyCode: string): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/guangyapan/sms/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId, verify_code: verifyCode }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // ─── 托管天翼云盘 (TianYiCloud) ───
+  //
+  // 跟光鸭一样属于托管型挂载，但走二维码登录：
+  //   1. start: 后端创建 source（auth_state=qr_pending），返回 base64 二维码图片
+  //   2. poll:  前端每 2-3s 调一次，直到 authenticated=true / auth_state=ready
+  // 用户用天翼云盘 App 扫码确认后，后端拿到 OpenList 侧 token，挂载完成。
+  // 完整契约：GET /v1/docs/frontend-managed-tianyicloud
+  startTianyicloudQr: async (params: {
+    name?: string;
+  }): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/tianyicloud/qr/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  pollTianyicloudQr: async (sourceId: number): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/tianyicloud/qr/poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // ─── 通用托管二维码登录 (TianYiCloud / QuarkTV / UCTV) ───
+  //
+  // 这三家走同一份合同：
+  //   POST /v1/storage/managed/{slug}/qr/start  body { name?, ...protocol_extras }
+  //   POST /v1/storage/managed/{slug}/qr/poll   body { source_id }
+  // QuarkTV / UCTV 多一个可选的 link_method（download | streaming，默认 download），
+  // 天翼没这个字段——extras 里有就带上，没有就不带，后端兼容。
+  // 完整契约：GET /v1/docs/frontend-managed-tianyicloud / frontend-managed-quark-uc
+  startManagedQrLogin: async (
+    slug: string,
+    params: {
+      name?: string;
+      link_method?: 'download' | 'streaming';
+      root_folder_id?: string;
+      // 115cloud 专属：扫码端类型。后端默认 wechatmini，前端只在用户明确选择
+      // 「高级设置 / 切换扫码端」时才需要传值。其他 provider 不识别此字段。
+      qrcode_source?: 'web' | 'android' | 'ios' | 'tv' | 'alipaymini' | 'wechatmini' | 'qandroid';
+    },
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>(`/v1/storage/managed/${slug}/qr/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  pollManagedQrLogin: async (
+    slug: string,
+    sourceId: number,
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>(`/v1/storage/managed/${slug}/qr/poll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // ─── 通用托管 OAuth 登录 (BaiduNetdisk) ───
+  //
+  // 跟 QR 是兄弟接口，但走 OAuth 跳转：
+  //   POST /v1/storage/managed/{slug}/oauth/start  body { name?, ...protocol_extras }
+  //     → 返回 authorization_url，前端用浏览器打开（Web 端 window.open / PC 端 shellOpen）
+  //   POST /v1/storage/managed/{slug}/oauth/poll   body { source_id }
+  //     → 状态机：oauth_pending (waiting_for_authorization) → ready | oauth_failed
+  // 百度回调走后端 /oauth/callback，前端只 poll；不解析回调 URL。
+  // 完整契约：GET /v1/docs/frontend-managed-baidunetdisk
+  startManagedOauthLogin: async (
+    slug: string,
+    params: {
+      name?: string;
+      root_folder_path?: string;
+      // 百度网盘下载接口：official | crack | crack_video。普通用户不暴露，留空走后端默认。
+      download_api?: 'official' | 'crack' | 'crack_video';
+    },
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>(`/v1/storage/managed/${slug}/oauth/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  pollManagedOauthLogin: async (
+    slug: string,
+    sourceId: number,
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>(`/v1/storage/managed/${slug}/oauth/poll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
 };
 

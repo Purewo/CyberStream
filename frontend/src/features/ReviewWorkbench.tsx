@@ -4,10 +4,11 @@ import { ResourceGovernance } from './ResourceGovernance';
 import { EpisodeDiagnostics } from './EpisodeDiagnostics';
 import { OtherVideosArchive } from './OtherVideosArchive';
 import { movieService } from '../api';
+import { Movie } from '../types';
 
 const SUPPORTED_BUCKETS = ['resource_governance', 'episode_review', 'other_videos_archive'];
 
-export const ReviewWorkbench = () => {
+export const ReviewWorkbench = ({ onMovieSelect }: { onMovieSelect?: (m: Movie) => void }) => {
   const [activeTab, setActiveTab] = useState<string>('resource_governance');
   const [taxonomy, setTaxonomy] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -90,7 +91,7 @@ export const ReviewWorkbench = () => {
 
       <div className="mt-4">
         {activeTab === 'resource_governance' && <ResourceGovernance taxonomy={taxonomy} />}
-        {activeTab === 'episode_review' && <EpisodeDiagnostics taxonomy={taxonomy} />}
+        {activeTab === 'episode_review' && <EpisodeDiagnostics taxonomy={taxonomy} onMovieSelect={onMovieSelect} />}
         {activeTab === 'other_videos_archive' && <OtherVideosArchive />}
       </div>
     </div>

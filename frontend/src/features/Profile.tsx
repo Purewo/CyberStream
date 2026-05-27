@@ -4,6 +4,7 @@ import {
   Shield,
   Trophy,
   Settings2,
+  Settings,
   Hexagon,
   Lock,
   Terminal,
@@ -429,7 +430,7 @@ const TmdbSettingsCard: React.FC = () => {
       const data = res.data || {};
       if (data.token_set !== undefined) setTokenSet(!!data.token_set);
       setTokenInput("");
-      toast.success("TMDB 配置已保存（下次扫描立刻生效）");
+      toast.success("TMDB 配置已保存。注意：PC 单机版 / 自部署后端需重启服务后才会生效。");
     } catch (e) {
       console.error(e);
       toast.error("保存失败");
@@ -449,7 +450,7 @@ const TmdbSettingsCard: React.FC = () => {
       }
       setTokenSet(false);
       setTokenInput("");
-      toast.success("TMDB token 已清除");
+      toast.success("TMDB token 已清除。注意：PC 单机版 / 自部署后端需重启服务后才彻底生效。");
     } catch (e) {
       console.error(e);
       toast.error("清除失败");
@@ -1254,6 +1255,28 @@ interface ProfilePageProps {
   onRefreshFavorites?: () => Promise<void>;
 }
 
+const AddSourceButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const [hover, setHover] = useState(false);
+  const primary = 'var(--color-primary)';
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: hover ? primary : 'transparent',
+        color: hover ? '#000' : primary,
+        borderColor: primary,
+        boxShadow: hover ? `0 0 18px ${primary}` : 'none',
+        transition: 'background 180ms ease, color 180ms ease, box-shadow 180ms ease',
+      }}
+      className="px-4 py-2 rounded-xl border flex items-center gap-2 text-sm font-['Orbitron']"
+    >
+      <Plus size={16} /> 接入新链路
+    </button>
+  );
+};
+
 export const ProfilePage: React.FC<ProfilePageProps> = ({
   settings,
   setSettings,
@@ -1276,6 +1299,71 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   }, [initialTab]);
 
   const [scanningSource, setScanningSource] = useState<{ id: number; name: string } | null>(null);
+  // 删除存储源时弹的 PIN 输入框：保险柜 PIN 校验失败 / 非空依赖时触发。
+  const [pinPromptState, setPinPromptState] = useState<{
+    sourceId: number;
+    sourceName: string;
+    error?: string;
+  } | null>(null);
+  const [pinPromptValue, setPinPromptValue] = useState('');
+  const [pinPromptSubmitting, setPinPromptSubmitting] = useState(false);
+  // 正在 refresh 的存储源 id —— UI 上让 refresh 图标转起来。同时禁用 click，
+  // 避免用户连点导致后端排队。
+  const [refreshingSourceId, setRefreshingSourceId] = useState<number | null>(null);
+
+  // 手动刷新存储源根目录缓存：调 /v1/storage/sources/{id}/refresh，底层让 alist
+  // 重新拉一次 fs/list（refresh=true），不触发扫描和刮削。云盘新增文件但 alist
+  // 内部缓存还没同步时点这个能立刻看到。成功后顺便重新拉健康/列表，把统计信息
+  // 也更新一遍。
+  const handleRefreshSource = async (id: number, name: string) => {
+    if (refreshingSourceId !== null) return;
+    setRefreshingSourceId(id);
+    try {
+      const { storageService } = await import('../api');
+      const res = await storageService.refreshSourcePath(id);
+      if (res.ok) {
+        toast.success(`「${name}」目录缓存已刷新`);
+      } else {
+        toast.error(res.msg || '刷新失败');
+      }
+    } finally {
+      setRefreshingSourceId(null);
+    }
+  };
+
+  // 单个媒体库的整体刷新：把这个 lib 下所有 bindings 串行扫一遍
+  // (refreshSourcePath，dirs_only=true)。比按 source 一刷整个 alist 精准，
+  // 又比逐条点省事——一个 lib 通常只挂三五个目录，串行延迟可接受，
+  // 也避免对同一个 source 并发刷把后端打挂。busy state 用 lib.id 锁。
+  const [refreshingLibraryId, setRefreshingLibraryId] = useState<number | null>(null);
+  const handleRefreshLibrary = async (libId: number, libName: string) => {
+    if (refreshingLibraryId !== null) return;
+    const bindings = libraryBindings[libId] || [];
+    if (bindings.length === 0) {
+      toast.info('该媒体库还没有绑定目录');
+      return;
+    }
+    setRefreshingLibraryId(libId);
+    try {
+      const { storageService } = await import('../api');
+      let okCount = 0;
+      let firstErr: string | undefined;
+      for (const b of bindings) {
+        const res = await storageService.refreshSourcePath(b.source_id, b.root_path, true);
+        if (res.ok) okCount += 1;
+        else if (!firstErr) firstErr = res.msg;
+      }
+      if (okCount === bindings.length) {
+        toast.success(`「${libName}」${okCount} 个目录已刷新`);
+      } else if (okCount > 0) {
+        toast.error(`部分刷新失败（成功 ${okCount}/${bindings.length}）${firstErr ? '：' + firstErr : ''}`);
+      } else {
+        toast.error(firstErr || '刷新失败');
+      }
+    } finally {
+      setRefreshingLibraryId(null);
+    }
+  };
 
   // 成就：进 MEDALS tab 时按需加载，POST /unlock 后 dirty 标记触发刷新
   const [achievements, setAchievements] = useState<Achievement[]>([]);
@@ -1424,6 +1512,33 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setLibraryBindings(newBindings);
   };
 
+  // 媒体库卡片用库内代表 backdrop 当背景，让光秃秃的纯色卡有"内容感"。
+  // 走 /libraries/{id}/featured，第一项 backdrop 优先，回退 poster。
+  // 失败 / 空库（刚建未扫的）→ 不写入 map → 卡片退化成无图样式，不抛错。
+  const [libraryBackdrops, setLibraryBackdrops] = useState<Record<number, string>>({});
+  const loadLibraryBackdrops = async () => {
+    if (!libraries || libraries.length === 0) return;
+    const { libraryService } = await import("../api");
+    const results = await Promise.all(
+      libraries.map(async (lib) => {
+        try {
+          const featured = await libraryService.getFeatured(lib.id);
+          const first = featured.find((m) => m.backdrop_asset_url || m.backdrop_url || m.poster_asset_url || m.poster_url);
+          if (!first) return [lib.id, ''] as const;
+          const url = first.backdrop_asset_url || first.backdrop_url || first.poster_asset_url || first.poster_url || '';
+          return [lib.id, url] as const;
+        } catch {
+          return [lib.id, ''] as const;
+        }
+      }),
+    );
+    const map: Record<number, string> = {};
+    for (const [id, url] of results) {
+      if (url) map[id] = url;
+    }
+    setLibraryBackdrops(map);
+  };
+
   useEffect(() => {
     window.scrollTo(0, 0);
     if (activeTab === "RESOURCES") {
@@ -1432,6 +1547,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     if (activeTab === "LIBRARIES") {
       loadBindings();
       loadResources();
+      loadLibraryBackdrops();
     }
   }, [activeTab, libraries]);
 
@@ -1546,18 +1662,54 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   const handleDeleteSource = (id: number) => {
     setConfirmAction({
-      message: "Disconnect this source?",
+      message: "确定断开这条链路？",
       onConfirm: async () => {
         const { storageService } = await import("../api");
-        const success = await storageService.deleteSource(id, true);
-        if (success) {
+        const result = await storageService.deleteSource(id, { keepMetadata: true });
+        if (result.ok) {
           toast.success("存储源已断开连接");
           await loadResources();
         } else {
-          toast.error("断开存储源失败");
+          toast.error(result.msg || "断开存储源失败");
         }
       },
     });
+  };
+
+  // 真正发起删除存储源的请求 + 错误码分支处理。
+  // - 200 → 成功路径
+  // - 40341 → 后端未配置保险柜 PIN，引导去「数据保险库」tab
+  // - 40344 → PIN 错误，弹 PIN 输入框（已有 PIN 弹框时只更新 error）
+  // - 42900 → 扫描进行中，禁止删除
+  const performDeleteSource = async (id: number, name: string, pin?: string) => {
+    const { storageService } = await import("../api");
+    const result = await storageService.deleteSource(id, { keepMetadata: false, pin });
+    if (result.ok) {
+      setPinPromptState(null);
+      setPinPromptValue('');
+      toast.success("已卸载并清空该源的全部数据");
+      await loadResources();
+      await onRefreshLibraries();
+      return;
+    }
+    if (result.code === 40341) {
+      setPinPromptState(null);
+      toast.error("尚未设置保险柜 PIN，请先在「数据保险库」中配置");
+      setActiveTab("VAULT");
+      return;
+    }
+    if (result.code === 40344) {
+      // 已经在 PIN 弹框里 → 提示错误重试；从 confirmAction 进来 → 弹出 PIN 弹框
+      setPinPromptState({ sourceId: id, sourceName: name, error: "PIN 错误，请重试" });
+      setPinPromptValue('');
+      return;
+    }
+    if (result.code === 42900) {
+      setPinPromptState(null);
+      toast.error("扫描正在进行，无法删除存储源，请等扫描结束后再试");
+      return;
+    }
+    toast.error(result.msg || "强制卸载失败");
   };
 
   const handleForceDeleteOfflineSource = (id: number, name: string) => {
@@ -1566,18 +1718,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       desc: "该源已离线，确认卸载后会同步清空所有关联媒体记录与库绑定，避免前端遗留脏数据。此操作不可撤销。",
       confirmLabel: "强制卸载并清空",
       tone: "danger",
-      onConfirm: async () => {
-        const { storageService } = await import("../api");
-        const success = await storageService.deleteSource(id, false);
-        if (success) {
-          toast.success("已卸载并清空该源的全部数据");
-          await loadResources();
-          await onRefreshLibraries();
-        } else {
-          toast.error("强制卸载失败");
-        }
+      onConfirm: () => {
+        performDeleteSource(id, name);
       },
     });
+  };
+
+  const submitPinPrompt = async () => {
+    if (!pinPromptState) return;
+    if (!/^\d{6}$/.test(pinPromptValue)) {
+      setPinPromptState({ ...pinPromptState, error: "PIN 必须是 6 位数字" });
+      return;
+    }
+    setPinPromptSubmitting(true);
+    try {
+      await performDeleteSource(pinPromptState.sourceId, pinPromptState.sourceName, pinPromptValue);
+    } finally {
+      setPinPromptSubmitting(false);
+    }
   };
 
   // 扫描前的 TMDB token 守门员：未配置就拦下来引导去「系统配置」，
@@ -1751,6 +1909,36 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setBindBrowsePath("/");
   };
 
+  // 浏览节点目录弹窗里"刷新当前目录"按钮的 busy 态。区别于卡片上的 refresh
+  // ——卡片那个刷的是源根目录缓存，这里刷的是用户当前正在看的子目录。
+  const [isRefreshingBrowse, setIsRefreshingBrowse] = useState(false);
+
+  // 浏览模态里点刷新：调 /sources/{id}/refresh 时带上当前 bindBrowsePath，让 alist
+  // 重新拉这个子目录的 fs/list；成功后再走 loadBindBrowse 把列表刷新一遍。
+  // 失败则 toast 出来并停留在原列表，不动 path 也不清空数据。
+  const handleRefreshBrowsePath = async () => {
+    if (!bindingSourceId || isRefreshingBrowse) return;
+    setIsRefreshingBrowse(true);
+    try {
+      const { storageService } = await import('../api');
+      const res = await storageService.refreshSourcePath(
+        bindingSourceId,
+        bindBrowsePath,
+        true,
+      );
+      if (!res.ok) {
+        toast.error(res.msg || '刷新失败');
+        return;
+      }
+      // refresh 接口本身就返回新一轮目录列表，但格式跟 getSourceBrowse 不一定
+      // 完全一致；为了语义一致用现成 loadBindBrowse 重读一次。
+      await loadBindBrowse(bindBrowsePath);
+      toast.success('当前目录缓存已刷新');
+    } finally {
+      setIsRefreshingBrowse(false);
+    }
+  };
+
   const loadBindBrowse = async (path: string = "/") => {
     if (!bindingSourceId) return;
     setIsBindBrowsing(true);
@@ -1919,7 +2107,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       case "REVIEW":
         return (
           <div className="animate-in slide-in-from-right-4 fade-in duration-300 -mt-24 -mx-4 md:-mx-12">
-            <ReviewWorkbench />
+            <ReviewWorkbench onMovieSelect={onMovieSelect} />
           </div>
         );
       case "VAULT":
@@ -2068,12 +2256,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 </p>
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => setIsAddingResource(true)}
-                  className="px-4 py-2 rounded-xl border border-primary/50 text-primary hover:bg-primary hover:text-black hover:border-primary hover:shadow-[0_0_15px_var(--color-primary)] flex items-center gap-2 text-sm font-['Orbitron'] transition-all"
-                >
-                  <Plus size={16} /> 接入新链路
-                </button>
+                <AddSourceButton onClick={() => setIsAddingResource(true)} />
               </div>
             </div>
 
@@ -2202,6 +2385,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
                   {/* Operational Toolbar */}
                   <div className="relative z-10 pt-3 border-t border-white/5 flex gap-2 justify-end items-center mt-auto">
+                    {res.actions?.can_refresh && (
+                      <button
+                        title="刷新目录缓存（云盘新增文件但 AList 还没同步时用）"
+                        onClick={() => handleRefreshSource(res.id, res.name)}
+                        disabled={refreshingSourceId === res.id}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-emerald-500/50 text-emerald-500/70 hover:text-emerald-400 hover:bg-emerald-500/10 hover:shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all duration-300 group/btn disabled:opacity-50 disabled:cursor-wait"
+                      >
+                        <RefreshCw
+                          size={14}
+                          className={`group-hover/btn:scale-110 transition-transform ${refreshingSourceId === res.id ? 'animate-spin' : ''}`}
+                        />
+                      </button>
+                    )}
                     {res.actions?.can_scan && (
                       <button
                         title="触发全量/增量扫描更新"
@@ -2230,25 +2426,16 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     )}
                     <div className="flex-1"></div>
                     {res.guards?.can_delete_directly === false ? (
-                      res.health?.status === "offline" ? (
-                        <button
-                          title="该源已离线，强制卸载并清空所有关联数据"
-                          onClick={() => handleForceDeleteOfflineSource(res.id, res.name)}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-red-500/30 hover:border-red-500 text-red-500/80 hover:text-red-400 hover:bg-red-500/15 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] transition-all duration-300 group/btn"
-                        >
-                          <Trash2
-                            size={14}
-                            className="group-hover/btn:scale-110 transition-transform"
-                          />
-                        </button>
-                      ) : (
-                        <button
-                          title="状态受保护：存在依赖项或系统默认节点，无法直接卸载"
-                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 text-gray-600 cursor-not-allowed"
-                        >
-                          <Lock size={14} />
-                        </button>
-                      )
+                      <button
+                        title="该源有依赖项（媒体记录或库绑定），强制卸载需要保险柜 PIN 校验。卸载会同时清空所有关联数据。"
+                        onClick={() => handleForceDeleteOfflineSource(res.id, res.name)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-red-500/30 hover:border-red-500 text-red-500/80 hover:text-red-400 hover:bg-red-500/15 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] transition-all duration-300 group/btn"
+                      >
+                        <Trash2
+                          size={14}
+                          className="group-hover/btn:scale-110 transition-transform"
+                        />
+                      </button>
                     ) : (
                       <button
                         title="断开/卸载该节点"
@@ -2400,22 +2587,52 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {libraries && libraries.length > 0 ? (
-                libraries.map((lib) => (
+                libraries.map((lib) => {
+                  const backdrop = libraryBackdrops[lib.id];
+                  return (
                   <div
                     key={lib.id}
-                    className="border border-white/10 bg-[#0a0a12]/80 p-5 rounded-xl hover:border-primary/50 transition-colors"
+                    className="relative overflow-hidden border border-white/10 bg-[#0a0a12]/80 p-5 rounded-xl hover:border-primary/50 transition-colors group/lib"
                   >
+                    {backdrop && (
+                      <>
+                        <img
+                          src={backdrop}
+                          alt=""
+                          aria-hidden
+                          loading="lazy"
+                          className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover/lib:opacity-40 transition-opacity duration-500 pointer-events-none"
+                        />
+                        {/* 双层渐变蒙版：从底向上压暗，保证名称/按钮/绑定列表都能读 */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a12] via-[#0a0a12]/85 to-[#0a0a12]/30 pointer-events-none"></div>
+                        <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-[#0a0a12]/60 pointer-events-none"></div>
+                      </>
+                    )}
+                    <div className="relative z-10">
                     <div className="flex justify-between items-start mb-4">
                       <h4 className="font-['Orbitron'] font-bold text-white text-lg">
                         {lib.name}
                       </h4>
-                      <button
-                        onClick={() => handleDeleteLibrary(lib.id)}
-                        className="text-white/30 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded transition-all border border-transparent hover:border-red-500/30"
-                        title="删除媒体库（不影响存储资源）"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleRefreshLibrary(lib.id, lib.name)}
+                          disabled={refreshingLibraryId === lib.id}
+                          className="text-white/30 hover:text-emerald-400 hover:bg-emerald-400/10 p-1.5 rounded transition-all border border-transparent hover:border-emerald-400/30 disabled:opacity-100 disabled:text-emerald-400 disabled:cursor-wait"
+                          title="刷新该库下所有绑定目录缓存"
+                        >
+                          <RefreshCw
+                            size={14}
+                            className={refreshingLibraryId === lib.id ? 'animate-spin' : ''}
+                          />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLibrary(lib.id)}
+                          className="text-white/30 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded transition-all border border-transparent hover:border-red-500/30"
+                          title="删除媒体库（不影响存储资源）"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
                     <p className="text-sm text-gray-400 mb-4">
                       {lib.description || "无描述 / No description."}
@@ -2427,22 +2644,27 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                           setEditingLibraryName(lib.name);
                           setEditingLibraryDescription(lib.description || "");
                         }}
-                        className="text-xs bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-1.5 rounded transition-colors text-white font-['Rajdhani']"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-amber-400/50 text-amber-400/70 hover:text-amber-300 hover:bg-amber-400/10 hover:shadow-[0_0_15px_rgba(251,191,36,0.4)] transition-all duration-300 group/btn"
+                        title="编辑设置"
+                        aria-label="编辑设置"
                       >
-                        编辑设置
+                        <Settings size={14} className="group-hover/btn:scale-110 group-hover/btn:rotate-45 transition-transform" />
                       </button>
                       <button
                         onClick={() => handleOpenBinding(lib.id)}
-                        className="text-xs bg-primary/20 border border-primary/30 hover:bg-primary/40 px-3 py-1.5 rounded transition-colors text-primary font-['Rajdhani']"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-fuchsia-500/50 text-fuchsia-500/70 hover:text-fuchsia-400 hover:bg-fuchsia-500/10 hover:shadow-[0_0_15px_rgba(217,70,239,0.4)] transition-all duration-300 group/btn"
+                        title="绑定目录"
+                        aria-label="绑定目录"
                       >
-                        绑定目录
+                        <FolderTree size={14} className="group-hover/btn:scale-110 transition-transform" />
                       </button>
                       <button
                         onClick={() => handleScanLibrary(lib.id, lib.name)}
-                        className="text-xs bg-secondary/15 border border-secondary/40 hover:bg-secondary/30 px-3 py-1.5 rounded transition-colors text-secondary font-['Rajdhani'] flex items-center gap-1"
-                        title="扫描并刮削该媒体库已绑定的所有目录"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-cyan-500/50 text-cyan-500/70 hover:text-cyan-400 hover:bg-cyan-500/10 hover:shadow-[0_0_15px_rgba(6,182,212,0.4)] transition-all duration-300 group/btn"
+                        title="扫描刮削（扫描并刮削该媒体库已绑定的所有目录）"
+                        aria-label="扫描刮削"
                       >
-                        <ScanLine size={12} /> 扫描刮削
+                        <Zap size={14} className="group-hover/btn:scale-110 transition-transform" />
                       </button>
                     </div>
                     {libraryBindings[lib.id] &&
@@ -2490,8 +2712,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                           </div>
                         </div>
                       )}
+                    </div>
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="col-span-full h-48 border border-dashed border-white/20 flex flex-col items-center justify-center text-gray-500 rounded-xl">
                   <FolderTree size={32} className="mb-2 opacity-50" />
@@ -2564,7 +2788,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           ? 'bg-cyan-400/10 border-cyan-400/40 text-cyan-300 hover:bg-cyan-400 hover:text-black'
           : 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500 hover:text-black';
         const heading = isInfo ? '需要先配置' : '确认执行';
-        const cancelLabel = isInfo ? '稍后' : 'ABORT';
+        const cancelLabel = isInfo ? '稍后' : '取消';
         return (
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
             <div
@@ -2598,13 +2822,74 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   }}
                   className={`px-5 py-2.5 rounded-lg border font-['Orbitron'] text-sm tracking-wider transition-all flex items-center justify-center gap-2 flex-1 ${accentBtn}`}
                 >
-                  {confirmAction.confirmLabel || 'PROCEED'}
+                  {confirmAction.confirmLabel || '确认'}
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+
+      {pinPromptState && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => {
+              if (pinPromptSubmitting) return;
+              setPinPromptState(null);
+              setPinPromptValue('');
+            }}
+          ></div>
+          <div className="relative bg-[#0a0a12] border border-white/10 rounded-2xl w-full max-w-sm shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-8 animate-in zoom-in-95 duration-200 transition-all border-t-2 border-t-red-500/50">
+            <h3 className="text-xl font-['Orbitron'] font-bold text-white mb-2 flex items-center gap-3">
+              <Lock className="text-red-500" size={22} />
+              请输入保险柜 PIN
+            </h3>
+            <p className="text-gray-400 font-['Rajdhani'] mt-3 text-sm">
+              强制卸载存储源「{pinPromptState.sourceName}」需要保险柜 PIN 校验。
+            </p>
+            <p className="text-[11px] text-gray-500 font-sans mt-2">
+              如果忘记 PIN 或还没设置，请到「数据保险库」面板配置。
+            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              maxLength={6}
+              value={pinPromptValue}
+              onChange={(e) => setPinPromptValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !pinPromptSubmitting) submitPinPrompt();
+              }}
+              placeholder="6 位数字 PIN"
+              className="mt-5 w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white font-mono text-center tracking-[0.6em] focus:outline-none focus:border-red-500/60 focus:shadow-[0_0_15px_rgba(239,68,68,0.2)] transition-all"
+            />
+            {pinPromptState.error && (
+              <p className="text-xs text-red-400 mt-2 font-['Rajdhani']">{pinPromptState.error}</p>
+            )}
+            <div className="mt-6 flex gap-4">
+              <button
+                disabled={pinPromptSubmitting}
+                onClick={() => {
+                  setPinPromptState(null);
+                  setPinPromptValue('');
+                }}
+                className="px-5 py-2.5 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-['Orbitron'] text-sm tracking-wider flex-1 transition-all disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                disabled={pinPromptSubmitting || pinPromptValue.length !== 6}
+                onClick={submitPinPrompt}
+                className="px-5 py-2.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-black font-['Orbitron'] text-sm tracking-wider flex-1 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:bg-red-500/10 disabled:hover:text-red-500"
+              >
+                {pinPromptSubmitting && <Loader2 size={14} className="animate-spin" />}
+                确认卸载
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isAddingLibrary && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
@@ -2655,13 +2940,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   onClick={() => setIsAddingLibrary(false)}
                   className="px-6 py-3 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-['Orbitron'] text-sm tracking-wider flex-1 transition-all"
                 >
-                  ABORT
+                  取消
                 </button>
                 <button
                   onClick={handleCreateLibrary}
                   className="px-6 py-3 rounded-lg bg-primary/10 border border-primary/50 text-primary hover:bg-primary hover:text-black font-['Orbitron'] text-sm tracking-wider transition-all flex items-center justify-center gap-2 flex-1 shadow-[0_0_20px_rgba(0,243,255,0.15)]"
                 >
-                  <Save size={16} /> CREATE
+                  <Save size={16} /> 创建
                 </button>
               </div>
             </div>
@@ -2692,7 +2977,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="space-y-6">
               <div>
                 <label className="block text-xs font-['Orbitron'] text-gray-500 tracking-widest mb-2">
-                  库名称 IDENTIFIER
+                  库名称
                 </label>
                 <input
                   type="text"
@@ -2704,7 +2989,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               </div>
               <div>
                 <label className="block text-xs font-['Orbitron'] text-gray-500 tracking-widest mb-2">
-                  描述信息 DESCRIPTION
+                  描述信息
                 </label>
                 <textarea
                   value={editingLibraryDescription}
@@ -2718,22 +3003,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   onClick={() => setEditingLibraryId(null)}
                   className="px-5 py-3 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-['Orbitron'] text-sm tracking-wider transition-all"
                 >
-                  ABORT
-                </button>
-                <button
-                  onClick={() =>
-                    editingLibraryId && handleDeleteLibrary(editingLibraryId)
-                  }
-                  className="px-5 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-black font-['Orbitron'] text-sm tracking-wider transition-all flex items-center justify-center gap-2"
-                >
-                  <Trash2 size={16} /> DELETE
+                  取消
                 </button>
                 <div className="flex-1"></div>
                 <button
                   onClick={handleEditLibrarySubmit}
                   className="px-8 py-3 rounded-lg bg-primary/10 border border-primary/50 text-primary hover:bg-primary hover:text-black font-['Orbitron'] text-sm tracking-wider transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.15)]"
                 >
-                  <Save size={16} /> SAVE
+                  <Save size={16} /> 保存
                 </button>
               </div>
             </div>
@@ -2769,6 +3046,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <span className="text-primary font-mono text-sm flex-1 truncate">
                   {bindBrowsePath}
                 </span>
+                <button
+                  title="刷新当前目录缓存（云盘新增文件但 AList 还没同步时用）"
+                  onClick={handleRefreshBrowsePath}
+                  disabled={isRefreshingBrowse}
+                  className="px-2 py-0.5 rounded bg-white/10 hover:bg-emerald-500/20 hover:text-emerald-400 transition-colors border border-white/5 hover:border-emerald-500/40 text-[10px] text-white flex items-center gap-1 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  <RefreshCw size={11} className={isRefreshingBrowse ? 'animate-spin' : ''} />
+                  REFRESH
+                </button>
                 {bindBrowsePath !== "/" && bindBrowsePath !== "" && (
                   <button
                     onClick={() => {
@@ -2781,8 +3067,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                           : (isAbsolute ? "/" : "") + parts.join("/");
                       loadBindBrowse(parentPath === "" ? "/" : parentPath);
                     }}
-                    className="ml-auto px-2 py-0.5 rounded bg-white/10 hover:bg-primary/20 hover:text-primary transition-colors border border-white/5 hover:border-primary text-[10px] text-white"
+                    className="px-2 py-0.5 rounded bg-white/10 hover:bg-blue-500/20 hover:text-blue-400 transition-colors border border-white/5 hover:border-blue-500/40 text-[10px] text-white flex items-center gap-1"
                   >
+                    <ChevronLeft size={11} />
                     UP DIR
                   </button>
                 )}

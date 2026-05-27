@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Loader2, Plus, Link as LinkIcon, Search, AlertCircle, X, Check, Sparkles } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Loader2, Plus, Link as LinkIcon, Search, AlertCircle, X, Check, Sparkles, RefreshCcw } from "lucide-react";
 import { movieService, libraryService } from "../api";
 import { toast } from "../utils";
 import { Library as LibraryType, Movie } from "../types";
@@ -293,6 +293,17 @@ export const OtherVideosArchive = () => {
   const [attachModalItem, setAttachModalItem] = useState<any>(null);
   const [matchModalItem, setMatchModalItem] = useState<any>(null);
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchRunning, setBatchRunning] = useState(false);
+
+  const selectableItems = useMemo(
+    () => items.filter(it => !!it.movie_id),
+    [items]
+  );
+  const allSelectableSelected =
+    selectableItems.length > 0 &&
+    selectableItems.every(it => selectedIds.has(it.movie_id));
+
   const fetchItems = async (p = 1, kw = appliedKeyword) => {
     setLoading(true);
     setError("");
@@ -301,6 +312,7 @@ export const OtherVideosArchive = () => {
       setItems(res.items || []);
       setPagination(res.meta);
       setPage(p);
+      setSelectedIds(new Set());
     } catch (e: any) {
       setError(e.message || "获取其他视频归档失败");
     } finally {
@@ -316,6 +328,85 @@ export const OtherVideosArchive = () => {
     setAppliedKeyword(keyword.trim());
   };
 
+  const toggleSelect = (movieId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(movieId)) next.delete(movieId);
+      else next.add(movieId);
+      return next;
+    });
+  };
+
+  const togglePageSelect = () => {
+    setSelectedIds(prev => {
+      if (allSelectableSelected) {
+        const next = new Set(prev);
+        selectableItems.forEach(it => next.delete(it.movie_id));
+        return next;
+      }
+      const next = new Set(prev);
+      selectableItems.forEach(it => next.add(it.movie_id));
+      return next;
+    });
+  };
+
+  const handleBatchReScrape = async () => {
+    const movieIds = Array.from(selectedIds);
+    if (movieIds.length === 0) return;
+    setBatchRunning(true);
+    try {
+      const plan = await movieService.planBatchReScrapeMetadata({
+        movie_ids: movieIds,
+        limit: movieIds.length,
+      });
+      const applyPayload = plan?.apply_payload;
+      const planItems = applyPayload?.items;
+      if (!planItems || planItems.length === 0) {
+        toast.error("后端未生成可执行的重刮计划");
+        return;
+      }
+      const job = await movieService.startBatchReScrapeMetadataJob({
+        items: planItems,
+      });
+      const jobAny = job as any;
+      const jobId = jobAny?.job?.id || jobAny?.id;
+      if (jobId) {
+        toast.success(`已提交 ${planItems.length} 项批量重刮任务`);
+        setSelectedIds(new Set());
+        window.dispatchEvent(new CustomEvent('cyber:job:started', {
+          detail: { jobId, label: `批量重刮元数据 (${planItems.length} 项)` },
+        }));
+      } else if (job) {
+        toast.success(`已提交 ${planItems.length} 项批量重刮任务，后台执行中`);
+        setSelectedIds(new Set());
+        setTimeout(() => {
+          fetchItems(page, appliedKeyword);
+          window.dispatchEvent(new CustomEvent('movie-updated'));
+        }, 800);
+      } else {
+        toast.error("提交失败");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "批量重刮失败");
+    } finally {
+      setBatchRunning(false);
+    }
+  };
+
+  // 监听全局 job 完成事件，刷新归档列表（重刮成功的条目会从 review 池里出列）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ jobId?: string; status?: string }>).detail;
+      if (!detail) return;
+      if (detail.status === 'succeeded' || detail.status === 'failed') {
+        fetchItems(page, appliedKeyword);
+        window.dispatchEvent(new CustomEvent('movie-updated'));
+      }
+    };
+    window.addEventListener('cyber:job:finished', handler);
+    return () => window.removeEventListener('cyber:job:finished', handler);
+  }, [page, appliedKeyword]);
+
   return (
     <div className="bg-[#0a0a0a] border border-primary-30 text-gray-200">
       <div className="p-4 border-b border-primary-30 flex items-center justify-between bg-primary-5">
@@ -324,6 +415,16 @@ export const OtherVideosArchive = () => {
           其他视频归档池
         </h2>
         <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBatchReScrape}
+              disabled={batchRunning}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-black hover:bg-primary-hover transition-colors disabled:opacity-50 text-xs font-bold uppercase tracking-wider"
+            >
+              {batchRunning ? <Loader2 className="animate-spin w-3.5 h-3.5" /> : <RefreshCcw className="w-3.5 h-3.5" />}
+              批量重刮 ({selectedIds.size})
+            </button>
+          )}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -360,6 +461,16 @@ export const OtherVideosArchive = () => {
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-primary-50">
+                  <th className="p-3 font-normal tracking-wide uppercase w-10">
+                    <input
+                      type="checkbox"
+                      checked={allSelectableSelected}
+                      onChange={togglePageSelect}
+                      disabled={selectableItems.length === 0}
+                      className="accent-primary cursor-pointer disabled:cursor-not-allowed"
+                      title={allSelectableSelected ? "取消全选当前页" : "全选当前页"}
+                    />
+                  </th>
                   <th className="p-3 font-normal tracking-wide uppercase">视频源标识</th>
                   <th className="p-3 font-normal tracking-wide uppercase">识别结果 / 标题</th>
                   <th className="p-3 font-normal tracking-wide uppercase">元数据状态</th>
@@ -371,8 +482,20 @@ export const OtherVideosArchive = () => {
                   const recommendation = item.recommended_resolution || 'create_manual_movie';
                   const matchPreferred = recommendation === 'match_metadata';
                   const matchAvailable = !!item.actions?.match_metadata && !!item.movie_id;
+                  const movieId = item.movie_id as string | undefined;
+                  const checked = !!movieId && selectedIds.has(movieId);
                   return (
                   <tr key={item.resource_id || index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <td className="p-3 align-top">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => movieId && toggleSelect(movieId)}
+                        disabled={!movieId}
+                        className="accent-primary cursor-pointer disabled:cursor-not-allowed"
+                        title={movieId ? "选中以加入批量重刮" : "缺少 movie_id，无法批量重刮"}
+                      />
+                    </td>
                     <td className="p-3 align-top">
                       <div className="font-medium text-gray-300 break-all leading-relaxed">
                         {item.resource_info?.file?.filename || "未知文件"}

@@ -10,6 +10,7 @@ import { AddLibraryWizard } from './features/AddLibraryWizard';
 import { AddToLibraryModal } from './features/AddToLibraryModal';
 import { ContextMenu } from './components/ui/ContextMenu';
 import { ScanProgressBar } from './components/ui/ScanProgressBar';
+import { BackgroundJobProgressBar } from './components/ui/BackgroundJobProgressBar';
 import { Toaster } from './components/ui/Toaster';
 import { movieService, libraryService, userService } from './api';
 import { getDeviceId } from './api/core';
@@ -547,6 +548,7 @@ const App = () => {
 
       {/* Global Scan Progress */}
       <ScanProgressBar />
+      <BackgroundJobProgressBar />
 
       {/* Global Notification System */}
       <Toaster />
