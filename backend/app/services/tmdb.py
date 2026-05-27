@@ -9,13 +9,23 @@ logger = logging.getLogger(__name__)
 
 class TMDBScraper:
     def __init__(self):
+        self.session = requests.Session()
+        self.session.trust_env = False
+        self.refresh_runtime_config(reset_session=False)
+
+    def refresh_runtime_config(self, reset_session=False):
         self.headers = {
             "Authorization": f"Bearer {config.TMDB_TOKEN}",
             "accept": "application/json"
         }
-        self.session = requests.Session()
-        self.session.trust_env = False
         self.proxies = getattr(config, "TMDB_PROXIES", None)
+        if reset_session:
+            try:
+                self.session.close()
+            except Exception:
+                logger.debug("TMDB session close failed during config refresh", exc_info=True)
+            self.session = requests.Session()
+            self.session.trust_env = False
 
     def _normalize_search_query(self, query):
         clean_query = re.sub(r'\b(19|20)\d{2}\b', '', query or '').strip()
@@ -171,6 +181,7 @@ class TMDBScraper:
         if not config.TMDB_TOKEN:
             logger.warning("TMDB_TOKEN is not configured; skipping TMDB request url=%s", url)
             return None
+        self.refresh_runtime_config(reset_session=False)
 
         for _ in range(3):
             try:

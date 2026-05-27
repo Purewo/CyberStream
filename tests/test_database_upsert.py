@@ -106,6 +106,56 @@ class DatabaseUpsertTests(unittest.TestCase):
         self.assertEqual(300, resources[0].size)
         self.assertEqual("Movie - 2160p", resources[0].label)
 
+    def test_local_fallback_file_replacement_reuses_existing_episode_resource(self):
+        adapter = MovieDatabaseAdapter()
+        movie = Movie(tmdb_id="tv/100", title="The Day of the Jackal", original_title="The Day of the Jackal", year=2024)
+        db.session.add(movie)
+        db.session.commit()
+
+        resource = MediaResource(
+            movie_id=movie.id,
+            source_id=self.source.id,
+            path="shows/The Day of the Jackal/S01E01.AMZN.WEB-DL.mkv",
+            filename="S01E01.AMZN.WEB-DL.mkv",
+            size=100,
+            season=1,
+            episode=1,
+            tech_specs={"size": 100},
+        )
+        db.session.add(resource)
+        db.session.commit()
+        original_resource_id = resource.id
+
+        result = adapter.upsert_movie(
+            {
+                "tmdb_id": "loc-tv-ghost",
+                "title": "Dirty Scanner Title",
+                "original_title": "Dirty Scanner Title",
+                "year": 2077,
+                "scraper_source": "LOCAL_FALLBACK",
+            },
+            {
+                "path": "shows/The Day of the Jackal/S01E01.NOW.WEB-DL.mkv",
+                "tech_specs": {"size": 200, "resolution": "1080p"},
+                "season": 1,
+                "episode": 1,
+                "label": "S01E01 - 1080p",
+            },
+            self.source.id,
+        )
+
+        resources = MediaResource.query.filter_by(movie_id=movie.id).all()
+        self.assertEqual("Saved", result["msg"])
+        self.assertEqual(1, Movie.query.count())
+        self.assertEqual(1, len(resources))
+        self.assertEqual(original_resource_id, resources[0].id)
+        self.assertEqual("shows/The Day of the Jackal/S01E01.NOW.WEB-DL.mkv", resources[0].path)
+        self.assertEqual(200, resources[0].size)
+
+        refreshed = db.session.get(Movie, movie.id)
+        self.assertEqual("tv/100", refreshed.tmdb_id)
+        self.assertEqual("The Day of the Jackal", refreshed.title)
+
 
 if __name__ == "__main__":
     unittest.main()

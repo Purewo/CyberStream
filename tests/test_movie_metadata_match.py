@@ -11,7 +11,18 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
-from backend.app.models import Movie, MovieMetadataLock
+from backend.app.models import (
+    HomepageSetting,
+    History,
+    Library,
+    LibraryMovieMembership,
+    MediaResource,
+    Movie,
+    MovieMetadataLock,
+    MovieSeasonMetadata,
+    StorageSource,
+    UserFavorite,
+)
 
 
 class MovieMetadataMatchTests(unittest.TestCase):
@@ -274,6 +285,106 @@ class MovieMetadataMatchTests(unittest.TestCase):
         self.assertEqual("An old hotel. A missing woman.", fields["description"]["preview_value"])
         self.assertEqual("existing-poster", fields["cover"]["preview_value"])
         self.assertEqual("existing-backdrop", fields["background_cover"]["preview_value"])
+
+    def test_match_existing_tmdb_movie_merges_orphan_relations_and_resources(self):
+        target = Movie(
+            tmdb_id="tv/67954",
+            title="既有正确条目",
+            cover="target-poster",
+            scraper_source="TMDB",
+        )
+        orphan = Movie(
+            tmdb_id="loc-tv-orphan",
+            title="脏目录幽灵条目",
+            cover="orphan-poster",
+            scraper_source="LOCAL_FALLBACK",
+        )
+        library = Library(name="剧集", slug="tv")
+        source = StorageSource(name="Cloud", type="local", config={"root_path": "/shows"})
+        db.session.add_all([target, orphan, library, source])
+        db.session.flush()
+        old_target_resource = MediaResource(
+            movie_id=target.id,
+            source_id=source.id,
+            path="shows/jackal/S01E01.AMZN.mkv",
+            filename="S01E01.AMZN.mkv",
+            season=1,
+            episode=1,
+        )
+        orphan_resource = MediaResource(
+            movie_id=orphan.id,
+            source_id=source.id,
+            path="shows/jackal/S01E01.NOW.mkv",
+            filename="S01E01.NOW.mkv",
+            season=1,
+            episode=1,
+        )
+        db.session.add_all([old_target_resource, orphan_resource])
+        db.session.flush()
+        db.session.add_all([
+            History(resource_id=orphan_resource.id, progress=120, duration=600),
+            LibraryMovieMembership(library_id=library.id, movie_id=target.id, mode="include"),
+            LibraryMovieMembership(library_id=library.id, movie_id=orphan.id, mode="include"),
+            UserFavorite(scope_key="default", movie_id=target.id),
+            UserFavorite(scope_key="default", movie_id=orphan.id),
+            MovieMetadataLock(movie_id=orphan.id, locked_fields=["description"]),
+            MovieSeasonMetadata(movie_id=orphan.id, season=1, title="幽灵季名"),
+            HomepageSetting(
+                id=1,
+                hero_movie_id=orphan.id,
+                sections=[{"key": "custom", "movie_ids": [orphan.id, target.id]}],
+            ),
+        ])
+        db.session.commit()
+        orphan_id = orphan.id
+        resource_id = orphan_resource.id
+        target_resource_id = old_target_resource.id
+
+        tmdb_payload = {
+            "tmdb_id": "tv/67954",
+            "title": "豺狼的日子",
+            "original_title": "The Day of the Jackal",
+            "year": 2024,
+            "rating": 8.2,
+            "description": "new description",
+            "cover": "new-poster",
+            "background_cover": "new-backdrop",
+            "category": ["剧情"],
+            "director": "Creator",
+            "actors": ["演员"],
+            "country": "英国",
+            "scraper_source": "TMDB",
+            "season_metadata": [{"season": 1, "title": "Season 1", "episode_count": 10}],
+        }
+
+        with patch("backend.app.api.library_routes.scraper.get_movie_details", return_value=tmdb_payload):
+            response = self.client.post(
+                f"/api/v1/movies/{orphan_id}/metadata/match",
+                json={"tmdb_id": "tv/67954", "media_type_hint": "tv", "apply": True},
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(target.id, response.get_json()["data"]["id"])
+        self.assertIsNone(db.session.get(Movie, orphan_id))
+
+        refreshed_target = db.session.get(Movie, target.id)
+        self.assertEqual("豺狼的日子", refreshed_target.title)
+        self.assertEqual("new-poster", refreshed_target.cover)
+        self.assertEqual("", refreshed_target.description or "")
+        self.assertIn("description", refreshed_target.get_locked_fields())
+        self.assertIsNone(db.session.get(MediaResource, resource_id))
+        merged_resource = db.session.get(MediaResource, target_resource_id)
+        self.assertEqual(target.id, merged_resource.movie_id)
+        self.assertEqual("shows/jackal/S01E01.NOW.mkv", merged_resource.path)
+        self.assertEqual(target_resource_id, History.query.first().resource_id)
+        self.assertEqual(1, LibraryMovieMembership.query.filter_by(library_id=library.id, movie_id=target.id).count())
+        self.assertEqual(1, UserFavorite.query.filter_by(scope_key="default", movie_id=target.id).count())
+
+        setting = db.session.get(HomepageSetting, 1)
+        self.assertEqual(target.id, setting.hero_movie_id)
+        self.assertEqual([target.id], setting.sections[0]["movie_ids"])
+        season = MovieSeasonMetadata.query.filter_by(movie_id=target.id, season=1).first()
+        self.assertEqual("Season 1", season.title)
 
 
 if __name__ == "__main__":

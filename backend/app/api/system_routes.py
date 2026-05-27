@@ -197,6 +197,9 @@ def _refresh_runtime_config():
     current_app.config["TMDB_PROXIES"] = proxies
     current_app.config["PROXIES"] = proxies
 
+    from backend.app.services import tmdb as tmdb_module
+    tmdb_module.scraper.refresh_runtime_config(reset_session=True)
+
 
 @system_bp.route('/system/tmdb-config', methods=['GET'])
 def get_tmdb_config():

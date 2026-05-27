@@ -12,6 +12,17 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app.services.tmdb import TMDBScraper
 
 
+class FakeTMDBResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.payload
+
+
 class TMDBSearchRankingTests(unittest.TestCase):
     def build_scraper(self):
         scraper = TMDBScraper()
@@ -84,6 +95,29 @@ class TMDBSearchRankingTests(unittest.TestCase):
         scraper = TMDBScraper()
         self.assertFalse(scraper.session.trust_env)
         self.assertEqual(scraper.proxies, {"http": "http://127.0.0.1:17890", "https": "http://127.0.0.1:17890"})
+
+    def test_tmdb_scraper_reads_runtime_token_and_proxy_on_each_request(self):
+        scraper = TMDBScraper()
+        calls = []
+
+        def fake_get(url, headers=None, params=None, proxies=None, timeout=None):
+            calls.append({
+                "headers": dict(headers or {}),
+                "proxies": dict(proxies or {}),
+            })
+            return FakeTMDBResponse({"ok": True})
+
+        with patch("backend.app.services.tmdb.config.TMDB_TOKEN", "old-token"), \
+             patch("backend.app.services.tmdb.config.TMDB_PROXIES", {"http": "http://old", "https": "http://old"}):
+            scraper.refresh_runtime_config(reset_session=False)
+
+        with patch.object(scraper.session, "get", side_effect=fake_get), \
+             patch("backend.app.services.tmdb.config.TMDB_TOKEN", "new-token"), \
+             patch("backend.app.services.tmdb.config.TMDB_PROXIES", {"http": "http://new", "https": "http://new"}):
+            self.assertEqual({"ok": True}, scraper._get("https://api.themoviedb.org/test"))
+
+        self.assertEqual("Bearer new-token", calls[0]["headers"]["Authorization"])
+        self.assertEqual({"http": "http://new", "https": "http://new"}, calls[0]["proxies"])
 
     def test_details_fall_back_to_english_when_localized_payload_is_sparse(self):
         scraper = self.build_scraper()

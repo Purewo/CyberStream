@@ -8,6 +8,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from flask import Blueprint, current_app, redirect, request, send_file
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.api.helpers import build_pagination_meta, get_history_map, get_movie_user_history, get_resource_history_map
 from backend.app.api.library_helpers import (
@@ -4615,22 +4616,36 @@ def refresh_movie_metadata(id):
     if not meta_data:
         return api_error(code=50201, msg="Metadata refresh failed", http_status=502)
 
+    target_tmdb_id = str(meta_data.get('tmdb_id') or tmdb_id)
+    update_payload = _build_external_metadata_update_payload(meta_data)
+
     try:
-        movie.tmdb_id = meta_data.get('tmdb_id') or tmdb_id
+        target_movie = Movie.query.filter(
+            Movie.tmdb_id == target_tmdb_id,
+            Movie.id != movie.id,
+        ).first()
+        merge_result = None
+        if target_movie:
+            merge_result = scanner_adapter.merge_movie_records(movie, target_movie)
+            movie = target_movie
+        else:
+            movie.tmdb_id = target_tmdb_id
+
         updated_fields, _ = scanner_adapter.update_movie_metadata(
             movie,
-            _build_external_metadata_update_payload(meta_data),
+            update_payload,
             unlock_fields=unlock_fields,
             respect_locked=True,
         )
         _sync_movie_season_metadata(movie, meta_data)
         db.session.commit()
         logger.info(
-            "Movie metadata refreshed movie_id=%s tmdb_id=%s fields=%s unlocked=%s",
+            "Movie metadata refreshed movie_id=%s tmdb_id=%s fields=%s unlocked=%s merged=%s",
             movie.id,
             movie.tmdb_id,
             ','.join(updated_fields),
             ','.join(unlock_fields or []),
+            bool(merge_result and merge_result.get("merged")),
         )
         return api_response(data=movie.to_detail_dict(), msg="Movie metadata refreshed")
     except Exception as e:
@@ -5081,24 +5096,73 @@ def match_movie_metadata(id):
             http_status=409,
         )
 
+    target_tmdb_id = str(meta_data.get('tmdb_id') or tmdb_id)
+    update_payload = _build_external_metadata_update_payload(meta_data)
+    source_movie_id = movie.id
+
     try:
-        movie.tmdb_id = meta_data.get('tmdb_id') or tmdb_id
+        target_movie = Movie.query.filter(
+            Movie.tmdb_id == target_tmdb_id,
+            Movie.id != movie.id,
+        ).first()
+        merge_result = None
+        if target_movie:
+            merge_result = scanner_adapter.merge_movie_records(movie, target_movie)
+            movie = target_movie
+        else:
+            movie.tmdb_id = target_tmdb_id
+
         updated_fields, _ = scanner_adapter.update_movie_metadata(
             movie,
-            _build_external_metadata_update_payload(meta_data),
+            update_payload,
             unlock_fields=unlock_fields,
             respect_locked=True,
         )
         _sync_movie_season_metadata(movie, meta_data)
         db.session.commit()
         logger.info(
-            "Movie metadata matched movie_id=%s tmdb_id=%s fields=%s unlocked=%s",
+            "Movie metadata matched movie_id=%s tmdb_id=%s fields=%s unlocked=%s merged=%s",
             movie.id,
             movie.tmdb_id,
             ','.join(updated_fields),
             ','.join(unlock_fields or []),
+            bool(merge_result and merge_result.get("merged")),
         )
         return api_response(data=movie.to_detail_dict(), msg="Movie metadata matched")
+    except IntegrityError as e:
+        db.session.rollback()
+        logger.exception("Match movie metadata integrity conflict movie_id=%s tmdb_id=%s error=%s", movie.id, tmdb_id, e)
+        try:
+            source_movie = db.session.get(Movie, source_movie_id)
+            target_movie = Movie.query.filter(
+                Movie.tmdb_id == target_tmdb_id,
+                Movie.id != source_movie_id,
+            ).first()
+            if source_movie and target_movie:
+                scanner_adapter.merge_movie_records(source_movie, target_movie)
+                updated_fields, _ = scanner_adapter.update_movie_metadata(
+                    target_movie,
+                    update_payload,
+                    unlock_fields=unlock_fields,
+                    respect_locked=True,
+                )
+                _sync_movie_season_metadata(target_movie, meta_data)
+                db.session.commit()
+                logger.info(
+                    "Movie metadata matched after integrity merge movie_id=%s tmdb_id=%s fields=%s",
+                    target_movie.id,
+                    target_movie.tmdb_id,
+                    ','.join(updated_fields),
+                )
+                return api_response(data=target_movie.to_detail_dict(), msg="Movie metadata matched")
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "Match movie metadata integrity merge failed source_movie_id=%s tmdb_id=%s",
+                source_movie_id,
+                target_tmdb_id,
+            )
+        return api_error(code=50010, msg="Match failed", http_status=500)
     except Exception as e:
         db.session.rollback()
         logger.exception("Match movie metadata failed movie_id=%s tmdb_id=%s error=%s", movie.id, tmdb_id, e)

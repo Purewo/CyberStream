@@ -5,7 +5,20 @@ from datetime import datetime
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from backend.app.extensions import db
-from backend.app.models import Movie, MediaResource, StorageSource, MovieSeasonMetadata
+from backend.app.models import (
+    HomepageSetting,
+    History,
+    LibraryMovieMembership,
+    MediaResource,
+    Movie,
+    MovieMetadataLock,
+    MovieSeasonMetadata,
+    ResourceSubtitle,
+    ResourceSubtitleSetting,
+    StorageSource,
+    UserFavorite,
+    UserSubtitleSetting,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +80,298 @@ class MovieDatabaseAdapter:
         resource.episode = resource_info.get('episode')
         resource.label = resource_info.get('label')
 
+    def _normalize_resource_path(self, path):
+        return str(path or '').replace('\\', '/').strip().strip('/')
+
+    def _resource_parent_path(self, path):
+        normalized = self._normalize_resource_path(path)
+        if not normalized or '/' not in normalized:
+            return ''
+        return normalized.rsplit('/', 1)[0]
+
+    def _is_local_fallback_identity(self, tmdb_id):
+        return str(tmdb_id or '').strip().lower().startswith('loc-')
+
+    def _find_replacement_resource(self, movie, resource_info, source_id, rel_path):
+        episode = resource_info.get('episode')
+        if episode is None:
+            return None
+
+        parent_path = self._resource_parent_path(rel_path)
+        query = MediaResource.query.filter_by(
+            movie_id=movie.id,
+            source_id=source_id,
+            season=resource_info.get('season'),
+            episode=episode,
+        )
+        candidates = [
+            resource for resource in query.all()
+            if self._resource_parent_path(resource.path) == parent_path
+            and self._normalize_resource_path(resource.path) != self._normalize_resource_path(rel_path)
+        ]
+        if len(candidates) != 1:
+            return None
+        return candidates[0]
+
+    def _find_movie_by_replaced_local_resource(self, meta_data, resource_info, source_id):
+        if not self._is_local_fallback_identity(meta_data.get('tmdb_id')):
+            return None
+        episode = resource_info.get('episode')
+        if episode is None:
+            return None
+
+        rel_path = resource_info.get('path')
+        parent_path = self._resource_parent_path(rel_path)
+        query = MediaResource.query.filter_by(
+            source_id=source_id,
+            season=resource_info.get('season'),
+            episode=episode,
+        )
+        candidate_movies = {}
+        for resource in query.all():
+            if (
+                resource.movie
+                and self._resource_parent_path(resource.path) == parent_path
+                and self._normalize_resource_path(resource.path) != self._normalize_resource_path(rel_path)
+            ):
+                candidate_movies[resource.movie.id] = resource.movie
+        if len(candidate_movies) != 1:
+            return None
+        return next(iter(candidate_movies.values()))
+
+    def _merge_library_memberships(self, source_movie, target_movie):
+        for row in LibraryMovieMembership.query.filter_by(movie_id=source_movie.id).all():
+            duplicate = LibraryMovieMembership.query.filter_by(
+                library_id=row.library_id,
+                movie_id=target_movie.id,
+            ).first()
+            if duplicate:
+                db.session.delete(row)
+            else:
+                row.movie_id = target_movie.id
+
+    def _merge_user_favorites(self, source_movie, target_movie):
+        for row in UserFavorite.query.filter_by(movie_id=source_movie.id).all():
+            duplicate = UserFavorite.query.filter_by(
+                scope_key=row.scope_key,
+                movie_id=target_movie.id,
+            ).first()
+            if duplicate:
+                db.session.delete(row)
+            else:
+                row.movie_id = target_movie.id
+
+    def _replace_movie_id_in_homepage_sections(self, sections, source_movie_id, target_movie_id):
+        if not isinstance(sections, list):
+            return sections, False
+
+        changed = False
+        next_sections = []
+        for section in sections:
+            if not isinstance(section, dict):
+                next_sections.append(section)
+                continue
+            movie_ids = section.get('movie_ids')
+            if not isinstance(movie_ids, list):
+                next_sections.append(section)
+                continue
+
+            section_changed = False
+            next_movie_ids = []
+            seen = set()
+            for movie_id in movie_ids:
+                next_movie_id = target_movie_id if movie_id == source_movie_id else movie_id
+                if next_movie_id in seen:
+                    section_changed = True
+                    changed = True
+                    continue
+                seen.add(next_movie_id)
+                next_movie_ids.append(next_movie_id)
+                if next_movie_id != movie_id:
+                    section_changed = True
+                    changed = True
+
+            if section_changed:
+                section = dict(section)
+                section['movie_ids'] = next_movie_ids
+            next_sections.append(section)
+
+        return next_sections, changed
+
+    def _merge_homepage_settings(self, source_movie, target_movie):
+        for setting in HomepageSetting.query.all():
+            changed = False
+            if setting.hero_movie_id == source_movie.id:
+                setting.hero_movie_id = target_movie.id
+                changed = True
+            sections, sections_changed = self._replace_movie_id_in_homepage_sections(
+                setting.sections,
+                source_movie.id,
+                target_movie.id,
+            )
+            if sections_changed:
+                setting.sections = sections
+                changed = True
+            if changed:
+                setting.updated_at = datetime.utcnow()
+
+    def _merge_metadata_locks(self, source_movie, target_movie):
+        source_lock = MovieMetadataLock.query.filter_by(movie_id=source_movie.id).first()
+        if not source_lock:
+            return
+        target_movie.add_locked_fields(source_lock.get_locked_fields())
+
+    def _merge_season_metadata(self, source_movie, target_movie):
+        target_by_season = {
+            item.season: item
+            for item in MovieSeasonMetadata.query.filter_by(movie_id=target_movie.id).all()
+        }
+        for source_item in MovieSeasonMetadata.query.filter_by(movie_id=source_movie.id).all():
+            target_item = target_by_season.get(source_item.season)
+            if not target_item:
+                target_item = MovieSeasonMetadata(
+                    movie_id=target_movie.id,
+                    season=source_item.season,
+                    title=source_item.title,
+                    overview=source_item.overview,
+                    air_date=source_item.air_date,
+                    poster=source_item.poster,
+                    episode_count=source_item.episode_count,
+                    metadata_edited_at=source_item.metadata_edited_at,
+                )
+                db.session.add(target_item)
+                target_by_season[source_item.season] = target_item
+                continue
+
+            for field in SEASON_METADATA_FIELDS:
+                if getattr(target_item, field) in (None, '', []):
+                    value = getattr(source_item, field)
+                    if value not in (None, '', []):
+                        setattr(target_item, field, value)
+
+    def _resource_payload(self, resource):
+        return {
+            field: getattr(resource, field)
+            for field in (
+                'source_id',
+                'path',
+                'filename',
+                'size',
+                'season',
+                'episode',
+                'title',
+                'overview',
+                'metadata_edited_at',
+                'label',
+                'tech_specs',
+            )
+        }
+
+    def _copy_resource_payload(self, source_payload, target_resource):
+        for field in (
+            'source_id',
+            'path',
+            'filename',
+            'size',
+            'season',
+            'episode',
+            'title',
+            'overview',
+            'metadata_edited_at',
+            'label',
+            'tech_specs',
+        ):
+            setattr(target_resource, field, source_payload.get(field))
+
+    def _merge_resource_subtitles(self, source_resource, target_resource):
+        for row in ResourceSubtitle.query.filter_by(resource_id=source_resource.id).all():
+            duplicate = ResourceSubtitle.query.filter_by(
+                resource_id=target_resource.id,
+                candidate_id=row.candidate_id,
+            ).first()
+            if duplicate:
+                db.session.delete(row)
+            else:
+                row.resource_id = target_resource.id
+
+    def _merge_resource_subtitle_settings(self, source_resource, target_resource):
+        for row in ResourceSubtitleSetting.query.filter_by(resource_id=source_resource.id).all():
+            duplicate = ResourceSubtitleSetting.query.filter_by(resource_id=target_resource.id).first()
+            if duplicate:
+                db.session.delete(row)
+            else:
+                row.resource_id = target_resource.id
+
+        for row in UserSubtitleSetting.query.filter_by(resource_id=source_resource.id).all():
+            duplicate = UserSubtitleSetting.query.filter_by(
+                user_id=row.user_id,
+                resource_id=target_resource.id,
+            ).first()
+            if duplicate:
+                db.session.delete(row)
+            else:
+                row.resource_id = target_resource.id
+
+    def _merge_resource_records(self, source_resource, target_resource):
+        if not source_resource or not target_resource or source_resource.id == target_resource.id:
+            return target_resource
+
+        source_payload = self._resource_payload(source_resource)
+        history_rows = History.query.filter_by(resource_id=source_resource.id).all()
+        for row in history_rows:
+            row.resource_id = target_resource.id
+        self._merge_resource_subtitles(source_resource, target_resource)
+        self._merge_resource_subtitle_settings(source_resource, target_resource)
+        db.session.delete(source_resource)
+        db.session.flush()
+        for row in history_rows:
+            row.resource_id = target_resource.id
+        self._copy_resource_payload(source_payload, target_resource)
+        return target_resource
+
+    def merge_movie_records(self, source_movie, target_movie):
+        if not source_movie or not target_movie:
+            return {"merged": False}
+        if source_movie.id == target_movie.id:
+            return {"merged": False, "target_movie_id": target_movie.id}
+
+        resource_ids = []
+        for resource in MediaResource.query.filter_by(movie_id=source_movie.id).all():
+            replacement = self._find_replacement_resource(
+                target_movie,
+                {"season": resource.season, "episode": resource.episode},
+                resource.source_id,
+                resource.path,
+            )
+            if replacement:
+                replacement = self._merge_resource_records(resource, replacement)
+                replacement.movie_id = target_movie.id
+                resource_ids.append(replacement.id)
+            else:
+                resource.movie_id = target_movie.id
+                resource_ids.append(resource.id)
+
+        self._merge_library_memberships(source_movie, target_movie)
+        self._merge_user_favorites(source_movie, target_movie)
+        self._merge_homepage_settings(source_movie, target_movie)
+        self._merge_metadata_locks(source_movie, target_movie)
+        self._merge_season_metadata(source_movie, target_movie)
+
+        db.session.flush()
+        db.session.delete(source_movie)
+        logger.info(
+            "Merged movie records source_movie_id=%s target_movie_id=%s resources=%s",
+            source_movie.id,
+            target_movie.id,
+            len(resource_ids),
+        )
+        return {
+            "merged": True,
+            "source_movie_id": source_movie.id,
+            "target_movie_id": target_movie.id,
+            "resource_ids": resource_ids,
+        }
+
     def _retry_upsert_existing_resource_after_integrity_error(self, meta_data, resource_info, source_id, rel_path):
         movie = Movie.query.filter_by(tmdb_id=str(meta_data.get('tmdb_id'))).first()
         resource = MediaResource.query.filter_by(source_id=source_id, path=rel_path).first()
@@ -89,23 +394,47 @@ class MovieDatabaseAdapter:
         if not tmdb_id: return
 
         movie = Movie.query.filter_by(tmdb_id=tmdb_id).first()
+        reused_local_replacement_movie = False
+        rel_path = resource_info['path']
 
         if not movie:
-            movie = Movie(
-                tmdb_id=tmdb_id
-            )
+            movie = self._find_movie_by_replaced_local_resource(meta_data, resource_info, source_id)
+            reused_local_replacement_movie = movie is not None
+
+        if not movie:
+            movie = Movie(tmdb_id=tmdb_id)
             self._apply_movie_metadata(movie, meta_data, overwrite=True)
             db.session.add(movie)
             db.session.commit()
             logger.info("Inserted movie title=%s id=%s", movie.title, movie.id)
-        else:
+        elif not reused_local_replacement_movie:
             self._apply_movie_metadata(movie, meta_data, overwrite=False)
+        else:
+            logger.info(
+                "Reused existing movie for local replacement source_id=%s path=%s movie_id=%s",
+                source_id,
+                rel_path,
+                movie.id,
+            )
 
-        self.sync_movie_season_metadata(movie, meta_data.get('season_metadata'), prune_missing=True)
+        if not reused_local_replacement_movie:
+            self.sync_movie_season_metadata(movie, meta_data.get('season_metadata'), prune_missing=True)
 
         # 处理资源：唯一键是 (source_id, path)
-        rel_path = resource_info['path']
         resource = MediaResource.query.filter_by(source_id=source_id, path=rel_path).first()
+        replacement_resource = self._find_replacement_resource(movie, resource_info, source_id, rel_path)
+        if resource and replacement_resource and resource.id != replacement_resource.id:
+            resource = self._merge_resource_records(resource, replacement_resource)
+            resource.movie_id = movie.id
+        elif not resource and replacement_resource:
+            resource = replacement_resource
+            logger.info(
+                "Reused replaced media resource source_id=%s old_path=%s new_path=%s movie_id=%s",
+                source_id,
+                resource.path,
+                rel_path,
+                movie.id,
+            )
         tech_specs = self._build_resource_tech_specs(resource_info)
 
         if resource:
