@@ -137,6 +137,8 @@ TMDB_REFRESHABLE_FIELDS = [
 TMDB_SEARCH_SOURCE_HINTS = {'movie', 'tv'}
 
 METADATA_BULK_REIDENTIFY_ISSUES = {
+    "placeholder_metadata",
+    "local_only_metadata",
     "fallback_pipeline_match",
     "poster_missing",
     "low_confidence_resources",
@@ -148,7 +150,7 @@ METADATA_QUALITY_ACTIONS = [
     {
         "id": "bulk_reidentify",
         "label": "批量重识别 dry-run",
-        "description": "先预览 fallback、缺海报和低置信资源的重识别结果，用户确认后再提交批量 re-scrape。",
+        "description": "先预览本地占位、仅本地元数据、fallback、缺海报和低置信资源的重识别结果，用户确认后再提交批量 re-scrape。",
         "issue_codes": sorted(METADATA_BULK_REIDENTIFY_ISSUES),
         "method": "POST",
         "endpoint": "/api/v1/metadata/re-scrape/plan",
@@ -1549,10 +1551,10 @@ def _metadata_season_result_changed(season_result):
     return bool(season_result.get("upserted") or season_result.get("deleted"))
 
 
-def _build_metadata_apply_status(error=None, updated_fields=None, season_result=None):
+def _build_metadata_apply_status(error=None, updated_fields=None, season_result=None, merged=False):
     if error:
         return "failed"
-    if updated_fields or _metadata_season_result_changed(season_result):
+    if merged or updated_fields or _metadata_season_result_changed(season_result):
         return "updated"
     return "unchanged"
 
@@ -2881,13 +2883,16 @@ def _build_metadata_batch_result(
     entity_context=None,
     updated_fields=None,
     season_result=None,
+    merge_result=None,
     error=None,
 ):
+    merged = bool(merge_result and merge_result.get("merged"))
     item = movie.to_metadata_work_item()
     status = _build_metadata_apply_status(
         error=error,
         updated_fields=updated_fields,
         season_result=season_result,
+        merged=merged,
     )
     result = {
         "movie_id": movie.id,
@@ -2895,6 +2900,7 @@ def _build_metadata_batch_result(
         "scraper_source": movie.scraper_source,
         "status": status,
         "changed": status == "updated",
+        "merged": merged,
         "updated_fields": updated_fields or [],
         "season_metadata_result": season_result or {"upserted": 0, "deleted": 0},
         "metadata_state": item["metadata_state"],
@@ -2907,6 +2913,9 @@ def _build_metadata_batch_result(
         result["explanation"] = _build_metadata_resolution_feedback(resolution, entity_context)
     if error:
         result["error"] = _classify_metadata_error(error["code"], error["msg"])
+    if merged:
+        result["merged_from_movie_id"] = merge_result.get("source_movie_id")
+        result["target_movie_id"] = merge_result.get("target_movie_id")
     return result
 
 
@@ -2930,6 +2939,50 @@ def _normalize_metadata_batch_rescrape_payload(payload):
     if not isinstance(items, list) or not items:
         raise MetadataValidationError(code=40022, msg="Invalid field value: items should be a non-empty array")
     return items
+
+
+def _apply_metadata_rescrape_result(movie, result, unlock_fields=None):
+    resolution = result["resolution"]
+    meta_data = dict(resolution.meta_data or {})
+    target_tmdb_id = meta_data.get('tmdb_id') or resolution.resolved_tmdb_id
+    target_tmdb_id = str(target_tmdb_id).strip() if target_tmdb_id else None
+
+    # Trace source resources before a merge so reparented/replaced resources retain
+    # the decision trail produced for this scrape run.
+    movie_metadata_rescrape_service.apply_resource_traces(
+        result["resources"],
+        result["entity_context"],
+        resolution,
+    )
+
+    merge_result = None
+    if target_tmdb_id:
+        target_movie = None
+        if not target_tmdb_id.lower().startswith('loc-'):
+            target_movie = Movie.query.filter(
+                Movie.tmdb_id == target_tmdb_id,
+                Movie.id != movie.id,
+            ).first()
+        if target_movie:
+            merge_result = scanner_adapter.merge_movie_records(movie, target_movie)
+            movie = target_movie
+        else:
+            movie.tmdb_id = target_tmdb_id
+
+    updated_fields, _ = scanner_adapter.update_movie_metadata(
+        movie,
+        _build_external_metadata_update_payload(meta_data),
+        unlock_fields=unlock_fields,
+        respect_locked=True,
+    )
+    season_result = _sync_movie_season_metadata(movie, meta_data)
+    return {
+        "movie": movie,
+        "resolution": resolution,
+        "updated_fields": updated_fields,
+        "season_result": season_result,
+        "merge_result": merge_result,
+    }
 
 
 def _execute_metadata_batch_rescrape(items, progress_callback=None):
@@ -2957,30 +3010,17 @@ def _execute_metadata_batch_rescrape(items, progress_callback=None):
             media_type_hint = _normalize_media_type_hint(item.get('media_type_hint')) if isinstance(item, dict) else None
             with db.session.begin_nested():
                 result = movie_metadata_rescrape_service.resolve_movie(movie, media_type_hint=media_type_hint)
-                resolution = result["resolution"]
-                meta_data = dict(resolution.meta_data)
-
-                if resolution.resolved_tmdb_id:
-                    movie.tmdb_id = meta_data.get('tmdb_id') or resolution.resolved_tmdb_id
-                elif meta_data.get('tmdb_id'):
-                    movie.tmdb_id = meta_data.get('tmdb_id')
-
-                updated_fields, _ = scanner_adapter.update_movie_metadata(
-                    movie,
-                    _build_external_metadata_update_payload(meta_data),
-                    unlock_fields=unlock_fields,
-                    respect_locked=True,
-                )
-                season_result = _sync_movie_season_metadata(movie, meta_data)
-                movie_metadata_rescrape_service.apply_resource_traces(
-                    result["resources"],
-                    result["entity_context"],
-                    resolution,
-                )
+                applied = _apply_metadata_rescrape_result(movie, result, unlock_fields=unlock_fields)
+                movie = applied["movie"]
+                resolution = applied["resolution"]
+                updated_fields = applied["updated_fields"]
+                season_result = applied["season_result"]
+                merge_result = applied["merge_result"]
 
             status = _build_metadata_apply_status(
                 updated_fields=updated_fields,
                 season_result=season_result,
+                merged=bool(merge_result and merge_result.get("merged")),
             )
             if status == "updated":
                 updated_movie_ids.append(movie.id)
@@ -2990,6 +3030,7 @@ def _execute_metadata_batch_rescrape(items, progress_callback=None):
                 entity_context=result["entity_context"],
                 updated_fields=updated_fields,
                 season_result=season_result,
+                merge_result=merge_result,
             ))
         except MetadataValidationError as e:
             results.append(_build_metadata_batch_result(movie, error={"code": e.code, "msg": e.msg}))
@@ -4669,39 +4710,29 @@ def re_scrape_movie_metadata(id):
 
     try:
         result = movie_metadata_rescrape_service.resolve_movie(movie, media_type_hint=media_type_hint)
-        resolution = result["resolution"]
-        meta_data = dict(resolution.meta_data)
-
-        if resolution.resolved_tmdb_id:
-            movie.tmdb_id = meta_data.get('tmdb_id') or resolution.resolved_tmdb_id
-        elif meta_data.get('tmdb_id'):
-            movie.tmdb_id = meta_data.get('tmdb_id')
-
-        updated_fields, _ = scanner_adapter.update_movie_metadata(
-            movie,
-            _build_external_metadata_update_payload(meta_data),
-            unlock_fields=unlock_fields,
-            respect_locked=True,
-        )
-        season_result = _sync_movie_season_metadata(movie, meta_data)
-        movie_metadata_rescrape_service.apply_resource_traces(
-            result["resources"],
-            result["entity_context"],
-            resolution,
-        )
+        applied = _apply_metadata_rescrape_result(movie, result, unlock_fields=unlock_fields)
+        movie = applied["movie"]
+        resolution = applied["resolution"]
+        updated_fields = applied["updated_fields"]
+        season_result = applied["season_result"]
+        merge_result = applied["merge_result"]
         db.session.commit()
         logger.info(
-            "Movie metadata re-scraped movie_id=%s tmdb_id=%s scrape_layer=%s scrape_strategy=%s resources=%s",
+            "Movie metadata re-scraped movie_id=%s tmdb_id=%s scrape_layer=%s scrape_strategy=%s resources=%s merged=%s",
             movie.id,
             movie.tmdb_id,
             resolution.scrape_layer,
             resolution.scrape_strategy,
             result["resource_count"],
+            bool(merge_result and merge_result.get("merged")),
         )
-        status = _build_metadata_apply_status(updated_fields=updated_fields, season_result=season_result)
+        merged = bool(merge_result and merge_result.get("merged"))
+        status = _build_metadata_apply_status(updated_fields=updated_fields, season_result=season_result, merged=merged)
         return api_response(data={
             "status": status,
             "changed": status == "updated",
+            "merged": merged,
+            "merged_from_movie_id": merge_result.get("source_movie_id") if merged else None,
             "movie": movie.to_detail_dict(),
             "resolution": _build_metadata_resolution_info(resolution),
             "entity_context": _build_metadata_entity_context_info(

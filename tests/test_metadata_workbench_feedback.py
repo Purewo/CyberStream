@@ -164,6 +164,81 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertEqual(1, data["summary"]["status_counts"]["updated"])
         self.assertEqual(1, data["summary"]["status_counts"]["failed"])
 
+    def test_single_re_scrape_merges_local_placeholder_into_existing_external_movie(self):
+        target = Movie(
+            tmdb_id="tv/100",
+            title="已有条目",
+            original_title="Existing Title",
+            year=2020,
+            cover="target-poster",
+            scraper_source="TMDB",
+        )
+        source = self._add_movie(title="本地占位")
+        db.session.add(target)
+        db.session.commit()
+        resource = self._add_resource(source)
+
+        with patch(
+            "backend.app.api.library_routes.movie_metadata_rescrape_service.resolve_movie",
+            return_value={
+                "resources": [resource],
+                "entity_context": self._entity_context(resource),
+                "resolution": self._tmdb_resolution(),
+                "resource_count": 1,
+            },
+        ):
+            response = self.client.post(f"/api/v1/movies/{source.id}/metadata/re-scrape", json={"media_type_hint": "tv"})
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertTrue(data["merged"])
+        self.assertTrue(data["changed"])
+        self.assertEqual(source.id, data["merged_from_movie_id"])
+        self.assertEqual(target.id, data["movie"]["id"])
+        self.assertIsNone(db.session.get(Movie, source.id))
+        refreshed_target = db.session.get(Movie, target.id)
+        self.assertEqual("New Title", refreshed_target.title)
+        self.assertEqual(target.id, db.session.get(MediaResource, resource.id).movie_id)
+
+    def test_batch_re_scrape_merges_local_placeholder_into_existing_external_movie(self):
+        target = Movie(
+            tmdb_id="tv/100",
+            title="已有条目",
+            original_title="Existing Title",
+            year=2020,
+            cover="target-poster",
+            scraper_source="TMDB",
+        )
+        source = self._add_movie(title="待批量修复")
+        db.session.add(target)
+        db.session.commit()
+        resource = self._add_resource(source)
+
+        with patch(
+            "backend.app.api.library_routes.movie_metadata_rescrape_service.resolve_movie",
+            return_value={
+                "resources": [resource],
+                "entity_context": self._entity_context(resource),
+                "resolution": self._tmdb_resolution(),
+                "resource_count": 1,
+            },
+        ):
+            response = self.client.post(
+                "/api/v1/metadata/re-scrape",
+                json={"items": [{"id": source.id, "media_type_hint": "tv"}]},
+            )
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        item = data["items"][0]
+        self.assertTrue(item["merged"])
+        self.assertEqual(source.id, item["merged_from_movie_id"])
+        self.assertEqual(target.id, item["target_movie_id"])
+        self.assertEqual(target.id, item["movie_id"])
+        self.assertEqual([target.id], data["summary"]["updated_movie_ids"])
+        self.assertIsNone(db.session.get(Movie, source.id))
+        self.assertEqual(target.id, db.session.get(MediaResource, resource.id).movie_id)
+
     def test_batch_re_scrape_job_tracks_status_and_result(self):
         movie = self._add_movie()
         resource = self._add_resource(movie)
@@ -238,6 +313,8 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertIn("resource_governance", bucket_ids)
         self.assertIn("placeholder_metadata", issue_codes)
         self.assertEqual("metadata_review", issue_codes["placeholder_metadata"]["bucket"])
+        self.assertEqual("batch_reidentify_plan", issue_codes["placeholder_metadata"]["bulk_action"])
+        self.assertEqual("batch_reidentify_plan", issue_codes["local_only_metadata"]["bulk_action"])
         self.assertEqual("/api/v1/metadata/work-items", issue_codes["poster_missing"]["list"]["endpoint"])
         self.assertEqual("/api/v1/resources/governance-items", issue_codes["invalid_path"]["list"]["endpoint"])
         self.assertIn("BANGUMI", [item["code"] for item in data["metadata_sources"]])
@@ -294,6 +371,34 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertEqual("no_resources", planned[failed_movie.id]["error"]["category"])
         self.assertEqual("旧标题", db.session.get(Movie, movie.id).title)
         apply_resource_traces.assert_not_called()
+
+    def test_batch_re_scrape_plan_defaults_include_local_metadata_failures(self):
+        placeholder = self._add_movie(title="本地占位", scraper_source="LOCAL_FALLBACK", cover="")
+        local_only = self._add_movie(title="本地 NFO", scraper_source="NFO_LOCAL", cover="")
+        placeholder_resource = self._add_resource(placeholder, path="shows/Placeholder.S01E01.mkv")
+        local_resource = self._add_resource(local_only, path="shows/Nfo.Local.S01E01.mkv")
+
+        def resolve_movie(movie, media_type_hint=None):
+            resource = placeholder_resource if movie.id == placeholder.id else local_resource
+            return {
+                "resources": [resource],
+                "entity_context": self._entity_context(resource),
+                "resolution": self._tmdb_resolution(),
+                "resource_count": 1,
+            }
+
+        with patch(
+            "backend.app.api.library_routes.movie_metadata_rescrape_service.resolve_movie",
+            side_effect=resolve_movie,
+        ):
+            response = self.client.post("/api/v1/metadata/re-scrape/plan", json={"limit": 10})
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertIn("placeholder_metadata", data["selection"]["issue_codes"])
+        self.assertIn("local_only_metadata", data["selection"]["issue_codes"])
+        self.assertEqual({placeholder.id, local_only.id}, {item["movie_id"] for item in data["items"]})
+        self.assertEqual(2, data["summary"]["planned"])
 
     def test_episode_review_items_returns_queue_with_dry_run_payload(self):
         movie = self._add_movie(title="剧集队列", scraper_source="TMDB")

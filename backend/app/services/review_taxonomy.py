@@ -188,7 +188,7 @@ METADATA_ISSUE_DEFINITIONS = [
         "bucket": "metadata_review",
         "description": "没有可靠外部匹配，只由本地路径生成了占位影片资料。",
         "primary_action": "match_metadata",
-        "bulk_action": None,
+        "bulk_action": "batch_reidentify_plan",
     },
     {
         "code": "local_only_metadata",
@@ -198,7 +198,7 @@ METADATA_ISSUE_DEFINITIONS = [
         "bucket": "metadata_review",
         "description": "存在本地或 NFO 资料，但没有绑定外部元数据来源。",
         "primary_action": "match_metadata",
-        "bulk_action": None,
+        "bulk_action": "batch_reidentify_plan",
     },
     {
         "code": "fallback_pipeline_match",
