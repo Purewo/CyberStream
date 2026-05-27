@@ -1,6 +1,6 @@
 import { ThemeConfig } from '../types';
 
-export const API_BASE = "https://pw.pioneer.fan:84/api";
+export const API_BASE = "http://127.0.0.1:5004/api";
 
 export const THEMES: Record<string, ThemeConfig> = { 
   CYBER: { primary: '#00f3ff', secondary: '#bc13fe', bg: '#050505', text: '#ffffff', accent: '#f2ff00' }, 

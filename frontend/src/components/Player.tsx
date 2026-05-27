@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Play, Pause, Volume2, VolumeX, Lock, Maximize, BoxSelect, Scan, Activity, LayoutGrid, Server, HardDrive, MessageSquare, Settings, Trash2, Star, Upload, ExternalLink } from 'lucide-react';
+import { ChevronLeft, Play, Pause, Volume2, VolumeX, Lock, Maximize, Minimize, BoxSelect, Scan, Activity, LayoutGrid, Server, HardDrive, Captions, Settings, Trash2, Star, Upload, ExternalLink } from 'lucide-react';
 import { Movie, PlayOptions, Episode } from '../types';
 import { movieService, userService, resourceService } from '../api';
 import { getApiBase } from '../platform';
@@ -885,8 +885,20 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
       if (audioRef.current) audioRef.current.playbackRate = next;
   }; 
 
-  const toggleAspectRatio = () => setAspectRatio(p => p === 'contain' ? 'cover' : 'contain'); 
-  const handleFullscreen = () => { if (videoContainerRef.current) videoContainerRef.current.requestFullscreen().catch(console.warn); }; 
+  const toggleAspectRatio = () => setAspectRatio(p => p === 'contain' ? 'cover' : 'contain');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+  const handleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(console.warn);
+    } else if (videoContainerRef.current) {
+      videoContainerRef.current.requestFullscreen().catch(console.warn);
+    }
+  };
   
   const handleVideoEnded = () => { 
       if (resourceGroups?.items && currentEpisode) { 
@@ -1276,7 +1288,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
             ref={videoContainerRef}
             className={`flex-grow relative ${isPcRuntime ? '' : 'bg-black'} flex items-center justify-center group min-w-0 min-h-0 ${isIdle ? 'cursor-none' : ''}`}
             style={isPcRuntime ? { backgroundColor: 'transparent' } : undefined}
-            onMouseMove={isLocked ? undefined : resetIdleTimer}
+            onMouseMove={isLocked ? undefined : handleMouseMove}
             onDoubleClick={isLocked ? resetIdleTimer : undefined}
         > 
             {loading ? <div className="text-primary animate-pulse font-['Orbitron']">连接中...</div> : (currentEpisode ? (
@@ -1559,7 +1571,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                                             className={`text-gray-400 hover:text-white hover:scale-110 transition-transform ${showSubtitleSelector || activeSubtitleId ? 'text-primary' : ''}`}
                                             title="Subtitles"
                                         >
-                                            <MessageSquare size={20} />
+                                            <Captions size={20} />
                                         </button>
                                         
                                         {showSubtitleSelector && (
@@ -1746,7 +1758,9 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                                     <button onClick={() => { setIsLocked(true); setIsIdle(true); if (idleTimerRef.current) clearTimeout(idleTimerRef.current); }} className="text-gray-400 hover:text-white hover:rotate-12 transition-transform" title="Lock Controls"><Lock size={20} /></button>
                                     <button onClick={toggleAspectRatio} className="text-gray-400 hover:text-white hover:scale-110 transition-transform" title="Aspect Ratio">{aspectRatio === 'contain' ? <BoxSelect size={20} /> : <Scan size={20} />}</button> 
                                     <button onClick={changePlaybackRate} className="text-xs font-['Orbitron'] font-bold text-white hover:text-primary border border-white/20 px-2 py-1 rounded hover:border-primary transition-all hover:shadow-[0_0_10px_var(--color-primary)]">{playbackRate}x</button> 
-                                    <Maximize size={24} className="text-white hover:text-primary cursor-pointer hover:scale-110 transition-transform" onClick={handleFullscreen} /> 
+                                    {isFullscreen
+                                        ? <Minimize size={24} className="text-white hover:text-primary cursor-pointer hover:scale-110 transition-transform" onClick={handleFullscreen} />
+                                        : <Maximize size={24} className="text-white hover:text-primary cursor-pointer hover:scale-110 transition-transform" onClick={handleFullscreen} />}
                                 </div>
                             </div> 
                         </div> 

@@ -8,6 +8,18 @@ import { formatBytes, toast } from '../utils/index';
 // `getApiBase()` is the runtime-resolved value that respects PC user config.
 export { API_BASE };
 
+// Sidecar (cyber-backend.exe) 是 PyInstaller onefile，首次启动要解 _MEI 临时
+// 目录 + 起 waitress，3-5s 不响应是正常的。前端首屏挂载马上就 fetch 数据，
+// 这段窗口内的网络错误不弹 toast，避免一进来就刷屏「无法连接到服务」。
+// 8s 之后再 fail 才上报；此时大概率是真的后端挂了，值得告警。
+const APP_BOOT_AT = Date.now();
+const BOOT_SILENCE_MS = 8000;
+function shouldSurfaceNetworkError(path: string): boolean {
+  if (path.includes('/stream') || path.includes('/health')) return false;
+  if (Date.now() - APP_BOOT_AT < BOOT_SILENCE_MS) return false;
+  return true;
+}
+
 // Types defining the raw API response structure based on openapi.json
 interface ApiResponse<T> {
   code: number;
@@ -72,7 +84,7 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T | nul
     return json.data;
   } catch (error) {
     console.error(`Network Error on ${path} \n(If this is unexpected, check if the backend is running, if API_BASE is correct, or if the backend correctly returns CORS headers for this route)`, error);
-    if (!path.includes('/stream') && !path.includes('/health')) {
+    if (shouldSurfaceNetworkError(path)) {
        toast.error(`网络连接异常: 无法连接到服务 (${path})，请检查后端是否在线或跨域配置。`);
     }
     return null;
@@ -101,7 +113,7 @@ async function fetchApiRaw<T>(path: string, options?: RequestInit): Promise<RawA
     };
   } catch (error) {
     console.error(`Network Error on ${path}`, error);
-    if (!path.includes('/stream') && !path.includes('/health')) {
+    if (shouldSurfaceNetworkError(path)) {
        toast.error(`网络连接异常: 无法连接到服务 (${path})，请检查后端是否在线或跨域配置。`);
     }
     return { ok: false, status: 0 };

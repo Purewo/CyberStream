@@ -1560,6 +1560,26 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     });
   };
 
+  const handleForceDeleteOfflineSource = (id: number, name: string) => {
+    setConfirmAction({
+      message: `强制卸载离线源「${name}」？`,
+      desc: "该源已离线，确认卸载后会同步清空所有关联媒体记录与库绑定，避免前端遗留脏数据。此操作不可撤销。",
+      confirmLabel: "强制卸载并清空",
+      tone: "danger",
+      onConfirm: async () => {
+        const { storageService } = await import("../api");
+        const success = await storageService.deleteSource(id, false);
+        if (success) {
+          toast.success("已卸载并清空该源的全部数据");
+          await loadResources();
+          await onRefreshLibraries();
+        } else {
+          toast.error("强制卸载失败");
+        }
+      },
+    });
+  };
+
   // 扫描前的 TMDB token 守门员：未配置就拦下来引导去「系统配置」，
   // 不然 scanner 会以原始文件名建条目，关键词撞库刮到错电影 —— 完整版
   // 全新装机的小白几乎必踩。已配置时静默放行。
@@ -2210,12 +2230,25 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     )}
                     <div className="flex-1"></div>
                     {res.guards?.can_delete_directly === false ? (
-                      <button
-                        title="状态受保护：存在依赖项或系统默认节点，无法直接卸载"
-                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 text-gray-600 cursor-not-allowed"
-                      >
-                        <Lock size={14} />
-                      </button>
+                      res.health?.status === "offline" ? (
+                        <button
+                          title="该源已离线，强制卸载并清空所有关联数据"
+                          onClick={() => handleForceDeleteOfflineSource(res.id, res.name)}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-red-500/30 hover:border-red-500 text-red-500/80 hover:text-red-400 hover:bg-red-500/15 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] transition-all duration-300 group/btn"
+                        >
+                          <Trash2
+                            size={14}
+                            className="group-hover/btn:scale-110 transition-transform"
+                          />
+                        </button>
+                      ) : (
+                        <button
+                          title="状态受保护：存在依赖项或系统默认节点，无法直接卸载"
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 text-gray-600 cursor-not-allowed"
+                        >
+                          <Lock size={14} />
+                        </button>
+                      )
                     ) : (
                       <button
                         title="断开/卸载该节点"
@@ -2577,7 +2610,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
           <div
             className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={() => setIsAddingLibrary(false)}
           ></div>
           <div className="relative bg-[#0a0a12] border border-white/10 rounded-2xl w-full max-w-lg shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-8 animate-in zoom-in-95 duration-200 transition-all">
             <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">
@@ -2641,7 +2673,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
           <div
             className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={() => setEditingLibraryId(null)}
           ></div>
           <div className="relative bg-[#0a0a12] border border-white/10 rounded-2xl w-full max-w-lg shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-8 animate-in zoom-in-95 duration-200 transition-all">
             <div className="flex justify-between items-center mb-8 border-b border-white/5 pb-4">

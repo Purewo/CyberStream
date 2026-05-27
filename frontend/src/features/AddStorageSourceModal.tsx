@@ -81,10 +81,18 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
     if (!newSourceName || !selectedProtocol) return;
 
     let finalConfig = { ...newSourceConfig };
+    const pathField = selectedProtocol.config_fields?.find((f: any) => f.name === 'root' || f.name === 'path' || f.name === 'folder');
     if (previewPath && previewPath !== "/") {
-      const pathField = selectedProtocol.config_fields?.find((f: any) => f.name === 'root' || f.name === 'path' || f.name === 'folder');
       if (pathField) {
         finalConfig[pathField.name] = previewPath;
+      }
+    }
+
+    if (pathField) {
+      const filledPath = (finalConfig[pathField.name] || '').trim();
+      if (!filledPath || filledPath === '/') {
+        toast.error("请先填写路径，或点击「连通测试与预览」选择目录后再挂载");
+        return;
       }
     }
 
@@ -105,7 +113,6 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
     <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
       <div
         className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={onClose}
       ></div>
       <div
         className={`relative bg-[#0a0a12] border border-white/10 rounded-2xl w-full ${selectedProtocol ? "max-w-5xl max-h-[90vh]" : "max-w-4xl max-h-[90vh]"} flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-8 animate-in zoom-in-95 duration-200 transition-all`}
