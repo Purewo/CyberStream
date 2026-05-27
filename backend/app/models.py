@@ -124,7 +124,9 @@ class StorageSource(db.Model):
 
         return {
             "can_change_type": not has_dependents,
+            "can_delete": True,
             "can_delete_directly": not has_dependents,
+            "requires_pin_on_delete": has_dependents,
             "requires_keep_metadata_on_delete": usage["has_resources"],
             "has_dependents": has_dependents,
         }

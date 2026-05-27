@@ -10,6 +10,7 @@ from backend.app.providers.base import StorageProviderError
 from backend.app.providers.factory import provider_factory
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
+from backend.app.services.vault import VaultAccessError, verify_vault_pin
 from backend.app.storage.source_registry import (
     list_supported_source_types,
     get_source_capabilities,
@@ -111,6 +112,10 @@ def _normalize_storage_config(storage_type, config):
 def _get_json_payload():
     """统一读取 JSON 请求体；空 body 时返回空字典。"""
     return request.get_json(silent=True) or {}
+
+
+def _vault_error_response(error):
+    return api_error(code=error.code, msg=error.msg, http_status=error.http_status)
 
 
 def _scan_background_task(app, source_id=None, root_path=None, content_type=None, scrape_enabled=True, scraper_policy=None):
@@ -256,17 +261,26 @@ def delete_source(id):
     if scanner_engine.is_scanning:
         return api_error(code=42900, msg="Scanner is running, cannot delete source", http_status=429)
 
-    keep_metadata = request.args.get('keep_metadata', 'false').lower() == 'true'
+    payload = _get_json_payload()
+    keep_metadata, keep_metadata_ok = _coerce_bool(
+        payload.get('keepMetadata', payload.get('keep_metadata')),
+        default=None,
+    )
+    if not keep_metadata_ok:
+        return api_error(code=40041, msg="Invalid field value: keepMetadata should be boolean")
+    if keep_metadata is None:
+        keep_metadata = request.args.get('keep_metadata', 'false').lower() == 'true'
     source = db.session.get(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 
     guards = source.get_mutation_guards()
-    if guards["requires_keep_metadata_on_delete"] and not keep_metadata:
-        return api_error(
-            code=40040,
-            msg="Source still has resources; pass keep_metadata=true or migrate resources first",
-        )
+    if guards["has_dependents"] and not keep_metadata:
+        try:
+            verify_vault_pin(payload, audit_action="storage.source.delete.verify_pin")
+        except VaultAccessError as e:
+            db.session.rollback()
+            return _vault_error_response(e)
 
     success, msg = scanner_adapter.delete_storage_source(id, keep_metadata)
     if not success:

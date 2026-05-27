@@ -149,6 +149,31 @@ def require_vault_unlocked():
     return secret
 
 
+def verify_vault_pin(payload, audit_action="vault.pin.verify"):
+    scope_key, actor = _require_admin_context()
+    now = datetime.utcnow()
+    secret = _secret_for_scope(scope_key)
+    if not secret:
+        raise VaultAccessError(40341, "Vault PIN is not configured")
+    if _is_locked(secret, now):
+        raise VaultAccessError(42340, "Vault is locked due to excessive PIN changes", http_status=423)
+    pin = _validate_pin((payload or {}).get("pin"))
+    if not check_password_hash(secret.pin_hash, pin):
+        _clear_unlock_session()
+        record_audit(
+            audit_action,
+            target_type="vault",
+            target_id=secret.scope_key,
+            outcome="failure",
+            actor=actor,
+            details={"reason": "invalid_pin"},
+            commit=True,
+        )
+        raise VaultAccessError(40344, "Vault PIN is incorrect")
+    record_audit(audit_action, target_type="vault", target_id=secret.scope_key, actor=actor)
+    return secret
+
+
 def _consume_pin_change(secret, now, actor):
     if (
         not secret.pin_change_window_started_at

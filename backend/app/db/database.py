@@ -8,6 +8,7 @@ from backend.app.extensions import db
 from backend.app.models import (
     HomepageSetting,
     History,
+    LibrarySource,
     LibraryMovieMembership,
     MediaResource,
     Movie,
@@ -329,6 +330,43 @@ class MovieDatabaseAdapter:
         self._copy_resource_payload(source_payload, target_resource)
         return target_resource
 
+    def _remove_movie_from_homepage_settings(self, movie_id):
+        for setting in HomepageSetting.query.all():
+            changed = False
+            if setting.hero_movie_id == movie_id:
+                setting.hero_movie_id = None
+                changed = True
+
+            sections = setting.sections
+            if isinstance(sections, list):
+                next_sections = []
+                for section in sections:
+                    if not isinstance(section, dict) or not isinstance(section.get('movie_ids'), list):
+                        next_sections.append(section)
+                        continue
+                    next_movie_ids = [item for item in section['movie_ids'] if item != movie_id]
+                    if len(next_movie_ids) != len(section['movie_ids']):
+                        section = dict(section)
+                        section['movie_ids'] = next_movie_ids
+                        changed = True
+                    next_sections.append(section)
+                if changed:
+                    setting.sections = next_sections
+
+            if changed:
+                setting.updated_at = datetime.utcnow()
+
+    def _delete_resource_dependencies(self, resource_id):
+        for model in (History, ResourceSubtitle, ResourceSubtitleSetting, UserSubtitleSetting):
+            for row in model.query.filter_by(resource_id=resource_id).all():
+                db.session.delete(row)
+
+    def _delete_movie_dependencies(self, movie_id):
+        for model in (LibraryMovieMembership, UserFavorite, MovieMetadataLock, MovieSeasonMetadata):
+            for row in model.query.filter_by(movie_id=movie_id).all():
+                db.session.delete(row)
+        self._remove_movie_from_homepage_settings(movie_id)
+
     def merge_movie_records(self, source_movie, target_movie):
         if not source_movie or not target_movie:
             return {"merged": False}
@@ -620,6 +658,9 @@ class MovieDatabaseAdapter:
             return False, "Source not found"
 
         try:
+            for binding in LibrarySource.query.filter_by(source_id=source_id).all():
+                db.session.delete(binding)
+
             if keep_metadata:
                 # 保留元数据：仅解除关联，将 source_id 置空
                 # 这会使资源变为"离线"或"未知来源"状态，但保留在库中
@@ -632,6 +673,7 @@ class MovieDatabaseAdapter:
                 # 1. 删除资源并记录受影响的电影ID
                 for res in resources:
                     movie_ids_check.add(res.movie_id)
+                    self._delete_resource_dependencies(res.id)
                     db.session.delete(res)
 
                 # 刷新会话以确保资源删除生效
@@ -641,6 +683,7 @@ class MovieDatabaseAdapter:
                 for mid in movie_ids_check:
                     count = MediaResource.query.filter_by(movie_id=mid).count()
                     if count == 0:
+                        self._delete_movie_dependencies(mid)
                         Movie.query.filter_by(id=mid).delete()
 
             # 最后删除源配置
