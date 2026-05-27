@@ -1,0 +1,4 @@
+# NSIS build intermediates / outputs - 全是体积巨大的二进制，绝对不进 git
+.staging-full/
+.staging-lite/
+dist/
