@@ -88,7 +88,7 @@ pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
 
     if skip_spawn {
         log::info!("[backend] CYBER_SKIP_BACKEND_SIDECAR set, skipping spawn; expecting backend on {HEALTH_URL}");
-        spawn_health_probe();
+        spawn_health_probe(app.clone());
         return Ok(());
     }
 
@@ -105,6 +105,9 @@ pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
             log::info!(
                 "[backend] sidecar not bundled (lite build), running webview-only mode: {e}"
             );
+            // lite 模式：没有本地后端，splash 直接跳到「准备就绪」，
+            // 等前端 mount 完成后 invoke splash_done 关掉
+            crate::splash::set_phase(app, "准备就绪");
             return Ok(());
         }
     };
@@ -121,6 +124,7 @@ pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
             log::warn!(
                 "[backend] sidecar spawn failed, falling back to webview-only mode: {e}"
             );
+            crate::splash::set_phase(app, "准备就绪");
             return Ok(());
         }
     };
@@ -157,14 +161,17 @@ pub fn spawn_and_wait_ready(app: &AppHandle) -> Result<(), String> {
 
     // 探活搬到后台 —— 现在 setup 立刻返回，webview 同步初始化，
     // __TAURI_INTERNALS__ 注入及时，前端 detectKind() 不会再误判 web。
-    spawn_health_probe();
+    spawn_health_probe(app.clone());
     Ok(())
 }
 
-fn spawn_health_probe() {
+fn spawn_health_probe(app: AppHandle) {
     std::thread::Builder::new()
         .name("cyber-backend-probe".into())
-        .spawn(|| {
+        .spawn(move || {
+            // splash 上的「等待后端」阶段，让用户知道在等什么
+            crate::splash::set_phase(&app, "等待后端服务 ...");
+
             let started = Instant::now();
             let client = match reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(2))
@@ -184,6 +191,7 @@ fn spawn_health_probe() {
                             started.elapsed(),
                             resp.status()
                         );
+                        crate::splash::set_phase(&app, "准备就绪");
                         return;
                     }
                     Ok(resp) => {
@@ -196,6 +204,8 @@ fn spawn_health_probe() {
             log::warn!(
                 "[backend] sidecar not ready within {STARTUP_TIMEOUT:?}, frontend will surface 5xx"
             );
+            // 即使超时也提示一下，避免 splash 卡在「等待后端」字样不动
+            crate::splash::set_phase(&app, "后端启动超时，进入界面");
         })
         .expect("spawn cyber-backend probe thread");
 }

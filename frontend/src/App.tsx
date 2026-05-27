@@ -70,6 +70,19 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // PC 冷启动 splash：React mount + 首次 paint 落地后通知 Rust 关 splash 显主窗。
+  // requestAnimationFrame 双套一层，确保浏览器 layout/paint 至少跑过一帧，避免
+  // splash 关掉的瞬间用户看到一个还没着色完的空架子。
+  useEffect(() => {
+    if (platform().kind !== 'pc') return;
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        import('./platform/pc').then(m => m.signalSplashDone()).catch(() => {});
+      });
+    });
+    return () => cancelAnimationFrame(raf1);
+  }, []);
+
 
   // Global Context Menu Event Listener
   useEffect(() => {

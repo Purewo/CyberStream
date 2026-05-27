@@ -11,6 +11,7 @@ mod backend;
 mod external_player;
 mod native_player;
 pub mod proxy;
+mod splash;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -39,17 +40,32 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(backend::BackendState::new())
         .setup(|app| {
-            // 拉起捆绑的 cyber-backend.exe，阻塞到 /  返回 200 才继续。
-            // 没起来就直接 panic —— 桌面应用没后端=空壳，让用户看到明确报错
-            // 比悄悄打开一个空白 WebView 强。失败原因从 stdout/stderr 已
-            // 经流到 log 里。
+            // splash 第一时间出现 —— 比 sidecar spawn 还要早，让用户立刻看到
+            // 「应用真的启动了」。失败也不致命：退化成主窗口 visible:false
+            // 等 ready 自己冒出来。
+            if let Err(e) = splash::create_splash(&app.handle()) {
+                log::warn!("[splash] create failed (degrading to no-splash): {e}");
+            } else {
+                splash::set_phase(&app.handle(), "初始化界面 ...");
+            }
+
+            // 拉起捆绑的 cyber-backend.exe。spawn_and_wait_ready 内部探活搬到
+            // 后台线程，setup 立刻返回；探活成功后会 emit `splash:phase` 切到
+            // 「准备就绪」，前端 React mount 完成后 invoke splash_done 关 splash
+            // 显主窗。
             if let Err(e) = backend::spawn_and_wait_ready(&app.handle()) {
                 return Err(format!("backend bootstrap failed: {e}").into());
             }
+
+            // 没有 sidecar 的 lite 构建直接告诉 splash 后端已就绪（前端连远程
+            // 后端，splash 关闭由前端主导）。
+            // —— 注：spawn_and_wait_ready 内部的健康探针成功时也会推 phase，
+            // 这里不重复。
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             ping,
+            splash::splash_done,
             native_player::open_pc_player,
             external_player::launch_external_player,
             proxy::get_proxy_config,

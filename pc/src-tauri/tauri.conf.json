@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "CyberStream",
         "width": 1440,
         "height": 900,
@@ -20,7 +21,9 @@
         "decorations": true,
         "transparent": false,
         "fullscreen": false,
-        "resizable": true
+        "resizable": true,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {

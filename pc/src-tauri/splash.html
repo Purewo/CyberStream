@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CyberStream</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  body {
+    font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+    color: #f0f0f8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* 整个 splash 卡片：圆角暗背景 + 双色辉光 */
+  .card {
+    width: 460px;
+    height: 340px;
+    background: #0c0c12;
+    border: 1px solid rgba(0, 200, 230, 0.25);
+    border-radius: 14px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 0 60px rgba(0, 200, 230, 0.15),
+      0 18px 50px rgba(0, 0, 0, 0.6);
+    animation: fade-in 280ms ease-out;
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: scale(0.97); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  body.leaving .card {
+    animation: fade-out 240ms ease-in forwards;
+  }
+  @keyframes fade-out {
+    to { opacity: 0; transform: scale(0.97); }
+  }
+  /* 紫色辉光（左上） */
+  .glow-purple {
+    position: absolute;
+    width: 280px; height: 280px;
+    left: -100px; top: -120px;
+    background: radial-gradient(circle, rgba(140, 80, 220, 0.45) 0%, transparent 70%);
+    filter: blur(20px);
+    pointer-events: none;
+  }
+  /* 青色辉光（右下） */
+  .glow-cyan {
+    position: absolute;
+    width: 320px; height: 320px;
+    right: -120px; bottom: -130px;
+    background: radial-gradient(circle, rgba(0, 200, 230, 0.4) 0%, transparent 70%);
+    filter: blur(20px);
+    pointer-events: none;
+  }
+  /* 内容层 */
+  .content {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 32px 36px;
+    display: flex;
+    flex-direction: column;
+  }
+  /* 顶部 wordmark + 小方块 */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    opacity: 0.92;
+  }
+  .mark {
+    width: 14px; height: 14px;
+    background: #00c8e6;
+    border-radius: 2px;
+    box-shadow: 0 0 12px rgba(0, 200, 230, 0.6);
+  }
+  .wordmark {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: #d0d0e0;
+  }
+  /* 中央 ring */
+  .ring-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ring {
+    width: 72px; height: 72px;
+    border: 1.5px solid rgba(0, 200, 230, 0.6);
+    border-top-color: #00c8e6;
+    border-radius: 50%;
+    animation: spin 1.4s linear infinite;
+    position: relative;
+  }
+  .ring::after {
+    content: '';
+    position: absolute;
+    inset: 50% 50%;
+    width: 6px; height: 6px;
+    margin: -3px;
+    background: #c850e6;
+    border-radius: 50%;
+    box-shadow: 0 0 14px rgba(200, 80, 230, 0.8);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* 标题 */
+  .title {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: #f0f0f8;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 12px;
+    color: rgba(200, 200, 220, 0.65);
+    letter-spacing: 0.05em;
+  }
+  /* 阶段文案 */
+  .phase-wrap {
+    margin-top: 22px;
+    text-align: center;
+    min-height: 18px;
+  }
+  .phase {
+    font-size: 11px;
+    color: rgba(200, 200, 220, 0.7);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-family: 'Cascadia Mono', 'Consolas', monospace;
+    transition: opacity 200ms ease;
+  }
+  /* 底部 hairline + version */
+  .footer {
+    position: absolute;
+    left: 36px; right: 36px;
+    bottom: 14px;
+    border-top: 1px solid rgba(200, 200, 220, 0.12);
+    padding-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: rgba(160, 160, 180, 0.55);
+    letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="glow-purple"></div>
+    <div class="glow-cyan"></div>
+    <div class="content">
+      <div class="header">
+        <div class="mark"></div>
+        <div class="wordmark">CYBERSTREAM</div>
+      </div>
+      <div class="ring-wrap">
+        <div class="ring"></div>
+      </div>
+      <div class="title">CyberStream</div>
+      <div class="subtitle">Personal Media Nexus</div>
+      <div class="phase-wrap">
+        <div class="phase" id="phase">初始化界面 ...</div>
+      </div>
+      <div class="footer">
+        <span>SETUP</span>
+        <span id="version">v1.21.1</span>
+      </div>
+    </div>
+  </div>
+<script>
+  // 监听后端 / 前端发来的阶段事件，更新 phase 文案。
+  // Tauri 2 注入的 __TAURI__.event.listen 在窗口创建后立刻可用。
+  (async () => {
+    try {
+      const { listen } = window.__TAURI__.event;
+      const phaseEl = document.getElementById('phase');
+      let current = '初始化界面 ...';
+      const setPhase = (txt) => {
+        if (txt === current) return;
+        current = txt;
+        phaseEl.style.opacity = '0';
+        setTimeout(() => {
+          phaseEl.textContent = txt;
+          phaseEl.style.opacity = '1';
+        }, 180);
+      };
+      await listen('splash:phase', (e) => setPhase(e.payload || ''));
+      await listen('splash:fade-out', () => {
+        document.body.classList.add('leaving');
+      });
+    } catch (e) {
+      console.warn('[splash] event listener failed', e);
+    }
+  })();
+</script>
+</body>
+</html>

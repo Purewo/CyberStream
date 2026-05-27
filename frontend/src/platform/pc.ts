@@ -87,7 +87,7 @@ export function createPcPlatform(): Platform {
  * （pc.1 / pc.2 ...），同主版本下也能升级。发版时同步改这里和 GitHub
  * release tag —— 没有什么自动注入机制，最朴素的硬编码就是答案。
  */
-const PC_RELEASE = '1.21.1-pc.3';
+const PC_RELEASE = '1.21.1-pc.4';
 
 export function getPcRelease(): string {
   return PC_RELEASE;
@@ -139,4 +139,21 @@ export async function setProxyConfig(cfg: ProxyConfig): Promise<ProxyConfig> {
     app_proxy: next?.app_proxy ?? null,
     video_proxy: next?.video_proxy ?? null,
   };
+}
+
+/**
+ * 通知 Rust 端关闭 splash 启动屏 + 显示主窗口。
+ * App.tsx 首次 mount 完成后调用，给 splash 让出舞台。
+ *
+ * Web build 不会调到这里（platform.kind !== 'pc'），lite build 也走同一条
+ * 路径（Rust 那边对 splash 的关闭是幂等的）。
+ */
+export async function signalSplashDone(): Promise<void> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('splash_done');
+  } catch (e) {
+    // splash 不在或已关闭都是正常的，吞掉错误
+    console.debug('[splash] signalSplashDone noop', e);
+  }
 }
