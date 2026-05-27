@@ -306,6 +306,26 @@ class AListProviderTests(unittest.TestCase):
             location,
         )
 
+    def test_stream_resolves_alist_redirect_when_enabled(self):
+        provider = self.create_provider(token="static-token", resolve_redirect_stream=True)
+
+        stream, status, length, location = provider.get_stream_data("电影/movie.mkv", "bytes=0-99")
+
+        self.assertIsNone(stream)
+        self.assertEqual(302, status)
+        self.assertEqual(0, length)
+        self.assertEqual("https://cdn.example.com/raw/movie.mkv?fresh=1", location)
+        get_calls = [call for call in provider.session.calls if call[0] == "GET"]
+        self.assertEqual(False, get_calls[-1][3]["allow_redirects"])
+
+    def test_ffmpeg_input_resolves_alist_redirect_when_enabled(self):
+        provider = self.create_provider(token="static-token", resolve_redirect_stream=True)
+
+        self.assertEqual(
+            "https://cdn.example.com/raw/movie.mkv?fresh=1",
+            provider.get_ffmpeg_input("电影/movie.mkv"),
+        )
+
     def test_stream_default_preserves_http_scheme(self):
         provider = self.create_provider(base_url="http://alist.example.com:5244", root="/library", token="static-token")
 

@@ -297,7 +297,41 @@ X-Cyber-API-Token: <token>
 
 管理、扫描、元数据修改、字幕绑定、资源治理 job 等接口仍会要求 token。
 
-### 2.12 在线字幕配置
+### 2.12 托管 AList / 光鸭云盘
+
+#### `CYBER_MANAGED_ALIST_ENABLED`
+托管云盘入口总开关，默认 `false`。开启后允许通过 CyberStream 的 `storage/managed/guangyapan/sms/*` 接口创建和认证光鸭云盘来源。
+
+#### `CYBER_MANAGED_ALIST_BASE_URL`
+仅后端访问的 AList 地址，默认 `http://127.0.0.1:5244`。部署时应让 AList 只监听 localhost，不要把该地址提供给客户端。
+
+#### `CYBER_MANAGED_ALIST_TOKEN` / `CYBER_MANAGED_ALIST_USERNAME` / `CYBER_MANAGED_ALIST_PASSWORD`
+AList 管理认证信息。优先使用 `CYBER_MANAGED_ALIST_TOKEN`；没有 token 时后端会用账号密码登录 AList。凭据只保存在运行时环境中，不写入 `storage_sources.config`。
+
+#### `CYBER_MANAGED_ALIST_MOUNT_PREFIX`
+AList 内部托管挂载路径前缀，默认 `/cyberstream`。每个光鸭来源会挂载到该前缀下的独立随机子路径。
+
+#### `CYBER_MANAGED_ALIST_TIMEOUT_SECONDS` / `CYBER_MANAGED_ALIST_VERIFY_SSL`
+后端请求托管 AList 的超时与 TLS 校验选项，默认分别为 `30` 秒与 `false`。localhost HTTP 部署保持默认即可。
+
+### 2.13 托管 OpenList / 天翼云盘 / 115 云盘 / QuarkTV / UCTV
+
+#### `CYBER_MANAGED_OPENLIST_ENABLED`
+托管 OpenList 入口总开关，默认 `false`。开启后允许通过 CyberStream 的 `storage/managed/tianyicloud/qr/*`、`storage/managed/115cloud/qr/*`、`storage/managed/quarktv/qr/*`、`storage/managed/uctv/qr/*` 接口创建和认证对应云盘来源。
+
+#### `CYBER_MANAGED_OPENLIST_BASE_URL`
+仅后端访问的 OpenList 地址，默认 `http://127.0.0.1:5245`。OpenList 应与光鸭使用的 AList 分开运行，并只监听 localhost。
+
+#### `CYBER_MANAGED_OPENLIST_TOKEN` / `CYBER_MANAGED_OPENLIST_USERNAME` / `CYBER_MANAGED_OPENLIST_PASSWORD`
+OpenList 管理认证信息。优先使用 `CYBER_MANAGED_OPENLIST_TOKEN`；没有 token 时后端会用账号密码登录 OpenList。凭据只保存在运行时环境中，不写入 `storage_sources.config`。
+
+#### `CYBER_MANAGED_OPENLIST_MOUNT_PREFIX`
+OpenList 内部托管挂载路径前缀，默认 `/cyberstream`。每个天翼、115、QuarkTV、UCTV 来源会挂载到该前缀下的独立随机子路径。
+
+#### `CYBER_MANAGED_OPENLIST_TIMEOUT_SECONDS` / `CYBER_MANAGED_OPENLIST_VERIFY_SSL`
+后端请求托管 OpenList 的超时与 TLS 校验选项，默认分别为 `30` 秒与 `false`。localhost HTTP 部署保持默认即可。
+
+### 2.14 在线字幕配置
 
 #### `CYBER_ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS`
 SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源。
@@ -305,7 +339,7 @@ SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源
 #### `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS`
 SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用源；如果网络侧访问 `srtku.com` 不稳定，后端会在超时后返回 `providers.errors`，其中 `reason=timeout`，避免前端把慢源超时误判成整体故障。
 
-### 2.13 用户管理配置
+### 2.15 用户管理配置
 
 #### `CYBER_USER_MANAGEMENT_ENABLED`
 用户管理总开关，默认 `false`。关闭时不改变现有业务行为；开启后网页端通过 Cookie 会话登录，`CYBER_API_TOKEN` 仍保留为管理员后门。
@@ -325,7 +359,7 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 #### `CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` / `CYBER_LOGIN_RATE_LIMIT_WINDOW_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_LOCK_SECONDS`
 登录限流参数，默认 5 分钟内失败 `5` 次后锁定 `900` 秒。限流按客户端 IP + 用户名在当前后端进程内记录。
 
-### 2.14 维护任务持久化配置
+### 2.15 维护任务持久化配置
 
 #### `CYBER_MAINTENANCE_JOB_RESULT_ITEM_LIMIT`
 维护任务写入 `maintenance_jobs` 时，`result.items` 最多保留的条数，默认 `20`。内存中的刚执行结果仍保持完整；持久化结果会附加 `result_truncated`、`result_item_count` 和 `persisted_item_limit`。

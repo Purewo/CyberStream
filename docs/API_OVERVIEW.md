@@ -123,6 +123,10 @@ X-Cyber-API-Token: <token>
 - `frontend-review-workbench`
 - `frontend-user-management`
 - `frontend-audio-transcode`
+- `frontend-managed-guangyapan`
+- `frontend-managed-tianyicloud`
+- `frontend-managed-115cloud`
+- `frontend-managed-quark-uc`
 - `storage-config-flow`
 - `runbook`
 - `test-checklist`
@@ -394,12 +398,14 @@ X-Cyber-API-Token: <token>
 - 返回 `health` 字段，包含 `status`、`reason` 和 `message`
 - `status` 可能为 `online|offline|unknown|unsupported`
 - `reason` 为机器可读原因，便于前端和运维快速区分 `dns_resolution_failed`、`auth_failed`、`permission_denied`、`root_not_found`、`timeout` 等问题
+- 托管 `guangyapan`、`tianyicloud`、`115cloud`、`quarktv` 和 `uctv` 的健康响应不会暴露 localhost AList/OpenList 地址、内部挂载路径或运行时元数据
 
 ### `GET /api/v1/storage/provider-types`
 列出当前后端真正支持的存储协议与配置字段定义。
 
 说明：
 - 当前稳定支持：`local`、`webdav`、`smb`、`ftp`、`alist`、`openlist`
+- 当前 beta 支持：`guangyapan`、`tianyicloud`、`115cloud`、`quarktv`、`uctv`，分别通过 CyberStream 托管的本机 AList/OpenList 完成短信或扫码授权登录
 - 该接口应作为前端动态表单的首选来源，而不是硬编码协议类型
 - 后续新增来源时，优先扩展该接口和 provider 注册表，而不是散落到多个地方手写判断
 - 每个协议会返回 `capabilities`，用于前端决定是否展示扫描、刷新、播放、预览等入口
@@ -412,6 +418,134 @@ X-Cyber-API-Token: <token>
 - `items[].browse`、`items[].validate_path`、`items[].library_root_path` 可直接驱动前端目录选择器
 - `items[].config_root_key` 区分本地 `root_path` 与远端协议 `root`
 - `range_stream`、`redirect_stream` 用于播放链路能力展示
+- `managed`、`sms_login`、`qr_login` 用于识别托管光鸭/天翼/115/QuarkTV/UCTV 这类无需用户手动配置 AList/OpenList 的来源
+
+### `POST /api/v1/storage/managed/guangyapan/sms/start`
+启动托管光鸭云盘短信登录。
+
+请求体：
+- `phone_number`：必填，接收短信验证码的手机号
+- `name` / `source_name`：可选，存储源显示名，默认 `GuangYaPan`
+- `root_path` / `cloud_root_path`：可选，光鸭云盘侧根路径
+- `captcha_token`：可选，光鸭账号接口要求验证码时传
+
+说明：
+- 后端会调用仅本机可访问的 AList 管理接口创建 `GuangYaPan` 挂载，并触发短信验证码
+- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=sms_pending`
+- 响应只返回脱敏手机号和 CyberStream source，不返回 AList 地址、AList token、光鸭 token 或 verification id
+- `sms_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`，前端不要展示浏览、扫描、绑定或播放入口
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-guangyapan`
+
+### `POST /api/v1/storage/managed/guangyapan/sms/verify`
+提交短信验证码，完成托管光鸭云盘登录。
+
+请求体：
+- `source_id` / `id`：`sms/start` 返回的存储源 ID
+- `verify_code` / `code`：短信验证码
+
+说明：
+- 成功后 `config.auth_state=ready`，该来源才可浏览、扫描和播放
+- 成功响应中的 `source.actions` 会恢复为可用能力，前端应重新拉取存储源列表或使用响应中的 `source` 更新本地状态
+- 播放时后端会请求 localhost AList 的 `/d/...`，拿到光鸭最终 302 直链后再返回给前端；不会把本机 AList 地址暴露给安卓端
+- 测试期仍是 302 模式，前端收到的是最终云盘直链跳转
+
+### `POST /api/v1/storage/managed/tianyicloud/qr/start`
+启动托管天翼云盘扫码登录。
+
+请求体：
+- `name` / `source_name`：可选，存储源显示名，默认 `TianYiCloud`
+- `cloud_type`：可选，默认 `personal`；当前前端先不要暴露给普通用户
+- `root_folder_id`：可选，OpenList `189CloudTV` 技术根目录 ID；当前前端先不要让普通用户填写
+
+说明：
+- 后端会调用仅本机可访问的 OpenList 管理接口创建 `189CloudTV` 挂载，并返回二维码 data URL
+- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 响应不返回 OpenList 地址、OpenList token、天翼 token、内部 storage id 或内部挂载路径
+- `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-tianyicloud`
+
+### `POST /api/v1/storage/managed/tianyicloud/qr/poll`
+轮询托管天翼云盘扫码结果。
+
+请求体：
+- `source_id` / `id`：`qr/start` 返回的存储源 ID
+
+说明：
+- 未扫码时返回 `authenticated=false` 和 `auth_state=qr_pending`，前端继续展示二维码并轮询
+- 若响应里带新的 `qr_code_data_url`，前端应替换当前二维码
+- 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
+- 播放时后端会请求 localhost OpenList 的 `/d/...`，拿到天翼云盘最终 302 直链后再返回给前端；不会把本机 OpenList 地址暴露给安卓端
+
+### `POST /api/v1/storage/managed/115cloud/qr/start`
+启动托管 115 云盘扫码登录。
+
+请求体：
+- `name` / `source_name`：可选，存储源显示名，默认 `115 Cloud`
+- `qrcode_source`：可选，默认 `wechatmini`；允许 `web`、`android`、`ios`、`tv`、`alipaymini`、`wechatmini`、`qandroid`
+- `root_folder_id`：可选，OpenList `115 Cloud` 技术根目录 ID，普通用户先不要填写
+
+说明：
+- 后端会先请求 115 二维码接口，再调用仅本机可访问的 OpenList 管理接口创建 `115 Cloud` 挂载
+- 默认使用 `wechatmini`，避免占用用户常用的 Web、Android 或 iOS 登录态；前端首轮联调不需要显式传 `qrcode_source`
+- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 响应不返回 OpenList 地址、OpenList token、115 cookie、内部 storage id、内部挂载路径或二维码 uid/sign/time
+- `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-115cloud`
+
+### `POST /api/v1/storage/managed/115cloud/qr/poll`
+轮询托管 115 云盘扫码结果。
+
+请求体：
+- `source_id` / `id`：`qr/start` 返回的存储源 ID
+
+说明：
+- 未扫码时返回 `authenticated=false`、`auth_state=qr_pending`、`pending_reason=waiting_for_scan`、`qr_status=0`
+- 已扫码但未确认时返回 `authenticated=false`、`auth_state=qr_pending`、`pending_reason=waiting_for_confirm`、`qr_status=1`
+- 二维码过期或取消时返回 `auth_state=qr_expired` / `qr_canceled`，前端应停止轮询并重新发起扫码
+- 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
+- 播放时后端会请求 localhost OpenList 的 `/d/...`，拿到 115 最终 302 直链后再返回给前端；不会把本机 OpenList 地址暴露给安卓端
+
+### `POST /api/v1/storage/managed/quarktv/qr/start`
+启动托管 QuarkTV 扫码登录。
+
+请求体：
+- `name` / `source_name`：可选，存储源显示名，默认 `QuarkTV`
+- `root_folder_id`：可选，OpenList `QuarkTV` 技术根目录 ID，默认 `0`
+- `link_method`：可选，`download` 或 `streaming`，默认 `download`
+
+说明：
+- 后端会调用仅本机可访问的 OpenList 管理接口创建 `QuarkTV` 挂载，并返回二维码 data URL
+- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 响应不返回 OpenList 地址、OpenList token、夸克 token、内部 storage id 或内部挂载路径
+- `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-quark-uc`
+
+### `POST /api/v1/storage/managed/quarktv/qr/poll`
+轮询托管 QuarkTV 扫码结果。
+
+请求体：
+- `source_id` / `id`：`qr/start` 返回的存储源 ID
+
+说明：
+- 未扫码时返回 `authenticated=false` 和 `auth_state=qr_pending`，前端继续展示二维码并轮询
+- 若响应里带新的 `qr_code_data_url`，前端应替换当前二维码
+- 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
+- 播放时后端会请求 localhost OpenList 的 `/d/...`，拿到夸克网盘最终 302 直链后再返回给前端；不会把本机 OpenList 地址暴露给安卓端
+
+### `POST /api/v1/storage/managed/uctv/qr/start`
+启动托管 UCTV 扫码登录。
+
+请求体：
+- `name` / `source_name`：可选，存储源显示名，默认 `UCTV`
+- `root_folder_id`：可选，OpenList `UCTV` 技术根目录 ID，默认 `0`
+- `link_method`：可选，`download` 或 `streaming`，默认 `download`
+
+说明：
+- 合约与 QuarkTV 一致，返回 `type=uctv` 的 CyberStream 存储源
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-quark-uc`
+
+### `POST /api/v1/storage/managed/uctv/qr/poll`
+轮询托管 UCTV 扫码结果。请求体和响应字段与 QuarkTV poll 一致。
 
 ### `POST /api/v1/storage/sources`
 新增存储源。
@@ -429,6 +563,10 @@ X-Cyber-API-Token: <token>
 - `ftp` 当前要求 `config.host`，未提供账号密码时使用 anonymous 默认值
 - `alist/openlist` 当前要求 `config.base_url` 或 `config.host` 至少一个
 - `alist/openlist` 的 `config.root` 是技术挂载根目录；目录选择器选定挂载目录时应写入该字段
+- `guangyapan` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/guangyapan/sms/*`
+- `tianyicloud` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/tianyicloud/qr/*`
+- `115cloud` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/115cloud/qr/*`
+- `quarktv` 和 `uctv` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/quarktv/qr/*` 或 `storage/managed/uctv/qr/*`
 - 不支持的配置字段会直接报错，避免脏配置落库
 
 ### `PATCH /api/v1/storage/sources/<id>`
@@ -449,6 +587,7 @@ X-Cyber-API-Token: <token>
 说明：
 - 若该来源下仍有资源，当前默认不允许直接删除
 - 需要显式传 `keep_metadata=true`，或先做资源迁移/解绑
+- 删除托管 `guangyapan` / `tianyicloud` / `115cloud` / `quarktv` / `uctv` 来源时，后端会尽量同步删除 localhost AList/OpenList 中对应的内部挂载；失败只记日志，不影响 CyberStream 来源删除
 
 ### `POST /api/v1/storage/sources/<id>/scan`
 扫描指定存储源。
@@ -482,7 +621,7 @@ X-Cyber-API-Token: <token>
 - `dirs_only`：可选，默认 `false`
 
 说明：
-- 当前用于 `alist/openlist`，底层调用上游 `/api/fs/list` 并传 `refresh=true`
+- 当前用于 `alist/openlist/guangyapan/tianyicloud/115cloud/quarktv/uctv`，底层调用上游 `/api/fs/list` 并传 `refresh=true`
 - 只刷新上游目录缓存并返回刷新后的目录列表，不触发扫描、不触发刮削、不写入媒体库
 - 返回结构与 `browse` 基本一致，额外带 `refreshed` 和 `refresh_path`
 - 不支持目录刷新的存储源返回 `40042`

@@ -36,6 +36,7 @@ class AListProvider(StorageProvider):
         self.timeout = int(config.get('timeout', 30))
         self.verify_ssl = bool(config.get('verify_ssl', False))
         self.proxy_stream = bool(config.get('proxy_stream', False))
+        self.resolve_redirect_stream = bool(config.get('resolve_redirect_stream', False))
         self._resolved_token = None
         self._host_header = urlparse(self.base_url).netloc if self.request_base_url != self.base_url else None
 
@@ -533,7 +534,14 @@ class AListProvider(StorageProvider):
     def get_stream_data(self, path, range_header=None):
         try:
             self._ensure_auth_token()
-            public_download_url, _request_download_url = self._build_signed_download_urls(path)
+            public_download_url, request_download_url = self._build_signed_download_urls(path)
+            if self.resolve_redirect_stream:
+                response = self._open_stream_response(
+                    request_download_url,
+                    range_header=range_header,
+                    allow_redirects=False,
+                )
+                return self._to_stream_result(response, request_download_url)
             return None, 302, 0, public_download_url
         except Exception as e:
             logger.exception("%s stream failed path=%s error=%s", self.platform, path, e)
@@ -541,7 +549,16 @@ class AListProvider(StorageProvider):
 
     def get_ffmpeg_input(self, path):
         try:
-            public_download_url, _request_download_url = self._build_signed_download_urls(path)
+            public_download_url, request_download_url = self._build_signed_download_urls(path)
+            if self.resolve_redirect_stream:
+                response = self._open_stream_response(request_download_url, allow_redirects=False)
+                try:
+                    if response.status_code in [301, 302, 303, 307, 308]:
+                        location = response.headers.get('Location')
+                        if location:
+                            return urljoin(request_download_url, location)
+                finally:
+                    self._close_response(response)
             return public_download_url
         except Exception:
             try:

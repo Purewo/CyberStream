@@ -86,6 +86,30 @@ DOCUMENTS = {
         "format": "markdown",
         "content_type": "text/markdown; charset=utf-8",
     },
+    "frontend-managed-guangyapan": {
+        "title": "Frontend Managed GuangYaPan Integration",
+        "path": "docs/FRONTEND_MANAGED_GUANGYAPAN_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
+    "frontend-managed-tianyicloud": {
+        "title": "Frontend Managed TianYiCloud Integration",
+        "path": "docs/FRONTEND_MANAGED_TIANYICLOUD_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
+    "frontend-managed-115cloud": {
+        "title": "Frontend Managed 115 Cloud Integration",
+        "path": "docs/FRONTEND_MANAGED_115CLOUD_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
+    "frontend-managed-quark-uc": {
+        "title": "Frontend Managed QuarkTV / UCTV Integration",
+        "path": "docs/FRONTEND_MANAGED_QUARK_UC_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
     "storage-config-flow": {
         "title": "Storage Config Flow",
         "path": "docs/STORAGE_CONFIG_FLOW.md",

@@ -97,6 +97,122 @@ class StorageProtocolSupportTests(unittest.TestCase):
         self.assertTrue(items_by_type["ftp"]["library_root_path"])
         self.assertTrue(items_by_type["alist"]["redirect_stream"])
         self.assertTrue(items_by_type["openlist"]["browse"])
+        self.assertTrue(items_by_type["guangyapan"]["managed"])
+        self.assertTrue(items_by_type["guangyapan"]["sms_login"])
+        self.assertTrue(items_by_type["tianyicloud"]["managed"])
+        self.assertTrue(items_by_type["tianyicloud"]["qr_login"])
+        self.assertTrue(items_by_type["115cloud"]["managed"])
+        self.assertTrue(items_by_type["115cloud"]["qr_login"])
+        self.assertTrue(items_by_type["quarktv"]["managed"])
+        self.assertTrue(items_by_type["quarktv"]["qr_login"])
+        self.assertTrue(items_by_type["uctv"]["managed"])
+        self.assertTrue(items_by_type["uctv"]["qr_login"])
+
+    def test_normalize_guangyapan_config_supports_managed_source(self):
+        config, error = _normalize_storage_config(
+            "guangyapan",
+            {
+                "alist_storage_id": "12",
+                "mount_path": "/cyberstream/guangyapan/demo",
+                "auth_state": "ready",
+                "phone_number_masked": "*******1234",
+                "cloud_root_path": "电影",
+            },
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(12, config["alist_storage_id"])
+        self.assertEqual("/cyberstream/guangyapan/demo", config["mount_path"])
+        self.assertEqual("ready", config["auth_state"])
+        self.assertEqual("/电影", config["cloud_root_path"])
+
+    def test_normalize_tianyicloud_config_supports_managed_source(self):
+        config, error = _normalize_storage_config(
+            "tianyicloud",
+            {
+                "openlist_storage_id": "22",
+                "mount_path": "/cyberstream/tianyicloud/demo",
+                "auth_state": "ready",
+                "cloud_type": "PERSONAL",
+                "cloud_root_path": "/",
+            },
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(22, config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/tianyicloud/demo", config["mount_path"])
+        self.assertEqual("ready", config["auth_state"])
+        self.assertEqual("personal", config["cloud_type"])
+
+    def test_normalize_115cloud_config_supports_managed_source(self):
+        config, error = _normalize_storage_config(
+            "115cloud",
+            {
+                "openlist_storage_id": "115",
+                "mount_path": "/cyberstream/115cloud/demo",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "qrcode_source": "WEB",
+                "qr_uid": "uid",
+                "qr_sign": "sign",
+                "qr_time": "1779910679",
+            },
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(115, config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/115cloud/demo", config["mount_path"])
+        self.assertEqual("ready", config["auth_state"])
+        self.assertEqual("web", config["qrcode_source"])
+        self.assertEqual(1779910679, config["qr_time"])
+
+    def test_normalize_115cloud_config_defaults_to_wechatmini(self):
+        config, error = _normalize_storage_config(
+            "115cloud",
+            {
+                "openlist_storage_id": "115",
+                "mount_path": "/cyberstream/115cloud/demo",
+                "auth_state": "qr_pending",
+            },
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual("wechatmini", config["qrcode_source"])
+
+    def test_normalize_quarktv_config_supports_managed_source(self):
+        config, error = _normalize_storage_config(
+            "quarktv",
+            {
+                "openlist_storage_id": "23",
+                "mount_path": "/cyberstream/quarktv/demo",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "link_method": "STREAMING",
+            },
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(23, config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/quarktv/demo", config["mount_path"])
+        self.assertEqual("ready", config["auth_state"])
+        self.assertEqual("streaming", config["link_method"])
+
+    def test_normalize_uctv_config_supports_managed_source(self):
+        config, error = _normalize_storage_config(
+            "uctv",
+            {
+                "openlist_storage_id": "24",
+                "mount_path": "/cyberstream/uctv/demo",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+            },
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(24, config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/uctv/demo", config["mount_path"])
+        self.assertEqual("ready", config["auth_state"])
+        self.assertEqual("download", config["link_method"])
 
     def test_add_source_accepts_smb(self):
         response = self.client.post(

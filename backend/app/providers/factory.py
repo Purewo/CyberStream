@@ -3,6 +3,13 @@ from backend.app.storage.source_registry import normalize_source_config, normali
 from .alist import AListProvider
 from .ftp import FTPProvider
 from .local import LocalProvider
+from .managed_alist import (
+    Cloud115Provider,
+    GuangYaPanProvider,
+    QuarkTVProvider,
+    TianYiCloudProvider,
+    UCTVProvider,
+)
 from .smb import SMBProvider
 from .webdav import WebDAVProvider
 
@@ -15,6 +22,11 @@ class ProviderFactory:
         'ftp': FTPProvider,
         'alist': AListProvider,
         'openlist': AListProvider,
+        '115cloud': Cloud115Provider,
+        'guangyapan': GuangYaPanProvider,
+        'tianyicloud': TianYiCloudProvider,
+        'quarktv': QuarkTVProvider,
+        'uctv': UCTVProvider,
     }
 
     @classmethod

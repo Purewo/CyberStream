@@ -114,6 +114,85 @@ CYBER_LOGIN_RATE_LIMIT_ENABLED=true
 
 重启后用 `POST /api/v1/auth/login` 登录。普通用户可见范围由管理员在 `/api/v1/admin/users/<id>/library-rules` 配置；默认可见全部公开影视。管理员操作、登录失败和限流事件可通过 `GET /api/v1/admin/audit-logs` 查询。
 
+### 4.3 启用托管光鸭云盘
+
+CyberStream 只对外暴露自己的 HTTPS API；AList 只跑在本机。最小配置：
+
+```bash
+CYBER_MANAGED_ALIST_ENABLED=true
+CYBER_MANAGED_ALIST_BASE_URL=http://127.0.0.1:5244
+CYBER_MANAGED_ALIST_USERNAME=admin
+CYBER_MANAGED_ALIST_PASSWORD=<alist-admin-password>
+# 或使用 CYBER_MANAGED_ALIST_TOKEN=<alist-admin-token>
+CYBER_MANAGED_ALIST_MOUNT_PREFIX=/cyberstream
+```
+
+短信登录流程：
+
+```bash
+curl -s http://127.0.0.1:5004/api/v1/storage/managed/guangyapan/sms/start \
+  -H "Content-Type: application/json" \
+  -d '{"name":"光鸭云盘","phone_number":"+861380001234","root_path":""}'
+
+curl -s http://127.0.0.1:5004/api/v1/storage/managed/guangyapan/sms/verify \
+  -H "Content-Type: application/json" \
+  -d '{"source_id":1,"verify_code":"123456"}'
+```
+
+成功后来源状态为 `ready`。播放时后端会先解析 localhost AList `/d/...` 的 302，再把最终云盘直链返回给客户端。
+
+### 4.4 启用托管 OpenList 云盘
+
+天翼云盘、115 云盘、QuarkTV、UCTV 使用 OpenList 托管驱动，OpenList 只跑在本机，端口与 AList 分开。最小配置：
+
+```bash
+CYBER_MANAGED_OPENLIST_ENABLED=true
+CYBER_MANAGED_OPENLIST_BASE_URL=http://127.0.0.1:5245
+CYBER_MANAGED_OPENLIST_USERNAME=admin
+CYBER_MANAGED_OPENLIST_PASSWORD=<openlist-admin-password>
+# 或使用 CYBER_MANAGED_OPENLIST_TOKEN=<openlist-admin-token>
+CYBER_MANAGED_OPENLIST_MOUNT_PREFIX=/cyberstream
+```
+
+扫码登录流程：
+
+```bash
+curl -s http://127.0.0.1:5004/api/v1/storage/managed/tianyicloud/qr/start \
+  -H "Content-Type: application/json" \
+  -d '{"name":"天翼云盘"}'
+
+curl -s http://127.0.0.1:5004/api/v1/storage/managed/tianyicloud/qr/poll \
+  -H "Content-Type: application/json" \
+  -d '{"source_id":2}'
+```
+
+115、QuarkTV、UCTV 分别使用：
+
+```http
+POST /api/v1/storage/managed/115cloud/qr/start
+POST /api/v1/storage/managed/115cloud/qr/poll
+POST /api/v1/storage/managed/quarktv/qr/start
+POST /api/v1/storage/managed/quarktv/qr/poll
+POST /api/v1/storage/managed/uctv/qr/start
+POST /api/v1/storage/managed/uctv/qr/poll
+```
+
+`qr/start` 返回二维码展示字段。用户扫码确认后，轮询接口会返回 `authenticated=true` 且来源状态变为 `ready`。播放时后端会先解析 localhost OpenList `/d/...` 的 302，再把最终云盘直链返回给客户端。
+
+115 云盘扫码登录流程：
+
+```bash
+curl -s http://127.0.0.1:5004/api/v1/storage/managed/115cloud/qr/start \
+  -H "Content-Type: application/json" \
+  -d '{"name":"115 云盘"}'
+
+curl -s http://127.0.0.1:5004/api/v1/storage/managed/115cloud/qr/poll \
+  -H "Content-Type: application/json" \
+  -d '{"source_id":3}'
+```
+
+115 默认使用 `qrcode_source=wechatmini`，避免占用用户常用的 Web、Android 或 iOS 登录态。`qr/poll` 会区分 `waiting_for_scan`、`waiting_for_confirm`、`qr_expired` 和 `qr_canceled`。只有返回 `authenticated=true` 且 `auth_state=ready` 后，来源才允许预览、扫描、刷新和播放。
+
 ## 5. 常见问题
 
 ### 5.1 `ModuleNotFoundError: No module named 'backend'`
@@ -199,6 +278,8 @@ curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=诛仙3&
 - 测试清单：`docs/TEST_CHECKLIST.md`
 - 版本规范：`docs/VERSIONING.md`
 - 存储源配置流：`docs/STORAGE_CONFIG_FLOW.md`
+- 托管 115 云盘前端接入：`docs/FRONTEND_MANAGED_115CLOUD_INTEGRATION.md`
+- 托管 QuarkTV / UCTV 前端接入：`docs/FRONTEND_MANAGED_QUARK_UC_INTEGRATION.md`
 - 维护优先级：`docs/MAINTENANCE_TODO.md`
 
 ## 7. 当前运行文件

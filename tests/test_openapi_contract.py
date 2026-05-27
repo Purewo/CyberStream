@@ -113,6 +113,70 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("refresh", schemas["StorageProviderCapabilities"]["properties"])
         self.assertIn("can_refresh", schemas["StorageSourceActions"]["properties"])
 
+    def test_managed_guangyapan_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/managed/guangyapan/sms/start", paths)
+        self.assertIn("/api/v1/storage/managed/guangyapan/sms/verify", paths)
+        doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+        self.assertIn("frontend-managed-guangyapan", doc_key_enum)
+        self.assertIn("ConfigGuangYaPan", schemas)
+        self.assertIn("ManagedGuangYaPanSmsStartRequest", schemas)
+        self.assertIn("ManagedGuangYaPanSmsVerifyRequest", schemas)
+        self.assertIn("guangyapan", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("managed", schemas["StorageProviderCapabilities"]["properties"])
+        self.assertIn("sms_login", schemas["StorageProviderCapabilities"]["properties"])
+
+    def test_managed_tianyicloud_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/managed/tianyicloud/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/tianyicloud/qr/poll", paths)
+        doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+        self.assertIn("frontend-managed-tianyicloud", doc_key_enum)
+        self.assertIn("ConfigTianYiCloud", schemas)
+        self.assertIn("ManagedTianYiCloudQrStartRequest", schemas)
+        self.assertIn("ManagedTianYiCloudQrPollRequest", schemas)
+        self.assertIn("tianyicloud", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("qr_login", schemas["StorageProviderCapabilities"]["properties"])
+
+    def test_managed_115cloud_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/managed/115cloud/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/115cloud/qr/poll", paths)
+        doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+        self.assertIn("frontend-managed-115cloud", doc_key_enum)
+        self.assertIn("Config115Cloud", schemas)
+        self.assertIn("Managed115CloudQrStartRequest", schemas)
+        self.assertIn("Managed115CloudQrPollRequest", schemas)
+        self.assertIn("115cloud", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("qr_login", schemas["StorageProviderCapabilities"]["properties"])
+
+    def test_managed_quark_uc_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/managed/quarktv/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/quarktv/qr/poll", paths)
+        self.assertIn("/api/v1/storage/managed/uctv/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/uctv/qr/poll", paths)
+        doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+        self.assertIn("frontend-managed-quark-uc", doc_key_enum)
+        self.assertIn("ConfigQuarkTV", schemas)
+        self.assertIn("ConfigUCTV", schemas)
+        self.assertIn("ManagedQuarkUCTVQrStartRequest", schemas)
+        self.assertIn("ManagedQuarkUCTVQrPollRequest", schemas)
+        self.assertIn("quarktv", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("uctv", schemas["StorageSource"]["properties"]["type"]["enum"])
+
     def test_library_scan_openapi_documents_refresh_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]

@@ -97,6 +97,10 @@
 - `frontend-review-workbench`
 - `frontend-user-management`
 - `frontend-audio-transcode`
+- `frontend-managed-guangyapan`
+- `frontend-managed-tianyicloud`
+- `frontend-managed-115cloud`
+- `frontend-managed-quark-uc`
 - `storage-config-flow`
 - `runbook`
 - `test-checklist`
@@ -107,13 +111,58 @@
 
 说明：
 
-- 当前仅 `alist/openlist` 支持，底层调用上游 `fs/list` 并带 `refresh=true`
+- 当前支持 `alist/openlist/guangyapan/tianyicloud/115cloud/quarktv/uctv`，底层调用上游 `fs/list` 并带 `refresh=true`
 - 该接口只刷新目录缓存并返回刷新后的列表，不触发扫描、不触发刮削
 - `StorageSource.actions` 现在会额外暴露 `can_refresh`
 
+## 托管光鸭云盘
+
+- 新增 beta 存储类型 `guangyapan`，由 CyberStream 通过本机 AList 管理接口创建 GuangYaPan 挂载。
+- 新增 `POST /api/v1/storage/managed/guangyapan/sms/start`，提交手机号并触发光鸭短信验证码。
+- 新增 `POST /api/v1/storage/managed/guangyapan/sms/verify`，提交短信验证码后把来源状态更新为 `ready`。
+- 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-guangyapan`，包含短信登录时序、状态机、错误码和播放链路说明。
+- `sms_pending` 状态下托管光鸭来源的 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`，避免前端误展示可用操作。
+- 托管光鸭的 `StorageSource.config` 与健康检查响应不会暴露 localhost AList 地址或内部挂载路径。
+- 托管光鸭播放仍走 302，但后端会先访问 localhost AList `/d/...`，解析出最终云盘直链后再返回给前端，不暴露 AList 地址。
+- 运行时需启用 `CYBER_MANAGED_ALIST_ENABLED=true` 并配置本机 AList 地址和管理凭据。
+
+## 托管天翼云盘
+
+- 新增 beta 存储类型 `tianyicloud`，由 CyberStream 通过本机 OpenList 管理接口创建 `189CloudTV` 挂载。
+- 新增 `POST /api/v1/storage/managed/tianyicloud/qr/start`，创建托管来源并返回二维码 data URL。
+- 新增 `POST /api/v1/storage/managed/tianyicloud/qr/poll`，轮询扫码结果并在认证成功后把来源状态更新为 `ready`。
+- 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-tianyicloud`，包含扫码时序、状态机、错误码和播放链路说明。
+- `qr_pending` 状态下托管天翼来源的 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`，避免前端误展示可用操作。
+- 托管天翼的 `StorageSource.config` 与健康检查响应不会暴露 localhost OpenList 地址或内部挂载路径。
+- 托管天翼播放仍走 302，但后端会先访问 localhost OpenList `/d/...`，解析出最终云盘直链后再返回给前端，不暴露 OpenList 地址。
+- 运行时需启用 `CYBER_MANAGED_OPENLIST_ENABLED=true` 并配置本机 OpenList 地址和管理凭据。
+
+## 托管 115 云盘
+
+- 新增 beta 存储类型 `115cloud`，由 CyberStream 通过本机 OpenList 管理接口创建 `115 Cloud` 挂载。
+- 新增 `POST /api/v1/storage/managed/115cloud/qr/start`，创建托管来源并返回 115 二维码 data URL。
+- 新增 `POST /api/v1/storage/managed/115cloud/qr/poll`，轮询扫码状态；未扫码、已扫码待确认、过期和取消都按业务状态返回 `code=200`。
+- 新建 115 来源默认使用 `qrcode_source=wechatmini`，避免占用用户常用的 Web、Android 或 iOS 登录态；仍允许前端显式传其他 OpenList 支持的端类型用于排障。
+- 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-115cloud`，包含二维码登录、轮询状态机、过期/取消处理和播放链路说明。
+- `qr_pending`、`qr_expired`、`qr_canceled` 状态下托管 115 来源的 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`。
+- 托管 115 的 `StorageSource.config` 与健康检查响应不会暴露 localhost OpenList 地址、内部挂载路径、115 cookie 或二维码会话字段。
+- 播放仍走 302：后端先访问 localhost OpenList `/d/...`，解析出最终 115 直链后再返回给前端，不暴露 OpenList 地址。
+- 运行时复用 `CYBER_MANAGED_OPENLIST_ENABLED=true` 与本机 OpenList 管理凭据。
+
+## 托管 QuarkTV / UCTV
+
+- 新增 beta 存储类型 `quarktv` 和 `uctv`，由 CyberStream 通过本机 OpenList 管理接口创建 `QuarkTV` / `UCTV` 挂载。
+- 新增 `POST /api/v1/storage/managed/quarktv/qr/start`、`POST /api/v1/storage/managed/quarktv/qr/poll`。
+- 新增 `POST /api/v1/storage/managed/uctv/qr/start`、`POST /api/v1/storage/managed/uctv/qr/poll`。
+- 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-quark-uc`，包含二维码登录、轮询、状态机、错误码和播放链路说明。
+- `qr_pending` 状态下托管 QuarkTV / UCTV 来源的 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`。
+- 托管 QuarkTV / UCTV 的 `StorageSource.config` 与健康检查响应不会暴露 localhost OpenList 地址或内部挂载路径。
+- 播放仍走 302：后端先访问 localhost OpenList `/d/...`，解析出最终网盘直链后再返回给前端，不暴露 OpenList 地址。
+- 运行时复用 `CYBER_MANAGED_OPENLIST_ENABLED=true` 与本机 OpenList 管理凭据。
+
 ## 资源库扫描刷新
 
-- `POST /api/v1/libraries/{id}/scan` 默认会在扫描前刷新支持该能力的 `alist/openlist` 绑定目录。
+- `POST /api/v1/libraries/{id}/scan` 默认会在扫描前刷新支持该能力的 `alist/openlist/guangyapan/tianyicloud/115cloud/quarktv/uctv` 绑定目录。
 - 前端可传 `{"refresh": false}` 跳过上游刷新，维持纯扫描行为。
 - 目录刷新失败只写入扫描状态和后端日志，不会阻断后续扫描与刮削。
 - `POST /api/v1/scan` 在没有任何启用的资源库目录绑定时会返回 `40013`，避免旧全库扫描入口误扫存储源根目录。

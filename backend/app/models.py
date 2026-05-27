@@ -87,11 +87,15 @@ class StorageSource(db.Model):
                     "message": str(e),
                 }
 
+        ready_for_actions = True
+        if normalized_type in {"guangyapan", "tianyicloud", "115cloud", "quarktv", "uctv"}:
+            ready_for_actions = str((self.config or {}).get("auth_state") or "").strip().lower() == "ready"
+
         actions = {
-            "can_preview": supported and config_valid and capabilities.get("preview", False),
-            "can_scan": supported and config_valid and capabilities.get("scan", False),
-            "can_stream": supported and config_valid and capabilities.get("stream", False),
-            "can_refresh": supported and config_valid and capabilities.get("refresh", False),
+            "can_preview": supported and config_valid and ready_for_actions and capabilities.get("preview", False),
+            "can_scan": supported and config_valid and ready_for_actions and capabilities.get("scan", False),
+            "can_stream": supported and config_valid and ready_for_actions and capabilities.get("stream", False),
+            "can_refresh": supported and config_valid and ready_for_actions and capabilities.get("refresh", False),
         }
 
         return {

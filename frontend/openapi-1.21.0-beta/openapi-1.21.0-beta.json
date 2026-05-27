@@ -5686,6 +5686,586 @@
           }
         }
       }
+    },
+    "/api/v1/storage/managed/guangyapan/sms/start": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 启动托管光鸭云盘短信登录",
+        "description": "后端调用 localhost AList 创建 GuangYaPan 挂载并发送短信验证码，返回 CyberStream 存储源。AList 地址不会返回给终端用户。成功后 source.config.auth_state=sms_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-guangyapan。",
+        "operationId": "startManagedGuangYaPanSms",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedGuangYaPanSmsStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "验证码已发送，存储源处于 sms_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedGuangYaPanSmsStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或托管 AList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList 或光鸭账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/guangyapan/sms/verify": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 校验托管光鸭云盘短信验证码",
+        "description": "提交短信验证码给 localhost AList 完成 GuangYaPan 登录；成功后 source.config.auth_state=ready，该存储源可按 actions 暴露的能力浏览、扫描、刷新和播放。详细接入见 /api/v1/docs/frontend-managed-guangyapan。",
+        "operationId": "verifyManagedGuangYaPanSms",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedGuangYaPanSmsVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "短信验证码校验成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedGuangYaPanSmsVerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源不是托管光鸭或验证码错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList 或光鸭账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/tianyicloud/qr/start": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 启动托管天翼云盘扫码登录",
+        "description": "后端调用 localhost OpenList 创建 189CloudTV 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-tianyicloud。",
+        "operationId": "startManagedTianYiCloudQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedTianYiCloudQrStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已生成，存储源处于 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedTianYiCloudQrStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或天翼账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/tianyicloud/qr/poll": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 轮询托管天翼云盘扫码结果",
+        "description": "轮询 localhost OpenList 189CloudTV 扫码结果；成功后 source.config.auth_state=ready，该存储源可按 actions 暴露的能力浏览、扫描、刷新和播放。详细接入见 /api/v1/docs/frontend-managed-tianyicloud。",
+        "operationId": "pollManagedTianYiCloudQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedTianYiCloudQrPollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回扫码待完成或已完成状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedTianYiCloudQrPollResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源不是托管天翼或扫码状态异常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或天翼账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/115cloud/qr/start": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 启动托管 115 云盘扫码登录",
+        "description": "后端先请求 115 二维码接口，再调用 localhost OpenList 创建 115 Cloud 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-115cloud。",
+        "operationId": "startManaged115CloudQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Managed115CloudQrStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已生成，存储源处于 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Managed115CloudQrStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或 115 账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/115cloud/qr/poll": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 轮询托管 115 云盘扫码结果",
+        "description": "轮询 115 二维码扫码结果。未扫码、已扫码待确认、二维码过期或取消都以 code=200 的业务状态返回；只有真正不可恢复的后端/OpenList 调用错误才返回错误响应。成功后 source.config.auth_state=ready，source.actions 恢复可用。",
+        "operationId": "pollManaged115CloudQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Managed115CloudQrPollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "扫码状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Managed115CloudQrPollResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或存储源状态不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或 115 账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/quarktv/qr/start": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 启动托管 QuarkTV 扫码登录",
+        "description": "后端调用 localhost OpenList 创建 QuarkTV 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-quark-uc。",
+        "operationId": "startManagedQuarkTVQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已生成，存储源处于 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedQuarkUCTVQrStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或夸克网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/quarktv/qr/poll": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 轮询托管 QuarkTV 扫码结果",
+        "description": "轮询 localhost OpenList QuarkTV 扫码结果；成功后 source.config.auth_state=ready，该存储源可按 actions 暴露的能力浏览、扫描、刷新和播放。详细接入见 /api/v1/docs/frontend-managed-quark-uc。",
+        "operationId": "pollManagedQuarkTVQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrPollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "扫码仍在等待或已认证成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedQuarkUCTVQrPollResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或 QuarkTV 账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/uctv/qr/start": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 启动托管 UCTV 扫码登录",
+        "description": "后端调用 localhost OpenList 创建 UCTV 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-quark-uc。",
+        "operationId": "startManagedUCTVQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已生成，存储源处于 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedQuarkUCTVQrStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或UC 网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/uctv/qr/poll": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 轮询托管 UCTV 扫码结果",
+        "description": "轮询 localhost OpenList UCTV 扫码结果；成功后 source.config.auth_state=ready，该存储源可按 actions 暴露的能力浏览、扫描、刷新和播放。详细接入见 /api/v1/docs/frontend-managed-quark-uc。",
+        "operationId": "pollManagedUCTVQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrPollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "扫码仍在等待或已认证成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedQuarkUCTVQrPollResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或 UCTV 账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7607,7 +8187,12 @@
               "smb",
               "ftp",
               "alist",
-              "openlist"
+              "openlist",
+              "guangyapan",
+              "tianyicloud",
+              "115cloud",
+              "quarktv",
+              "uctv"
             ],
             "example": "webdav"
           },
@@ -7659,6 +8244,21 @@
               },
               {
                 "$ref": "#/components/schemas/ConfigOpenList"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigGuangYaPan"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigTianYiCloud"
+              },
+              {
+                "$ref": "#/components/schemas/Config115Cloud"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigQuarkTV"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigUCTV"
               }
             ]
           },
@@ -7707,7 +8307,12 @@
               "smb",
               "ftp",
               "alist",
-              "openlist"
+              "openlist",
+              "guangyapan",
+              "tianyicloud",
+              "115cloud",
+              "quarktv",
+              "uctv"
             ],
             "description": "存储协议类型"
           },
@@ -7731,6 +8336,9 @@
               },
               {
                 "$ref": "#/components/schemas/ConfigOpenList"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigGuangYaPan"
               }
             ]
           }
@@ -11859,7 +12467,12 @@
               "smb",
               "ftp",
               "alist",
-              "openlist"
+              "openlist",
+              "guangyapan",
+              "tianyicloud",
+              "115cloud",
+              "quarktv",
+              "uctv"
             ]
           },
           "display_name": {
@@ -11908,6 +12521,22 @@
           "redirect_stream": {
             "type": "boolean",
             "description": "是否支持将播放重定向到上游直链"
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "是否由 CyberStream 托管上游配置。"
+          },
+          "sms_login": {
+            "type": "boolean",
+            "description": "是否支持手机号短信登录流程。"
+          },
+          "qr_login": {
+            "type": "boolean",
+            "description": "是否支持二维码扫码登录流程。"
+          },
+          "oauth_login": {
+            "type": "boolean",
+            "description": "是否支持 OAuth 授权登录流程。"
           }
         }
       },
@@ -11915,15 +12544,22 @@
         "type": "object",
         "properties": {
           "can_preview": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the saved source can currently browse/preview directories."
           },
           "can_scan": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the saved source can currently be scanned."
           },
           "can_stream": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether resources under this source can currently be streamed."
+          },
+          "can_refresh": {
+            "description": "Whether the saved source can currently refresh upstream directory cache."
           }
-        }
+        },
+        "description": "Frontend action flags computed from provider capability and runtime source state. For managed GuangYaPan and TianYiCloud, all action flags stay false until config.auth_state is ready."
       },
       "StorageSourceHealth": {
         "type": "object",
@@ -11946,7 +12582,8 @@
             "type": "string",
             "nullable": true
           }
-        }
+        },
+        "description": "Storage health status. Managed GuangYaPan and TianYiCloud health responses do not expose localhost AList/OpenList URL, internal mount path, or runtime metadata."
       },
       "StorageSourceUsage": {
         "type": "object",
@@ -13957,7 +14594,12 @@
               "smb",
               "ftp",
               "alist",
-              "openlist"
+              "openlist",
+              "guangyapan",
+              "tianyicloud",
+              "115cloud",
+              "quarktv",
+              "uctv"
             ]
           },
           "display_name": {
@@ -14008,6 +14650,12 @@
           },
           "redirect_stream": {
             "type": "boolean"
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "sms_login": {
+            "type": "boolean"
           }
         }
       },
@@ -14024,7 +14672,12 @@
                 "smb",
                 "ftp",
                 "alist",
-                "openlist"
+                "openlist",
+                "guangyapan",
+                "tianyicloud",
+                "115cloud",
+                "quarktv",
+                "uctv"
               ]
             }
           },
@@ -15915,6 +16568,802 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/OtherVideoListData"
+              }
+            }
+          }
+        ]
+      },
+      "ConfigGuangYaPan": {
+        "type": "object",
+        "title": "GuangYaPan Managed Config",
+        "description": "CyberStream 托管 AList 生成的光鸭云盘来源配置；前端不应手工创建，使用托管短信接口。StorageSource.config 响应只返回 auth_state、phone_number_masked、cloud_root_path 等展示字段；alist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "required": [
+          "alist_storage_id",
+          "mount_path"
+        ],
+        "properties": {
+          "alist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 AList 内部 storage id；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 77,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 AList 内部挂载路径，不向终端用户展示为可访问地址；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/guangyapan/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "sms_pending",
+              "ready"
+            ],
+            "default": "sms_pending",
+            "description": "短信认证状态；ready 后才可浏览、扫描和播放。"
+          },
+          "phone_number_masked": {
+            "type": "string",
+            "description": "脱敏手机号，仅用于展示。",
+            "example": "********1234"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "光鸭云盘侧根路径，仅用于展示。",
+            "example": "/电影"
+          }
+        }
+      },
+      "ManagedGuangYaPanSmsStartRequest": {
+        "type": "object",
+        "required": [
+          "phone_number"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "存储源显示名称，未传默认 GuangYaPan。",
+            "example": "光鸭云盘"
+          },
+          "source_name": {
+            "type": "string",
+            "description": "name 的兼容别名。"
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "接收短信验证码的手机号。",
+            "example": "+861380001234"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "光鸭云盘侧根路径，可留空表示根目录。",
+            "example": "电影"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "captcha_token": {
+            "type": "string",
+            "description": "光鸭账号接口要求时传入的 captcha token。"
+          }
+        }
+      },
+      "ManagedGuangYaPanSmsVerifyRequest": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "verify_code"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "start 接口返回的 CyberStream 存储源 ID。",
+            "example": 3
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "verify_code": {
+            "type": "string",
+            "description": "短信验证码。",
+            "example": "123456"
+          },
+          "code": {
+            "type": "string",
+            "description": "verify_code 的兼容别名。"
+          }
+        }
+      },
+      "ManagedGuangYaPanSmsStartData": {
+        "type": "object",
+        "properties": {
+          "verification_sent": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "sms_pending"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedGuangYaPanSmsVerifyData": {
+        "type": "object",
+        "properties": {
+          "verified": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "ready"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedGuangYaPanSmsStartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedGuangYaPanSmsStartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedGuangYaPanSmsVerifyResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedGuangYaPanSmsVerifyData"
+              }
+            }
+          }
+        ]
+      },
+      "ConfigTianYiCloud": {
+        "type": "object",
+        "title": "TianYiCloud Managed Config",
+        "description": "CyberStream 托管 OpenList 生成的天翼云盘来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_type、cloud_root_path 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "required": [
+          "openlist_storage_id",
+          "mount_path"
+        ],
+        "properties": {
+          "openlist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 OpenList 内部 storage id；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 88,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 OpenList 内部挂载路径，不向终端用户展示为可访问地址；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/tianyicloud/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "ready"
+            ],
+            "default": "qr_pending",
+            "description": "扫码认证状态；ready 后才可浏览、扫描和播放。"
+          },
+          "cloud_type": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "family"
+            ],
+            "default": "personal",
+            "description": "OpenList 189CloudTV 云盘类型。当前前端先使用默认 personal。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "天翼云盘侧根路径，仅用于展示。",
+            "example": "/"
+          }
+        }
+      },
+      "Config115Cloud": {
+        "type": "object",
+        "title": "115 Cloud Managed Config",
+        "description": "CyberStream 托管 OpenList 生成的 115 云盘来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、qrcode_source 等展示字段；openlist_storage_id/mount_path/qr_uid/qr_sign/qr_time 为后端内部字段，不会在普通 source 响应中暴露。",
+        "required": [
+          "openlist_storage_id",
+          "mount_path"
+        ],
+        "properties": {
+          "openlist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 OpenList 内部 storage id；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 115,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 OpenList 内部挂载路径，不向终端用户展示为可访问地址；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/115cloud/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "qr_expired",
+              "qr_canceled",
+              "ready"
+            ],
+            "default": "qr_pending",
+            "description": "扫码认证状态；ready 后才可浏览、扫描和播放。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "115 云盘侧根路径，仅用于展示。",
+            "example": "/"
+          },
+          "qrcode_source": {
+            "type": "string",
+            "enum": [
+              "web",
+              "android",
+              "ios",
+              "tv",
+              "alipaymini",
+              "wechatmini",
+              "qandroid"
+            ],
+            "default": "wechatmini",
+            "description": "115 二维码登录端类型；前端首轮联调用默认 wechatmini。"
+          },
+          "qr_uid": {
+            "type": "string",
+            "description": "115 二维码会话 uid；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          },
+          "qr_sign": {
+            "type": "string",
+            "description": "115 二维码会话签名；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          },
+          "qr_time": {
+            "type": "integer",
+            "description": "115 二维码会话时间戳；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          }
+        }
+      },
+      "ManagedTianYiCloudQrStartRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "存储源显示名称，未传默认 TianYiCloud。",
+            "example": "天翼云盘"
+          },
+          "source_name": {
+            "type": "string",
+            "description": "name 的兼容别名。"
+          },
+          "cloud_type": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "family"
+            ],
+            "default": "personal",
+            "description": "OpenList 189CloudTV 云盘类型；当前前端先不要暴露给普通用户。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "OpenList 189CloudTV 技术根目录 ID，可留空使用默认个人云根目录。"
+          }
+        }
+      },
+      "ManagedTianYiCloudQrStartData": {
+        "type": "object",
+        "properties": {
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending"
+            ]
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "可直接渲染的二维码 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，客户端通常无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedTianYiCloudQrStartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedTianYiCloudQrStartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedTianYiCloudQrPollRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "qr/start 接口返回的 CyberStream 存储源 ID。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          }
+        }
+      },
+      "ManagedTianYiCloudQrPollData": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "ready"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "未完成扫码时的机器可读原因。"
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "OpenList 重新生成二维码时返回的新 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，客户端通常无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedTianYiCloudQrPollResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedTianYiCloudQrPollData"
+              }
+            }
+          }
+        ]
+      },
+      "Managed115CloudQrStartRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "存储源显示名称，未传默认 115 Cloud。",
+            "example": "115 云盘"
+          },
+          "source_name": {
+            "type": "string",
+            "description": "name 的兼容别名。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "OpenList 115 Cloud 技术根目录 ID，可留空使用默认根目录 0。",
+            "default": "0"
+          },
+          "qrcode_source": {
+            "type": "string",
+            "enum": [
+              "web",
+              "android",
+              "ios",
+              "tv",
+              "alipaymini",
+              "wechatmini",
+              "qandroid"
+            ],
+            "default": "wechatmini",
+            "description": "115 二维码登录端类型；首轮联调用默认 wechatmini。"
+          }
+        }
+      },
+      "Managed115CloudQrStartData": {
+        "type": "object",
+        "properties": {
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "ready"
+            ]
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "可直接渲染的二维码 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，客户端通常无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "Managed115CloudQrStartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Managed115CloudQrStartData"
+              }
+            }
+          }
+        ]
+      },
+      "Managed115CloudQrPollRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "qr/start 返回的 CyberStream 存储源 ID。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          }
+        }
+      },
+      "Managed115CloudQrPollData": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "qr_expired",
+              "qr_canceled",
+              "ready"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "waiting_for_scan",
+              "waiting_for_confirm",
+              "qr_expired",
+              "qr_canceled"
+            ],
+            "description": "未完成扫码时的机器可读原因。"
+          },
+          "qr_status": {
+            "type": "integer",
+            "nullable": true,
+            "description": "115 二维码状态：0 未扫码，1 已扫码待确认，2 已确认，-1 过期，-2 取消。"
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "需要替换二维码时返回的新 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，客户端通常无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "Managed115CloudQrPollResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Managed115CloudQrPollData"
+              }
+            }
+          }
+        ]
+      },
+      "ConfigQuarkTV": {
+        "type": "object",
+        "title": "QuarkTV Managed Config",
+        "description": "CyberStream 托管 OpenList 生成的 QuarkTV 来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、link_method 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "required": [
+          "openlist_storage_id",
+          "mount_path"
+        ],
+        "properties": {
+          "openlist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 OpenList 内部 storage id；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 99,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 OpenList 内部挂载路径，不向终端用户展示为可访问地址；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/quarktv/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "ready"
+            ],
+            "default": "qr_pending",
+            "description": "扫码认证状态；ready 后才可浏览、扫描和播放。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "夸克网盘侧根路径，仅用于展示。",
+            "example": "/"
+          },
+          "link_method": {
+            "type": "string",
+            "enum": [
+              "download",
+              "streaming"
+            ],
+            "default": "download",
+            "description": "OpenList 获取视频链接方式；前端首轮联调用默认 download。"
+          }
+        }
+      },
+      "ConfigUCTV": {
+        "type": "object",
+        "title": "UCTV Managed Config",
+        "description": "CyberStream 托管 OpenList 生成的 UCTV 来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、link_method 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "required": [
+          "openlist_storage_id",
+          "mount_path"
+        ],
+        "properties": {
+          "openlist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 OpenList 内部 storage id；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 99,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 OpenList 内部挂载路径，不向终端用户展示为可访问地址；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/uctv/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "ready"
+            ],
+            "default": "qr_pending",
+            "description": "扫码认证状态；ready 后才可浏览、扫描和播放。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "UC 网盘侧根路径，仅用于展示。",
+            "example": "/"
+          },
+          "link_method": {
+            "type": "string",
+            "enum": [
+              "download",
+              "streaming"
+            ],
+            "default": "download",
+            "description": "OpenList 获取视频链接方式；前端首轮联调用默认 download。"
+          }
+        }
+      },
+      "ManagedQuarkUCTVQrStartRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "存储源显示名称，未传时 QuarkTV 默认 QuarkTV，UCTV 默认 UCTV。",
+            "example": "QuarkTV"
+          },
+          "source_name": {
+            "type": "string",
+            "description": "name 的兼容别名。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "OpenList QuarkTV/UCTV 技术根目录 ID，可留空使用默认根目录 0。",
+            "default": "0"
+          },
+          "link_method": {
+            "type": "string",
+            "enum": [
+              "download",
+              "streaming"
+            ],
+            "default": "download",
+            "description": "OpenList 获取视频链接方式；首轮联调用默认 download。"
+          }
+        }
+      },
+      "ManagedQuarkUCTVQrStartData": {
+        "type": "object",
+        "properties": {
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending"
+            ]
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "可直接渲染的二维码 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，QuarkTV/UCTV 通常为空，客户端无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedQuarkUCTVQrStartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrStartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedQuarkUCTVQrPollRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "qr/start 接口返回的 CyberStream 存储源 ID。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          }
+        }
+      },
+      "ManagedQuarkUCTVQrPollData": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "ready"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "未完成扫码时的机器可读原因。"
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "OpenList 重新生成二维码时返回的新 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，客户端通常无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedQuarkUCTVQrPollResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrPollData"
               }
             }
           }

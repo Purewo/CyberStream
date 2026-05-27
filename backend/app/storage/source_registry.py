@@ -368,11 +368,294 @@ SOURCE_TYPE_DEFINITIONS = {
         'secret_fields': ['token', 'password', 'path_password'],
         'config_fields': [],
     },
+    'guangyapan': {
+        'display_name': 'GuangYaPan',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'sms_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': ['alist_storage_id', 'mount_path'],
+        'config_fields': [
+            {
+                'name': 'alist_storage_id',
+                'type': 'integer',
+                'required': True,
+                'description': 'CyberStream 托管 AList 内部 storage id',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': True,
+                'description': 'CyberStream 托管 AList 内部挂载路径',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'sms_pending',
+                'description': '短信认证状态：sms_pending 或 ready',
+            },
+            {
+                'name': 'phone_number_masked',
+                'type': 'string',
+                'required': False,
+                'description': '脱敏手机号，仅用于展示',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': '光鸭云盘侧根路径，仅用于展示',
+            },
+        ],
+    },
+    'tianyicloud': {
+        'display_name': 'TianYiCloud',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'qr_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': ['openlist_storage_id', 'mount_path'],
+        'config_fields': [
+            {
+                'name': 'openlist_storage_id',
+                'type': 'integer',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部 storage id',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部挂载路径',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'qr_pending',
+                'description': '扫码认证状态：qr_pending 或 ready',
+            },
+            {
+                'name': 'cloud_type',
+                'type': 'string',
+                'required': False,
+                'default': 'personal',
+                'description': '天翼云盘类型：personal 或 family',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': '天翼云盘侧根路径，仅用于展示',
+            },
+        ],
+    },
+    '115cloud': {
+        'display_name': '115 Cloud',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'qr_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': ['openlist_storage_id', 'mount_path', 'qr_uid', 'qr_sign', 'qr_time'],
+        'config_fields': [
+            {
+                'name': 'openlist_storage_id',
+                'type': 'integer',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部 storage id',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部挂载路径',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'qr_pending',
+                'description': '扫码认证状态：qr_pending、qr_expired、qr_canceled 或 ready',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': '115 云盘侧根路径，仅用于展示',
+            },
+            {
+                'name': 'qrcode_source',
+                'type': 'string',
+                'required': False,
+                'default': 'wechatmini',
+                'description': '115 二维码登录端类型：web、android、ios、tv、alipaymini、wechatmini 或 qandroid',
+            },
+            {
+                'name': 'qr_uid',
+                'type': 'string',
+                'required': False,
+                'description': '115 二维码会话 uid，后端隐藏字段',
+            },
+            {
+                'name': 'qr_sign',
+                'type': 'string',
+                'required': False,
+                'description': '115 二维码会话签名，后端隐藏字段',
+            },
+            {
+                'name': 'qr_time',
+                'type': 'integer',
+                'required': False,
+                'description': '115 二维码会话时间戳，后端隐藏字段',
+            },
+        ],
+    },
+    'quarktv': {
+        'display_name': 'QuarkTV',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'qr_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': ['openlist_storage_id', 'mount_path'],
+        'config_fields': [
+            {
+                'name': 'openlist_storage_id',
+                'type': 'integer',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部 storage id',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部挂载路径',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'qr_pending',
+                'description': '扫码认证状态：qr_pending 或 ready',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': '夸克网盘侧根路径，仅用于展示',
+            },
+            {
+                'name': 'link_method',
+                'type': 'string',
+                'required': False,
+                'default': 'download',
+                'description': 'OpenList 获取视频链接方式：download 或 streaming',
+            },
+        ],
+    },
+    'uctv': {
+        'display_name': 'UCTV',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'qr_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': ['openlist_storage_id', 'mount_path'],
+        'config_fields': [
+            {
+                'name': 'openlist_storage_id',
+                'type': 'integer',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部 storage id',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部挂载路径',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'qr_pending',
+                'description': '扫码认证状态：qr_pending 或 ready',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': 'UC 网盘侧根路径，仅用于展示',
+            },
+            {
+                'name': 'link_method',
+                'type': 'string',
+                'required': False,
+                'default': 'download',
+                'description': 'OpenList 获取视频链接方式：download 或 streaming',
+            },
+        ],
+    },
 }
 
 SOURCE_TYPE_DEFINITIONS['openlist']['config_fields'] = SOURCE_TYPE_DEFINITIONS['alist']['config_fields']
 
 REMOTE_ROOT_SOURCE_TYPES = {'webdav', 'smb', 'ftp', 'alist', 'openlist'}
+MANAGED_CLOUD_ROOT_SOURCE_TYPES = {'guangyapan', 'tianyicloud', '115cloud', 'quarktv', 'uctv'}
 
 LEGACY_CONFIG_ALIASES = {
     'path': 'root_path',
@@ -474,8 +757,11 @@ def sanitize_source_config(s_type, config):
     normalized_config = normalize_source_config(normalized_type, config or {})
     masked = {}
     secret_fields = set(definition.get('secret_fields', []))
+    hidden_fields = set(definition.get('hidden_fields', []))
 
     for key, value in normalized_config.items():
+        if key in hidden_fields:
+            continue
         if key in secret_fields and value not in (None, ''):
             masked[key] = '***'
         else:
@@ -528,6 +814,26 @@ def build_source_display_root(s_type, config):
         base_path = str(display_config.get('base_path') or '').strip().strip('/')
         suffix = f"/{base_path}" if base_path else ''
         return f"{protocol}://{host}:{port}{suffix}{root}"
+
+    if normalized_type == 'guangyapan':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"GuangYaPan:{root}"
+
+    if normalized_type == 'tianyicloud':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"TianYiCloud:{root}"
+
+    if normalized_type == '115cloud':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"115 Cloud:{root}"
+
+    if normalized_type == 'quarktv':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"QuarkTV:{root}"
+
+    if normalized_type == 'uctv':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"UCTV:{root}"
 
     return "Unknown"
 
@@ -582,6 +888,27 @@ def _normalize_post_config_fields(s_type, config):
         if isinstance(config.get('base_url'), str):
             config['base_url'] = config['base_url'].rstrip('/')
         config.setdefault('host', '')
+
+    if normalized_type in MANAGED_CLOUD_ROOT_SOURCE_TYPES and 'cloud_root_path' in config:
+        config['cloud_root_path'] = _normalize_remote_root(config.get('cloud_root_path'))
+
+    if normalized_type == 'tianyicloud' and 'cloud_type' in config and isinstance(config.get('cloud_type'), str):
+        config['cloud_type'] = config['cloud_type'].strip().lower() or 'personal'
+        if config['cloud_type'] not in {'personal', 'family'}:
+            raise StorageProviderError("Invalid config field value: cloud_type should be personal or family", code=40038)
+
+    if normalized_type == '115cloud' and 'qrcode_source' in config and isinstance(config.get('qrcode_source'), str):
+        config['qrcode_source'] = config['qrcode_source'].strip().lower() or 'wechatmini'
+        if config['qrcode_source'] not in {'web', 'android', 'ios', 'tv', 'alipaymini', 'wechatmini', 'qandroid'}:
+            raise StorageProviderError(
+                "Invalid config field value: qrcode_source should be web, android, ios, tv, alipaymini, wechatmini or qandroid",
+                code=40038,
+            )
+
+    if normalized_type in {'quarktv', 'uctv'} and 'link_method' in config and isinstance(config.get('link_method'), str):
+        config['link_method'] = config['link_method'].strip().lower() or 'download'
+        if config['link_method'] not in {'download', 'streaming'}:
+            raise StorageProviderError("Invalid config field value: link_method should be download or streaming", code=40038)
 
     if normalized_type == 'smb':
         config.setdefault('remote_name', config.get('host', ''))

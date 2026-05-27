@@ -8,6 +8,7 @@ from backend.app.extensions import db
 from backend.app.models import StorageSource
 from backend.app.providers.base import StorageProviderError
 from backend.app.providers.factory import provider_factory
+from backend.app.services.managed_alist import ManagedAListClient, ManagedAListError, ManagedOpenListClient
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
 from backend.app.services.vault import VaultAccessError, verify_vault_pin
@@ -114,8 +115,69 @@ def _get_json_payload():
     return request.get_json(silent=True) or {}
 
 
+def _managed_alist_error_response(error):
+    http_status = 502 if error.code >= 500 else 400
+    return api_error(code=error.code, msg=error.message, http_status=http_status)
+
+
 def _vault_error_response(error):
     return api_error(code=error.code, msg=error.msg, http_status=error.http_status)
+
+
+def _build_guangyapan_source_config(state, auth_state):
+    return {
+        "alist_storage_id": int(state["storage_id"]),
+        "mount_path": state["mount_path"],
+        "auth_state": auth_state,
+        "phone_number_masked": state.get("phone_number_masked"),
+        "cloud_root_path": state.get("cloud_root_path") or "/",
+    }
+
+
+def _build_tianyicloud_source_config(state, auth_state):
+    return {
+        "openlist_storage_id": int(state["storage_id"]),
+        "mount_path": state["mount_path"],
+        "auth_state": auth_state,
+        "cloud_type": state.get("cloud_type") or "personal",
+        "cloud_root_path": state.get("cloud_root_path") or "/",
+    }
+
+
+def _build_115cloud_source_config(state, auth_state):
+    config = {
+        "openlist_storage_id": int(state["storage_id"]),
+        "mount_path": state["mount_path"],
+        "auth_state": auth_state,
+        "cloud_root_path": state.get("cloud_root_path") or "/",
+        "qrcode_source": state.get("qrcode_source") or ManagedOpenListClient.DEFAULT_115_QRCODE_SOURCE,
+    }
+    for key in ("qr_uid", "qr_sign", "qr_time"):
+        if state.get(key) is not None:
+            config[key] = state[key]
+    return config
+
+
+_MANAGED_QUARK_UC_PROVIDERS = {
+    "quarktv": {
+        "default_name": "QuarkTV",
+        "display_name": "QuarkTV",
+    },
+    "uctv": {
+        "default_name": "UCTV",
+        "display_name": "UCTV",
+    },
+}
+
+
+def _build_quark_uc_source_config(state, auth_state):
+    return {
+        "openlist_storage_id": int(state["storage_id"]),
+        "mount_path": state["mount_path"],
+        "auth_state": auth_state,
+        "cloud_root_path": state.get("cloud_root_path") or "/",
+        "link_method": state.get("link_method") or "download",
+    }
 
 
 def _scan_background_task(app, source_id=None, root_path=None, content_type=None, scrape_enabled=True, scraper_policy=None):
@@ -210,6 +272,523 @@ def add_source():
         return api_error(code=50014, msg="Create source failed", http_status=500)
 
 
+@storage_bp.route('/storage/managed/guangyapan/sms/start', methods=['POST'])
+def start_managed_guangyapan_sms():
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or 'GuangYaPan').strip()
+    phone_number = (payload.get('phone_number') or '').strip()
+    root_path = (payload.get('root_path') or payload.get('cloud_root_path') or '').strip()
+    captcha_token = (payload.get('captcha_token') or '').strip()
+
+    if not phone_number:
+        return api_error(code=40001, msg="Missing required field: phone_number")
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+
+    storage_state = None
+    try:
+        client = ManagedAListClient()
+        storage_state = client.create_guangyapan_storage(
+            phone_number=phone_number,
+            root_path=root_path,
+            captcha_token=captcha_token,
+        )
+        source_config = normalize_source_config(
+            'guangyapan',
+            _build_guangyapan_source_config(storage_state, auth_state='sms_pending'),
+        )
+        source = StorageSource(name=name, type='guangyapan', config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        return api_response(data={
+            "verification_sent": True,
+            "auth_state": "sms_pending",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedAListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed AList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedAListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed AList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Start managed GuangYaPan SMS failed error=%s", e)
+        return api_error(code=50016, msg="Start GuangYaPan SMS login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/guangyapan/sms/verify', methods=['POST'])
+def verify_managed_guangyapan_sms():
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    verify_code = (payload.get('verify_code') or payload.get('code') or '').strip()
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+    if not verify_code:
+        return api_error(code=40001, msg="Missing required field: verify_code")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != 'guangyapan':
+        return api_error(code=40061, msg="Storage source is not a managed GuangYaPan source")
+
+    try:
+        source_config = source.config or {}
+        storage_id = int(source_config.get("alist_storage_id") or 0)
+        if not storage_id:
+            return api_error(code=40061, msg="Managed GuangYaPan source has no AList storage id")
+        client = ManagedAListClient()
+        verified_state = client.verify_guangyapan_storage(storage_id, verify_code)
+        next_config = dict(source_config)
+        next_config.update({
+            "alist_storage_id": storage_id,
+            "mount_path": verified_state["mount_path"],
+            "auth_state": "ready",
+        })
+        source.config = normalize_source_config('guangyapan', next_config)
+        db.session.commit()
+        return api_response(data={
+            "verified": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Verify managed GuangYaPan SMS failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50017, msg="Verify GuangYaPan SMS login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/tianyicloud/qr/start', methods=['POST'])
+def start_managed_tianyicloud_qr():
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or 'TianYiCloud').strip()
+    cloud_type = str(payload.get('cloud_type') or 'personal').strip().lower()
+    root_folder_id = str(payload.get('root_folder_id') or '').strip()
+
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+
+    storage_state = None
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_tianyicloud_storage(
+            root_folder_id=root_folder_id,
+            cloud_type=cloud_type,
+        )
+        source_config = normalize_source_config(
+            'tianyicloud',
+            _build_tianyicloud_source_config(storage_state, auth_state='qr_pending'),
+        )
+        source = StorageSource(name=name, type='tianyicloud', config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        return api_response(data={
+            "qr_started": True,
+            "auth_state": "qr_pending",
+            "qr_code_data_url": storage_state["qr_code_data_url"],
+            "qr_content": storage_state.get("qr_content"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Start managed TianYiCloud QR failed error=%s", e)
+        return api_error(code=50018, msg="Start TianYiCloud QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/tianyicloud/qr/poll', methods=['POST'])
+def poll_managed_tianyicloud_qr():
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != 'tianyicloud':
+        return api_error(code=40061, msg="Storage source is not a managed TianYiCloud source")
+
+    try:
+        source_config = source.config or {}
+        storage_id = int(source_config.get("openlist_storage_id") or 0)
+        if not storage_id:
+            return api_error(code=40061, msg="Managed TianYiCloud source has no OpenList storage id")
+        client = ManagedOpenListClient()
+        login_state = client.poll_tianyicloud_storage(storage_id)
+        if not login_state.get("authenticated"):
+            data = {
+                "authenticated": False,
+                "auth_state": "qr_pending",
+                "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+                "source": source.to_dict(),
+            }
+            if login_state.get("qr_code_data_url"):
+                data["qr_code_data_url"] = login_state["qr_code_data_url"]
+                data["qr_content"] = login_state.get("qr_content")
+            return api_response(data=data)
+
+        next_config = dict(source_config)
+        next_config.update({
+            "openlist_storage_id": storage_id,
+            "mount_path": login_state["mount_path"],
+            "auth_state": "ready",
+            "cloud_type": login_state.get("cloud_type") or source_config.get("cloud_type") or "personal",
+        })
+        source.config = normalize_source_config('tianyicloud', next_config)
+        db.session.commit()
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Poll managed TianYiCloud QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50019, msg="Poll TianYiCloud QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/115cloud/qr/start', methods=['POST'])
+def start_managed_115cloud_qr():
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or '115 Cloud').strip()
+    root_folder_id = str(payload.get('root_folder_id') or '').strip()
+    qrcode_source = str(
+        payload.get('qrcode_source') or ManagedOpenListClient.DEFAULT_115_QRCODE_SOURCE
+    ).strip().lower()
+
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+
+    storage_state = None
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_115cloud_storage(
+            root_folder_id=root_folder_id,
+            qrcode_source=qrcode_source,
+        )
+        auth_state = storage_state.get("auth_state") or "qr_pending"
+        source_config = normalize_source_config(
+            '115cloud',
+            _build_115cloud_source_config(storage_state, auth_state=auth_state),
+        )
+        source = StorageSource(name=name, type='115cloud', config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        data = {
+            "qr_started": auth_state != "ready",
+            "auth_state": auth_state,
+            "source": source.to_dict(),
+        }
+        if storage_state.get("qr_code_data_url"):
+            data["qr_code_data_url"] = storage_state["qr_code_data_url"]
+            data["qr_content"] = storage_state.get("qr_content")
+        return api_response(data=data)
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Start managed 115 Cloud QR failed error=%s", e)
+        return api_error(code=50022, msg="Start 115 Cloud QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/115cloud/qr/poll', methods=['POST'])
+def poll_managed_115cloud_qr():
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != '115cloud':
+        return api_error(code=40061, msg="Storage source is not a managed 115 Cloud source")
+
+    try:
+        source_config = source.config or {}
+        storage_id = int(source_config.get("openlist_storage_id") or 0)
+        if not storage_id:
+            return api_error(code=40061, msg="Managed 115 Cloud source has no OpenList storage id")
+
+        qr_session = None
+        if source_config.get("qr_uid") and source_config.get("qr_sign") and source_config.get("qr_time") is not None:
+            qr_session = {
+                "qr_uid": source_config.get("qr_uid"),
+                "qr_sign": source_config.get("qr_sign"),
+                "qr_time": source_config.get("qr_time"),
+            }
+
+        client = ManagedOpenListClient()
+        login_state = client.poll_115cloud_storage(storage_id, qr_session=qr_session)
+        if not login_state.get("authenticated"):
+            auth_state = login_state.get("auth_state") or "qr_pending"
+            next_config = dict(source_config)
+            next_config.update({
+                "openlist_storage_id": storage_id,
+                "mount_path": login_state.get("mount_path") or source_config.get("mount_path"),
+                "auth_state": auth_state,
+                "cloud_root_path": login_state.get("cloud_root_path") or source_config.get("cloud_root_path") or "/",
+                "qrcode_source": (
+                    login_state.get("qrcode_source")
+                    or source_config.get("qrcode_source")
+                    or ManagedOpenListClient.DEFAULT_115_QRCODE_SOURCE
+                ),
+            })
+            source.config = normalize_source_config('115cloud', next_config)
+            db.session.commit()
+            data = {
+                "authenticated": False,
+                "auth_state": auth_state,
+                "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+                "source": source.to_dict(),
+            }
+            if login_state.get("qr_status") is not None:
+                data["qr_status"] = login_state["qr_status"]
+            if login_state.get("qr_code_data_url"):
+                data["qr_code_data_url"] = login_state["qr_code_data_url"]
+                data["qr_content"] = login_state.get("qr_content")
+            return api_response(data=data)
+
+        next_config = dict(source_config)
+        next_config.update({
+            "openlist_storage_id": storage_id,
+            "mount_path": login_state["mount_path"],
+            "auth_state": "ready",
+            "cloud_root_path": login_state.get("cloud_root_path") or source_config.get("cloud_root_path") or "/",
+            "qrcode_source": (
+                login_state.get("qrcode_source")
+                or source_config.get("qrcode_source")
+                or ManagedOpenListClient.DEFAULT_115_QRCODE_SOURCE
+            ),
+        })
+        for key in ("qr_uid", "qr_sign", "qr_time"):
+            next_config.pop(key, None)
+        source.config = normalize_source_config('115cloud', next_config)
+        db.session.commit()
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Poll managed 115 Cloud QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50023, msg="Poll 115 Cloud QR login failed", http_status=500)
+
+
+
+def _start_managed_quark_uc_qr(source_type):
+    provider_meta = _MANAGED_QUARK_UC_PROVIDERS[source_type]
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or provider_meta["default_name"]).strip()
+    root_folder_id = str(payload.get('root_folder_id') or '').strip()
+    link_method = str(payload.get('link_method') or 'download').strip().lower()
+
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+
+    storage_state = None
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_quark_uc_tv_storage(
+            kind=source_type,
+            root_folder_id=root_folder_id,
+            link_method=link_method,
+        )
+        source_config = normalize_source_config(
+            source_type,
+            _build_quark_uc_source_config(storage_state, auth_state='qr_pending'),
+        )
+        source = StorageSource(name=name, type=source_type, config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        return api_response(data={
+            "qr_started": True,
+            "auth_state": "qr_pending",
+            "qr_code_data_url": storage_state["qr_code_data_url"],
+            "qr_content": storage_state.get("qr_content"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Start managed %s QR failed error=%s", provider_meta["display_name"], e)
+        return api_error(code=50020, msg=f"Start {provider_meta['display_name']} QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/quarktv/qr/start', methods=['POST'])
+def start_managed_quarktv_qr():
+    return _start_managed_quark_uc_qr('quarktv')
+
+
+@storage_bp.route('/storage/managed/uctv/qr/start', methods=['POST'])
+def start_managed_uctv_qr():
+    return _start_managed_quark_uc_qr('uctv')
+
+
+def _poll_managed_quark_uc_qr(source_type):
+    provider_meta = _MANAGED_QUARK_UC_PROVIDERS[source_type]
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != source_type:
+        return api_error(code=40061, msg=f"Storage source is not a managed {provider_meta['display_name']} source")
+
+    try:
+        source_config = source.config or {}
+        storage_id = int(source_config.get("openlist_storage_id") or 0)
+        if not storage_id:
+            return api_error(code=40061, msg=f"Managed {provider_meta['display_name']} source has no OpenList storage id")
+        client = ManagedOpenListClient()
+        login_state = client.poll_quark_uc_tv_storage(storage_id, source_type)
+        if not login_state.get("authenticated"):
+            data = {
+                "authenticated": False,
+                "auth_state": "qr_pending",
+                "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+                "source": source.to_dict(),
+            }
+            if login_state.get("qr_code_data_url"):
+                data["qr_code_data_url"] = login_state["qr_code_data_url"]
+                data["qr_content"] = login_state.get("qr_content")
+            return api_response(data=data)
+
+        next_config = dict(source_config)
+        next_config.update({
+            "openlist_storage_id": storage_id,
+            "mount_path": login_state["mount_path"],
+            "auth_state": "ready",
+            "cloud_root_path": login_state.get("cloud_root_path") or source_config.get("cloud_root_path") or "/",
+            "link_method": login_state.get("link_method") or source_config.get("link_method") or "download",
+        })
+        source.config = normalize_source_config(source_type, next_config)
+        db.session.commit()
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Poll managed %s QR failed source_id=%s error=%s", provider_meta["display_name"], source_id, e)
+        return api_error(code=50021, msg=f"Poll {provider_meta['display_name']} QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/quarktv/qr/poll', methods=['POST'])
+def poll_managed_quarktv_qr():
+    return _poll_managed_quark_uc_qr('quarktv')
+
+
+@storage_bp.route('/storage/managed/uctv/qr/poll', methods=['POST'])
+def poll_managed_uctv_qr():
+    return _poll_managed_quark_uc_qr('uctv')
+
+
 @storage_bp.route('/storage/sources/<int:id>', methods=['PATCH'])
 def update_storage_source(id):
     """v1.9.0 新增: 更新存储源配置 (支持 name, config 修改)。"""
@@ -282,9 +861,23 @@ def delete_source(id):
             db.session.rollback()
             return _vault_error_response(e)
 
+    managed_storage_id = None
+    managed_client_class = None
+    if source.type == 'guangyapan':
+        managed_storage_id = (source.config or {}).get('alist_storage_id')
+        managed_client_class = ManagedAListClient
+    elif source.type in {'tianyicloud', '115cloud', 'quarktv', 'uctv'}:
+        managed_storage_id = (source.config or {}).get('openlist_storage_id')
+        managed_client_class = ManagedOpenListClient
     success, msg = scanner_adapter.delete_storage_source(id, keep_metadata)
     if not success:
         return api_error(code=40003, msg=msg, http_status=404 if 'not found' in msg else 500)
+
+    if managed_storage_id:
+        try:
+            managed_client_class().delete_storage(managed_storage_id)
+        except Exception:
+            logger.exception("Delete managed storage runtime entry failed source_id=%s storage_id=%s", id, managed_storage_id)
 
     return api_response(msg="Source deleted successfully")
 

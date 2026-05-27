@@ -46,6 +46,10 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertIn("release-notes", keys)
         self.assertIn("api-overview", keys)
         self.assertIn("frontend-review-workbench", keys)
+        self.assertIn("frontend-managed-guangyapan", keys)
+        self.assertIn("frontend-managed-tianyicloud", keys)
+        self.assertIn("frontend-managed-115cloud", keys)
+        self.assertIn("frontend-managed-quark-uc", keys)
 
     def test_openapi_json_is_served_raw_for_generators(self):
         client = self._create_client()
@@ -107,6 +111,44 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("text/markdown", response.mimetype)
         self.assertIn("# 1.21.0-beta", response.get_data(as_text=True))
+
+    def test_managed_guangyapan_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-managed-guangyapan")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        self.assertIn("storage/managed/guangyapan/sms/start", response.get_data(as_text=True))
+
+    def test_managed_tianyicloud_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-managed-tianyicloud")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        self.assertIn("storage/managed/tianyicloud/qr/start", response.get_data(as_text=True))
+
+    def test_managed_115cloud_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-managed-115cloud")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        self.assertIn("storage/managed/115cloud/qr/start", response.get_data(as_text=True))
+
+    def test_managed_quark_uc_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-managed-quark-uc")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        text = response.get_data(as_text=True)
+        self.assertIn("storage/managed/quarktv/qr/start", text)
+        self.assertIn("storage/managed/uctv/qr/start", text)
 
     def test_unknown_document_key_returns_404(self):
         client = self._create_client()
