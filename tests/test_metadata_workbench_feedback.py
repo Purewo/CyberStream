@@ -11,7 +11,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
+from backend.app.metadata.parser import PathMetadataParser
+from backend.app.metadata.rescrape import MovieMetadataRescrapeService
+from backend.app.metadata.scraper import MetadataScraper as LegacyMetadataScraper
 from backend.app.metadata.types import EntityMetadataContext, MetadataResolution
+from backend.app.metadata.types import ParsedMediaInfo
 from backend.app.models import MediaResource, Movie, MovieSeasonMetadata
 from backend.app.services.jobs import job_manager
 
@@ -238,6 +242,105 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertEqual([target.id], data["summary"]["updated_movie_ids"])
         self.assertIsNone(db.session.get(Movie, source.id))
         self.assertEqual(target.id, db.session.get(MediaResource, resource.id).movie_id)
+
+    def test_re_scrape_rebuilds_title_from_clean_filename_when_parent_is_dirty(self):
+        movie = self._add_movie(title="【高清影视之家发布 www SSDSSE com】阿丽塔：战斗天使 USA TrueHD7 1")
+        path = (
+            "来自：云添加/【高清影视之家发布 www.SSDSSE.com】阿丽塔：战斗天使"
+            "[HDR+杜比视界双版本][国英多音轨+特效中文字幕].2019.USA.BluRay.Remux.UHD.DoVi.HDR10."
+            "2160p.Atmos.TrueHD7.1-DreamHD/Alita Battle Angel 2019 USA BluRay Remux UHD DoVi "
+            "HDR 2160p Atmos TrueHD7.1-DreamHD.mkv"
+        )
+        resource = MediaResource(
+            movie_id=movie.id,
+            path=path,
+            filename=path.rsplit("/", 1)[-1],
+        )
+        db.session.add(resource)
+        db.session.commit()
+
+        captured = {}
+
+        def fake_resolve(parsed_info):
+            captured["title"] = parsed_info.title
+            captured["year"] = parsed_info.year
+            return MetadataResolution(
+                meta_data={
+                    "tmdb_id": "movie/399579",
+                    "title": "阿丽塔：战斗天使",
+                    "original_title": "Alita: Battle Angel",
+                    "year": 2019,
+                    "rating": 7.2,
+                    "description": "updated",
+                    "cover": "poster",
+                    "background_cover": "backdrop",
+                    "category": ["动作"],
+                    "director": "Robert Rodriguez",
+                    "actors": [],
+                    "country": "US",
+                    "scraper_source": "TMDB_FALLBACK",
+                },
+                resolved_tmdb_id="movie/399579",
+                scrape_layer="structured",
+                scrape_strategy="movie_filename_year",
+                reason="tmdb_match",
+            )
+
+        with patch("backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata", side_effect=fake_resolve):
+            result = MovieMetadataRescrapeService().resolve_movie(movie, media_type_hint="movie")
+
+        self.assertEqual("Alita Battle Angel", captured["title"])
+        self.assertEqual(2019, captured["year"])
+        self.assertEqual("Alita Battle Angel", result["entity_context"].title)
+
+    def test_legacy_pipeline_ignores_current_local_placeholder_title_match(self):
+        movie = Movie(
+            tmdb_id="loc-911c3d266e2b",
+            title="Transformers Age of Extinction",
+            original_title="Transformers Age of Extinction",
+            year=2014,
+            scraper_source="LOCAL_FALLBACK",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        parsed_info = ParsedMediaInfo(
+            title="Transformers Age of Extinction",
+            year=2014,
+            media_type_hint="movie",
+            parse_layer="strict",
+            parse_strategy="movie_filename_year",
+            confidence="high",
+        )
+        details = {
+            "tmdb_id": "movie/91314",
+            "title": "变形金刚4：绝迹重生",
+            "original_title": "Transformers: Age of Extinction",
+            "year": 2014,
+            "rating": 6.0,
+            "description": "updated",
+            "cover": "poster",
+            "background_cover": "backdrop",
+            "category": ["动作"],
+            "director": "Michael Bay",
+            "actors": [],
+            "country": "US",
+            "scraper_source": "TMDB",
+        }
+
+        resolver = LegacyMetadataScraper(PathMetadataParser())
+        with patch("backend.app.metadata.scraper.tmdb_scraper.search_movie", return_value="movie/91314") as search, \
+             patch("backend.app.metadata.scraper.tmdb_scraper.get_movie_details", return_value=details):
+            resolution = resolver.resolve(parsed_info)
+
+        search.assert_called_once_with(
+            "Transformers Age of Extinction",
+            2014,
+            strict=True,
+            media_type_hint="movie",
+        )
+        self.assertEqual("movie/91314", resolution.resolved_tmdb_id)
+        self.assertEqual("TMDB_STRICT", resolution.meta_data["scraper_source"])
 
     def test_batch_re_scrape_job_tracks_status_and_result(self):
         movie = self._add_movie()

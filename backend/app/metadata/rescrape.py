@@ -4,6 +4,7 @@ from collections import defaultdict
 
 from backend.app.metadata import metadata_pipeline
 from backend.app.providers.factory import provider_factory
+from backend.app.services.media_path_cleaner import MediaPathCleaner
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,9 @@ class MovieMetadataRescrapeService:
     - 按需读取同目录 sidecar NFO
     - 复用 metadata pipeline 的 strict/fallback/nfo/tmdb/ai 规则
     """
+
+    def __init__(self):
+        self.cleaner = MediaPathCleaner()
 
     def resolve_movie(self, movie, media_type_hint=None):
         resources = movie.resources.all()
@@ -103,6 +107,7 @@ class MovieMetadataRescrapeService:
         for resource in resources:
             path = resource.path or ''
             filename = resource.filename or os.path.basename(path)
+            clean = self.cleaner.parse_path_metadata(path)
             parsed = metadata_pipeline.parse_path(path)
             nfo_candidates = self._find_sidecar_nfo(provider, path, filename, directory_cache) if provider else []
 
@@ -115,14 +120,17 @@ class MovieMetadataRescrapeService:
                 "name": filename,
                 "_resource": resource,
                 "_meta": {
-                    "title": parsed.title,
-                    "year": parsed.year,
-                    "season": resource.season if resource.season is not None else parsed.season,
-                    "episode": resource.episode if resource.episode is not None else parsed.episode,
-                    "media_type_hint": trace.get('media_type_hint') or parsed.media_type_hint,
-                    "parse_layer": trace.get('parse_layer') or parsed.parse_layer,
-                    "parse_strategy": trace.get('parse_strategy') or parsed.parse_strategy,
-                    "confidence": trace.get('confidence') or parsed.confidence,
+                    "title": clean.title,
+                    "year": clean.year,
+                    "season": resource.season if resource.season is not None else clean.season,
+                    "episode": resource.episode if resource.episode is not None else clean.episode,
+                    "media_type_hint": parsed.media_type_hint or trace.get('media_type_hint'),
+                    "parse_layer": parsed.parse_layer,
+                    "parse_strategy": clean.parse_strategy or parsed.parse_strategy,
+                    "confidence": parsed.confidence,
+                    "parse_mode": clean.parse_mode,
+                    "clean_parse_strategy": clean.parse_strategy,
+                    "needs_review": clean.needs_review,
                     "nfo_candidates": nfo_candidates,
                 },
             })

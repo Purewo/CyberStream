@@ -1,13 +1,152 @@
 import requests
 import re
+import socket
 import time
 import logging
+import threading
+from urllib.parse import urlparse
+from urllib3.util import connection as urllib3_connection
 from backend import config
 from backend.app.utils.genres import normalize_tmdb_genres
 
 logger = logging.getLogger(__name__)
 
+_TMDB_DNS_FAMILY_LOCK = threading.Lock()
+_TMDB_DNS_FAMILY_CACHE = {}
+_TMDB_DNS_FAMILY_CACHE_TTL = 300
+_TMDB_DNS_PROBE_TIMEOUT = 0.8
+
+
+def _tmdb_ipv4_gai_family():
+    return socket.AF_INET
+
+
+def _tmdb_ipv6_gai_family():
+    return socket.AF_INET6
+
+
+def _tmdb_gai_family_callback(family):
+    return _tmdb_ipv6_gai_family if family == socket.AF_INET6 else _tmdb_ipv4_gai_family
+
+
+def _tmdb_address_key(sockaddr):
+    return str(sockaddr)
+
+
+def _tmdb_probe_family(addresses, timeout):
+    last_error = None
+    seen = set()
+    for family, socktype, proto, _canonname, sockaddr in addresses:
+        key = _tmdb_address_key(sockaddr)
+        if key in seen:
+            continue
+        seen.add(key)
+        sock = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return family
+        except OSError as e:
+            last_error = e
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+    if last_error:
+        raise last_error
+    raise OSError("No address available for family probe")
+
+
+def _tmdb_cache_key(url):
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return None
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return parsed.hostname, port
+
+
+def _tmdb_cached_family(cache_key):
+    now = time.monotonic()
+    with _TMDB_DNS_FAMILY_LOCK:
+        cached = _TMDB_DNS_FAMILY_CACHE.get(cache_key)
+        if cached and cached[1] > now:
+            return cached[0]
+        if cached:
+            _TMDB_DNS_FAMILY_CACHE.pop(cache_key, None)
+    return None
+
+
+def _tmdb_store_family(cache_key, family):
+    with _TMDB_DNS_FAMILY_LOCK:
+        _TMDB_DNS_FAMILY_CACHE[cache_key] = (
+            family,
+            time.monotonic() + _TMDB_DNS_FAMILY_CACHE_TTL,
+        )
+
+
+def _tmdb_clear_family(cache_key, family=None):
+    with _TMDB_DNS_FAMILY_LOCK:
+        cached = _TMDB_DNS_FAMILY_CACHE.get(cache_key)
+        if cached and (family is None or cached[0] == family):
+            _TMDB_DNS_FAMILY_CACHE.pop(cache_key, None)
+
+
+def _tmdb_race_dns_families(host, port):
+    try:
+        addrinfos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as e:
+        logger.debug("TMDB DNS family probe skipped host=%s error=%s", host, e)
+        return None
+
+    grouped = {
+        socket.AF_INET: [],
+        socket.AF_INET6: [],
+    }
+    family_order = []
+    for addrinfo in addrinfos:
+        family = addrinfo[0]
+        if family in grouped:
+            grouped[family].append(addrinfo)
+            if family not in family_order:
+                family_order.append(family)
+
+    families = [family for family in family_order if grouped[family]]
+    if len(families) == 1:
+        return families[0]
+    if not families:
+        return None
+
+    result = {}
+    done = threading.Event()
+
+    def worker(family):
+        try:
+            _tmdb_probe_family(grouped[family], _TMDB_DNS_PROBE_TIMEOUT)
+        except OSError as e:
+            logger.debug("TMDB DNS family probe failed host=%s family=%s error=%s", host, family, e)
+            return
+        if not done.is_set():
+            result["family"] = family
+            done.set()
+
+    threads = [
+        threading.Thread(target=worker, args=(family,), daemon=True)
+        for family in families
+    ]
+    for thread in threads:
+        thread.start()
+
+    done.wait(_TMDB_DNS_PROBE_TIMEOUT)
+    for thread in threads:
+        thread.join(timeout=0)
+    return result.get("family")
+
 class TMDBScraper:
+    PRECISE_MATCH_SCORE_THRESHOLD = 400
+
     def __init__(self):
         self.session = requests.Session()
         self.session.trust_env = False
@@ -39,6 +178,7 @@ class TMDBScraper:
     def _normalize_compare_text(self, value):
         text = re.sub(r'\s+', ' ', (value or '').strip().lower())
         text = re.sub(r'[-_.:]+', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
     def _looks_ascii_query(self, query):
@@ -177,6 +317,68 @@ class TMDBScraper:
             forced_media_type=variant["forced_media_type"],
         )
 
+    def _search_best_result(self, variants, clean_query, year=None, strict=False, media_type_hint=None):
+        best_result = None
+        best_score = None
+
+        for variant in variants:
+            results = self._search_variant_results(variant)
+            for result in results:
+                if media_type_hint in ['movie', 'tv'] and result.get('media_type') != media_type_hint:
+                    continue
+                score = self._score_result(result, clean_query, year=year, strict=strict)
+                if score is None:
+                    continue
+                score += variant["bonus"]
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_result = result
+
+        return best_result, best_score
+
+    def _pick_dns_family(self, url):
+        cache_key = _tmdb_cache_key(url)
+        if not cache_key:
+            return None
+
+        cached = _tmdb_cached_family(cache_key)
+        if cached:
+            return cached
+
+        family = _tmdb_race_dns_families(*cache_key)
+        if family:
+            _tmdb_store_family(cache_key, family)
+        return family
+
+    def _clear_dns_family_cache(self, url, family=None):
+        cache_key = _tmdb_cache_key(url)
+        if cache_key:
+            _tmdb_clear_family(cache_key, family=family)
+
+    def _session_get(self, url, params=None, family=None):
+        if family not in (socket.AF_INET, socket.AF_INET6):
+            return self.session.get(
+                url,
+                headers=self.headers,
+                params=params,
+                proxies=self.proxies,
+                timeout=10
+            )
+
+        with _TMDB_DNS_FAMILY_LOCK:
+            original_gai_family = urllib3_connection.allowed_gai_family
+            urllib3_connection.allowed_gai_family = _tmdb_gai_family_callback(family)
+            try:
+                return self.session.get(
+                    url,
+                    headers=self.headers,
+                    params=params,
+                    proxies=self.proxies,
+                    timeout=10
+                )
+            finally:
+                urllib3_connection.allowed_gai_family = original_gai_family
+
     def _get(self, url, params=None):
         if not config.TMDB_TOKEN:
             logger.warning("TMDB_TOKEN is not configured; skipping TMDB request url=%s", url)
@@ -184,17 +386,14 @@ class TMDBScraper:
         self.refresh_runtime_config(reset_session=False)
 
         for _ in range(3):
+            family = None if self.proxies else self._pick_dns_family(url)
             try:
-                response = self.session.get(
-                    url,
-                    headers=self.headers,
-                    params=params,
-                    proxies=self.proxies,
-                    timeout=10
-                )
+                response = self._session_get(url, params=params, family=family)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
+                if family:
+                    self._clear_dns_family_cache(url, family=family)
                 logger.warning("TMDB request failed url=%s attempt=%s error=%s", url, _ + 1, e)
                 time.sleep(1)
         return None
@@ -210,19 +409,24 @@ class TMDBScraper:
             media_type_hint,
         )
 
-        best_result = None
-        best_score = None
+        if media_type_hint in ['movie', 'tv']:
+            broad_result, broad_score = self._search_best_result(
+                self._build_search_variants(clean_query, year=None, media_type_hint=None),
+                clean_query,
+                year=year,
+                strict=strict,
+                media_type_hint=media_type_hint,
+            )
+            if broad_result and (broad_score or 0) >= self.PRECISE_MATCH_SCORE_THRESHOLD:
+                return f"{broad_result['media_type']}/{broad_result['id']}"
 
-        for variant in self._build_search_variants(clean_query, year=year, media_type_hint=media_type_hint):
-            results = self._search_variant_results(variant)
-            for result in results:
-                score = self._score_result(result, clean_query, year=year, strict=strict)
-                if score is None:
-                    continue
-                score += variant["bonus"]
-                if best_score is None or score > best_score:
-                    best_score = score
-                    best_result = result
+        best_result, _ = self._search_best_result(
+            self._build_search_variants(clean_query, year=year, media_type_hint=media_type_hint),
+            clean_query,
+            year=year,
+            strict=strict,
+            media_type_hint=media_type_hint,
+        )
 
         if not best_result:
             return None

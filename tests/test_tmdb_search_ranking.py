@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 import sys
 import unittest
 from unittest.mock import patch
@@ -10,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.services.tmdb import TMDBScraper
+from backend.app.services import tmdb as tmdb_module
 
 
 class FakeTMDBResponse:
@@ -63,6 +65,36 @@ class TMDBSearchRankingTests(unittest.TestCase):
 
         with patch.object(scraper, "_get", side_effect=fake_get):
             self.assertEqual("movie/667717", scraper.search_movie("Deep Sea", 2023, media_type_hint="movie"))
+
+    def test_media_type_hint_uses_multi_search_when_precise_match_exists(self):
+        scraper = self.build_scraper()
+        urls = []
+
+        def fake_get(url, params=None):
+            urls.append(url)
+            if url.endswith("/search/multi"):
+                return {
+                    "results": [
+                        {
+                            "id": 91314,
+                            "media_type": "movie",
+                            "title": "变形金刚4：绝迹重生",
+                            "original_title": "Transformers: Age of Extinction",
+                            "release_date": "2014-06-25",
+                            "popularity": 14,
+                        }
+                    ]
+                }
+            raise AssertionError(f"unexpected direct endpoint: {url}")
+
+        with patch.object(scraper, "_get", side_effect=fake_get):
+            self.assertEqual(
+                "movie/91314",
+                scraper.search_movie("Transformers Age of Extinction", 2014, media_type_hint="movie"),
+            )
+
+        self.assertTrue(urls)
+        self.assertTrue(all(url.endswith("/search/multi") for url in urls))
 
     def test_strict_requires_exact_title_and_year(self):
         scraper = self.build_scraper()
@@ -118,6 +150,26 @@ class TMDBSearchRankingTests(unittest.TestCase):
 
         self.assertEqual("Bearer new-token", calls[0]["headers"]["Authorization"])
         self.assertEqual({"http": "http://new", "https": "http://new"}, calls[0]["proxies"])
+
+    def test_tmdb_scraper_uses_selected_ipv6_family_for_direct_request(self):
+        scraper = TMDBScraper()
+        calls = []
+
+        def fake_get(url, headers=None, params=None, proxies=None, timeout=None):
+            calls.append({
+                "family": tmdb_module.urllib3_connection.allowed_gai_family(),
+                "proxies": proxies,
+            })
+            return FakeTMDBResponse({"ok": True})
+
+        with patch.object(scraper, "_pick_dns_family", return_value=socket.AF_INET6), \
+             patch.object(scraper.session, "get", side_effect=fake_get), \
+             patch("backend.app.services.tmdb.config.TMDB_TOKEN", "token"), \
+             patch("backend.app.services.tmdb.config.TMDB_PROXIES", None):
+            self.assertEqual({"ok": True}, scraper._get("https://api.themoviedb.org/test"))
+
+        self.assertEqual(socket.AF_INET6, calls[0]["family"])
+        self.assertIsNone(calls[0]["proxies"])
 
     def test_details_fall_back_to_english_when_localized_payload_is_sparse(self):
         scraper = self.build_scraper()

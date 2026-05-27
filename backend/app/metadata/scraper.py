@@ -74,7 +74,7 @@ class MetadataScraper:
         if cache_key in self.tmdb_cache:
             tmdb_id = self.tmdb_cache[cache_key]
         else:
-            db_match = db.get_movie_by_title_year(title, year)
+            db_match = db.get_movie_by_title_year(title, year, media_type_hint)
             if db_match:
                 tmdb_id = db_match['tmdb_id']
             else:
@@ -109,7 +109,7 @@ class MetadataScraper:
         if cache_key in self.tmdb_cache:
             tmdb_id = self.tmdb_cache[cache_key]
         else:
-            db_match = db.get_movie_by_title_year(title, year)
+            db_match = db.get_movie_by_title_year(title, year, media_type_hint)
             if db_match:
                 tmdb_id = db_match['tmdb_id']
             else:
