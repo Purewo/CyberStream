@@ -2101,6 +2101,46 @@ def _compact_resource_summary(resource, resource_item=None):
     }
 
 
+def _build_movie_playback_hint(movie):
+    source_stream_cache = {}
+    playable_resources = []
+
+    for resource in movie.resources.all():
+        if not resource.path or not resource.source:
+            continue
+        source_id = resource.source.id
+        if source_id not in source_stream_cache:
+            try:
+                state = resource.source.resolve_runtime_state()
+                source_stream_cache[source_id] = bool((state.get("actions") or {}).get("can_stream"))
+            except Exception as e:
+                logger.debug(
+                    "Resolve source stream state failed source_id=%s resource_id=%s error=%s",
+                    source_id,
+                    resource.id,
+                    e,
+                )
+                source_stream_cache[source_id] = False
+        if source_stream_cache[source_id]:
+            playable_resources.append(resource)
+
+    if not playable_resources:
+        return {
+            "playable": False,
+            "primary_resource_id": None,
+        }
+
+    primary = sorted(
+        playable_resources,
+        key=lambda resource: _resource_quality_sort_value_light(resource, None),
+        reverse=True,
+    )[0]
+    return {
+        "playable": True,
+        "primary_resource_id": primary.id,
+    }
+
+
 def _episode_parse_candidate(resource, cleaner):
     parsed = cleaner.parse_path_metadata(resource.path or resource.filename or "")
     suggested_season = parsed.season if parsed.season is not None else resource.season
@@ -2334,6 +2374,7 @@ def _build_movie_episode_repair_plan(movie):
 def _build_episode_review_queue_item(movie, plan=None, snapshot=None):
     snapshot = snapshot or movie.get_metadata_snapshot()
     plan = plan or _build_movie_episode_repair_plan(movie)
+    playback_hint = _build_movie_playback_hint(movie)
     episode_issues = [
         issue
         for issue in snapshot["issues"]
@@ -2356,6 +2397,8 @@ def _build_episode_review_queue_item(movie, plan=None, snapshot=None):
         "original_title": movie.original_title,
         "year": movie.year,
         "poster_url": movie.cover,
+        "playable": playback_hint["playable"],
+        "primary_resource_id": playback_hint["primary_resource_id"],
         "scraper_source": movie.scraper_source,
         "metadata_state": snapshot["state"],
         "metadata_actions": snapshot["actions"],

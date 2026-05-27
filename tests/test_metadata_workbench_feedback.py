@@ -16,7 +16,7 @@ from backend.app.metadata.rescrape import MovieMetadataRescrapeService
 from backend.app.metadata.scraper import MetadataScraper as LegacyMetadataScraper
 from backend.app.metadata.types import EntityMetadataContext, MetadataResolution
 from backend.app.metadata.types import ParsedMediaInfo
-from backend.app.models import MediaResource, Movie, MovieSeasonMetadata
+from backend.app.models import MediaResource, Movie, MovieSeasonMetadata, StorageSource
 from backend.app.services.jobs import job_manager
 
 
@@ -52,9 +52,16 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         db.session.commit()
         return movie
 
-    def _add_resource(self, movie, path="shows/Old.Title.S01E01.mkv"):
+    def _add_source(self):
+        source = StorageSource(name="Local", type="local", config={"root_path": "/tmp/media"})
+        db.session.add(source)
+        db.session.commit()
+        return source
+
+    def _add_resource(self, movie, path="shows/Old.Title.S01E01.mkv", source=None):
         resource = MediaResource(
             movie_id=movie.id,
+            source_id=source.id if source else None,
             path=path,
             filename=path.rsplit("/", 1)[-1],
             season=1,
@@ -505,14 +512,15 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
 
     def test_episode_review_items_returns_queue_with_dry_run_payload(self):
         movie = self._add_movie(title="剧集队列", scraper_source="TMDB")
+        source = self._add_source()
         db.session.add(MovieSeasonMetadata(movie_id=movie.id, season=1, title="第一季", episode_count=3))
-        first = self._add_resource(movie, path="shows/Review.Queue.S01E01.mkv")
+        first = self._add_resource(movie, path="shows/Review.Queue.S01E01.mkv", source=source)
         first.episode = 1
-        missing_slot = self._add_resource(movie, path="shows/Review.Queue.S01E02.mkv")
+        missing_slot = self._add_resource(movie, path="shows/Review.Queue.S01E02.mkv", source=source)
         missing_slot.episode = None
-        duplicate_a = self._add_resource(movie, path="shows/Review.Queue.S01E03.1080p.mkv")
+        duplicate_a = self._add_resource(movie, path="shows/Review.Queue.S01E03.1080p.mkv", source=source)
         duplicate_a.episode = 3
-        duplicate_b = self._add_resource(movie, path="shows/Review.Queue.S01E03.2160p.mkv")
+        duplicate_b = self._add_resource(movie, path="shows/Review.Queue.S01E03.2160p.mkv", source=source)
         duplicate_b.episode = 3
         db.session.commit()
 
@@ -523,11 +531,31 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertEqual(1, data["pagination"]["total_items"])
         item = data["items"][0]
         self.assertEqual(movie.id, item["movie_id"])
+        self.assertTrue(item["playable"])
+        self.assertIn(
+            item["primary_resource_id"],
+            {first.id, missing_slot.id, duplicate_a.id, duplicate_b.id},
+        )
         self.assertEqual(1, item["auto_update_count"])
         self.assertEqual([{"id": missing_slot.id, "season": 1, "episode": 2}], item["apply_payload"]["items"])
         issue_codes = {issue["code"] for issue in item["metadata_issues"]}
         self.assertIn("missing_episode_numbers", issue_codes)
         self.assertIn("duplicate_episode_numbers", issue_codes)
+
+    def test_episode_review_items_marks_orphaned_resources_unplayable(self):
+        movie = self._add_movie(title="离线剧集", scraper_source="TMDB")
+        db.session.add(MovieSeasonMetadata(movie_id=movie.id, season=1, title="第一季", episode_count=2))
+        resource = self._add_resource(movie, path="shows/Offline.Show.S01E01.mkv")
+        resource.episode = None
+        db.session.commit()
+
+        response = self.client.get("/api/v1/metadata/episode-review-items")
+
+        self.assertEqual(200, response.status_code)
+        item = response.get_json()["data"]["items"][0]
+        self.assertEqual(movie.id, item["movie_id"])
+        self.assertFalse(item["playable"])
+        self.assertIsNone(item["primary_resource_id"])
 
     def test_preview_explains_placeholder_metadata_result(self):
         movie = self._add_movie(title="Unknown Raw", cover="")

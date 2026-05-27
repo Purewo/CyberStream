@@ -88,6 +88,13 @@ PATCH /api/v1/movies/{movie_id}/resources/metadata
 
 `episode-review-items` 返回的 `apply_payload` 是后端 dry-run 后认为可自动提交的修正项。前端应先展示给用户确认，再提交到对应 `apply_endpoint`。
 
+队列 item 还会返回播放能力提示：
+
+- `playable`: 当前至少有一个资源绑定到可串流的存储源。
+- `primary_resource_id`: 默认播放候选资源 ID；无可播放资源时为 `null`。
+
+剧集审查卡片的主点击行为应跳转影视详情页，而不是直接打开播放器。详情页负责展示 RAW 警告、播放按钮、多 source/多季资源选择和元数据修复入口。
+
 ### 资源治理
 
 使用：
