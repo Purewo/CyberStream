@@ -287,11 +287,14 @@ def ensure_sqlite_schema(engine):
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
 
+    def _create_table_if_not_exists(ddl):
+        return ddl.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
+
     with engine.begin() as conn:
         for table_name, ddl in SQLITE_TABLE_PATCHES.items():
             if table_name in existing_tables:
                 continue
-            conn.execute(text(ddl))
+            conn.execute(text(_create_table_if_not_exists(ddl)))
             existing_tables.add(table_name)
 
         if "user_vault_secrets" in existing_tables:
