@@ -212,15 +212,21 @@ class OpenApiContractTests(unittest.TestCase):
         paths = openapi["paths"]
 
         self.assertIn("/api/v1/storage/managed/quarktv/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/quarktv/qr/restart", paths)
         self.assertIn("/api/v1/storage/managed/quarktv/qr/poll", paths)
         self.assertIn("/api/v1/storage/managed/uctv/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/uctv/qr/restart", paths)
         self.assertIn("/api/v1/storage/managed/uctv/qr/poll", paths)
         doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
         self.assertIn("frontend-managed-quark-uc", doc_key_enum)
         self.assertIn("ConfigQuarkTV", schemas)
         self.assertIn("ConfigUCTV", schemas)
         self.assertIn("ManagedQuarkUCTVQrStartRequest", schemas)
+        self.assertIn("ManagedQuarkUCTVQrRestartRequest", schemas)
+        self.assertIn("ManagedQuarkUCTVQrRestartResponse", schemas)
         self.assertIn("ManagedQuarkUCTVQrPollRequest", schemas)
+        self.assertIn("root_folder_id", schemas["ConfigQuarkTV"]["properties"])
+        self.assertIn("root_folder_id", schemas["ConfigUCTV"]["properties"])
         self.assertIn("quarktv", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("uctv", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("/api/v1/resources/{id}/streaming-qualities", paths)

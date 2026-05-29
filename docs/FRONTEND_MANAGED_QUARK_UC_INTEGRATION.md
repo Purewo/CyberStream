@@ -53,7 +53,9 @@ Fields:
 
 - `name` or `source_name`: optional source display name.
 - `root_folder_id`: optional OpenList root folder id. Default is `0`.
-- `link_method`: optional, `download` or `streaming`. Default is `download`. For first联调 use `download`.
+- `link_method`: optional, `download` or `streaming`. Default is `download`. The frontend should expose this as a user choice when mounting QuarkTV:
+  - `download`: OpenList download link mode.
+  - `streaming`: OpenList streaming link mode. For Web/Android playback, prefer this as the UI default.
 
 Success response:
 
@@ -71,6 +73,7 @@ Success response:
       "config": {
         "auth_state": "qr_pending",
         "cloud_root_path": "/",
+        "root_folder_id": "0",
         "link_method": "download"
       },
       "actions": {
@@ -138,6 +141,7 @@ Ready response:
       "config": {
         "auth_state": "ready",
         "cloud_root_path": "/",
+        "root_folder_id": "0",
         "link_method": "download"
       },
       "actions": {
@@ -153,12 +157,72 @@ Ready response:
 
 Poll every 2 to 3 seconds while the login screen is open. Stop polling once `authenticated=true` or the user cancels.
 
+## QuarkTV Re-login Existing Source
+
+QuarkTV TV login can be kicked offline when the same account is used elsewhere. Do not create a new CyberStream source for re-login, because that breaks existing resource indexes and library bindings. Restart QR login on the existing source:
+
+```http
+POST /api/v1/storage/managed/quarktv/qr/restart
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "source_id": 12,
+  "link_method": "streaming"
+}
+```
+
+Fields:
+
+- `source_id` or `id`: required existing CyberStream QuarkTV source id.
+- `link_method`: optional, `download` or `streaming`. If omitted, backend keeps the source's previous `config.link_method`.
+- `root_folder_id`: optional. If omitted, backend keeps the source's previous `config.root_folder_id`.
+
+Success response:
+
+```json
+{
+  "code": 200,
+  "data": {
+    "qr_restarted": true,
+    "qr_started": true,
+    "auth_state": "qr_pending",
+    "replaced_openlist_storage_id": 41,
+    "old_openlist_storage_deleted": true,
+    "qr_code_data_url": "data:image/jpeg;base64,...",
+    "qr_content": null,
+    "source": {
+      "id": 12,
+      "type": "quarktv",
+      "config": {
+        "auth_state": "qr_pending",
+        "cloud_root_path": "/",
+        "root_folder_id": "0",
+        "link_method": "streaming"
+      },
+      "actions": {
+        "can_preview": false,
+        "can_scan": false,
+        "can_stream": false,
+        "can_refresh": false
+      }
+    }
+  }
+}
+```
+
+After restart, poll the normal QuarkTV poll endpoint with the same `source_id` until `authenticated=true`.
+
 ## UCTV QR Login
 
 UCTV uses the same contract with these paths:
 
 ```http
 POST /api/v1/storage/managed/uctv/qr/start
+POST /api/v1/storage/managed/uctv/qr/restart
 POST /api/v1/storage/managed/uctv/qr/poll
 ```
 

@@ -825,6 +825,13 @@ SOURCE_TYPE_DEFINITIONS = {
                 'description': '夸克网盘侧根路径，仅用于展示',
             },
             {
+                'name': 'root_folder_id',
+                'type': 'string',
+                'required': False,
+                'default': '0',
+                'description': 'OpenList QuarkTV root_folder_id',
+            },
+            {
                 'name': 'link_method',
                 'type': 'string',
                 'required': False,
@@ -876,6 +883,13 @@ SOURCE_TYPE_DEFINITIONS = {
                 'required': False,
                 'default': '/',
                 'description': 'UC 网盘侧根路径，仅用于展示',
+            },
+            {
+                'name': 'root_folder_id',
+                'type': 'string',
+                'required': False,
+                'default': '0',
+                'description': 'OpenList UCTV root_folder_id',
             },
             {
                 'name': 'link_method',
@@ -1203,6 +1217,8 @@ def _normalize_post_config_fields(s_type, config):
         config['link_method'] = config['link_method'].strip().lower() or 'download'
         if config['link_method'] not in {'download', 'streaming'}:
             raise StorageProviderError("Invalid config field value: link_method should be download or streaming", code=40038)
+    if normalized_type in {'quarktv', 'uctv'} and 'root_folder_id' in config and isinstance(config.get('root_folder_id'), str):
+        config['root_folder_id'] = config['root_folder_id'].strip() or '0'
 
     if normalized_type == 'smb':
         config.setdefault('remote_name', config.get('host', ''))

@@ -13,6 +13,8 @@
 - 新增 `GET /api/v1/resources/{id}/stream-transcoded?resolution=...`，按指定画质 302 到 provider 转码直链。
 - `ResourcePlayback` 新增 `cloud_transcode`，前端可据此发现 `qualities_endpoint`、`stream_endpoint` 和支持的 `low/normal/high/super/2k/4k` 档位。
 - QuarkTV/UCTV 原始下载直链保留为兼容入口，但前端 Web 播放应优先使用 `cloud_transcode`，避免 raw download URL 无法在线播放。
+- QuarkTV/UCTV 挂载时 `link_method` 明确支持 `download` / `streaming` 用户选择；`source.config` 会返回当前选择。
+- 新增 `POST /api/v1/storage/managed/{quarktv|uctv}/qr/restart`，用于登录态被踢后在同一个 `source_id` 上重新扫码，不重建 CyberStream 存储源、不破坏资源索引和媒体库绑定。
 
 ## 资源库影片筛选
 

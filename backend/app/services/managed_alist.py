@@ -746,6 +746,7 @@ class ManagedOpenListClient(ManagedAListClient):
             "driver": storage.get("driver"),
             "kind": kind,
             "cloud_root_path": "/",
+            "root_folder_id": addition.get("root_folder_id") or "0",
             "link_method": addition.get("link_method") or "download",
             "authenticated": bool(authenticated),
             "auth_state": "ready" if authenticated else "qr_pending",

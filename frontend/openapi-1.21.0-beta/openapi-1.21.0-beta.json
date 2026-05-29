@@ -6038,7 +6038,7 @@
     "/api/v1/storage/managed/quarktv/qr/start": {
       "post": {
         "summary": "🟠 [已开发未验证] 启动托管 QuarkTV 扫码登录",
-        "description": "后端调用 localhost OpenList 创建 QuarkTV 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-quark-uc。",
+        "description": "后端调用 localhost OpenList 创建 QuarkTV 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-quark-uc。 link_method 支持 download 与 streaming，前端应在挂载时提供选择。",
         "operationId": "startManagedQuarkTVQr",
         "x-lifecycle-status": "implemented_unverified",
         "tags": [
@@ -6077,6 +6077,69 @@
           },
           "502": {
             "description": "托管 OpenList 或夸克网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/quarktv/qr/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新启动托管 QuarkTV 扫码登录",
+        "description": "用于 QuarkTV 登录态被其他设备踢下线后的重新登录；后端保留同一个 CyberStream source_id，只替换 localhost OpenList 内部挂载并返回新的二维码。前端随后继续调用对应 qr/poll 轮询。",
+        "operationId": "restartManagedQuarkTVQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已重新生成，原存储源回到 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedQuarkUCTVQrRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或 QuarkTV 账号接口调用失败",
             "content": {
               "application/json": {
                 "schema": {
@@ -6154,7 +6217,7 @@
     "/api/v1/storage/managed/uctv/qr/start": {
       "post": {
         "summary": "🟠 [已开发未验证] 启动托管 UCTV 扫码登录",
-        "description": "后端调用 localhost OpenList 创建 UCTV 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-quark-uc。",
+        "description": "后端调用 localhost OpenList 创建 UCTV 挂载并返回二维码 data URL，OpenList 地址不会返回给终端用户。成功后 source.config.auth_state=qr_pending，source.actions 中浏览、扫描、刷新、播放均为 false。详细接入见 /api/v1/docs/frontend-managed-quark-uc。 link_method 支持 download 与 streaming，前端应在挂载时提供选择。",
         "operationId": "startManagedUCTVQr",
         "x-lifecycle-status": "implemented_unverified",
         "tags": [
@@ -6193,6 +6256,69 @@
           },
           "502": {
             "description": "托管 OpenList 或UC 网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/uctv/qr/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新启动托管 UCTV 扫码登录",
+        "description": "用于 UCTV 登录态被其他设备踢下线后的重新登录；后端保留同一个 CyberStream source_id，只替换 localhost OpenList 内部挂载并返回新的二维码。前端随后继续调用对应 qr/poll 轮询。",
+        "operationId": "restartManagedUCTVQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已重新生成，原存储源回到 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedQuarkUCTVQrRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或 UCTV 账号接口调用失败",
             "content": {
               "application/json": {
                 "schema": {
@@ -17807,7 +17933,7 @@
       "ConfigQuarkTV": {
         "type": "object",
         "title": "QuarkTV Managed Config",
-        "description": "CyberStream 托管 OpenList 生成的 QuarkTV 来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、link_method 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "description": "CyberStream 托管 OpenList 生成的 QuarkTV 来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、root_folder_id、link_method 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
         "required": [
           "openlist_storage_id",
           "mount_path"
@@ -17840,6 +17966,12 @@
             "description": "夸克网盘侧根路径，仅用于展示。",
             "example": "/"
           },
+          "root_folder_id": {
+            "type": "string",
+            "default": "0",
+            "description": "OpenList QuarkTV 技术根目录 ID；用于重新登录时保持同一个挂载根目录。",
+            "example": "0"
+          },
           "link_method": {
             "type": "string",
             "enum": [
@@ -17847,14 +17979,14 @@
               "streaming"
             ],
             "default": "download",
-            "description": "OpenList 获取视频链接方式；前端首轮联调用默认 download。"
+            "description": "OpenList 获取视频链接方式；前端挂载时应提供 download/streaming 选择，Web/Android 播放场景建议 UI 默认选 streaming。"
           }
         }
       },
       "ConfigUCTV": {
         "type": "object",
         "title": "UCTV Managed Config",
-        "description": "CyberStream 托管 OpenList 生成的 UCTV 来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、link_method 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "description": "CyberStream 托管 OpenList 生成的 UCTV 来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、root_folder_id、link_method 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
         "required": [
           "openlist_storage_id",
           "mount_path"
@@ -17887,6 +18019,12 @@
             "description": "UC 网盘侧根路径，仅用于展示。",
             "example": "/"
           },
+          "root_folder_id": {
+            "type": "string",
+            "default": "0",
+            "description": "OpenList UCTV 技术根目录 ID；用于重新登录时保持同一个挂载根目录。",
+            "example": "0"
+          },
           "link_method": {
             "type": "string",
             "enum": [
@@ -17894,7 +18032,7 @@
               "streaming"
             ],
             "default": "download",
-            "description": "OpenList 获取视频链接方式；前端首轮联调用默认 download。"
+            "description": "OpenList 获取视频链接方式；前端挂载时应提供 download/streaming 选择，Web/Android 播放场景建议 UI 默认选 streaming。"
           }
         }
       },
@@ -17922,7 +18060,7 @@
               "streaming"
             ],
             "default": "download",
-            "description": "OpenList 获取视频链接方式；首轮联调用默认 download。"
+            "description": "OpenList 获取视频链接方式；前端挂载 QuarkTV/UCTV 时应给用户提供 download 与 streaming 两个选项，Web/Android 播放场景建议 UI 默认选 streaming。"
           }
         }
       },
@@ -18929,6 +19067,89 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/ResourceCloudTranscodeQualities"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedQuarkUCTVQrRestartRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "已有 CyberStream QuarkTV/UCTV 存储源 ID；重新登录不会创建新的 source。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "可选；OpenList QuarkTV/UCTV 技术根目录 ID。不传则沿用当前 source.config.root_folder_id。",
+            "default": "0"
+          },
+          "link_method": {
+            "type": "string",
+            "enum": [
+              "download",
+              "streaming"
+            ],
+            "description": "可选；OpenList 获取视频链接方式。不传则沿用当前 source.config.link_method。"
+          }
+        }
+      },
+      "ManagedQuarkUCTVQrRestartData": {
+        "type": "object",
+        "properties": {
+          "qr_restarted": {
+            "type": "boolean"
+          },
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending"
+            ]
+          },
+          "replaced_openlist_storage_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "被替换的 localhost OpenList 内部 storage id；仅用于调试，不应展示给终端用户。"
+          },
+          "old_openlist_storage_deleted": {
+            "type": "boolean",
+            "description": "旧 localhost OpenList 挂载是否已成功删除；删除失败不阻塞重新登录。"
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "可直接渲染的二维码 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，客户端通常无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedQuarkUCTVQrRestartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedQuarkUCTVQrRestartData"
               }
             }
           }

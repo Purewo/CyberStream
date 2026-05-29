@@ -605,11 +605,26 @@ X-Cyber-API-Token: <token>
 - `link_method`：可选，`download` 或 `streaming`，默认 `download`
 
 说明：
+- 前端挂载 QuarkTV 时应给用户提供 `download` 和 `streaming` 两个选项；后端会把选择持久化到 `source.config.link_method`。Web/Android 播放场景建议 UI 默认选 `streaming`
 - 后端会调用仅本机可访问的 OpenList 管理接口创建 `QuarkTV` 挂载，并返回二维码 data URL
 - 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
 - 响应不返回 OpenList 地址、OpenList token、夸克 token、内部 storage id 或内部挂载路径
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-quark-uc`
+
+### `POST /api/v1/storage/managed/quarktv/qr/restart`
+对已有 QuarkTV 存储源重新发起扫码登录。
+
+请求体：
+- `source_id` / `id`：必填，已有 QuarkTV 存储源 ID
+- `link_method`：可选，`download` 或 `streaming`；不传则沿用当前 `source.config.link_method`
+- `root_folder_id`：可选；不传则沿用当前 `source.config.root_folder_id`
+
+说明：
+- 用于 QuarkTV 登录态被其他设备踢下线后的重新登录
+- 不会新建 CyberStream 存储源；后端会保留同一个 `source_id`，从而保留资源索引、媒体库绑定和前端本地引用
+- 后端会尽量删除旧的 localhost OpenList 挂载，再创建新的 OpenList 挂载并返回新二维码
+- 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `/api/v1/storage/managed/quarktv/qr/poll` 轮询
 
 ### `POST /api/v1/storage/managed/quarktv/qr/poll`
 轮询托管 QuarkTV 扫码结果。
@@ -635,6 +650,9 @@ X-Cyber-API-Token: <token>
 说明：
 - 合约与 QuarkTV 一致，返回 `type=uctv` 的 CyberStream 存储源
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-quark-uc`
+
+### `POST /api/v1/storage/managed/uctv/qr/restart`
+对已有 UCTV 存储源重新发起扫码登录。请求体和响应字段与 QuarkTV restart 一致。
 
 ### `POST /api/v1/storage/managed/uctv/qr/poll`
 轮询托管 UCTV 扫码结果。请求体和响应字段与 QuarkTV poll 一致。

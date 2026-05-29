@@ -40,6 +40,7 @@ class FakeManagedOpenListClient:
             "auth_state": "qr_pending",
             "authenticated": False,
             "cloud_root_path": "/",
+            "root_folder_id": root_folder_id or "0",
             "link_method": link_method,
             "qr_code_data_url": "data:image/jpeg;base64,cXVhcmstdWMtcXI=",
             "qr_content": None,
@@ -55,6 +56,7 @@ class FakeManagedOpenListClient:
                 "auth_state": "qr_pending",
                 "authenticated": False,
                 "cloud_root_path": "/",
+                "root_folder_id": "0",
                 "link_method": "download",
                 "pending_reason": "waiting_for_scan",
             }
@@ -112,6 +114,8 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
         self.assertEqual("quarktv", source.type)
         self.assertEqual("qr_pending", source.config["auth_state"])
         self.assertEqual(99, source.config["openlist_storage_id"])
+        self.assertEqual("0", source.config["root_folder_id"])
+        self.assertEqual("streaming", source.config["link_method"])
         self.assertEqual(
             [{"kind": "quarktv", "root_folder_id": "", "link_method": "streaming"}],
             FakeManagedOpenListClient.created_requests,
@@ -131,6 +135,87 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
             [{"kind": "uctv", "root_folder_id": "", "link_method": "download"}],
             FakeManagedOpenListClient.created_requests,
         )
+
+    def test_restart_qr_replaces_openlist_storage_without_new_source(self):
+        source = StorageSource(
+            name="Quark test",
+            type="quarktv",
+            config={
+                "openlist_storage_id": 41,
+                "mount_path": "/cyberstream/quarktv/old",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "root_folder_id": "root-1",
+                "link_method": "download",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.id
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/quarktv/qr/restart",
+                json={
+                    "source_id": source_id,
+                    "link_method": "streaming",
+                },
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["qr_restarted"])
+        self.assertTrue(payload["data"]["qr_started"])
+        self.assertEqual(41, payload["data"]["replaced_openlist_storage_id"])
+        self.assertTrue(payload["data"]["old_openlist_storage_deleted"])
+        self.assertEqual("qr_pending", payload["data"]["auth_state"])
+        self.assertEqual(source_id, payload["data"]["source"]["id"])
+        self.assertEqual("qr_pending", payload["data"]["source"]["config"]["auth_state"])
+        self.assertEqual("root-1", payload["data"]["source"]["config"]["root_folder_id"])
+        self.assertEqual("streaming", payload["data"]["source"]["config"]["link_method"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_stream"])
+        self.assertEqual([41], FakeManagedOpenListClient.deleted_storage_ids)
+        self.assertEqual(
+            [{"kind": "quarktv", "root_folder_id": "root-1", "link_method": "streaming"}],
+            FakeManagedOpenListClient.created_requests,
+        )
+
+        saved_source = db.session.get(StorageSource, source_id)
+        self.assertIsNotNone(saved_source)
+        self.assertEqual(99, saved_source.config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/quarktv/fake", saved_source.config["mount_path"])
+        self.assertEqual("qr_pending", saved_source.config["auth_state"])
+        self.assertEqual("root-1", saved_source.config["root_folder_id"])
+        self.assertEqual("streaming", saved_source.config["link_method"])
+        self.assertEqual(1, StorageSource.query.count())
+
+    def test_restart_qr_rejects_wrong_source_type(self):
+        source = StorageSource(
+            name="UC test",
+            type="uctv",
+            config={
+                "openlist_storage_id": 41,
+                "mount_path": "/cyberstream/uctv/old",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "root_folder_id": "0",
+                "link_method": "download",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/quarktv/qr/restart",
+                json={"source_id": source.id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(400, response.status_code)
+        self.assertNotEqual(200, payload["code"])
+        self.assertEqual([], FakeManagedOpenListClient.deleted_storage_ids)
+        self.assertEqual([], FakeManagedOpenListClient.created_requests)
 
     def test_poll_pending_keeps_source_locked(self):
         source = StorageSource(

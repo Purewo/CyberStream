@@ -276,6 +276,7 @@ def _build_quark_uc_source_config(state, auth_state):
         "mount_path": state["mount_path"],
         "auth_state": auth_state,
         "cloud_root_path": state.get("cloud_root_path") or "/",
+        "root_folder_id": str(state.get("root_folder_id") or "0"),
         "link_method": state.get("link_method") or "download",
     }
 
@@ -1199,14 +1200,113 @@ def _start_managed_quark_uc_qr(source_type):
         return api_error(code=50020, msg=f"Start {provider_meta['display_name']} QR login failed", http_status=500)
 
 
+def _restart_managed_quark_uc_qr(source_type):
+    provider_meta = _MANAGED_QUARK_UC_PROVIDERS[source_type]
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != source_type:
+        return api_error(code=40061, msg=f"Storage source is not a managed {provider_meta['display_name']} source")
+
+    source_config = source.config or {}
+    root_folder_id = str(
+        payload.get('root_folder_id')
+        if payload.get('root_folder_id') is not None
+        else source_config.get("root_folder_id") or "0"
+    ).strip() or "0"
+    link_method = str(payload.get('link_method') or source_config.get("link_method") or 'download').strip().lower()
+    if link_method not in {'download', 'streaming'}:
+        return api_error(code=40038, msg="Invalid field value: link_method should be download or streaming")
+    old_storage_id = None
+    try:
+        old_storage_id = int(source_config.get("openlist_storage_id") or 0) or None
+    except (TypeError, ValueError):
+        old_storage_id = None
+
+    storage_state = None
+    old_storage_deleted = False
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_quark_uc_tv_storage(
+            kind=source_type,
+            root_folder_id=root_folder_id,
+            link_method=link_method,
+        )
+        next_config = dict(source_config)
+        next_config.update(_build_quark_uc_source_config(storage_state, auth_state='qr_pending'))
+        source.config = normalize_source_config(source_type, next_config)
+        db.session.commit()
+        if old_storage_id and old_storage_id != int(storage_state["storage_id"]):
+            try:
+                client.delete_storage(old_storage_id)
+                old_storage_deleted = True
+            except Exception:
+                logger.exception(
+                    "Delete stale managed OpenList storage after %s relogin failed source_id=%s storage_id=%s",
+                    provider_meta["display_name"],
+                    source_id,
+                    old_storage_id,
+                )
+        return api_response(data={
+            "qr_restarted": True,
+            "qr_started": True,
+            "auth_state": "qr_pending",
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": old_storage_deleted,
+            "qr_code_data_url": storage_state["qr_code_data_url"],
+            "qr_content": storage_state.get("qr_content"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Restart managed %s QR failed source_id=%s error=%s", provider_meta["display_name"], source_id, e)
+        return api_error(code=50020, msg=f"Restart {provider_meta['display_name']} QR login failed", http_status=500)
+
+
 @storage_bp.route('/storage/managed/quarktv/qr/start', methods=['POST'])
 def start_managed_quarktv_qr():
     return _start_managed_quark_uc_qr('quarktv')
 
 
+@storage_bp.route('/storage/managed/quarktv/qr/restart', methods=['POST'])
+def restart_managed_quarktv_qr():
+    return _restart_managed_quark_uc_qr('quarktv')
+
+
 @storage_bp.route('/storage/managed/uctv/qr/start', methods=['POST'])
 def start_managed_uctv_qr():
     return _start_managed_quark_uc_qr('uctv')
+
+
+@storage_bp.route('/storage/managed/uctv/qr/restart', methods=['POST'])
+def restart_managed_uctv_qr():
+    return _restart_managed_quark_uc_qr('uctv')
 
 
 def _poll_managed_quark_uc_qr(source_type):
@@ -1252,6 +1352,7 @@ def _poll_managed_quark_uc_qr(source_type):
             "mount_path": login_state["mount_path"],
             "auth_state": "ready",
             "cloud_root_path": login_state.get("cloud_root_path") or source_config.get("cloud_root_path") or "/",
+            "root_folder_id": str(login_state.get("root_folder_id") or source_config.get("root_folder_id") or "0"),
             "link_method": login_state.get("link_method") or source_config.get("link_method") or "download",
         })
         source.config = normalize_source_config(source_type, next_config)
