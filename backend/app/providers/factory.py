@@ -4,8 +4,11 @@ from .alist import AListProvider
 from .ftp import FTPProvider
 from .local import LocalProvider
 from .managed_alist import (
+    AliyundriveProvider,
+    BaiduNetdiskProvider,
     Cloud115Provider,
     GuangYaPanProvider,
+    Pan123Provider,
     QuarkTVProvider,
     TianYiCloudProvider,
     UCTVProvider,
@@ -23,6 +26,9 @@ class ProviderFactory:
         'alist': AListProvider,
         'openlist': AListProvider,
         '115cloud': Cloud115Provider,
+        'aliyundrive': AliyundriveProvider,
+        'baidunetdisk': BaiduNetdiskProvider,
+        '123pan': Pan123Provider,
         'guangyapan': GuangYaPanProvider,
         'tianyicloud': TianYiCloudProvider,
         'quarktv': QuarkTVProvider,

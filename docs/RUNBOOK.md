@@ -143,7 +143,7 @@ curl -s http://127.0.0.1:5004/api/v1/storage/managed/guangyapan/sms/verify \
 
 ### 4.4 启用托管 OpenList 云盘
 
-天翼云盘、115 云盘、QuarkTV、UCTV 使用 OpenList 托管驱动，OpenList 只跑在本机，端口与 AList 分开。最小配置：
+天翼云盘、115 云盘、阿里云盘、百度网盘、QuarkTV、UCTV 使用 OpenList 托管驱动，OpenList 只跑在本机，端口与 AList 分开。最小配置：
 
 ```bash
 CYBER_MANAGED_OPENLIST_ENABLED=true
@@ -152,6 +152,22 @@ CYBER_MANAGED_OPENLIST_USERNAME=admin
 CYBER_MANAGED_OPENLIST_PASSWORD=<openlist-admin-password>
 # 或使用 CYBER_MANAGED_OPENLIST_TOKEN=<openlist-admin-token>
 CYBER_MANAGED_OPENLIST_MOUNT_PREFIX=/cyberstream
+# 阿里云盘生产建议配置自有 OpenAPI 凭据；不配置时 auto 会使用公共工具接口做首轮联调
+CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_AUTH_MODE=auto
+CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_PUBLIC_API_BASE_URL=https://api.oplist.org/alicloud
+CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_ID=<optional-aliyundrive-openapi-client-id>
+CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_SECRET=<optional-aliyundrive-openapi-client-secret>
+# 百度网盘留空会使用 AList 公开默认 OAuth 应用，并走 OOB 授权码提交模式；有自有百度应用时再覆盖。
+CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_ID=
+CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_SECRET=
+CYBER_MANAGED_OPENLIST_BAIDUNETDISK_RENEW_API_URL=https://api.oplist.org/baiduyun/renewapi
+CYBER_BACKEND_PUBLIC_BASE_URL=https://cyberstream.ma1.gameuniverse.top
+```
+
+如果配置自有百度网盘 OAuth 应用，会走 CyberStream callback 自动完成授权，百度开放平台回调地址必须与公网后端一致：
+
+```text
+https://cyberstream.ma1.gameuniverse.top/api/v1/storage/managed/baidunetdisk/oauth/callback
 ```
 
 扫码登录流程：
@@ -166,18 +182,23 @@ curl -s http://127.0.0.1:5004/api/v1/storage/managed/tianyicloud/qr/poll \
   -d '{"source_id":2}'
 ```
 
-115、QuarkTV、UCTV 分别使用：
+115、阿里云盘、百度网盘、QuarkTV、UCTV 分别使用：
 
 ```http
 POST /api/v1/storage/managed/115cloud/qr/start
 POST /api/v1/storage/managed/115cloud/qr/poll
+POST /api/v1/storage/managed/aliyundrive/qr/start
+POST /api/v1/storage/managed/aliyundrive/qr/poll
+POST /api/v1/storage/managed/baidunetdisk/oauth/start
+POST /api/v1/storage/managed/baidunetdisk/oauth/poll
+GET  /api/v1/storage/managed/baidunetdisk/oauth/callback
 POST /api/v1/storage/managed/quarktv/qr/start
 POST /api/v1/storage/managed/quarktv/qr/poll
 POST /api/v1/storage/managed/uctv/qr/start
 POST /api/v1/storage/managed/uctv/qr/poll
 ```
 
-`qr/start` 返回二维码展示字段。用户扫码确认后，轮询接口会返回 `authenticated=true` 且来源状态变为 `ready`。播放时后端会先解析 localhost OpenList `/d/...` 的 302，再把最终云盘直链返回给客户端。
+`qr/start` 返回二维码展示字段。用户扫码确认后，轮询接口会返回 `authenticated=true` 且来源状态变为 `ready`。百度网盘是 OAuth 授权，不是二维码；`oauth/start` 返回 `authorization_url`，授权回调完成后 `oauth/poll` 返回 ready。播放时后端会先解析 localhost OpenList `/d/...` 的 302，再把最终云盘直链返回给客户端。
 
 115 云盘扫码登录流程：
 
@@ -279,6 +300,7 @@ curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=诛仙3&
 - 版本规范：`docs/VERSIONING.md`
 - 存储源配置流：`docs/STORAGE_CONFIG_FLOW.md`
 - 托管 115 云盘前端接入：`docs/FRONTEND_MANAGED_115CLOUD_INTEGRATION.md`
+- 托管百度网盘前端接入：`docs/FRONTEND_MANAGED_BAIDUNETDISK_INTEGRATION.md`
 - 托管 QuarkTV / UCTV 前端接入：`docs/FRONTEND_MANAGED_QUARK_UC_INTEGRATION.md`
 - 维护优先级：`docs/MAINTENANCE_TODO.md`
 

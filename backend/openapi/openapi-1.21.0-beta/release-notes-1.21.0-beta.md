@@ -7,6 +7,13 @@
 - 后端播放、音频转码和字幕 URL 不再用 `PREFERRED_URL_SCHEME=https` 把公开 HTTP 请求隐式改写成 HTTPS。
 - `PREFERRED_URL_SCHEME` 仅保留 Flask 原生语义；需要固定外部入口时使用 `CYBER_BACKEND_PUBLIC_BASE_URL=http://...` 或 `https://...`，scheme 会原样保留。
 
+## QuarkTV / UCTV 云端转码播放
+
+- 新增 `GET /api/v1/resources/{id}/streaming-qualities`，返回 QuarkTV/UCTV provider 云端转码画质列表。
+- 新增 `GET /api/v1/resources/{id}/stream-transcoded?resolution=...`，按指定画质 302 到 provider 转码直链。
+- `ResourcePlayback` 新增 `cloud_transcode`，前端可据此发现 `qualities_endpoint`、`stream_endpoint` 和支持的 `low/normal/high/super/2k/4k` 档位。
+- QuarkTV/UCTV 原始下载直链保留为兼容入口，但前端 Web 播放应优先使用 `cloud_transcode`，避免 raw download URL 无法在线播放。
+
 ## 资源库影片筛选
 
 - `GET /api/v1/libraries/{id}/movies` 现在会正确应用 `genre`、`country`、`year` 查询参数，语义与全局 `GET /api/v1/movies` 保持一致。
@@ -100,6 +107,8 @@
 - `frontend-managed-guangyapan`
 - `frontend-managed-tianyicloud`
 - `frontend-managed-115cloud`
+- `frontend-managed-aliyundrive`
+- `frontend-managed-baidunetdisk`
 - `frontend-managed-quark-uc`
 - `storage-config-flow`
 - `runbook`
@@ -111,7 +120,7 @@
 
 说明：
 
-- 当前支持 `alist/openlist/guangyapan/tianyicloud/115cloud/quarktv/uctv`，底层调用上游 `fs/list` 并带 `refresh=true`
+- 当前支持 `alist/openlist/guangyapan/tianyicloud/115cloud/aliyundrive/baidunetdisk/quarktv/uctv`，底层调用上游 `fs/list` 并带 `refresh=true`
 - 该接口只刷新目录缓存并返回刷新后的列表，不触发扫描、不触发刮削
 - `StorageSource.actions` 现在会额外暴露 `can_refresh`
 
@@ -149,6 +158,40 @@
 - 播放仍走 302：后端先访问 localhost OpenList `/d/...`，解析出最终 115 直链后再返回给前端，不暴露 OpenList 地址。
 - 运行时复用 `CYBER_MANAGED_OPENLIST_ENABLED=true` 与本机 OpenList 管理凭据。
 
+## 托管阿里云盘
+
+- 新增 beta 存储类型 `aliyundrive`，由 CyberStream 通过阿里云盘 OpenAPI 二维码会话完成登录，再创建本机 OpenList `AliyundriveOpen` 挂载。
+- 新增 `POST /api/v1/storage/managed/aliyundrive/qr/start`，创建托管来源并返回阿里云盘二维码 URL。
+- 新增 `POST /api/v1/storage/managed/aliyundrive/qr/poll`，轮询扫码状态；未扫码、已扫码待确认、过期和取消都按业务状态返回 `code=200`。
+- 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-aliyundrive`，包含二维码登录、轮询状态机、授权模式、错误码和播放链路说明。
+- `qr_pending`、`qr_expired`、`qr_canceled` 状态下托管阿里云盘来源的 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`。
+- 托管阿里云盘的 `StorageSource.config` 与健康检查响应不会暴露 localhost OpenList 地址、内部挂载路径、refresh token、access token 或二维码 sid。
+- 播放仍走 302：后端先访问 localhost OpenList `/d/...`，解析出最终阿里云盘直链后再返回给前端，不暴露 OpenList 地址。
+- 运行时复用 `CYBER_MANAGED_OPENLIST_ENABLED=true` 与本机 OpenList 管理凭据；未配置自有阿里 OpenAPI 凭据时，默认走 OpenList 公共工具链 `https://api.oplist.org/alicloud`，避免 AListgo token 与 OpenList renew API 不匹配。
+- 生产建议配置 `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_ID` 和 `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_SECRET`；`alistgo` 授权模式仅保留兼容，不建议用于托管 OpenList 挂载。
+
+## 托管百度网盘
+
+- 新增 beta 存储类型 `baidunetdisk`，由 CyberStream 通过百度开放平台 OAuth 授权，再创建本机 OpenList `BaiduNetdisk` 挂载。
+- 新增 `POST /api/v1/storage/managed/baidunetdisk/oauth/start`，创建 pending 来源并返回百度 `authorization_url`。
+- 新增 `POST /api/v1/storage/managed/baidunetdisk/oauth/poll`，轮询 OAuth 授权状态；未授权完成返回 `auth_state=oauth_pending`，失败返回 `oauth_failed`，成功返回 `ready`。
+- 新增公开回调 `GET /api/v1/storage/managed/baidunetdisk/oauth/callback`，供百度开放平台回跳，前端不需要主动调用。
+- 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-baidunetdisk`，包含 OAuth 时序、状态机、后端配置和播放链路说明。
+- `oauth_pending`、`oauth_failed` 状态下托管百度网盘来源的 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`。
+- 托管百度网盘的 `StorageSource.config` 与健康检查响应不会暴露 localhost OpenList 地址、内部挂载路径、百度 access token、refresh token 或 OAuth state。
+- 百度网盘 Web 播放显式禁用：资源 `playback.web_player.supported=false`、`reason=baidunetdisk_requires_pc_client`，前端应提示用户下载/使用 PC 客户端。PC 模式通过 `external_player.requires_local_backend=true` 与 `requires_user_agent_rewrite=true` 交给本地后端处理百度上游 User-Agent。
+- 运行时复用 `CYBER_MANAGED_OPENLIST_ENABLED=true` 与本机 OpenList 管理凭据，并必须配置 `CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_ID` 和 `CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_SECRET`；百度开放平台回调地址应配置为公网后端 `/api/v1/storage/managed/baidunetdisk/oauth/callback`。
+
+## 托管 123 云盘
+
+- 新增 beta 存储类型 `123pan`，由 CyberStream 通过本机 OpenList 管理接口创建 `123Pan` 挂载。
+- 新增 `POST /api/v1/storage/managed/123pan/login`，使用 123 云盘账号密码完成托管登录并直接返回 `auth_state=ready` 的存储源。
+- 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-123pan`，明确这是账号密码登录，不是扫码或短信流程。
+- 托管 123Pan 的 `StorageSource.config` 与健康检查响应不会暴露 localhost OpenList 地址、内部挂载路径或账号密码；响应只展示脱敏账号、`root_folder_id` 和 `platform`。
+- `GET /api/v1/storage/capabilities` 为 `123pan` 返回 `managed=true`、`password_login=true`，前端可据此展示账号密码表单。
+- 播放仍走 302：后端先访问 localhost OpenList `/d/...`，解析出最终 123Pan 直链后再返回给前端，不暴露 OpenList 地址。
+- 运行时复用 `CYBER_MANAGED_OPENLIST_ENABLED=true` 与本机 OpenList 管理凭据。
+
 ## 托管 QuarkTV / UCTV
 
 - 新增 beta 存储类型 `quarktv` 和 `uctv`，由 CyberStream 通过本机 OpenList 管理接口创建 `QuarkTV` / `UCTV` 挂载。
@@ -162,7 +205,7 @@
 
 ## 资源库扫描刷新
 
-- `POST /api/v1/libraries/{id}/scan` 默认会在扫描前刷新支持该能力的 `alist/openlist/guangyapan/tianyicloud/115cloud/quarktv/uctv` 绑定目录。
+- `POST /api/v1/libraries/{id}/scan` 默认会在扫描前刷新支持该能力的 `alist/openlist/guangyapan/tianyicloud/115cloud/aliyundrive/baidunetdisk/123pan/quarktv/uctv` 绑定目录。
 - 前端可传 `{"refresh": false}` 跳过上游刷新，维持纯扫描行为。
 - 目录刷新失败只写入扫描状态和后端日志，不会阻断后续扫描与刮削。
 - `POST /api/v1/scan` 在没有任何启用的资源库目录绑定时会返回 `40013`，避免旧全库扫描入口误扫存储源根目录。

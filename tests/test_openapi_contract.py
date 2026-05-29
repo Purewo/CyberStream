@@ -159,6 +159,53 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("115cloud", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("qr_login", schemas["StorageProviderCapabilities"]["properties"])
 
+    def test_managed_aliyundrive_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/managed/aliyundrive/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/aliyundrive/qr/poll", paths)
+        doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+        self.assertIn("frontend-managed-aliyundrive", doc_key_enum)
+        self.assertIn("ConfigAliyundrive", schemas)
+        self.assertIn("ManagedAliyundriveQrStartRequest", schemas)
+        self.assertIn("ManagedAliyundriveQrPollRequest", schemas)
+        self.assertIn("aliyundrive", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("qr_login", schemas["StorageProviderCapabilities"]["properties"])
+
+    def test_managed_baidunetdisk_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/start", paths)
+        self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/complete", paths)
+        self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/poll", paths)
+        self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/callback", paths)
+        doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+        self.assertIn("frontend-managed-baidunetdisk", doc_key_enum)
+        self.assertIn("ConfigBaiduNetdisk", schemas)
+        self.assertIn("ManagedBaiduNetdiskOAuthStartRequest", schemas)
+        self.assertIn("ManagedBaiduNetdiskOAuthCompleteRequest", schemas)
+        self.assertIn("ManagedBaiduNetdiskOAuthPollRequest", schemas)
+        self.assertIn("baidunetdisk", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("oauth_login", schemas["StorageProviderCapabilities"]["properties"])
+
+    def test_managed_123pan_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        self.assertIn("/api/v1/storage/managed/123pan/login", paths)
+        doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+        self.assertIn("frontend-managed-123pan", doc_key_enum)
+        self.assertIn("Config123Pan", schemas)
+        self.assertIn("Managed123PanLoginRequest", schemas)
+        self.assertIn("Managed123PanLoginResponse", schemas)
+        self.assertIn("123pan", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("password_login", schemas["StorageProviderCapabilities"]["properties"])
+
     def test_managed_quark_uc_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]
@@ -176,6 +223,11 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("ManagedQuarkUCTVQrPollRequest", schemas)
         self.assertIn("quarktv", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("uctv", schemas["StorageSource"]["properties"]["type"]["enum"])
+        self.assertIn("/api/v1/resources/{id}/streaming-qualities", paths)
+        self.assertIn("/api/v1/resources/{id}/stream-transcoded", paths)
+        self.assertIn("ResourceCloudTranscodePlayback", schemas)
+        self.assertIn("ResourceCloudTranscodeQualities", schemas)
+        self.assertIn("cloud_transcode", schemas["ResourcePlayback"]["properties"])
 
     def test_library_scan_openapi_documents_refresh_contract(self):
         openapi = self._load_openapi()
@@ -419,6 +471,16 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("ResourceExternalPlaybackSubtitles", schemas)
         self.assertIn("ResourceExternalPlaybackHandoff", schemas)
         self.assertIn("ExternalPlayerProfile", schemas)
+        web_player_properties = schemas["ResourceWebPlayerPlayback"]["properties"]
+        self.assertIn("reason", web_player_properties)
+        self.assertIn("message", web_player_properties)
+        self.assertIn("recommended_action", web_player_properties)
+        external_player_properties = schemas["ResourceExternalPlayerPlayback"]["properties"]
+        self.assertIn("requires_local_backend", external_player_properties)
+        self.assertIn("requires_user_agent_rewrite", external_player_properties)
+        stream_properties = schemas["ResourceExternalPlaybackStream"]["properties"]
+        self.assertIn("requires_local_backend", stream_properties)
+        self.assertIn("requires_user_agent_rewrite", stream_properties)
         self.assertIn(
             "audio/x-mpegurl",
             paths["/api/v1/resources/{id}/external-playback"]["get"]["responses"]["200"]["content"],

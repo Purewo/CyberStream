@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import socket
 import sys
 import unittest
+from unittest.mock import patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.app.services import managed_alist as managed_alist_module
 from backend.app.services.managed_alist import ManagedAListError, ManagedOpenListClient
 
 
@@ -215,6 +218,193 @@ class Fake115OpenListSession:
         })
 
 
+class FakeAliyundriveOpenListSession:
+    def __init__(self, qr_status="WaitLogin"):
+        self.headers = {}
+        self.trust_env = True
+        self.qr_status = qr_status
+        self.deleted = []
+        self.created_payload = None
+        self.callback_params = None
+        self.callback_headers = None
+
+    def post(self, url, json=None, params=None, headers=None, timeout=None, verify=None):
+        if url == "https://api.alistgo.com/alist/ali_open/qr":
+            return FakeResponse({
+                "sid": "ali-sid",
+                "qrCodeUrl": "https://openapi.alipan.com/oauth/qrcode/ali-sid",
+            })
+        if url == "https://api.alistgo.com/alist/ali_open/code":
+            return FakeResponse({
+                "access_token": "ali-access",
+                "refresh_token": "ali-refresh",
+            })
+        if url.endswith("/api/admin/storage/create"):
+            self.created_payload = json
+            return FakeResponse({"code": 200, "data": {"id": 188}})
+        if url.endswith("/api/admin/storage/delete"):
+            self.deleted.append(int(params["id"]))
+            return FakeResponse({"code": 200, "data": None})
+        raise AssertionError(url)
+
+    def get(self, url, params=None, headers=None, timeout=None, verify=None):
+        if url == "https://api.oplist.org/alicloud/requests":
+            return FakeResponse({
+                "sid": "ali-sid",
+                "text": "https://openapi.alipan.com/oauth/qrcode/ali-sid",
+            })
+        if url in {
+            "https://api.alistgo.com/proxy/https://open.aliyundrive.com/oauth/qrcode/ali-sid/status",
+            "https://openapi.aliyundrive.com/oauth/qrcode/ali-sid/status",
+        }:
+            payload = {"status": self.qr_status}
+            if self.qr_status == "LoginSuccess":
+                payload["authCode"] = "ali-auth-code"
+            return FakeResponse(payload)
+        if url == "https://api.oplist.org/alicloud/callback":
+            self.callback_params = dict(params or {})
+            self.callback_headers = dict(headers or {})
+            return FakeResponse({
+                "access_token": "ali-access",
+                "refresh_token": "ali-refresh",
+            })
+        if not url.endswith("/api/admin/storage/get"):
+            raise AssertionError(url)
+        payload_addition = json.loads(self.created_payload["addition"]) if self.created_payload else {}
+        return FakeResponse({
+            "code": 200,
+            "data": {
+                "id": int(params["id"]),
+                "driver": "AliyundriveOpen",
+                "mount_path": "/cyberstream/aliyundrive/test",
+                "status": "work",
+                "addition": json.dumps({
+                    "drive_type": payload_addition.get("drive_type", "resource"),
+                    "root_folder_id": payload_addition.get("root_folder_id", "root"),
+                    "refresh_token": payload_addition.get("refresh_token", "ali-refresh"),
+                    "order_by": "name",
+                    "order_direction": "ASC",
+                    "use_online_api": payload_addition.get("use_online_api", True),
+                    "alipan_type": payload_addition.get("alipan_type", "default"),
+                    "api_url_address": payload_addition.get(
+                        "api_url_address",
+                        "https://api.oplist.org/alicloud/renewapi",
+                    ),
+                    "client_id": payload_addition.get("client_id", ""),
+                    "client_secret": payload_addition.get("client_secret", ""),
+                    "remove_way": "trash",
+                    "rapid_upload": False,
+                    "internal_upload": False,
+                    "livp_download_format": "jpeg",
+                }),
+            },
+        })
+
+
+class FakeBaiduNetdiskOpenListSession:
+    def __init__(self):
+        self.headers = {}
+        self.trust_env = True
+        self.deleted = []
+        self.created_payload = None
+        self.token_params = None
+
+    def post(self, url, json=None, params=None, headers=None, timeout=None, verify=None):
+        if url.endswith("/api/admin/storage/create"):
+            self.created_payload = json
+            return FakeResponse({"code": 200, "data": {"id": 211}})
+        if url.endswith("/api/admin/storage/delete"):
+            self.deleted.append(int(params["id"]))
+            return FakeResponse({"code": 200, "data": None})
+        raise AssertionError(url)
+
+    def get(self, url, params=None, headers=None, timeout=None, verify=None):
+        if url == "https://openapi.baidu.com/oauth/2.0/token":
+            self.token_params = dict(params or {})
+            return FakeResponse({
+                "access_token": "baidu-access",
+                "refresh_token": "baidu-refresh",
+                "expires_in": 2592000,
+            })
+        if not url.endswith("/api/admin/storage/get"):
+            raise AssertionError(url)
+        payload_addition = json.loads(self.created_payload["addition"]) if self.created_payload else {}
+        return FakeResponse({
+            "code": 200,
+            "data": {
+                "id": int(params["id"]),
+                "driver": "BaiduNetdisk",
+                "mount_path": "/cyberstream/baidunetdisk/test",
+                "status": "work",
+                "addition": json.dumps({
+                    "root_folder_path": payload_addition.get("root_folder_path", "/"),
+                    "order_by": "name",
+                    "order_direction": "asc",
+                    "download_api": payload_addition.get("download_api", "official"),
+                    "use_online_api": payload_addition.get("use_online_api", False),
+                    "api_url_address": payload_addition.get(
+                        "api_url_address",
+                        "https://api.oplist.org/baiduyun/renewapi",
+                    ),
+                    "client_id": payload_addition.get("client_id", "baidu-client-id"),
+                    "client_secret": payload_addition.get("client_secret", "baidu-client-secret"),
+                    "custom_crack_ua": "netdisk",
+                    "access_token": payload_addition.get("access_token", "baidu-access"),
+                    "refresh_token": payload_addition.get("refresh_token", "baidu-refresh"),
+                    "upload_thread": "3",
+                    "upload_timeout": 60,
+                    "upload_api": "https://d.pcs.baidu.com",
+                    "use_dynamic_upload_api": True,
+                    "custom_upload_part_size": 0,
+                    "low_bandwith_upload_mode": False,
+                    "only_list_video_file": False,
+                }),
+            },
+        })
+
+
+class Fake123PanOpenListSession:
+    def __init__(self, create_ok=True):
+        self.headers = {}
+        self.trust_env = True
+        self.create_ok = create_ok
+        self.deleted = []
+        self.created_payload = None
+
+    def post(self, url, json=None, params=None, headers=None, timeout=None, verify=None):
+        if url.endswith("/api/admin/storage/create"):
+            self.created_payload = json
+            if self.create_ok:
+                return FakeResponse({"code": 200, "data": {"id": 123}})
+            return FakeResponse({"code": 500, "message": "invalid password", "data": {"id": 123}})
+        if url.endswith("/api/admin/storage/delete"):
+            self.deleted.append(int(params["id"]))
+            return FakeResponse({"code": 200, "data": None})
+        raise AssertionError(url)
+
+    def get(self, url, params=None, headers=None, timeout=None, verify=None):
+        if not url.endswith("/api/admin/storage/get"):
+            raise AssertionError(url)
+        payload_addition = json.loads(self.created_payload["addition"]) if self.created_payload else {}
+        return FakeResponse({
+            "code": 200,
+            "data": {
+                "id": int(params["id"]),
+                "driver": "123Pan",
+                "mount_path": "/cyberstream/123pan/test",
+                "status": "work",
+                "addition": json.dumps({
+                    "username": payload_addition.get("username", "13800000000"),
+                    "password": payload_addition.get("password", "secret"),
+                    "root_folder_id": payload_addition.get("root_folder_id", "0"),
+                    "access_token": payload_addition.get("access_token", "access-token"),
+                    "UploadThread": payload_addition.get("UploadThread", 3),
+                    "platform": payload_addition.get("platform", "web"),
+                }),
+            },
+        })
+
+
 class ManagedOpenListClientTests(unittest.TestCase):
     def create_client(self, session):
         return ManagedOpenListClient(
@@ -227,6 +417,11 @@ class ManagedOpenListClientTests(unittest.TestCase):
                 "MANAGED_OPENLIST_TIMEOUT_SECONDS": 30,
                 "MANAGED_OPENLIST_VERIFY_SSL": False,
                 "MANAGED_OPENLIST_MOUNT_PREFIX": "/cyberstream",
+                "MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_ID": "baidu-client-id",
+                "MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_SECRET": "baidu-client-secret",
+                "MANAGED_OPENLIST_BAIDUNETDISK_AUTHORIZE_URL": "https://openapi.baidu.com/oauth/2.0/authorize",
+                "MANAGED_OPENLIST_BAIDUNETDISK_TOKEN_URL": "https://openapi.baidu.com/oauth/2.0/token",
+                "MANAGED_OPENLIST_BAIDUNETDISK_RENEW_API_URL": "https://api.oplist.org/baiduyun/renewapi",
             },
             session=session,
         )
@@ -415,6 +610,180 @@ class ManagedOpenListClientTests(unittest.TestCase):
         self.assertEqual("qr_expired", state["pending_reason"])
         self.assertEqual(-1, state["qr_status"])
         self.assertFalse(session.updated)
+
+    def test_aliyundrive_qr_start_uses_openlist_public_tool_fallback(self):
+        session = FakeAliyundriveOpenListSession()
+        client = self.create_client(session)
+
+        started = client.start_aliyundrive_qr()
+
+        self.assertEqual("qr_pending", started["auth_state"])
+        self.assertEqual("waiting_for_scan", started["pending_reason"])
+        self.assertEqual("ali-sid", started["qr_sid"])
+        self.assertEqual("openlist", started["auth_provider"])
+        self.assertEqual("https://openapi.alipan.com/oauth/qrcode/ali-sid", started["qr_code_url"])
+
+    def test_aliyundrive_qr_poll_reports_pending_without_creating_openlist_storage(self):
+        session = FakeAliyundriveOpenListSession(qr_status="WaitLogin")
+        client = self.create_client(session)
+
+        state = client.poll_aliyundrive_storage("ali-sid")
+
+        self.assertFalse(state["authenticated"])
+        self.assertEqual("qr_pending", state["auth_state"])
+        self.assertEqual("waiting_for_scan", state["pending_reason"])
+        self.assertIsNone(session.created_payload)
+
+    def test_aliyundrive_request_uses_selected_ipv6_family(self):
+        session = FakeAliyundriveOpenListSession(qr_status="WaitLogin")
+        client = self.create_client(session)
+        calls = []
+
+        def fake_get(url, params=None, headers=None, timeout=None, verify=None):
+            calls.append(managed_alist_module.urllib3_connection.allowed_gai_family())
+            return FakeResponse({"status": "WaitLogin"})
+
+        with patch.object(client, "_pick_aliyundrive_dns_family", return_value=socket.AF_INET6), \
+             patch.object(session, "get", side_effect=fake_get):
+            self.assertEqual(
+                {"status": "WaitLogin"},
+                client._request_aliyundrive_json(
+                    "get",
+                    "https://openapi.aliyundrive.com/oauth/qrcode/ali-sid/status",
+                    "QR status",
+                ),
+            )
+
+        self.assertEqual(socket.AF_INET6, calls[0])
+
+    def test_aliyundrive_qr_poll_creates_openlist_storage_after_login_success(self):
+        session = FakeAliyundriveOpenListSession(qr_status="LoginSuccess")
+        client = self.create_client(session)
+
+        state = client.poll_aliyundrive_storage("ali-sid")
+
+        self.assertTrue(state["authenticated"])
+        self.assertEqual("ready", state["auth_state"])
+        self.assertEqual(188, state["storage_id"])
+        self.assertEqual("/cyberstream/aliyundrive/test", state["mount_path"])
+        self.assertEqual("AliyundriveOpen", session.created_payload["driver"])
+        self.assertIn("/aliyundrive/", session.created_payload["mount_path"])
+        addition = json.loads(session.created_payload["addition"])
+        self.assertEqual("ali-refresh", addition["refresh_token"])
+        self.assertEqual("resource", addition["drive_type"])
+        self.assertEqual("root", addition["root_folder_id"])
+        self.assertTrue(addition["use_online_api"])
+        self.assertEqual({"grant_type": "authorization_code", "code": "ali-sid"}, session.callback_params)
+        self.assertEqual("driver_txt=alicloud_qr; server_use=true", session.callback_headers.get("Cookie"))
+
+    def test_baidunetdisk_oauth_start_builds_authorization_url(self):
+        session = FakeBaiduNetdiskOpenListSession()
+        client = self.create_client(session)
+
+        started = client.start_baidunetdisk_oauth(
+            redirect_uri="https://cyberstream.example/api/v1/storage/managed/baidunetdisk/oauth/callback",
+            root_path="电影",
+        )
+
+        self.assertEqual("oauth_pending", started["auth_state"])
+        self.assertEqual("waiting_for_authorization", started["pending_reason"])
+        self.assertEqual("/电影", started["root_folder_path"])
+        self.assertEqual("official", started["download_api"])
+        self.assertIn("https://openapi.baidu.com/oauth/2.0/authorize?", started["authorization_url"])
+        self.assertIn("client_id=baidu-client-id", started["authorization_url"])
+        self.assertIn(
+            "redirect_uri=https%3A%2F%2Fcyberstream.example%2Fapi%2Fv1%2Fstorage%2Fmanaged%2Fbaidunetdisk%2Foauth%2Fcallback",
+            started["authorization_url"],
+        )
+        self.assertIn("scope=basic%2Cnetdisk", started["authorization_url"])
+        self.assertEqual("redirect", started["callback_mode"])
+        self.assertFalse(started["requires_authorization_code"])
+        self.assertTrue(started["oauth_state"])
+
+    def test_baidunetdisk_oauth_start_uses_builtin_public_client_by_default(self):
+        session = FakeBaiduNetdiskOpenListSession()
+        client = ManagedOpenListClient(
+            app_config={
+                "MANAGED_OPENLIST_ENABLED": True,
+                "MANAGED_OPENLIST_BASE_URL": "http://127.0.0.1:5245",
+                "MANAGED_OPENLIST_TOKEN": "token",
+                "MANAGED_OPENLIST_USERNAME": "admin",
+                "MANAGED_OPENLIST_PASSWORD": "",
+                "MANAGED_OPENLIST_TIMEOUT_SECONDS": 30,
+                "MANAGED_OPENLIST_VERIFY_SSL": False,
+                "MANAGED_OPENLIST_MOUNT_PREFIX": "/cyberstream",
+            },
+            session=session,
+        )
+
+        started = client.start_baidunetdisk_oauth(
+            redirect_uri="https://cyberstream.example/api/v1/storage/managed/baidunetdisk/oauth/callback",
+        )
+
+        self.assertIn(
+            f"client_id={ManagedOpenListClient.DEFAULT_BAIDUNETDISK_CLIENT_ID}",
+            started["authorization_url"],
+        )
+        self.assertIn("redirect_uri=oob", started["authorization_url"])
+        self.assertEqual("oob", started["callback_mode"])
+        self.assertTrue(started["requires_authorization_code"])
+        self.assertEqual("oob", started["oauth_redirect_uri"])
+
+    def test_baidunetdisk_oauth_complete_creates_openlist_storage(self):
+        session = FakeBaiduNetdiskOpenListSession()
+        client = self.create_client(session)
+
+        state = client.complete_baidunetdisk_oauth(
+            code="baidu-code",
+            redirect_uri="https://cyberstream.example/api/v1/storage/managed/baidunetdisk/oauth/callback",
+            root_path="/电影",
+        )
+
+        self.assertTrue(state["authenticated"])
+        self.assertEqual("ready", state["auth_state"])
+        self.assertEqual(211, state["storage_id"])
+        self.assertEqual("/cyberstream/baidunetdisk/test", state["mount_path"])
+        self.assertEqual("BaiduNetdisk", session.created_payload["driver"])
+        self.assertIn("/baidunetdisk/", session.created_payload["mount_path"])
+        self.assertEqual("baidu-code", session.token_params["code"])
+        addition = json.loads(session.created_payload["addition"])
+        self.assertEqual("baidu-refresh", addition["refresh_token"])
+        self.assertEqual("baidu-access", addition["access_token"])
+        self.assertEqual("/电影", addition["root_folder_path"])
+        self.assertFalse(addition["use_online_api"])
+
+    def test_123pan_login_creates_openlist_storage(self):
+        session = Fake123PanOpenListSession()
+        client = self.create_client(session)
+
+        state = client.create_123pan_storage(
+            username="13800000000",
+            password="secret",
+            root_folder_id="0",
+        )
+
+        self.assertTrue(state["authenticated"])
+        self.assertEqual("ready", state["auth_state"])
+        self.assertEqual(123, state["storage_id"])
+        self.assertEqual("/cyberstream/123pan/test", state["mount_path"])
+        self.assertEqual("13*****0000", state["account_name_masked"])
+        self.assertEqual("123Pan", session.created_payload["driver"])
+        self.assertIn("/123pan/", session.created_payload["mount_path"])
+        addition = json.loads(session.created_payload["addition"])
+        self.assertEqual("13800000000", addition["username"])
+        self.assertEqual("secret", addition["password"])
+        self.assertEqual("0", addition["root_folder_id"])
+        self.assertEqual("web", addition["platform"])
+
+    def test_123pan_failed_login_deletes_openlist_orphan_storage(self):
+        session = Fake123PanOpenListSession(create_ok=False)
+        client = self.create_client(session)
+
+        with self.assertRaises(ManagedAListError):
+            client.create_123pan_storage(username="13800000000", password="bad")
+
+        self.assertEqual([123], session.deleted)
+
 
 if __name__ == "__main__":
     unittest.main()

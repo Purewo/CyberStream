@@ -103,6 +103,12 @@ class StorageProtocolSupportTests(unittest.TestCase):
         self.assertTrue(items_by_type["tianyicloud"]["qr_login"])
         self.assertTrue(items_by_type["115cloud"]["managed"])
         self.assertTrue(items_by_type["115cloud"]["qr_login"])
+        self.assertTrue(items_by_type["aliyundrive"]["managed"])
+        self.assertTrue(items_by_type["aliyundrive"]["qr_login"])
+        self.assertTrue(items_by_type["baidunetdisk"]["managed"])
+        self.assertTrue(items_by_type["baidunetdisk"]["oauth_login"])
+        self.assertTrue(items_by_type["123pan"]["managed"])
+        self.assertTrue(items_by_type["123pan"]["password_login"])
         self.assertTrue(items_by_type["quarktv"]["managed"])
         self.assertTrue(items_by_type["quarktv"]["qr_login"])
         self.assertTrue(items_by_type["uctv"]["managed"])
@@ -178,6 +184,96 @@ class StorageProtocolSupportTests(unittest.TestCase):
 
         self.assertIsNone(error)
         self.assertEqual("wechatmini", config["qrcode_source"])
+
+    def test_normalize_aliyundrive_config_supports_pending_and_ready_sources(self):
+        pending_config, pending_error = _normalize_storage_config(
+            "aliyundrive",
+            {
+                "auth_state": "qr_pending",
+                "cloud_root_path": "/",
+                "root_folder_id": "",
+                "drive_type": "RESOURCE",
+                "alipan_type": "tv",
+                "qr_sid": "ali-sid",
+                "auth_provider": "OPENLIST",
+            },
+        )
+
+        self.assertIsNone(pending_error)
+        self.assertNotIn("openlist_storage_id", pending_config)
+        self.assertEqual("root", pending_config["root_folder_id"])
+        self.assertEqual("resource", pending_config["drive_type"])
+        self.assertEqual("alipanTV", pending_config["alipan_type"])
+        self.assertEqual("openlist", pending_config["auth_provider"])
+
+        ready_config, ready_error = _normalize_storage_config(
+            "aliyundrive",
+            {
+                "openlist_storage_id": "188",
+                "mount_path": "/cyberstream/aliyundrive/demo",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+            },
+        )
+
+        self.assertIsNone(ready_error)
+        self.assertEqual(188, ready_config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/aliyundrive/demo", ready_config["mount_path"])
+        self.assertEqual("resource", ready_config["drive_type"])
+
+    def test_normalize_baidunetdisk_config_supports_pending_and_ready_sources(self):
+        pending_config, pending_error = _normalize_storage_config(
+            "baidunetdisk",
+            {
+                "auth_state": "oauth_pending",
+                "cloud_root_path": "/电影",
+                "root_folder_path": "电影",
+                "download_api": "OFFICIAL",
+                "oauth_state": "state",
+            },
+        )
+
+        self.assertIsNone(pending_error)
+        self.assertNotIn("openlist_storage_id", pending_config)
+        self.assertEqual("/电影", pending_config["cloud_root_path"])
+        self.assertEqual("/电影", pending_config["root_folder_path"])
+        self.assertEqual("official", pending_config["download_api"])
+
+        ready_config, ready_error = _normalize_storage_config(
+            "baidunetdisk",
+            {
+                "openlist_storage_id": "211",
+                "mount_path": "/cyberstream/baidunetdisk/demo",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+            },
+        )
+
+        self.assertIsNone(ready_error)
+        self.assertEqual(211, ready_config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/baidunetdisk/demo", ready_config["mount_path"])
+        self.assertEqual("official", ready_config["download_api"])
+
+    def test_normalize_123pan_config_supports_managed_source(self):
+        config, error = _normalize_storage_config(
+            "123pan",
+            {
+                "openlist_storage_id": "123",
+                "mount_path": "/cyberstream/123pan/demo",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "root_folder_id": "",
+                "account_name_masked": "13*****0000",
+                "platform": "",
+            },
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(123, config["openlist_storage_id"])
+        self.assertEqual("/cyberstream/123pan/demo", config["mount_path"])
+        self.assertEqual("ready", config["auth_state"])
+        self.assertEqual("0", config["root_folder_id"])
+        self.assertEqual("web", config["platform"])
 
     def test_normalize_quarktv_config_supports_managed_source(self):
         config, error = _normalize_storage_config(

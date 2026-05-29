@@ -314,10 +314,10 @@ AList 内部托管挂载路径前缀，默认 `/cyberstream`。每个光鸭来�
 #### `CYBER_MANAGED_ALIST_TIMEOUT_SECONDS` / `CYBER_MANAGED_ALIST_VERIFY_SSL`
 后端请求托管 AList 的超时与 TLS 校验选项，默认分别为 `30` 秒与 `false`。localhost HTTP 部署保持默认即可。
 
-### 2.13 托管 OpenList / 天翼云盘 / 115 云盘 / QuarkTV / UCTV
+### 2.13 托管 OpenList / 天翼云盘 / 115 云盘 / 阿里云盘 / 百度网盘 / QuarkTV / UCTV
 
 #### `CYBER_MANAGED_OPENLIST_ENABLED`
-托管 OpenList 入口总开关，默认 `false`。开启后允许通过 CyberStream 的 `storage/managed/tianyicloud/qr/*`、`storage/managed/115cloud/qr/*`、`storage/managed/quarktv/qr/*`、`storage/managed/uctv/qr/*` 接口创建和认证对应云盘来源。
+托管 OpenList 入口总开关，默认 `false`。开启后允许通过 CyberStream 的 `storage/managed/tianyicloud/qr/*`、`storage/managed/115cloud/qr/*`、`storage/managed/aliyundrive/qr/*`、`storage/managed/baidunetdisk/oauth/*`、`storage/managed/quarktv/qr/*`、`storage/managed/uctv/qr/*` 接口创建和认证对应云盘来源。
 
 #### `CYBER_MANAGED_OPENLIST_BASE_URL`
 仅后端访问的 OpenList 地址，默认 `http://127.0.0.1:5245`。OpenList 应与光鸭使用的 AList 分开运行，并只监听 localhost。
@@ -326,10 +326,28 @@ AList 内部托管挂载路径前缀，默认 `/cyberstream`。每个光鸭来�
 OpenList 管理认证信息。优先使用 `CYBER_MANAGED_OPENLIST_TOKEN`；没有 token 时后端会用账号密码登录 OpenList。凭据只保存在运行时环境中，不写入 `storage_sources.config`。
 
 #### `CYBER_MANAGED_OPENLIST_MOUNT_PREFIX`
-OpenList 内部托管挂载路径前缀，默认 `/cyberstream`。每个天翼、115、QuarkTV、UCTV 来源会挂载到该前缀下的独立随机子路径。
+OpenList 内部托管挂载路径前缀，默认 `/cyberstream`。每个天翼、115、阿里云盘、百度网盘、QuarkTV、UCTV 来源会挂载到该前缀下的独立随机子路径。
 
 #### `CYBER_MANAGED_OPENLIST_TIMEOUT_SECONDS` / `CYBER_MANAGED_OPENLIST_VERIFY_SSL`
 后端请求托管 OpenList 的超时与 TLS 校验选项，默认分别为 `30` 秒与 `false`。localhost HTTP 部署保持默认即可。
+
+#### `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_AUTH_MODE`
+阿里云盘扫码授权模式，默认 `auto`。`auto` 会在配置了 `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_ID` 与 `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_SECRET` 时使用自有官方 OpenAPI，否则使用 OpenList 官方公共工具接口；`official` 强制使用自有 OpenAPI 凭据；`openlist` 强制使用 OpenList 公共工具接口；`alistgo` 仅保留为 AList 公共工具兼容模式，不建议搭配 OpenList 托管挂载使用。
+
+#### `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_ID` / `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_SECRET`
+阿里云盘官方 OpenAPI 应用凭据。生产建议配置这两个值并使用 `auto` 或 `official`，避免长期依赖公共 token 工具。
+
+#### `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_PUBLIC_API_BASE_URL`
+公共工具接口基地址，默认 `https://api.oplist.org/alicloud`。仅 `auto` 无自有凭据或 `openlist` 模式使用；强制 `alistgo` 兼容模式时可改为 `https://api.alistgo.com/alist/ali_open`。
+
+#### `CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_RENEW_API_URL`
+OpenList `AliyundriveOpen` 使用在线刷新接口时的地址，默认 `https://api.oplist.org/alicloud/renewapi`。配置自有官方凭据时，后端会让 OpenList 本地刷新 token，减少对公共接口的依赖。
+
+#### `CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_ID` / `CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_SECRET`
+百度网盘 OAuth 应用凭据。留空时使用 AList 公开默认百度 OAuth 应用，并走 `redirect_uri=oob` 授权码提交模式，避免公开应用回调域名不匹配；配置后会优先使用自有应用，并走 CyberStream callback 自动完成。使用自有应用时，百度开放平台回调地址需要配置为 `CYBER_BACKEND_PUBLIC_BASE_URL` 加 `/api/v1/storage/managed/baidunetdisk/oauth/callback`。
+
+#### `CYBER_MANAGED_OPENLIST_BAIDUNETDISK_RENEW_API_URL`
+OpenList `BaiduNetdisk` 使用的刷新接口地址，默认 `https://api.oplist.org/baiduyun/renewapi`。后端会把实际使用的 `client_id/client_secret` 和 token 写入 localhost OpenList 挂载，不会返回给前端。
 
 ### 2.14 在线字幕配置
 

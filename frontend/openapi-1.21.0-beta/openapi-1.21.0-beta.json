@@ -6266,6 +6266,584 @@
           }
         }
       }
+    },
+    "/api/v1/storage/managed/aliyundrive/qr/start": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 启动托管阿里云盘扫码登录",
+        "description": "后端启动阿里云盘 OpenAPI 二维码会话，用户确认后再创建 localhost OpenList AliyundriveOpen 挂载。OpenList 地址、token、二维码 sid 和内部挂载路径不会返回给终端用户。详细接入见 /api/v1/docs/frontend-managed-aliyundrive。",
+        "operationId": "startManagedAliyundriveQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedAliyundriveQrStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已生成，存储源处于 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedAliyundriveQrStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、托管 OpenList 未启用或阿里授权配置缺失",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList、阿里 OpenAPI 或公共工具接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/aliyundrive/qr/poll": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 轮询托管阿里云盘扫码结果",
+        "description": "轮询阿里云盘二维码扫码结果。未扫码、已扫码待确认、二维码过期或取消都以 code=200 的业务状态返回；用户确认后后端换取 token 并创建 localhost OpenList AliyundriveOpen 挂载。",
+        "operationId": "pollManagedAliyundriveQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedAliyundriveQrPollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "扫码状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedAliyundriveQrPollResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或存储源状态不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList、阿里 OpenAPI 或公共工具接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/baidunetdisk/oauth/start": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 启动托管百度网盘 OAuth 授权",
+        "description": "创建 oauth_pending 的百度网盘托管来源并返回 authorization_url。自有百度 OAuth 应用使用 redirect callback 自动完成；默认公开应用使用 oob 授权码提交模式，前端需调用 oauth/complete。",
+        "operationId": "startManagedBaiduNetdiskOAuth",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth 授权已启动，存储源处于 oauth_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、托管 OpenList 未启用或百度 OAuth 配置缺失",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或百度 OAuth 接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/baidunetdisk/oauth/complete": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 完成托管百度网盘 OOB 授权",
+        "description": "当 oauth/start 返回 callback_mode=oob 时，前端提交百度授权页显示的 authorization_code，后端换取 token、创建 localhost OpenList BaiduNetdisk 挂载，并更新来源为 ready。",
+        "operationId": "completeManagedBaiduNetdiskOAuth",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthCompleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth 授权完成，存储源处于 ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthPollResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、授权码无效或存储源状态不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或百度 OAuth 接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/baidunetdisk/oauth/poll": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 轮询托管百度网盘 OAuth 授权结果",
+        "description": "轮询百度网盘 OAuth 授权结果。未完成授权返回 oauth_pending；授权失败返回 oauth_failed；callback 完成 token exchange 和 OpenList 挂载后返回 ready。",
+        "operationId": "pollManagedBaiduNetdiskOAuth",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthPollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth 授权状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthPollResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或存储源状态不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/baidunetdisk/oauth/callback": {
+      "get": {
+        "summary": "🟠 [已开发未验证] 百度网盘 OAuth 回调",
+        "description": "百度开放平台回调地址。该接口由浏览器/百度跳转调用，前端不需要直接调用；后端会验证 state、交换 token、创建 localhost OpenList 挂载，并返回简单 HTML。",
+        "operationId": "callbackManagedBaiduNetdiskOAuth",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "授权完成，返回 HTML 页面",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "授权失败或缺少 code",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "OAuth state 无效或过期",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或百度 OAuth 接口调用失败",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/123pan/login": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 托管 123Pan 账号密码登录",
+        "description": "后端调用 localhost OpenList 创建 123Pan 挂载。123Pan 当前是账号密码登录，不是扫码或短信流程；OpenList 地址、密码、内部 storage id 和内部挂载路径不会返回给终端用户。详细接入见 /api/v1/docs/frontend-managed-123pan。",
+        "operationId": "loginManaged123Pan",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Managed123PanLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功，存储源已 ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Managed123PanLoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误或托管 OpenList 未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 OpenList 或 123Pan 账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{id}/streaming-qualities": {
+      "get": {
+        "summary": "🔵 [新增] 查询 QuarkTV/UCTV 云端转码清晰度",
+        "description": "仅用于托管 QuarkTV/UCTV 资源。后端直接调用 provider TV API，按资源路径解析 fid，并返回 provider 可用的转码档位。前端应优先使用 items[].stream_url 或 /stream-transcoded?resolution=... 播放，不要继续使用 raw download stream_url。",
+        "operationId": "getResourceStreamingQualities",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "required": false,
+            "description": "可选。指定要选择的云端转码清晰度；不传时使用 provider default_resolution，若默认不可用则选择最高可用档。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high",
+                "super",
+                "2k",
+                "4k"
+              ]
+            }
+          },
+          {
+            "name": "quality",
+            "in": "query",
+            "required": false,
+            "description": "resolution 的兼容别名。前端新代码优先使用 resolution。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high",
+                "super",
+                "2k",
+                "4k"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "云端转码清晰度列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCloudTranscodeQualitiesApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "资源来源不支持云端转码，或 resolution/quality 非法。"
+          },
+          "404": {
+            "description": "资源不存在，或 provider 中找不到该资源路径。"
+          },
+          "409": {
+            "description": "来源未 ready，或请求的清晰度当前不可用。"
+          },
+          "502": {
+            "description": "后端访问 localhost OpenList 或 provider TV API 失败。"
+          }
+        }
+      }
+    },
+    "/api/v1/resources/{id}/stream-transcoded": {
+      "get": {
+        "summary": "🔵 [新增] QuarkTV/UCTV 云端转码播放跳转",
+        "description": "选择 QuarkTV/UCTV 的一个云端转码清晰度并 302 跳转到 provider 转码直链。不暴露 localhost OpenList 地址。resolution 可选，省略时使用 provider 默认档或最高可用档。",
+        "operationId": "streamResourceTranscoded",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "Player"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "resolution",
+            "in": "query",
+            "required": false,
+            "description": "可选。指定要选择的云端转码清晰度；不传时使用 provider default_resolution，若默认不可用则选择最高可用档。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high",
+                "super",
+                "2k",
+                "4k"
+              ]
+            }
+          },
+          {
+            "name": "quality",
+            "in": "query",
+            "required": false,
+            "description": "resolution 的兼容别名。前端新代码优先使用 resolution。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high",
+                "super",
+                "2k",
+                "4k"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "跳转到 provider 云端转码直链",
+            "headers": {
+              "Location": {
+                "description": "Provider transcoded direct URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "资源来源不支持云端转码，或 resolution/quality 非法。"
+          },
+          "404": {
+            "description": "资源不存在，或 provider 中找不到该资源路径。"
+          },
+          "409": {
+            "description": "来源未 ready，或请求的清晰度当前不可用。"
+          },
+          "502": {
+            "description": "后端访问 localhost OpenList 或 provider TV API 失败。"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8191,6 +8769,9 @@
               "guangyapan",
               "tianyicloud",
               "115cloud",
+              "aliyundrive",
+              "baidunetdisk",
+              "123pan",
               "quarktv",
               "uctv"
             ],
@@ -8255,6 +8836,15 @@
                 "$ref": "#/components/schemas/Config115Cloud"
               },
               {
+                "$ref": "#/components/schemas/ConfigAliyundrive"
+              },
+              {
+                "$ref": "#/components/schemas/ConfigBaiduNetdisk"
+              },
+              {
+                "$ref": "#/components/schemas/Config123Pan"
+              },
+              {
                 "$ref": "#/components/schemas/ConfigQuarkTV"
               },
               {
@@ -8311,6 +8901,9 @@
               "guangyapan",
               "tianyicloud",
               "115cloud",
+              "aliyundrive",
+              "baidunetdisk",
+              "123pan",
               "quarktv",
               "uctv"
             ],
@@ -8339,6 +8932,9 @@
               },
               {
                 "$ref": "#/components/schemas/ConfigGuangYaPan"
+              },
+              {
+                "$ref": "#/components/schemas/Config123Pan"
               }
             ]
           }
@@ -10169,7 +10765,7 @@
       },
       "ResourcePlayback": {
         "type": "object",
-        "description": "资源播放能力矩阵。描述播放方式、外部播放器链接、同目录外挂字幕、音频兼容风险和可用的独立音频实时转码入口；不改变 /resources/{id}/stream 的默认视频播放行为。",
+        "description": "资源播放能力矩阵。描述播放方式、外部播放器链接、同目录外挂字幕、音频兼容风险和可用的独立音频实时转码入口；不改变 /resources/{id}/stream 的默认视频播放行为。 QuarkTV/UCTV 额外通过 cloud_transcode 暴露 provider 云端转码清晰度入口。",
         "properties": {
           "stream_url": {
             "type": "string",
@@ -10222,6 +10818,9 @@
             "items": {
               "$ref": "#/components/schemas/ResourcePlaybackWarning"
             }
+          },
+          "cloud_transcode": {
+            "$ref": "#/components/schemas/ResourceCloudTranscodePlayback"
           }
         }
       },
@@ -10251,12 +10850,27 @@
           },
           "needs_server_audio_transcode": {
             "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "When web_player.supported=false, machine-readable reason. For Baidu Netdisk this is baidunetdisk_requires_pc_client."
+          },
+          "message": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional display-safe explanation for why the web player is unavailable."
+          },
+          "recommended_action": {
+            "type": "string",
+            "nullable": true,
+            "description": "Suggested frontend action, for example download_pc_client."
           }
         }
       },
       "ResourceExternalPlayerPlayback": {
         "type": "object",
-        "description": "供 PotPlayer、IINA、VLC 等外部播放器使用的链接信息。当前 url 指向后端 stream 入口，AList/OpenList 场景会由该入口继续 302 到上游 /d 直链。subtitle_urls 来自同目录外挂字幕发现结果。",
+        "description": "供 PotPlayer、IINA、VLC 等外部播放器或 PC 客户端使用的链接信息。当前 url 指向后端 stream 入口，AList/OpenList 场景会由该入口继续 302 到上游 /d 直链。subtitle_urls 来自同目录外挂字幕发现结果。Baidu Netdisk 需要 PC 本地后端改写上游 User-Agent。",
         "properties": {
           "supported": {
             "type": "boolean"
@@ -10278,6 +10892,19 @@
           "subtitle_placeholder_url": {
             "type": "string",
             "nullable": true
+          },
+          "requires_local_backend": {
+            "type": "boolean",
+            "description": "True when a plain web/external player should not directly consume the stream URL and a PC local backend is expected."
+          },
+          "requires_user_agent_rewrite": {
+            "type": "boolean",
+            "description": "True when the PC local backend must rewrite User-Agent before opening the upstream cloud link."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Machine-readable external playback requirement reason, for example baidunetdisk_requires_user_agent_rewrite."
           }
         }
       },
@@ -12471,6 +13098,9 @@
               "guangyapan",
               "tianyicloud",
               "115cloud",
+              "aliyundrive",
+              "baidunetdisk",
+              "123pan",
               "quarktv",
               "uctv"
             ]
@@ -12537,6 +13167,10 @@
           "oauth_login": {
             "type": "boolean",
             "description": "是否支持 OAuth 授权登录流程。"
+          },
+          "password_login": {
+            "type": "boolean",
+            "description": "是否支持账号密码托管登录流程。"
           }
         }
       },
@@ -14598,6 +15232,9 @@
               "guangyapan",
               "tianyicloud",
               "115cloud",
+              "aliyundrive",
+              "baidunetdisk",
+              "123pan",
               "quarktv",
               "uctv"
             ]
@@ -14656,6 +15293,15 @@
           },
           "sms_login": {
             "type": "boolean"
+          },
+          "qr_login": {
+            "type": "boolean"
+          },
+          "oauth_login": {
+            "type": "boolean"
+          },
+          "password_login": {
+            "type": "boolean"
           }
         }
       },
@@ -14676,6 +15322,9 @@
                 "guangyapan",
                 "tianyicloud",
                 "115cloud",
+                "aliyundrive",
+                "baidunetdisk",
+                "123pan",
                 "quarktv",
                 "uctv"
               ]
@@ -15631,6 +16280,19 @@
           "url_type": {
             "type": "string",
             "example": "http_stream"
+          },
+          "requires_local_backend": {
+            "type": "boolean",
+            "description": "True when the PC handoff expects a local backend rather than a plain browser/player opening the URL directly."
+          },
+          "requires_user_agent_rewrite": {
+            "type": "boolean",
+            "description": "True when the PC local backend must rewrite User-Agent for the upstream cloud URL."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Machine-readable stream handoff requirement reason, for example baidunetdisk_requires_user_agent_rewrite."
           }
         }
       },
@@ -17364,6 +18026,909 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/ManagedQuarkUCTVQrPollData"
+              }
+            }
+          }
+        ]
+      },
+      "ConfigAliyundrive": {
+        "type": "object",
+        "title": "Aliyundrive Managed Config",
+        "description": "CyberStream 托管 OpenList 生成的阿里云盘来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、root_folder_id、drive_type、alipan_type 等展示字段；openlist_storage_id/mount_path/qr_sid/auth_provider 为后端内部字段，不会在普通 source 响应中暴露。",
+        "properties": {
+          "openlist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 OpenList 内部 storage id；扫码完成后才生成；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 188,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 OpenList 内部挂载路径；扫码完成后才生成；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/aliyundrive/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "qr_expired",
+              "qr_canceled",
+              "ready"
+            ],
+            "default": "qr_pending",
+            "description": "扫码认证状态；ready 后才可浏览、扫描和播放。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "阿里云盘侧根路径，仅用于展示。",
+            "example": "/"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "default": "root",
+            "description": "OpenList AliyundriveOpen 技术根目录 ID。"
+          },
+          "drive_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "resource",
+              "backup"
+            ],
+            "default": "resource",
+            "description": "OpenList AliyundriveOpen drive_type。"
+          },
+          "alipan_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "alipanTV"
+            ],
+            "default": "default",
+            "description": "OpenList AliyundriveOpen alipan_type。"
+          },
+          "qr_sid": {
+            "type": "string",
+            "description": "阿里云盘二维码会话 sid；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          },
+          "auth_provider": {
+            "type": "string",
+            "enum": [
+              "official",
+              "openlist",
+              "alistgo"
+            ],
+            "description": "阿里云盘授权提供方；后端内部隐藏字段，StorageSource.config 响应不返回。默认 openlist；alistgo 仅保留兼容。",
+            "writeOnly": true
+          }
+        }
+      },
+      "ManagedAliyundriveQrStartRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "存储源显示名称，未传默认 Aliyundrive。",
+            "example": "阿里云盘"
+          },
+          "source_name": {
+            "type": "string",
+            "description": "name 的兼容别名。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "OpenList AliyundriveOpen 技术根目录 ID，可留空使用 root。",
+            "default": "root"
+          },
+          "drive_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "resource",
+              "backup"
+            ],
+            "default": "resource",
+            "description": "OpenList AliyundriveOpen drive_type；首轮联调用默认 resource。"
+          },
+          "alipan_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "alipanTV"
+            ],
+            "default": "default",
+            "description": "OpenList AliyundriveOpen alipan_type；首轮联调用默认 default。"
+          }
+        }
+      },
+      "ManagedAliyundriveQrPollRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "qr/start 返回的 CyberStream 存储源 ID。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          }
+        }
+      },
+      "ManagedAliyundriveQrStartData": {
+        "type": "object",
+        "properties": {
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "enum": [
+              "waiting_for_scan"
+            ],
+            "description": "启动扫码后的初始等待原因。"
+          },
+          "qr_status": {
+            "type": "string",
+            "nullable": true,
+            "description": "阿里云盘二维码状态，例如 WaitLogin。"
+          },
+          "qr_code_url": {
+            "type": "string",
+            "description": "可直接渲染的阿里云盘二维码 URL。"
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "兼容既有二维码字段；阿里云盘这里通常是 URL，不一定是 data:image。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "二维码原始扫码内容，客户端通常无需解析。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedAliyundriveQrPollData": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "qr_expired",
+              "qr_canceled",
+              "ready"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "waiting_for_scan",
+              "waiting_for_confirm",
+              "qr_expired",
+              "qr_canceled"
+            ],
+            "description": "未完成扫码时的机器可读原因。"
+          },
+          "qr_status": {
+            "type": "string",
+            "nullable": true,
+            "description": "阿里云盘二维码状态，例如 WaitLogin、ScanSuccess、LoginSuccess。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedAliyundriveQrStartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedAliyundriveQrStartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedAliyundriveQrPollResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedAliyundriveQrPollData"
+              }
+            }
+          }
+        ]
+      },
+      "ConfigBaiduNetdisk": {
+        "type": "object",
+        "title": "Baidu Netdisk Managed Config",
+        "description": "CyberStream 托管 OpenList 生成的百度网盘来源配置；前端不应手工创建，使用托管 OAuth 接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、root_folder_path、download_api 等展示字段；openlist_storage_id/mount_path/oauth_state/oauth_callback_mode/oauth_redirect_uri/oauth_error 为后端内部字段，不会在普通 source 响应中暴露。",
+        "properties": {
+          "openlist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 OpenList 内部 storage id；OAuth 完成后才生成；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 211,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 OpenList 内部挂载路径；OAuth 完成后才生成；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/baidunetdisk/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "oauth_pending",
+              "oauth_failed",
+              "ready"
+            ],
+            "default": "oauth_pending",
+            "description": "OAuth 认证状态；ready 后才可浏览、扫描和播放。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "百度网盘侧根路径，仅用于展示。",
+            "example": "/"
+          },
+          "root_folder_path": {
+            "type": "string",
+            "default": "/",
+            "description": "OpenList BaiduNetdisk root_folder_path。"
+          },
+          "download_api": {
+            "type": "string",
+            "enum": [
+              "official",
+              "crack",
+              "crack_video"
+            ],
+            "default": "official",
+            "description": "OpenList 下载接口；首轮联调用默认 official。"
+          },
+          "oauth_state": {
+            "type": "string",
+            "description": "百度 OAuth state；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          },
+          "oauth_callback_mode": {
+            "type": "string",
+            "enum": [
+              "redirect",
+              "oob"
+            ],
+            "description": "百度 OAuth 回调模式；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          },
+          "oauth_redirect_uri": {
+            "type": "string",
+            "description": "百度 OAuth token exchange 使用的 redirect_uri；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          },
+          "oauth_error": {
+            "type": "string",
+            "description": "百度 OAuth 失败原因；后端内部隐藏字段，StorageSource.config 响应不返回。",
+            "writeOnly": true
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthStartRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "存储源显示名称，未传默认 Baidu Netdisk。",
+            "example": "百度网盘"
+          },
+          "source_name": {
+            "type": "string",
+            "description": "name 的兼容别名。"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "百度网盘侧根路径，可留空使用 /。",
+            "default": "/"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "root_folder_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "download_api": {
+            "type": "string",
+            "enum": [
+              "official",
+              "crack",
+              "crack_video"
+            ],
+            "default": "official",
+            "description": "OpenList 下载接口；普通用户不要暴露。"
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthPollRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "oauth/start 返回的 CyberStream 存储源 ID。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthCompleteRequest": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "authorization_code"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "oauth/start 返回的 CyberStream 存储源 ID。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "authorization_code": {
+            "type": "string",
+            "description": "百度 OOB 授权页显示的授权码。"
+          },
+          "code": {
+            "type": "string",
+            "description": "authorization_code 的兼容别名。"
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthStartData": {
+        "type": "object",
+        "properties": {
+          "oauth_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "oauth_pending"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "enum": [
+              "waiting_for_authorization"
+            ],
+            "description": "启动 OAuth 后的初始等待原因。"
+          },
+          "authorization_url": {
+            "type": "string",
+            "description": "前端需要打开的百度 OAuth 授权地址。"
+          },
+          "callback_mode": {
+            "type": "string",
+            "enum": [
+              "redirect",
+              "oob"
+            ],
+            "description": "redirect 表示百度会跳回 CyberStream callback；oob 表示百度页面显示授权码，前端需调用 oauth/complete。"
+          },
+          "requires_authorization_code": {
+            "type": "boolean",
+            "description": "为 true 时前端必须收集授权码并提交到 authorization_code_submit_url。"
+          },
+          "callback_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "百度开放平台配置的回调地址。"
+          },
+          "authorization_code_submit_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "callback_mode=oob 时提交 authorization_code 的 CyberStream 接口。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthPollData": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "oauth_pending",
+              "oauth_failed",
+              "ready"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "waiting_for_authorization",
+              "oauth_failed"
+            ],
+            "description": "未完成授权时的机器可读原因。"
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "OAuth 失败时返回的错误信息。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthStartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthStartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedBaiduNetdiskOAuthPollResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthPollData"
+              }
+            }
+          }
+        ]
+      },
+      "Config123Pan": {
+        "type": "object",
+        "title": "123Pan Managed Config",
+        "description": "CyberStream 托管 OpenList 生成的 123Pan 来源配置；前端不应手工创建，使用托管登录接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、root_folder_id、account_name_masked、platform 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "required": [
+          "openlist_storage_id",
+          "mount_path"
+        ],
+        "properties": {
+          "openlist_storage_id": {
+            "type": "integer",
+            "description": "CyberStream 托管 OpenList 内部 storage id；后端内部字段，StorageSource.config 响应不返回。",
+            "example": 123,
+            "writeOnly": true
+          },
+          "mount_path": {
+            "type": "string",
+            "description": "CyberStream 托管 OpenList 内部挂载路径，不向终端用户展示为可访问地址；后端内部字段，StorageSource.config 响应不返回。",
+            "example": "/cyberstream/123pan/abc123def456",
+            "writeOnly": true
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "ready"
+            ],
+            "default": "ready",
+            "description": "账号密码认证状态；ready 后可浏览、扫描和播放。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "default": "/",
+            "description": "123 云盘侧根路径，仅用于展示。",
+            "example": "/"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "default": "0",
+            "description": "OpenList 123Pan 技术根目录 ID。"
+          },
+          "account_name_masked": {
+            "type": "string",
+            "nullable": true,
+            "description": "脱敏后的 123 云盘账号，仅用于展示。",
+            "example": "13*****0000"
+          },
+          "platform": {
+            "type": "string",
+            "default": "web",
+            "description": "OpenList 123Pan platform header，默认 web。"
+          }
+        }
+      },
+      "Managed123PanLoginRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "存储源显示名称，未传时默认 123Pan。",
+            "example": "123Pan"
+          },
+          "source_name": {
+            "type": "string",
+            "description": "name 的兼容别名。"
+          },
+          "username": {
+            "type": "string",
+            "description": "123Pan 账号、手机号或邮箱。",
+            "example": "13800000000"
+          },
+          "account": {
+            "type": "string",
+            "description": "username 的兼容别名。"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "description": "123Pan 账号密码；只提交给 CyberStream 后端，响应不会返回。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "default": "0",
+            "description": "OpenList 123Pan 技术根目录 ID，可留空使用默认根目录 0。"
+          },
+          "platform": {
+            "type": "string",
+            "default": "web",
+            "description": "OpenList 123Pan platform header，默认 web。"
+          }
+        }
+      },
+      "Managed123PanLoginData": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "ready"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "Managed123PanLoginResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Managed123PanLoginData"
+              }
+            }
+          }
+        ]
+      },
+      "ResourceCloudTranscodePlayback": {
+        "type": "object",
+        "description": "QuarkTV/UCTV provider cloud transcoding playback entry. The frontend should call qualities_endpoint, let the user choose a resolution, then play stream_url or stream_endpoint with resolution.",
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "quarktv",
+              "uctv",
+              null
+            ]
+          },
+          "provider_name": {
+            "type": "string",
+            "nullable": true,
+            "example": "QuarkTV"
+          },
+          "mode": {
+            "type": "string",
+            "nullable": true,
+            "example": "provider_cloud_transcode"
+          },
+          "qualities_endpoint": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v1/resources/11111111-1111-1111-1111-111111111111/streaming-qualities"
+          },
+          "stream_endpoint": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v1/resources/11111111-1111-1111-1111-111111111111/stream-transcoded"
+          },
+          "resolution_param": {
+            "type": "string",
+            "example": "resolution"
+          },
+          "available_resolutions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high",
+                "super",
+                "2k",
+                "4k"
+              ]
+            }
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "example": "provider_not_supported"
+          }
+        }
+      },
+      "ResourceCloudTranscodeFile": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "nullable": true
+          },
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "fid": {
+            "type": "string",
+            "nullable": true,
+            "description": "Provider file id resolved by CyberStream. It is returned for diagnostics only; frontend should not persist it."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "ResourceCloudTranscodeDolbyVision": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "profile": {
+            "type": "integer",
+            "nullable": true
+          },
+          "level": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "ResourceCloudTranscodeQualityItem": {
+        "type": "object",
+        "properties": {
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "super",
+              "2k",
+              "4k"
+            ],
+            "example": "4k"
+          },
+          "label": {
+            "type": "string",
+            "example": "4K"
+          },
+          "rank": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Ascending order: low=0, normal=1, high=2, super=3, 2k=4, 4k=5."
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "accessable": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Provider raw access flag. 1 usually means playable."
+          },
+          "trans_status": {
+            "type": "string",
+            "nullable": true,
+            "example": "success"
+          },
+          "duration": {
+            "type": "integer",
+            "nullable": true
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "format": {
+            "type": "string",
+            "nullable": true,
+            "example": "mp4"
+          },
+          "width": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3840
+          },
+          "height": {
+            "type": "integer",
+            "nullable": true,
+            "example": 2160
+          },
+          "bitrate": {
+            "type": "number",
+            "nullable": true
+          },
+          "dolby_vision": {
+            "$ref": "#/components/schemas/ResourceCloudTranscodeDolbyVision"
+          },
+          "url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Provider transcoded direct URL. It is not a localhost OpenList URL and may expire."
+          },
+          "stream_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "CyberStream 302 endpoint for this resolution. Frontend can use this to avoid holding the direct provider URL.",
+            "example": "/api/v1/resources/11111111-1111-1111-1111-111111111111/stream-transcoded?resolution=4k"
+          }
+        }
+      },
+      "ResourceCloudTranscodeQualities": {
+        "type": "object",
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "storage_type": {
+            "type": "string",
+            "enum": [
+              "quarktv",
+              "uctv"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "example": "QuarkTV"
+          },
+          "mode": {
+            "type": "string",
+            "example": "provider_cloud_transcode"
+          },
+          "file": {
+            "$ref": "#/components/schemas/ResourceCloudTranscodeFile"
+          },
+          "default_resolution": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "super",
+              "2k",
+              "4k",
+              null
+            ],
+            "example": "4k"
+          },
+          "selected_resolution": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "super",
+              "2k",
+              "4k",
+              null
+            ],
+            "example": "4k"
+          },
+          "selected_item": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResourceCloudTranscodeQualityItem"
+              }
+            ],
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceCloudTranscodeQualityItem"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePlaybackWarning"
+            }
+          }
+        }
+      },
+      "ResourceCloudTranscodeQualitiesApiResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ResourceCloudTranscodeQualities"
               }
             }
           }

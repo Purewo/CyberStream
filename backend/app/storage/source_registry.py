@@ -544,6 +544,242 @@ SOURCE_TYPE_DEFINITIONS = {
             },
         ],
     },
+    'aliyundrive': {
+        'display_name': 'Aliyundrive',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'qr_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': ['openlist_storage_id', 'mount_path', 'qr_sid', 'auth_provider'],
+        'config_fields': [
+            {
+                'name': 'openlist_storage_id',
+                'type': 'integer',
+                'required': False,
+                'description': 'CyberStream 托管 OpenList 内部 storage id；扫码完成后才会生成',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': False,
+                'description': 'CyberStream 托管 OpenList 内部挂载路径；扫码完成后才会生成',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'qr_pending',
+                'description': '扫码认证状态：qr_pending、qr_expired、qr_canceled 或 ready',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': '阿里云盘侧根路径，仅用于展示',
+            },
+            {
+                'name': 'root_folder_id',
+                'type': 'string',
+                'required': False,
+                'default': 'root',
+                'description': 'OpenList AliyundriveOpen root_folder_id',
+            },
+            {
+                'name': 'drive_type',
+                'type': 'string',
+                'required': False,
+                'default': 'resource',
+                'description': '阿里云盘 drive_type：default、resource 或 backup',
+            },
+            {
+                'name': 'alipan_type',
+                'type': 'string',
+                'required': False,
+                'default': 'default',
+                'description': 'OpenList AliyundriveOpen alipan_type：default 或 alipanTV',
+            },
+            {
+                'name': 'qr_sid',
+                'type': 'string',
+                'required': False,
+                'description': '阿里云盘二维码会话 sid，后端隐藏字段',
+            },
+            {
+                'name': 'auth_provider',
+                'type': 'string',
+                'required': False,
+                'description': '阿里云盘授权提供方，后端隐藏字段',
+            },
+        ],
+    },
+    'baidunetdisk': {
+        'display_name': 'Baidu Netdisk',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'oauth_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': [
+            'openlist_storage_id',
+            'mount_path',
+            'oauth_state',
+            'oauth_callback_mode',
+            'oauth_redirect_uri',
+            'oauth_error',
+        ],
+        'config_fields': [
+            {
+                'name': 'openlist_storage_id',
+                'type': 'integer',
+                'required': False,
+                'description': 'CyberStream 托管 OpenList 内部 storage id；OAuth 完成后才会生成',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': False,
+                'description': 'CyberStream 托管 OpenList 内部挂载路径；OAuth 完成后才会生成',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'oauth_pending',
+                'description': 'OAuth 认证状态：oauth_pending、oauth_failed 或 ready',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': '百度网盘侧根路径，仅用于展示',
+            },
+            {
+                'name': 'root_folder_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': 'OpenList BaiduNetdisk root_folder_path',
+            },
+            {
+                'name': 'download_api',
+                'type': 'string',
+                'required': False,
+                'default': 'official',
+                'description': 'OpenList 下载接口：official、crack 或 crack_video',
+            },
+            {
+                'name': 'oauth_state',
+                'type': 'string',
+                'required': False,
+                'description': '百度 OAuth state，后端隐藏字段',
+            },
+            {
+                'name': 'oauth_callback_mode',
+                'type': 'string',
+                'required': False,
+                'description': '百度 OAuth 回调模式：redirect 或 oob，后端隐藏字段',
+            },
+            {
+                'name': 'oauth_redirect_uri',
+                'type': 'string',
+                'required': False,
+                'description': '百度 OAuth token exchange 使用的 redirect_uri，后端隐藏字段',
+            },
+            {
+                'name': 'oauth_error',
+                'type': 'string',
+                'required': False,
+                'description': '百度 OAuth 失败原因，后端隐藏字段',
+            },
+        ],
+    },
+    '123pan': {
+        'display_name': '123Pan',
+        'status': 'beta',
+        'capabilities': {
+            'preview': True,
+            'scan': True,
+            'refresh': True,
+            'stream': True,
+            'ffmpeg_input': True,
+            'health_check': True,
+            'credentials_required': False,
+            'redirect_stream': True,
+            'managed': True,
+            'password_login': True,
+        },
+        'secret_fields': [],
+        'hidden_fields': ['openlist_storage_id', 'mount_path'],
+        'config_fields': [
+            {
+                'name': 'openlist_storage_id',
+                'type': 'integer',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部 storage id',
+            },
+            {
+                'name': 'mount_path',
+                'type': 'string',
+                'required': True,
+                'description': 'CyberStream 托管 OpenList 内部挂载路径',
+            },
+            {
+                'name': 'auth_state',
+                'type': 'string',
+                'required': False,
+                'default': 'ready',
+                'description': '账号密码认证状态：ready',
+            },
+            {
+                'name': 'cloud_root_path',
+                'type': 'string',
+                'required': False,
+                'default': '/',
+                'description': '123 云盘侧根路径，仅用于展示',
+            },
+            {
+                'name': 'root_folder_id',
+                'type': 'string',
+                'required': False,
+                'default': '0',
+                'description': 'OpenList 123Pan root_folder_id',
+            },
+            {
+                'name': 'account_name_masked',
+                'type': 'string',
+                'required': False,
+                'description': '脱敏后的 123 云盘账号，仅用于展示',
+            },
+            {
+                'name': 'platform',
+                'type': 'string',
+                'required': False,
+                'default': 'web',
+                'description': 'OpenList 123Pan platform header，默认 web',
+            },
+        ],
+    },
     'quarktv': {
         'display_name': 'QuarkTV',
         'status': 'beta',
@@ -655,7 +891,7 @@ SOURCE_TYPE_DEFINITIONS = {
 SOURCE_TYPE_DEFINITIONS['openlist']['config_fields'] = SOURCE_TYPE_DEFINITIONS['alist']['config_fields']
 
 REMOTE_ROOT_SOURCE_TYPES = {'webdav', 'smb', 'ftp', 'alist', 'openlist'}
-MANAGED_CLOUD_ROOT_SOURCE_TYPES = {'guangyapan', 'tianyicloud', '115cloud', 'quarktv', 'uctv'}
+MANAGED_CLOUD_ROOT_SOURCE_TYPES = {'guangyapan', 'tianyicloud', '115cloud', 'aliyundrive', 'baidunetdisk', '123pan', 'quarktv', 'uctv'}
 
 LEGACY_CONFIG_ALIASES = {
     'path': 'root_path',
@@ -827,6 +1063,18 @@ def build_source_display_root(s_type, config):
         root = display_config.get('cloud_root_path') or '/'
         return f"115 Cloud:{root}"
 
+    if normalized_type == 'aliyundrive':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"Aliyundrive:{root}"
+
+    if normalized_type == 'baidunetdisk':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"BaiduNetdisk:{root}"
+
+    if normalized_type == '123pan':
+        root = display_config.get('cloud_root_path') or '/'
+        return f"123Pan:{root}"
+
     if normalized_type == 'quarktv':
         root = display_config.get('cloud_root_path') or '/'
         return f"QuarkTV:{root}"
@@ -904,6 +1152,52 @@ def _normalize_post_config_fields(s_type, config):
                 "Invalid config field value: qrcode_source should be web, android, ios, tv, alipaymini, wechatmini or qandroid",
                 code=40038,
             )
+
+    if normalized_type == 'aliyundrive':
+        if 'root_folder_id' in config and isinstance(config.get('root_folder_id'), str):
+            config['root_folder_id'] = config['root_folder_id'].strip() or 'root'
+        if 'drive_type' in config and isinstance(config.get('drive_type'), str):
+            config['drive_type'] = config['drive_type'].strip().lower() or 'resource'
+            if config['drive_type'] not in {'default', 'resource', 'backup'}:
+                raise StorageProviderError(
+                    "Invalid config field value: drive_type should be default, resource or backup",
+                    code=40038,
+                )
+        if 'alipan_type' in config and isinstance(config.get('alipan_type'), str):
+            alipan_type = config['alipan_type'].strip()
+            if alipan_type.lower() in {'', 'default'}:
+                config['alipan_type'] = 'default'
+            elif alipan_type.lower() in {'alipantv', 'tv'}:
+                config['alipan_type'] = 'alipanTV'
+            else:
+                raise StorageProviderError(
+                    "Invalid config field value: alipan_type should be default or alipanTV",
+                    code=40038,
+                )
+        if 'auth_provider' in config and isinstance(config.get('auth_provider'), str):
+            config['auth_provider'] = config['auth_provider'].strip().lower() or 'openlist'
+            if config['auth_provider'] not in {'official', 'openlist', 'alistgo'}:
+                raise StorageProviderError(
+                    "Invalid config field value: auth_provider should be official, openlist or alistgo",
+                    code=40038,
+                )
+
+    if normalized_type == 'baidunetdisk':
+        if 'root_folder_path' in config and isinstance(config.get('root_folder_path'), str):
+            config['root_folder_path'] = _normalize_remote_root(config.get('root_folder_path'))
+        if 'download_api' in config and isinstance(config.get('download_api'), str):
+            config['download_api'] = config['download_api'].strip().lower() or 'official'
+            if config['download_api'] not in {'official', 'crack', 'crack_video'}:
+                raise StorageProviderError(
+                    "Invalid config field value: download_api should be official, crack or crack_video",
+                    code=40038,
+                )
+
+    if normalized_type == '123pan':
+        if 'root_folder_id' in config and isinstance(config.get('root_folder_id'), str):
+            config['root_folder_id'] = config['root_folder_id'].strip() or '0'
+        if 'platform' in config and isinstance(config.get('platform'), str):
+            config['platform'] = config['platform'].strip() or 'web'
 
     if normalized_type in {'quarktv', 'uctv'} and 'link_method' in config and isinstance(config.get('link_method'), str):
         config['link_method'] = config['link_method'].strip().lower() or 'download'

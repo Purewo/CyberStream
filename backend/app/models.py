@@ -88,7 +88,7 @@ class StorageSource(db.Model):
                 }
 
         ready_for_actions = True
-        if normalized_type in {"guangyapan", "tianyicloud", "115cloud", "quarktv", "uctv"}:
+        if normalized_type in {"guangyapan", "tianyicloud", "115cloud", "aliyundrive", "baidunetdisk", "123pan", "quarktv", "uctv"}:
             ready_for_actions = str((self.config or {}).get("auth_state") or "").strip().lower() == "ready"
 
         actions = {

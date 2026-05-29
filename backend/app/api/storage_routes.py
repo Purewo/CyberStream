@@ -1,7 +1,7 @@
 import logging
 import threading
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, Response, current_app, request
 
 from backend.app.db.database import scanner_adapter
 from backend.app.extensions import db
@@ -11,6 +11,7 @@ from backend.app.providers.factory import provider_factory
 from backend.app.services.managed_alist import ManagedAListClient, ManagedAListError, ManagedOpenListClient
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
+from backend.app.services.urls import api_url_for
 from backend.app.services.vault import VaultAccessError, verify_vault_pin
 from backend.app.storage.source_registry import (
     list_supported_source_types,
@@ -156,6 +157,105 @@ def _build_115cloud_source_config(state, auth_state):
         if state.get(key) is not None:
             config[key] = state[key]
     return config
+
+
+def _build_aliyundrive_source_config(state, auth_state):
+    config = {
+        "auth_state": auth_state,
+        "cloud_root_path": state.get("cloud_root_path") or "/",
+        "root_folder_id": state.get("root_folder_id") or "root",
+        "drive_type": state.get("drive_type") or "resource",
+        "alipan_type": state.get("alipan_type") or "default",
+    }
+    if state.get("storage_id") is not None:
+        config["openlist_storage_id"] = int(state["storage_id"])
+    if state.get("mount_path"):
+        config["mount_path"] = state["mount_path"]
+    if state.get("qr_sid"):
+        config["qr_sid"] = state["qr_sid"]
+    if state.get("auth_provider"):
+        config["auth_provider"] = state["auth_provider"]
+    return config
+
+
+def _build_baidunetdisk_source_config(state, auth_state):
+    config = {
+        "auth_state": auth_state,
+        "cloud_root_path": state.get("cloud_root_path") or "/",
+        "root_folder_path": state.get("root_folder_path") or state.get("cloud_root_path") or "/",
+        "download_api": state.get("download_api") or "official",
+    }
+    if state.get("storage_id") is not None:
+        config["openlist_storage_id"] = int(state["storage_id"])
+    if state.get("mount_path"):
+        config["mount_path"] = state["mount_path"]
+    if state.get("oauth_state"):
+        config["oauth_state"] = state["oauth_state"]
+    if state.get("oauth_callback_mode"):
+        config["oauth_callback_mode"] = state["oauth_callback_mode"]
+    if state.get("oauth_redirect_uri"):
+        config["oauth_redirect_uri"] = state["oauth_redirect_uri"]
+    if state.get("oauth_error"):
+        config["oauth_error"] = state["oauth_error"]
+    return config
+
+
+def _build_123pan_source_config(state, auth_state):
+    return {
+        "openlist_storage_id": int(state["storage_id"]),
+        "mount_path": state["mount_path"],
+        "auth_state": auth_state,
+        "cloud_root_path": state.get("cloud_root_path") or "/",
+        "root_folder_id": state.get("root_folder_id") or "0",
+        "account_name_masked": state.get("account_name_masked"),
+        "platform": state.get("platform") or "web",
+    }
+
+
+def _find_managed_source_by_oauth_state(source_type, oauth_state):
+    normalized_state = str(oauth_state or "").strip()
+    if not normalized_state:
+        return None
+    for source in StorageSource.query.filter_by(type=source_type).all():
+        if str((source.config or {}).get("oauth_state") or "").strip() == normalized_state:
+            return source
+    return None
+
+
+def _oauth_html(title, message):
+    escaped_title = str(title or "OAuth").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    escaped_message = str(message or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return Response(
+        (
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            f"<title>{escaped_title}</title></head><body>"
+            f"<h1>{escaped_title}</h1><p>{escaped_message}</p>"
+            "</body></html>"
+        ),
+        content_type="text/html; charset=utf-8",
+    )
+
+
+def _complete_baidunetdisk_oauth_source(source, code):
+    source_config = source.config or {}
+    callback_mode = str(source_config.get("oauth_callback_mode") or "redirect").strip().lower()
+    redirect_uri = str(source_config.get("oauth_redirect_uri") or "").strip()
+    if not redirect_uri:
+        redirect_uri = "oob" if callback_mode == "oob" else api_url_for("storage.callback_managed_baidunetdisk_oauth")
+    client = ManagedOpenListClient()
+    login_state = client.complete_baidunetdisk_oauth(
+        code=code,
+        redirect_uri=redirect_uri,
+        root_path=source_config.get("root_folder_path") or source_config.get("cloud_root_path") or "/",
+        download_api=source_config.get("download_api") or "official",
+    )
+    next_config = dict(source_config)
+    next_config.update(_build_baidunetdisk_source_config(login_state, auth_state='ready'))
+    for key in ("oauth_state", "oauth_error", "oauth_callback_mode", "oauth_redirect_uri"):
+        next_config.pop(key, None)
+    source.config = normalize_source_config('baidunetdisk', next_config)
+    db.session.commit()
+    return login_state
 
 
 _MANAGED_QUARK_UC_PROVIDERS = {
@@ -650,6 +750,400 @@ def poll_managed_115cloud_qr():
         return api_error(code=50023, msg="Poll 115 Cloud QR login failed", http_status=500)
 
 
+@storage_bp.route('/storage/managed/aliyundrive/qr/start', methods=['POST'])
+def start_managed_aliyundrive_qr():
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or 'Aliyundrive').strip()
+    root_folder_id = str(payload.get('root_folder_id') or '').strip()
+    drive_type = str(payload.get('drive_type') or 'resource').strip().lower()
+    alipan_type = str(payload.get('alipan_type') or 'default').strip()
+
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+
+    try:
+        client = ManagedOpenListClient()
+        login_state = client.start_aliyundrive_qr(
+            root_folder_id=root_folder_id,
+            drive_type=drive_type,
+            alipan_type=alipan_type,
+        )
+        source_config = normalize_source_config(
+            'aliyundrive',
+            _build_aliyundrive_source_config(login_state, auth_state='qr_pending'),
+        )
+        source = StorageSource(name=name, type='aliyundrive', config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        return api_response(data={
+            "qr_started": True,
+            "auth_state": "qr_pending",
+            "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+            "qr_status": login_state.get("qr_status"),
+            "qr_code_url": login_state["qr_code_url"],
+            "qr_code_data_url": login_state["qr_code_data_url"],
+            "qr_content": login_state.get("qr_content"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Start managed Aliyundrive QR failed error=%s", e)
+        return api_error(code=50024, msg="Start Aliyundrive QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/aliyundrive/qr/poll', methods=['POST'])
+def poll_managed_aliyundrive_qr():
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != 'aliyundrive':
+        return api_error(code=40061, msg="Storage source is not a managed Aliyundrive source")
+
+    try:
+        source_config = source.config or {}
+        if str(source_config.get("auth_state") or "").strip().lower() == "ready":
+            return api_response(data={
+                "authenticated": True,
+                "auth_state": "ready",
+                "source": source.to_dict(),
+            })
+
+        qr_sid = str(source_config.get("qr_sid") or "").strip()
+        if not qr_sid:
+            return api_error(code=40061, msg="Managed Aliyundrive source has no QR session")
+
+        client = ManagedOpenListClient()
+        login_state = client.poll_aliyundrive_storage(
+            qr_sid=qr_sid,
+            root_folder_id=source_config.get("root_folder_id") or "root",
+            drive_type=source_config.get("drive_type") or "resource",
+            alipan_type=source_config.get("alipan_type") or "default",
+            auth_provider=source_config.get("auth_provider"),
+        )
+        if not login_state.get("authenticated"):
+            auth_state = login_state.get("auth_state") or "qr_pending"
+            next_config = dict(source_config)
+            next_config.update(_build_aliyundrive_source_config(login_state, auth_state=auth_state))
+            next_config["qr_sid"] = qr_sid
+            source.config = normalize_source_config('aliyundrive', next_config)
+            db.session.commit()
+            data = {
+                "authenticated": False,
+                "auth_state": auth_state,
+                "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+                "source": source.to_dict(),
+            }
+            if login_state.get("qr_status") is not None:
+                data["qr_status"] = login_state["qr_status"]
+            return api_response(data=data)
+
+        next_config = dict(source_config)
+        next_config.update(_build_aliyundrive_source_config(login_state, auth_state='ready'))
+        for key in ("qr_sid", "auth_provider"):
+            next_config.pop(key, None)
+        source.config = normalize_source_config('aliyundrive', next_config)
+        db.session.commit()
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "qr_status": login_state.get("qr_status"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Poll managed Aliyundrive QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50025, msg="Poll Aliyundrive QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/baidunetdisk/oauth/start', methods=['POST'])
+def start_managed_baidunetdisk_oauth():
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or 'Baidu Netdisk').strip()
+    root_path = str(payload.get('root_path') or payload.get('cloud_root_path') or payload.get('root_folder_path') or '').strip()
+    download_api = str(payload.get('download_api') or 'official').strip().lower()
+
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+
+    try:
+        redirect_uri = api_url_for("storage.callback_managed_baidunetdisk_oauth")
+        client = ManagedOpenListClient()
+        oauth_state = client.start_baidunetdisk_oauth(
+            redirect_uri=redirect_uri,
+            root_path=root_path,
+            download_api=download_api,
+        )
+        source_config = normalize_source_config(
+            'baidunetdisk',
+            _build_baidunetdisk_source_config(oauth_state, auth_state='oauth_pending'),
+        )
+        source = StorageSource(name=name, type='baidunetdisk', config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        return api_response(data={
+            "oauth_started": True,
+            "auth_state": "oauth_pending",
+            "pending_reason": oauth_state.get("pending_reason") or "waiting_for_authorization",
+            "authorization_url": oauth_state["authorization_url"],
+            "callback_url": None if oauth_state.get("requires_authorization_code") else redirect_uri,
+            "callback_mode": oauth_state.get("callback_mode") or "redirect",
+            "requires_authorization_code": bool(oauth_state.get("requires_authorization_code")),
+            "authorization_code_submit_url": api_url_for("storage.complete_managed_baidunetdisk_oauth")
+            if oauth_state.get("requires_authorization_code")
+            else None,
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Start managed Baidu Netdisk OAuth failed error=%s", e)
+        return api_error(code=50026, msg="Start Baidu Netdisk OAuth failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/baidunetdisk/oauth/poll', methods=['POST'])
+def poll_managed_baidunetdisk_oauth():
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != 'baidunetdisk':
+        return api_error(code=40061, msg="Storage source is not a managed Baidu Netdisk source")
+
+    source_config = source.config or {}
+    auth_state = str(source_config.get("auth_state") or "oauth_pending").strip().lower()
+    if auth_state == "ready":
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    if auth_state == "oauth_failed":
+        return api_response(data={
+            "authenticated": False,
+            "auth_state": "oauth_failed",
+            "pending_reason": "oauth_failed",
+            "error_message": source_config.get("oauth_error") or "Baidu Netdisk authorization failed",
+            "source": source.to_dict(),
+        })
+    return api_response(data={
+        "authenticated": False,
+        "auth_state": "oauth_pending",
+        "pending_reason": "waiting_for_authorization",
+        "source": source.to_dict(),
+    })
+
+
+@storage_bp.route('/storage/managed/baidunetdisk/oauth/complete', methods=['POST'])
+def complete_managed_baidunetdisk_oauth():
+    payload = _get_json_payload()
+    source_id = payload.get('source_id') or payload.get('id')
+    authorization_code = str(payload.get('authorization_code') or payload.get('code') or '').strip()
+    if not source_id:
+        return api_error(code=40001, msg="Missing required field: source_id")
+    if not authorization_code:
+        return api_error(code=40001, msg="Missing required field: authorization_code")
+
+    try:
+        source_id = int(source_id)
+    except (TypeError, ValueError):
+        return api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != 'baidunetdisk':
+        return api_error(code=40061, msg="Storage source is not a managed Baidu Netdisk source")
+
+    source_config = source.config or {}
+    if str(source_config.get("auth_state") or "").strip().lower() == "ready":
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+
+    try:
+        _complete_baidunetdisk_oauth_source(source, authorization_code)
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        try:
+            next_config = dict(source_config)
+            next_config.update({
+                "auth_state": "oauth_failed",
+                "oauth_error": e.message,
+            })
+            source.config = normalize_source_config('baidunetdisk', next_config)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Persist Baidu Netdisk OAuth complete failure failed source_id=%s", source.id)
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Complete managed Baidu Netdisk OAuth failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50027, msg="Complete Baidu Netdisk OAuth failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/baidunetdisk/oauth/callback', methods=['GET'])
+def callback_managed_baidunetdisk_oauth():
+    oauth_state = str(request.args.get("state") or "").strip()
+    code = str(request.args.get("code") or "").strip()
+    error = str(request.args.get("error") or request.args.get("error_description") or "").strip()
+    source = _find_managed_source_by_oauth_state('baidunetdisk', oauth_state)
+    if not source:
+        return _oauth_html("Baidu Netdisk authorization failed", "OAuth state is invalid or expired"), 404
+
+    source_config = source.config or {}
+    try:
+        if error:
+            next_config = dict(source_config)
+            next_config.update({
+                "auth_state": "oauth_failed",
+                "oauth_error": error,
+            })
+            source.config = normalize_source_config('baidunetdisk', next_config)
+            db.session.commit()
+            return _oauth_html("Baidu Netdisk authorization failed", error), 400
+        if not code:
+            next_config = dict(source_config)
+            next_config.update({
+                "auth_state": "oauth_failed",
+                "oauth_error": "missing_authorization_code",
+            })
+            source.config = normalize_source_config('baidunetdisk', next_config)
+            db.session.commit()
+            return _oauth_html("Baidu Netdisk authorization failed", "Missing authorization code"), 400
+
+        _complete_baidunetdisk_oauth_source(source, code)
+        return _oauth_html(
+            "Baidu Netdisk authorization completed",
+            "Authorization completed. You can return to CyberStream.",
+        )
+    except ManagedAListError as e:
+        db.session.rollback()
+        try:
+            next_config = dict(source_config)
+            next_config.update({
+                "auth_state": "oauth_failed",
+                "oauth_error": e.message,
+            })
+            source.config = normalize_source_config('baidunetdisk', next_config)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Persist Baidu Netdisk OAuth failure failed source_id=%s", source.id)
+        return _oauth_html("Baidu Netdisk authorization failed", e.message), 502 if e.code >= 500 else 400
+    except StorageProviderError as e:
+        db.session.rollback()
+        return _oauth_html("Baidu Netdisk authorization failed", e.message), 400
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Baidu Netdisk OAuth callback failed source_id=%s error=%s", source.id, e)
+        return _oauth_html("Baidu Netdisk authorization failed", "Internal server error"), 500
+
+
+@storage_bp.route('/storage/managed/123pan/login', methods=['POST'])
+def login_managed_123pan():
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or '123Pan').strip()
+    username = str(payload.get('username') or payload.get('account') or '').strip()
+    password = str(payload.get('password') or '')
+    root_folder_id = str(payload.get('root_folder_id') or '').strip()
+    platform = str(payload.get('platform') or 'web').strip()
+
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+    if not username:
+        return api_error(code=40001, msg="Missing required field: username")
+    if not password:
+        return api_error(code=40001, msg="Missing required field: password")
+
+    storage_state = None
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_123pan_storage(
+            username=username,
+            password=password,
+            root_folder_id=root_folder_id,
+            platform=platform,
+        )
+        source_config = normalize_source_config(
+            '123pan',
+            _build_123pan_source_config(storage_state, auth_state='ready'),
+        )
+        source = StorageSource(name=name, type='123pan', config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        return api_response(data={
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Login managed 123Pan failed error=%s", e)
+        return api_error(code=50028, msg="Login 123Pan failed", http_status=500)
+
 
 def _start_managed_quark_uc_qr(source_type):
     provider_meta = _MANAGED_QUARK_UC_PROVIDERS[source_type]
@@ -866,7 +1360,7 @@ def delete_source(id):
     if source.type == 'guangyapan':
         managed_storage_id = (source.config or {}).get('alist_storage_id')
         managed_client_class = ManagedAListClient
-    elif source.type in {'tianyicloud', '115cloud', 'quarktv', 'uctv'}:
+    elif source.type in {'tianyicloud', '115cloud', 'aliyundrive', 'baidunetdisk', '123pan', 'quarktv', 'uctv'}:
         managed_storage_id = (source.config or {}).get('openlist_storage_id')
         managed_client_class = ManagedOpenListClient
     success, msg = scanner_adapter.delete_storage_source(id, keep_metadata)

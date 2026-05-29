@@ -104,6 +104,24 @@ DOCUMENTS = {
         "format": "markdown",
         "content_type": "text/markdown; charset=utf-8",
     },
+    "frontend-managed-aliyundrive": {
+        "title": "Frontend Managed Aliyundrive Integration",
+        "path": "docs/FRONTEND_MANAGED_ALIYUNDRIVE_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
+    "frontend-managed-baidunetdisk": {
+        "title": "Frontend Managed Baidu Netdisk Integration",
+        "path": "docs/FRONTEND_MANAGED_BAIDUNETDISK_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
+    "frontend-managed-123pan": {
+        "title": "Frontend Managed 123Pan Integration",
+        "path": "docs/FRONTEND_MANAGED_123PAN_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
     "frontend-managed-quark-uc": {
         "title": "Frontend Managed QuarkTV / UCTV Integration",
         "path": "docs/FRONTEND_MANAGED_QUARK_UC_INTEGRATION.md",

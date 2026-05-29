@@ -1,21 +1,163 @@
 import base64
 import json
+import logging
 import posixpath
 import re
+import socket
+import threading
 import time
 import uuid
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin, urlparse
 
 import requests
+import urllib3.util.connection as urllib3_connection
 from flask import current_app
 
 from backend.app.providers.base import StorageProviderError
+
+
+logger = logging.getLogger(__name__)
 
 
 class ManagedAListError(StorageProviderError):
     def __init__(self, message, code=50260, data=None):
         super().__init__(message, code=code)
         self.data = data
+
+
+_ALIYUNDRIVE_DNS_FAMILY_LOCK = threading.RLock()
+_ALIYUNDRIVE_DNS_FAMILY_CACHE = {}
+_ALIYUNDRIVE_DNS_FAMILY_CACHE_TTL = 300
+_ALIYUNDRIVE_DNS_PROBE_TIMEOUT = 0.8
+
+
+def _aliyundrive_ipv4_gai_family():
+    return socket.AF_INET
+
+
+def _aliyundrive_ipv6_gai_family():
+    return socket.AF_INET6
+
+
+def _aliyundrive_gai_family_callback(family):
+    return _aliyundrive_ipv6_gai_family if family == socket.AF_INET6 else _aliyundrive_ipv4_gai_family
+
+
+def _aliyundrive_cache_key(url):
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return None
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return parsed.hostname, port
+
+
+def _aliyundrive_cached_family(cache_key):
+    now = time.monotonic()
+    with _ALIYUNDRIVE_DNS_FAMILY_LOCK:
+        cached = _ALIYUNDRIVE_DNS_FAMILY_CACHE.get(cache_key)
+        if cached and cached[1] > now:
+            return cached[0]
+        if cached:
+            _ALIYUNDRIVE_DNS_FAMILY_CACHE.pop(cache_key, None)
+    return None
+
+
+def _aliyundrive_store_family(cache_key, family):
+    with _ALIYUNDRIVE_DNS_FAMILY_LOCK:
+        _ALIYUNDRIVE_DNS_FAMILY_CACHE[cache_key] = (
+            family,
+            time.monotonic() + _ALIYUNDRIVE_DNS_FAMILY_CACHE_TTL,
+        )
+
+
+def _aliyundrive_clear_family(cache_key, family=None):
+    with _ALIYUNDRIVE_DNS_FAMILY_LOCK:
+        cached = _ALIYUNDRIVE_DNS_FAMILY_CACHE.get(cache_key)
+        if cached and (family is None or cached[0] == family):
+            _ALIYUNDRIVE_DNS_FAMILY_CACHE.pop(cache_key, None)
+
+
+def _aliyundrive_probe_family(addresses, timeout):
+    last_error = None
+    seen = set()
+    for family, socktype, proto, _canonname, sockaddr in addresses:
+        key = str(sockaddr)
+        if key in seen:
+            continue
+        seen.add(key)
+        sock = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return family
+        except OSError as exc:
+            last_error = exc
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+    if last_error:
+        raise last_error
+    raise OSError("No address available for family probe")
+
+
+def _aliyundrive_race_dns_families(host, port):
+    try:
+        addrinfos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        logger.debug("Aliyundrive DNS family probe skipped host=%s error=%s", host, exc)
+        return None
+
+    grouped = {
+        socket.AF_INET: [],
+        socket.AF_INET6: [],
+    }
+    family_order = []
+    for addrinfo in addrinfos:
+        family = addrinfo[0]
+        if family in grouped:
+            grouped[family].append(addrinfo)
+            if family not in family_order:
+                family_order.append(family)
+
+    families = [family for family in family_order if grouped[family]]
+    if len(families) == 1:
+        return families[0]
+    if not families:
+        return None
+
+    result = {}
+    done = threading.Event()
+
+    def worker(family):
+        try:
+            _aliyundrive_probe_family(grouped[family], _ALIYUNDRIVE_DNS_PROBE_TIMEOUT)
+        except OSError as exc:
+            logger.debug(
+                "Aliyundrive DNS family probe failed host=%s family=%s error=%s",
+                host,
+                family,
+                exc,
+            )
+            return
+        if not done.is_set():
+            result["family"] = family
+            done.set()
+
+    threads = [
+        threading.Thread(target=worker, args=(family,), daemon=True)
+        for family in families
+    ]
+    for thread in threads:
+        thread.start()
+
+    done.wait(_ALIYUNDRIVE_DNS_PROBE_TIMEOUT)
+    for thread in threads:
+        thread.join(timeout=0)
+    return result.get("family")
 
 
 def mask_phone_number(phone_number):
@@ -25,6 +167,24 @@ def mask_phone_number(phone_number):
         return "*" * len(digits)
     prefix = "+" if raw.startswith("+") else ""
     return f"{prefix}{'*' * max(3, len(digits) - 4)}{digits[-4:]}"
+
+
+def mask_account_identifier(account):
+    raw = str(account or "").strip()
+    if not raw:
+        return ""
+    if "@" in raw:
+        local, domain = raw.split("@", 1)
+        if not local:
+            return f"***@{domain}"
+        visible = local[:2] if len(local) > 2 else local[:1]
+        return f"{visible}***@{domain}"
+    digits = "".join(char for char in raw if char.isdigit())
+    if len(digits) >= 6 and len(digits) == len(raw):
+        return f"{raw[:2]}{'*' * max(1, len(raw) - 6)}{raw[-4:]}"
+    if len(raw) <= 4:
+        return "*" * len(raw)
+    return f"{raw[:2]}***{raw[-2:]}"
 
 
 class ManagedAListClient:
@@ -248,6 +408,17 @@ class ManagedOpenListClient(ManagedAListClient):
     _PAN115_QR_TOKEN_URL = "https://qrcodeapi.115.com/api/1.0/web/1.0/token"
     _PAN115_QR_IMAGE_URL = "https://qrcodeapi.115.com/api/1.0/mac/1.0/qrcode"
     _PAN115_QR_STATUS_URL = "https://qrcodeapi.115.com/get/status/"
+    _ALIYUNDRIVE_PUBLIC_API_BASE_URL = "https://api.oplist.org/alicloud"
+    _ALIYUNDRIVE_QR_AUTHORIZE_URL = "https://openapi.aliyundrive.com/oauth/authorize/qrcode"
+    _ALIYUNDRIVE_QR_STATUS_URL_TEMPLATE = "https://openapi.aliyundrive.com/oauth/qrcode/{sid}/status"
+    _ALIYUNDRIVE_TOKEN_URL = "https://openapi.aliyundrive.com/oauth/access_token"
+    _ALIYUNDRIVE_RENEW_API_URL = "https://api.oplist.org/alicloud/renewapi"
+    _ALIYUNDRIVE_SCOPES = ("user:base", "file:all:read", "file:all:write")
+    DEFAULT_BAIDUNETDISK_CLIENT_ID = "hq9yQ9w9kR4YHj1kyYafLygVocobh7Sf"
+    DEFAULT_BAIDUNETDISK_CLIENT_SECRET = "YH2VpZcFJHYNnV6vLfHQXDBhcE7ZChyE"
+    _BAIDUNETDISK_AUTHORIZE_URL = "https://openapi.baidu.com/oauth/2.0/authorize"
+    _BAIDUNETDISK_TOKEN_URL = "https://openapi.baidu.com/oauth/2.0/token"
+    _BAIDUNETDISK_RENEW_API_URL = "https://api.oplist.org/baiduyun/renewapi"
     _QUARK_UC_DEFINITIONS = {
         "quarktv": {
             "driver": "QuarkTV",
@@ -258,6 +429,16 @@ class ManagedOpenListClient(ManagedAListClient):
             "display_name": "UCTV",
         },
     }
+
+    @staticmethod
+    def _normalize_123pan_root_id(root_folder_id):
+        raw = str(root_folder_id or "").strip()
+        return raw or "0"
+
+    @staticmethod
+    def _normalize_123pan_platform(platform):
+        raw = str(platform or "").strip()
+        return raw or "web"
 
     def _new_tianyicloud_mount_path(self):
         suffix = uuid.uuid4().hex[:12]
@@ -572,6 +753,849 @@ class ManagedOpenListClient(ManagedAListClient):
         if qr_payload:
             state.update(qr_payload)
         return state
+
+    def _pan123_addition(self, storage):
+        try:
+            addition = json.loads(storage.get("addition") or "{}")
+        except (TypeError, ValueError) as exc:
+            raise ManagedAListError("Managed OpenList returned invalid 123Pan addition") from exc
+        if not isinstance(addition, dict):
+            raise ManagedAListError("Managed OpenList returned invalid 123Pan addition")
+        return addition
+
+    def _build_123pan_state(self, storage_id, storage, username="", root_folder_id="0", platform="web"):
+        addition = self._pan123_addition(storage)
+        saved_root_id = (
+            addition.get("root_folder_id")
+            or addition.get("RootFolderID")
+            or root_folder_id
+            or "0"
+        )
+        saved_platform = addition.get("platform") or addition.get("Platform") or platform or "web"
+        return {
+            "storage_id": int(storage_id),
+            "mount_path": storage.get("mount_path"),
+            "cloud_root_path": "/",
+            "root_folder_id": str(saved_root_id),
+            "platform": str(saved_platform),
+            "account_name_masked": mask_account_identifier(username or addition.get("username") or addition.get("Username")),
+            "authenticated": True,
+            "auth_state": "ready",
+        }
+
+    @staticmethod
+    def _normalize_aliyundrive_root_id(root_folder_id):
+        raw = str(root_folder_id or "").strip()
+        return raw or "root"
+
+    @staticmethod
+    def _normalize_aliyundrive_drive_type(drive_type):
+        normalized = str(drive_type or "resource").strip().lower()
+        if normalized not in {"default", "resource", "backup"}:
+            raise ManagedAListError("Invalid Aliyundrive drive type", code=40036)
+        return normalized
+
+    @staticmethod
+    def _normalize_aliyundrive_alipan_type(alipan_type):
+        normalized = str(alipan_type or "default").strip()
+        if normalized.lower() in {"", "default"}:
+            return "default"
+        if normalized.lower() in {"alipantv", "tv"}:
+            return "alipanTV"
+        raise ManagedAListError("Invalid Aliyundrive alipan type", code=40036)
+
+    def _aliyundrive_auth_config(self, preferred_provider=None):
+        mode = str(
+            preferred_provider
+            or self._config_value("MANAGED_OPENLIST_ALIYUNDRIVE_AUTH_MODE", "auto")
+            or "auto"
+        ).strip().lower()
+        if mode not in {"auto", "official", "openlist", "alistgo"}:
+            raise ManagedAListError("Invalid Aliyundrive auth mode", code=40036)
+
+        client_id = str(self._config_value("MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_ID", "") or "").strip()
+        client_secret = str(self._config_value("MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_SECRET", "") or "").strip()
+        if mode == "official" and (not client_id or not client_secret):
+            raise ManagedAListError("Aliyundrive official OAuth credentials are not configured", code=40060)
+
+        if mode == "official" or (mode == "auto" and client_id and client_secret):
+            provider = "official"
+        elif mode == "alistgo":
+            provider = "alistgo"
+        else:
+            provider = "openlist"
+        public_base_url = str(
+            self._config_value(
+                "MANAGED_OPENLIST_ALIYUNDRIVE_PUBLIC_API_BASE_URL",
+                self._ALIYUNDRIVE_PUBLIC_API_BASE_URL,
+            )
+            or self._ALIYUNDRIVE_PUBLIC_API_BASE_URL
+        ).strip().rstrip("/")
+        if provider == "openlist" and public_base_url.endswith("/alist/ali_open"):
+            public_base_url = self._ALIYUNDRIVE_PUBLIC_API_BASE_URL
+        return {
+            "provider": provider,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "public_api_base_url": public_base_url,
+            "qr_authorize_url": str(
+                self._config_value(
+                    "MANAGED_OPENLIST_ALIYUNDRIVE_QR_AUTHORIZE_URL",
+                    self._ALIYUNDRIVE_QR_AUTHORIZE_URL,
+                )
+                or self._ALIYUNDRIVE_QR_AUTHORIZE_URL
+            ).strip(),
+            "qr_status_url_template": str(
+                self._config_value(
+                    "MANAGED_OPENLIST_ALIYUNDRIVE_QR_STATUS_URL_TEMPLATE",
+                    self._ALIYUNDRIVE_QR_STATUS_URL_TEMPLATE,
+                )
+                or self._ALIYUNDRIVE_QR_STATUS_URL_TEMPLATE
+            ).strip(),
+            "token_url": str(
+                self._config_value("MANAGED_OPENLIST_ALIYUNDRIVE_TOKEN_URL", self._ALIYUNDRIVE_TOKEN_URL)
+                or self._ALIYUNDRIVE_TOKEN_URL
+            ).strip(),
+            "renew_api_url": str(
+                self._config_value("MANAGED_OPENLIST_ALIYUNDRIVE_RENEW_API_URL", self._ALIYUNDRIVE_RENEW_API_URL)
+                or self._ALIYUNDRIVE_RENEW_API_URL
+            ).strip(),
+        }
+
+    @staticmethod
+    def _unwrap_aliyundrive_payload(payload):
+        if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+            return payload["data"]
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _aliyundrive_error_message(payload, fallback):
+        if not isinstance(payload, dict):
+            return fallback
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        return (
+            payload.get("message")
+            or payload.get("msg")
+            or payload.get("error_description")
+            or payload.get("error")
+            or payload.get("text")
+            or data.get("message")
+            or data.get("error_description")
+            or data.get("error")
+            or fallback
+        )
+
+    def _pick_aliyundrive_dns_family(self, url):
+        cache_key = _aliyundrive_cache_key(url)
+        if not cache_key:
+            return None
+
+        cached = _aliyundrive_cached_family(cache_key)
+        if cached:
+            return cached
+
+        family = _aliyundrive_race_dns_families(*cache_key)
+        if family:
+            _aliyundrive_store_family(cache_key, family)
+        return family
+
+    def _clear_aliyundrive_dns_family_cache(self, url, family=None):
+        cache_key = _aliyundrive_cache_key(url)
+        if cache_key:
+            _aliyundrive_clear_family(cache_key, family=family)
+
+    def _session_request_aliyundrive(self, method, url, family=None, **kwargs):
+        request = self.session.post if method == "post" else self.session.get
+        if family not in (socket.AF_INET, socket.AF_INET6):
+            return request(url, timeout=self.timeout, verify=True, **kwargs)
+
+        with _ALIYUNDRIVE_DNS_FAMILY_LOCK:
+            original_gai_family = urllib3_connection.allowed_gai_family
+            urllib3_connection.allowed_gai_family = _aliyundrive_gai_family_callback(family)
+            try:
+                return request(url, timeout=self.timeout, verify=True, **kwargs)
+            finally:
+                urllib3_connection.allowed_gai_family = original_gai_family
+
+    def _request_aliyundrive_json(self, method, url, operation, **kwargs):
+        last_error = None
+        for attempt in range(2):
+            family = self._pick_aliyundrive_dns_family(url)
+            try:
+                response = self._session_request_aliyundrive(method, url, family=family, **kwargs)
+                payload = response.json()
+                break
+            except (requests.RequestException, ValueError) as exc:
+                last_error = exc
+                if family:
+                    self._clear_aliyundrive_dns_family_cache(url, family=family)
+                if attempt == 0:
+                    continue
+                raise ManagedAListError(f"Aliyundrive {operation} request failed") from exc
+        else:
+            raise ManagedAListError(f"Aliyundrive {operation} request failed") from last_error
+
+        fallback = f"HTTP {response.status_code}"
+        message = self._aliyundrive_error_message(payload, fallback)
+        success_flag = payload.get("success") if isinstance(payload, dict) else None
+        error_value = payload.get("error") if isinstance(payload, dict) else None
+        if response.status_code >= 400 or error_value or success_flag is False:
+            raise ManagedAListError(f"Aliyundrive {operation} failed: {message}")
+        return self._unwrap_aliyundrive_payload(payload)
+
+    def _start_aliyundrive_qr_session(self, auth_config):
+        if auth_config["provider"] == "official":
+            data = self._request_aliyundrive_json(
+                "post",
+                auth_config["qr_authorize_url"],
+                "QR start",
+                json={
+                    "client_id": auth_config["client_id"],
+                    "client_secret": auth_config["client_secret"],
+                    "scopes": list(self._ALIYUNDRIVE_SCOPES),
+                },
+            )
+        elif auth_config["provider"] == "openlist":
+            data = self._request_aliyundrive_json(
+                "get",
+                f"{auth_config['public_api_base_url']}/requests",
+                "QR start",
+                params={
+                    "server_use": "true",
+                    "driver_txt": "alicloud_tv"
+                    if auth_config.get("alipan_type") == "alipanTV"
+                    else "alicloud_qr",
+                },
+            )
+        else:
+            data = self._request_aliyundrive_json(
+                "post",
+                f"{auth_config['public_api_base_url']}/qr",
+                "QR start",
+                json={},
+            )
+
+        sid = str(data.get("sid") or data.get("session_id") or data.get("sessionId") or "").strip()
+        qr_code_url = str(
+            data.get("qrCodeUrl")
+            or data.get("qr_code_url")
+            or data.get("qrCodeURL")
+            or data.get("text")
+            or ""
+        ).strip()
+        if not sid or not qr_code_url:
+            raise ManagedAListError("Aliyundrive QR start response is incomplete")
+        return {
+            "qr_sid": sid,
+            "qr_code_url": qr_code_url,
+            "qr_code_data_url": qr_code_url,
+            "qr_content": qr_code_url,
+            "auth_provider": auth_config["provider"],
+        }
+
+    def _get_aliyundrive_qr_status(self, qr_sid, auth_config):
+        sid = str(qr_sid or "").strip()
+        if not sid:
+            raise ManagedAListError("Aliyundrive QR session is incomplete", code=40061)
+        if auth_config["provider"] == "alistgo":
+            public_api_root = auth_config["public_api_base_url"]
+            if public_api_root.endswith("/alist/ali_open"):
+                public_api_root = public_api_root[: -len("/alist/ali_open")]
+            status_url = f"{public_api_root.rstrip('/')}/proxy/https://open.aliyundrive.com/oauth/qrcode/{sid}/status"
+        else:
+            status_url = auth_config["qr_status_url_template"].format(sid=sid)
+        data = self._request_aliyundrive_json("get", status_url, "QR status")
+        raw_status = str(data.get("status") or data.get("qr_status") or "").strip()
+        auth_code = str(data.get("authCode") or data.get("auth_code") or data.get("code") or "").strip()
+        normalized = raw_status.replace("_", "").replace("-", "").replace(" ", "").lower()
+
+        if normalized in {"loginsuccess", "confirmed", "success"}:
+            if auth_config["provider"] == "openlist":
+                auth_code = sid
+            if not auth_code:
+                raise ManagedAListError("Aliyundrive QR status response has no auth code")
+            return {
+                "qr_status": raw_status or "LoginSuccess",
+                "auth_state": "qr_allowed",
+                "auth_code": auth_code,
+                "pending_reason": None,
+            }
+        if normalized in {"scansuccess", "scaned", "scanned", "waitconfirm", "confirming"}:
+            return {
+                "qr_status": raw_status,
+                "auth_state": "qr_pending",
+                "pending_reason": "waiting_for_confirm",
+            }
+        if "expire" in normalized:
+            return {
+                "qr_status": raw_status,
+                "auth_state": "qr_expired",
+                "pending_reason": "qr_expired",
+            }
+        if "cancel" in normalized:
+            return {
+                "qr_status": raw_status,
+                "auth_state": "qr_canceled",
+                "pending_reason": "qr_canceled",
+            }
+        return {
+            "qr_status": raw_status or "WaitLogin",
+            "auth_state": "qr_pending",
+            "pending_reason": "waiting_for_scan",
+        }
+
+    def _exchange_aliyundrive_token(self, auth_code, auth_config):
+        code = str(auth_code or "").strip()
+        if not code:
+            raise ManagedAListError("Aliyundrive auth code is empty", code=40061)
+
+        if auth_config["provider"] == "official":
+            data = self._request_aliyundrive_json(
+                "post",
+                auth_config["token_url"],
+                "token exchange",
+                json={
+                    "client_id": auth_config["client_id"],
+                    "client_secret": auth_config["client_secret"],
+                    "grant_type": "authorization_code",
+                    "code": code,
+                },
+            )
+        elif auth_config["provider"] == "openlist":
+            driver_txt = "alicloud_tv" if auth_config.get("alipan_type") == "alipanTV" else "alicloud_qr"
+            data = self._request_aliyundrive_json(
+                "get",
+                f"{auth_config['public_api_base_url']}/callback",
+                "token exchange",
+                params={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                },
+                headers={
+                    "Cookie": f"driver_txt={driver_txt}; server_use=true",
+                },
+            )
+        else:
+            data = self._request_aliyundrive_json(
+                "post",
+                f"{auth_config['public_api_base_url']}/code",
+                "token exchange",
+                json={
+                    "client_id": "",
+                    "client_secret": "",
+                    "grant_type": "authorization_code",
+                    "code": code,
+                },
+            )
+
+        refresh_token = str(data.get("refresh_token") or data.get("refreshToken") or "").strip()
+        access_token = str(data.get("access_token") or data.get("accessToken") or "").strip()
+        if not refresh_token:
+            raise ManagedAListError("Aliyundrive token exchange response has no refresh token")
+        return {
+            "refresh_token": refresh_token,
+            "access_token": access_token,
+        }
+
+    def _aliyundrive_addition(self, storage):
+        try:
+            addition = json.loads(storage.get("addition") or "{}")
+        except (TypeError, ValueError) as exc:
+            raise ManagedAListError("Managed OpenList returned invalid Aliyundrive addition") from exc
+        if not isinstance(addition, dict):
+            raise ManagedAListError("Managed OpenList returned invalid Aliyundrive addition")
+        return addition
+
+    def _build_aliyundrive_state(
+        self,
+        authenticated,
+        root_folder_id="root",
+        drive_type="resource",
+        alipan_type="default",
+        storage_id=None,
+        storage=None,
+        qr_session=None,
+        auth_state=None,
+        pending_reason=None,
+        qr_status=None,
+        auth_provider=None,
+    ):
+        state = {
+            "root_folder_id": root_folder_id,
+            "drive_type": drive_type,
+            "alipan_type": alipan_type,
+            "cloud_root_path": "/",
+            "authenticated": bool(authenticated),
+            "auth_state": auth_state or ("ready" if authenticated else "qr_pending"),
+        }
+        if storage_id is not None:
+            state["storage_id"] = int(storage_id)
+        if storage:
+            state["mount_path"] = storage.get("mount_path")
+            addition = self._aliyundrive_addition(storage)
+            state["drive_type"] = addition.get("drive_type") or state["drive_type"]
+            state["root_folder_id"] = addition.get("root_folder_id") or state["root_folder_id"]
+            state["alipan_type"] = addition.get("alipan_type") or state["alipan_type"]
+        if qr_session:
+            state.update({
+                "qr_sid": qr_session.get("qr_sid"),
+                "qr_code_url": qr_session.get("qr_code_url"),
+                "qr_code_data_url": qr_session.get("qr_code_data_url"),
+                "qr_content": qr_session.get("qr_content"),
+                "auth_provider": qr_session.get("auth_provider") or auth_provider,
+            })
+        elif auth_provider:
+            state["auth_provider"] = auth_provider
+        if pending_reason:
+            state["pending_reason"] = pending_reason
+        if qr_status is not None:
+            state["qr_status"] = qr_status
+        return state
+
+    def start_aliyundrive_qr(self, root_folder_id="", drive_type="resource", alipan_type="default"):
+        root_folder_id = self._normalize_aliyundrive_root_id(root_folder_id)
+        drive_type = self._normalize_aliyundrive_drive_type(drive_type)
+        alipan_type = self._normalize_aliyundrive_alipan_type(alipan_type)
+        auth_config = self._aliyundrive_auth_config()
+        auth_config["alipan_type"] = alipan_type
+        qr_session = self._start_aliyundrive_qr_session(auth_config)
+        return self._build_aliyundrive_state(
+            authenticated=False,
+            root_folder_id=root_folder_id,
+            drive_type=drive_type,
+            alipan_type=alipan_type,
+            qr_session=qr_session,
+            pending_reason="waiting_for_scan",
+            qr_status="WaitLogin",
+            auth_provider=auth_config["provider"],
+        )
+
+    def _create_aliyundrive_openlist_storage(self, refresh_token, root_folder_id, drive_type, alipan_type, auth_config):
+        mount_path = self._new_openlist_mount_path("aliyundrive")
+        has_official_credentials = (
+            auth_config["provider"] == "official"
+            and bool(auth_config.get("client_id"))
+            and bool(auth_config.get("client_secret"))
+        )
+        addition = {
+            "drive_type": drive_type,
+            "root_folder_id": root_folder_id,
+            "refresh_token": str(refresh_token or "").strip(),
+            "order_by": "name",
+            "order_direction": "ASC",
+            "use_online_api": not has_official_credentials,
+            "alipan_type": alipan_type,
+            "api_url_address": auth_config["renew_api_url"],
+            "client_id": auth_config["client_id"] if has_official_credentials else "",
+            "client_secret": auth_config["client_secret"] if has_official_credentials else "",
+            "remove_way": "trash",
+            "rapid_upload": False,
+            "internal_upload": False,
+            "livp_download_format": "jpeg",
+        }
+        payload = {
+            "mount_path": mount_path,
+            "driver": "AliyundriveOpen",
+            "cache_expiration": 30,
+            "addition": json.dumps(addition, ensure_ascii=False),
+            "remark": "Managed by CyberStream",
+            "disabled": False,
+            "disable_index": False,
+            "enable_sign": False,
+            "web_proxy": False,
+            "webdav_policy": "302_redirect",
+            "proxy_range": False,
+            "down_proxy_url": "",
+            "down_proxy_sign": True,
+        }
+
+        try:
+            created = self.create_storage(payload)
+        except ManagedAListError as exc:
+            storage_id = (exc.data or {}).get("id") if isinstance(exc.data, dict) else None
+            if storage_id is not None:
+                try:
+                    self.delete_storage(storage_id)
+                except Exception:
+                    pass
+            raise
+
+        storage_id = created.get("id")
+        if storage_id is None:
+            raise ManagedAListError("Managed OpenList did not return a storage id")
+        storage = self.get_storage(storage_id)
+        if storage.get("driver") != "AliyundriveOpen":
+            try:
+                self.delete_storage(storage_id)
+            except Exception:
+                pass
+            raise ManagedAListError("Managed OpenList storage is not Aliyundrive", code=40061)
+        addition = self._aliyundrive_addition(storage)
+        if not addition.get("refresh_token"):
+            try:
+                self.delete_storage(storage_id)
+            except Exception:
+                pass
+            raise ManagedAListError("Managed OpenList did not save Aliyundrive refresh token")
+        return self._build_aliyundrive_state(
+            authenticated=True,
+            storage_id=storage_id,
+            storage=storage,
+            root_folder_id=root_folder_id,
+            drive_type=drive_type,
+            alipan_type=alipan_type,
+        )
+
+    def poll_aliyundrive_storage(
+        self,
+        qr_sid,
+        root_folder_id="",
+        drive_type="resource",
+        alipan_type="default",
+        auth_provider=None,
+    ):
+        root_folder_id = self._normalize_aliyundrive_root_id(root_folder_id)
+        drive_type = self._normalize_aliyundrive_drive_type(drive_type)
+        alipan_type = self._normalize_aliyundrive_alipan_type(alipan_type)
+        auth_config = self._aliyundrive_auth_config(auth_provider)
+        auth_config["alipan_type"] = alipan_type
+        qr_status = self._get_aliyundrive_qr_status(qr_sid, auth_config)
+        if qr_status["auth_state"] != "qr_allowed":
+            return self._build_aliyundrive_state(
+                authenticated=False,
+                root_folder_id=root_folder_id,
+                drive_type=drive_type,
+                alipan_type=alipan_type,
+                auth_state=qr_status["auth_state"],
+                pending_reason=qr_status.get("pending_reason"),
+                qr_status=qr_status.get("qr_status"),
+                auth_provider=auth_config["provider"],
+            )
+
+        token_state = self._exchange_aliyundrive_token(qr_status["auth_code"], auth_config)
+        ready_state = self._create_aliyundrive_openlist_storage(
+            refresh_token=token_state["refresh_token"],
+            root_folder_id=root_folder_id,
+            drive_type=drive_type,
+            alipan_type=alipan_type,
+            auth_config=auth_config,
+        )
+        ready_state["qr_status"] = qr_status.get("qr_status")
+        return ready_state
+
+    @staticmethod
+    def _normalize_baidunetdisk_root_path(root_path):
+        raw = str(root_path or "").replace("\\", "/").strip()
+        if not raw or raw == "/":
+            return "/"
+        return "/" + raw.strip("/")
+
+    @staticmethod
+    def _normalize_baidunetdisk_download_api(download_api):
+        normalized = str(download_api or "official").strip().lower()
+        if normalized not in {"official", "crack", "crack_video"}:
+            raise ManagedAListError("Invalid Baidu Netdisk download API", code=40036)
+        return normalized
+
+    def _baidunetdisk_oauth_config(self):
+        configured_client_id = str(self._config_value("MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_ID", "") or "").strip()
+        configured_client_secret = str(self._config_value("MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_SECRET", "") or "").strip()
+        uses_builtin_public_client = not configured_client_id and not configured_client_secret
+        client_id = configured_client_id or self.DEFAULT_BAIDUNETDISK_CLIENT_ID
+        client_secret = configured_client_secret or self.DEFAULT_BAIDUNETDISK_CLIENT_SECRET
+        if (configured_client_id and not configured_client_secret) or (configured_client_secret and not configured_client_id):
+            raise ManagedAListError("Baidu Netdisk OAuth credentials are incomplete", code=40060)
+        if not client_id or not client_secret:
+            raise ManagedAListError("Baidu Netdisk OAuth credentials are not configured", code=40060)
+        return {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "callback_mode": "oob" if uses_builtin_public_client else "redirect",
+            "authorize_url": str(
+                self._config_value("MANAGED_OPENLIST_BAIDUNETDISK_AUTHORIZE_URL", self._BAIDUNETDISK_AUTHORIZE_URL)
+                or self._BAIDUNETDISK_AUTHORIZE_URL
+            ).strip(),
+            "token_url": str(
+                self._config_value("MANAGED_OPENLIST_BAIDUNETDISK_TOKEN_URL", self._BAIDUNETDISK_TOKEN_URL)
+                or self._BAIDUNETDISK_TOKEN_URL
+            ).strip(),
+            "renew_api_url": str(
+                self._config_value("MANAGED_OPENLIST_BAIDUNETDISK_RENEW_API_URL", self._BAIDUNETDISK_RENEW_API_URL)
+                or self._BAIDUNETDISK_RENEW_API_URL
+            ).strip(),
+        }
+
+    @staticmethod
+    def _baidunetdisk_error_message(payload, fallback):
+        if not isinstance(payload, dict):
+            return fallback
+        return (
+            payload.get("error_description")
+            or payload.get("errmsg")
+            or payload.get("error")
+            or payload.get("message")
+            or fallback
+        )
+
+    def _request_baidunetdisk_json(self, url, operation, params=None):
+        try:
+            response = self.session.get(
+                url,
+                params=params,
+                timeout=self.timeout,
+                verify=True,
+            )
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise ManagedAListError(f"Baidu Netdisk {operation} request failed") from exc
+
+        if response.status_code >= 400 or payload.get("error"):
+            message = self._baidunetdisk_error_message(payload, f"HTTP {response.status_code}")
+            raise ManagedAListError(f"Baidu Netdisk {operation} failed: {message}")
+        return payload if isinstance(payload, dict) else {}
+
+    def start_baidunetdisk_oauth(self, redirect_uri, root_path="/", download_api="official"):
+        root_path = self._normalize_baidunetdisk_root_path(root_path)
+        download_api = self._normalize_baidunetdisk_download_api(download_api)
+        auth_config = self._baidunetdisk_oauth_config()
+        oauth_state = uuid.uuid4().hex + uuid.uuid4().hex
+        callback_mode = auth_config["callback_mode"]
+        oauth_redirect_uri = "oob" if callback_mode == "oob" else str(redirect_uri or "").strip()
+        query = urlencode({
+            "client_id": auth_config["client_id"],
+            "response_type": "code",
+            "redirect_uri": oauth_redirect_uri,
+            "scope": "basic,netdisk",
+            "state": oauth_state,
+            "qrcode": "1",
+        })
+        return {
+            "authenticated": False,
+            "auth_state": "oauth_pending",
+            "pending_reason": "waiting_for_authorization",
+            "authorization_url": f"{auth_config['authorize_url']}?{query}",
+            "oauth_state": oauth_state,
+            "oauth_callback_mode": callback_mode,
+            "oauth_redirect_uri": oauth_redirect_uri,
+            "callback_mode": callback_mode,
+            "requires_authorization_code": callback_mode == "oob",
+            "cloud_root_path": root_path,
+            "root_folder_path": root_path,
+            "download_api": download_api,
+        }
+
+    def _exchange_baidunetdisk_token(self, code, redirect_uri, auth_config):
+        auth_code = str(code or "").strip()
+        if not auth_code:
+            raise ManagedAListError("Baidu Netdisk authorization code is empty", code=40061)
+        data = self._request_baidunetdisk_json(
+            auth_config["token_url"],
+            "token exchange",
+            params={
+                "grant_type": "authorization_code",
+                "code": auth_code,
+                "client_id": auth_config["client_id"],
+                "client_secret": auth_config["client_secret"],
+                "redirect_uri": str(redirect_uri or "").strip(),
+            },
+        )
+        access_token = str(data.get("access_token") or "").strip()
+        refresh_token = str(data.get("refresh_token") or "").strip()
+        if not access_token or not refresh_token:
+            raise ManagedAListError("Baidu Netdisk token exchange response is incomplete")
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_in": data.get("expires_in"),
+        }
+
+    def _baidunetdisk_addition(self, storage):
+        try:
+            addition = json.loads(storage.get("addition") or "{}")
+        except (TypeError, ValueError) as exc:
+            raise ManagedAListError("Managed OpenList returned invalid Baidu Netdisk addition") from exc
+        if not isinstance(addition, dict):
+            raise ManagedAListError("Managed OpenList returned invalid Baidu Netdisk addition")
+        return addition
+
+    def _build_baidunetdisk_state(
+        self,
+        authenticated,
+        root_path="/",
+        download_api="official",
+        storage_id=None,
+        storage=None,
+        auth_state=None,
+        pending_reason=None,
+    ):
+        state = {
+            "cloud_root_path": root_path,
+            "root_folder_path": root_path,
+            "download_api": download_api,
+            "authenticated": bool(authenticated),
+            "auth_state": auth_state or ("ready" if authenticated else "oauth_pending"),
+        }
+        if storage_id is not None:
+            state["storage_id"] = int(storage_id)
+        if storage:
+            state["mount_path"] = storage.get("mount_path")
+            addition = self._baidunetdisk_addition(storage)
+            state["root_folder_path"] = addition.get("root_folder_path") or state["root_folder_path"]
+            state["cloud_root_path"] = addition.get("root_folder_path") or state["cloud_root_path"]
+            state["download_api"] = addition.get("download_api") or state["download_api"]
+        if pending_reason:
+            state["pending_reason"] = pending_reason
+        return state
+
+    def _create_baidunetdisk_openlist_storage(self, token_state, root_path, download_api, auth_config):
+        mount_path = self._new_openlist_mount_path("baidunetdisk")
+        addition = {
+            "root_folder_path": root_path,
+            "order_by": "name",
+            "order_direction": "asc",
+            "download_api": download_api,
+            "use_online_api": False,
+            "api_url_address": auth_config["renew_api_url"],
+            "client_id": auth_config["client_id"],
+            "client_secret": auth_config["client_secret"],
+            "custom_crack_ua": "netdisk",
+            "access_token": token_state["access_token"],
+            "refresh_token": token_state["refresh_token"],
+            "upload_thread": "3",
+            "upload_timeout": 60,
+            "upload_api": "https://d.pcs.baidu.com",
+            "use_dynamic_upload_api": True,
+            "custom_upload_part_size": 0,
+            "low_bandwith_upload_mode": False,
+            "only_list_video_file": False,
+        }
+        payload = {
+            "mount_path": mount_path,
+            "driver": "BaiduNetdisk",
+            "cache_expiration": 30,
+            "addition": json.dumps(addition, ensure_ascii=False),
+            "remark": "Managed by CyberStream",
+            "disabled": False,
+            "disable_index": False,
+            "enable_sign": False,
+            "web_proxy": False,
+            "webdav_policy": "302_redirect",
+            "proxy_range": False,
+            "down_proxy_url": "",
+            "down_proxy_sign": True,
+        }
+
+        try:
+            created = self.create_storage(payload)
+        except ManagedAListError as exc:
+            storage_id = (exc.data or {}).get("id") if isinstance(exc.data, dict) else None
+            if storage_id is not None:
+                try:
+                    self.delete_storage(storage_id)
+                except Exception:
+                    pass
+            raise
+
+        storage_id = created.get("id")
+        if storage_id is None:
+            raise ManagedAListError("Managed OpenList did not return a storage id")
+        storage = self.get_storage(storage_id)
+        if storage.get("driver") != "BaiduNetdisk":
+            try:
+                self.delete_storage(storage_id)
+            except Exception:
+                pass
+            raise ManagedAListError("Managed OpenList storage is not Baidu Netdisk", code=40061)
+        addition = self._baidunetdisk_addition(storage)
+        if not addition.get("refresh_token"):
+            try:
+                self.delete_storage(storage_id)
+            except Exception:
+                pass
+            raise ManagedAListError("Managed OpenList did not save Baidu Netdisk refresh token")
+        return self._build_baidunetdisk_state(
+            authenticated=True,
+            storage_id=storage_id,
+            storage=storage,
+            root_path=root_path,
+            download_api=download_api,
+        )
+
+    def complete_baidunetdisk_oauth(self, code, redirect_uri, root_path="/", download_api="official"):
+        root_path = self._normalize_baidunetdisk_root_path(root_path)
+        download_api = self._normalize_baidunetdisk_download_api(download_api)
+        auth_config = self._baidunetdisk_oauth_config()
+        token_state = self._exchange_baidunetdisk_token(code, redirect_uri, auth_config)
+        return self._create_baidunetdisk_openlist_storage(
+            token_state=token_state,
+            root_path=root_path,
+            download_api=download_api,
+            auth_config=auth_config,
+        )
+
+    def create_123pan_storage(self, username, password, root_folder_id="", platform="web"):
+        username = str(username or "").strip()
+        password = str(password or "")
+        if not username:
+            raise ManagedAListError("Missing required field: username", code=40001)
+        if not password:
+            raise ManagedAListError("Missing required field: password", code=40001)
+
+        root_folder_id = self._normalize_123pan_root_id(root_folder_id)
+        platform = self._normalize_123pan_platform(platform)
+        mount_path = self._new_openlist_mount_path("123pan")
+        addition = {
+            "username": username,
+            "password": password,
+            "root_folder_id": root_folder_id,
+            "access_token": "",
+            "UploadThread": 3,
+            "platform": platform,
+        }
+        payload = {
+            "mount_path": mount_path,
+            "driver": "123Pan",
+            "cache_expiration": 30,
+            "addition": json.dumps(addition, ensure_ascii=False),
+            "remark": "Managed by CyberStream",
+            "disabled": False,
+            "disable_index": False,
+            "enable_sign": False,
+            "web_proxy": False,
+            "webdav_policy": "302_redirect",
+            "proxy_range": False,
+            "down_proxy_url": "",
+            "down_proxy_sign": True,
+        }
+
+        try:
+            created = self.create_storage(payload)
+        except ManagedAListError as exc:
+            storage_id = (exc.data or {}).get("id") if isinstance(exc.data, dict) else None
+            if storage_id is not None:
+                try:
+                    self.delete_storage(storage_id)
+                except Exception:
+                    pass
+            raise
+
+        storage_id = created.get("id")
+        if storage_id is None:
+            raise ManagedAListError("Managed OpenList did not return a storage id")
+        storage = self.get_storage(storage_id)
+        if storage.get("driver") != "123Pan":
+            try:
+                self.delete_storage(storage_id)
+            except Exception:
+                pass
+            raise ManagedAListError("Managed OpenList storage is not 123Pan", code=40061)
+        return self._build_123pan_state(
+            storage_id=storage_id,
+            storage=storage,
+            username=username,
+            root_folder_id=root_folder_id,
+            platform=platform,
+        )
 
     def create_tianyicloud_storage(self, root_folder_id="", cloud_type="personal"):
         cloud_type = self._normalize_tianyicloud_type(cloud_type)

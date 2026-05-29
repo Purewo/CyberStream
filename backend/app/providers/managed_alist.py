@@ -124,6 +124,30 @@ class Cloud115Provider(ManagedOpenListProvider):
     HEALTH_MESSAGE = "115 Cloud reachable"
 
 
+class AliyundriveProvider(ManagedOpenListProvider):
+    """CyberStream-managed Aliyundrive source backed by a localhost OpenList mount."""
+
+    NOT_READY_MESSAGE = "Aliyundrive source has not completed QR login"
+    MISSING_MOUNT_MESSAGE = "Missing Aliyundrive mount path"
+    HEALTH_MESSAGE = "Aliyundrive reachable"
+
+
+class BaiduNetdiskProvider(ManagedOpenListProvider):
+    """CyberStream-managed Baidu Netdisk source backed by a localhost OpenList mount."""
+
+    NOT_READY_MESSAGE = "Baidu Netdisk source has not completed OAuth login"
+    MISSING_MOUNT_MESSAGE = "Missing Baidu Netdisk mount path"
+    HEALTH_MESSAGE = "Baidu Netdisk reachable"
+
+
+class Pan123Provider(ManagedOpenListProvider):
+    """CyberStream-managed 123Pan source backed by a localhost OpenList mount."""
+
+    NOT_READY_MESSAGE = "123Pan source has not completed password login"
+    MISSING_MOUNT_MESSAGE = "Missing 123Pan mount path"
+    HEALTH_MESSAGE = "123Pan reachable"
+
+
 class QuarkTVProvider(ManagedOpenListProvider):
     """CyberStream-managed QuarkTV source backed by a localhost OpenList mount."""
 

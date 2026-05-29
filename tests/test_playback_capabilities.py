@@ -9,7 +9,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.models import MediaResource, StorageSource
-from backend.app.services.playback import build_resource_playback, guess_video_mime_type
+from backend.app.services.playback import (
+    build_external_playback_manifest,
+    build_resource_playback,
+    guess_video_mime_type,
+)
 
 
 class PlaybackCapabilitiesTests(unittest.TestCase):
@@ -186,6 +190,85 @@ class PlaybackCapabilitiesTests(unittest.TestCase):
         self.assertFalse(playback["audio"]["server_transcode"]["available"])
         self.assertEqual("ffmpeg_not_installed", playback["audio"]["server_transcode"]["reason"])
         self.assertIsNone(playback["audio"]["server_transcode"]["endpoint"])
+
+    def test_baidunetdisk_disables_web_playback_but_keeps_pc_handoff(self):
+        source = StorageSource(id=1, name="Baidu", type="baidunetdisk", config={"auth_state": "ready"})
+        resource = MediaResource(
+            id="11111111-1111-1111-1111-111111111111",
+            source=source,
+            filename="Movie.mkv",
+            path="Movie.mkv",
+        )
+
+        playback = build_resource_playback(resource, resource_info={"technical": {}}, ffmpeg_available=True)
+
+        self.assertEqual("baidunetdisk", playback["storage_type"])
+        self.assertFalse(playback["web_player"]["supported"])
+        self.assertIsNone(playback["web_player"]["url"])
+        self.assertFalse(playback["web_player"]["range_supported"])
+        self.assertEqual("baidunetdisk_requires_pc_client", playback["web_player"]["reason"])
+        self.assertEqual("download_pc_client", playback["web_player"]["recommended_action"])
+        self.assertIn("PC client", playback["web_player"]["message"])
+        self.assertTrue(playback["external_player"]["supported"])
+        self.assertTrue(playback["external_player"]["requires_local_backend"])
+        self.assertTrue(playback["external_player"]["requires_user_agent_rewrite"])
+        self.assertEqual(
+            "baidunetdisk_requires_user_agent_rewrite",
+            playback["external_player"]["reason"],
+        )
+        self.assertIn(
+            "baidunetdisk_requires_pc_client",
+            {warning["code"] for warning in playback["warnings"]},
+        )
+
+        manifest = build_external_playback_manifest(
+            resource,
+            resource_payload={"resource_info": {"technical": {}}, "playback": playback},
+        )
+        self.assertTrue(manifest["handoff"]["supported"])
+        self.assertTrue(manifest["stream"]["requires_local_backend"])
+        self.assertTrue(manifest["stream"]["requires_user_agent_rewrite"])
+        self.assertEqual(
+            "baidunetdisk_requires_user_agent_rewrite",
+            manifest["stream"]["reason"],
+        )
+
+    def test_quarktv_exposes_cloud_transcode_capability(self):
+        source = StorageSource(
+            id=1,
+            name="QuarkTV",
+            type="quarktv",
+            config={
+                "auth_state": "ready",
+                "openlist_storage_id": 21,
+                "mount_path": "/cyberstream/quarktv/fake",
+                "link_method": "download",
+            },
+        )
+        resource = MediaResource(
+            id="11111111-1111-1111-1111-111111111111",
+            source=source,
+            filename="Movie.mkv",
+            path="Movies/Movie.mkv",
+        )
+
+        playback = build_resource_playback(resource, resource_info={"technical": {}}, ffmpeg_available=True)
+
+        self.assertTrue(playback["cloud_transcode"]["supported"])
+        self.assertEqual("quarktv", playback["cloud_transcode"]["provider"])
+        self.assertEqual(
+            "/api/v1/resources/11111111-1111-1111-1111-111111111111/streaming-qualities",
+            playback["cloud_transcode"]["qualities_endpoint"],
+        )
+        self.assertEqual(
+            "/api/v1/resources/11111111-1111-1111-1111-111111111111/stream-transcoded",
+            playback["cloud_transcode"]["stream_endpoint"],
+        )
+        self.assertIn("4k", playback["cloud_transcode"]["available_resolutions"])
+        self.assertIn(
+            "quark_uc_download_link_not_web_playable",
+            {warning["code"] for warning in playback["warnings"]},
+        )
 
 
 if __name__ == "__main__":

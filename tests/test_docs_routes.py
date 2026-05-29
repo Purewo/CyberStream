@@ -49,6 +49,9 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertIn("frontend-managed-guangyapan", keys)
         self.assertIn("frontend-managed-tianyicloud", keys)
         self.assertIn("frontend-managed-115cloud", keys)
+        self.assertIn("frontend-managed-aliyundrive", keys)
+        self.assertIn("frontend-managed-baidunetdisk", keys)
+        self.assertIn("frontend-managed-123pan", keys)
         self.assertIn("frontend-managed-quark-uc", keys)
 
     def test_openapi_json_is_served_raw_for_generators(self):
@@ -138,6 +141,33 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("text/markdown", response.mimetype)
         self.assertIn("storage/managed/115cloud/qr/start", response.get_data(as_text=True))
+
+    def test_managed_aliyundrive_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-managed-aliyundrive")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        self.assertIn("storage/managed/aliyundrive/qr/start", response.get_data(as_text=True))
+
+    def test_managed_baidunetdisk_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-managed-baidunetdisk")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        self.assertIn("storage/managed/baidunetdisk/oauth/start", response.get_data(as_text=True))
+
+    def test_managed_123pan_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-managed-123pan")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        self.assertIn("storage/managed/123pan/login", response.get_data(as_text=True))
 
     def test_managed_quark_uc_frontend_guide_is_served_raw(self):
         client = self._create_client()

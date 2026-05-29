@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
@@ -145,6 +146,124 @@ class ExternalPlaybackRouteTests(unittest.TestCase):
 
         self.assertEqual(400, response.status_code)
         self.assertEqual(40073, response.get_json()["code"])
+
+
+class CloudTranscodeRouteTests(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app({
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "TRUST_PROXY_HEADERS": True,
+        })
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.drop_all()
+        db.create_all()
+        self.client = self.app.test_client()
+
+        self.source = StorageSource(
+            name="QuarkTV",
+            type="quarktv",
+            config={
+                "auth_state": "ready",
+                "openlist_storage_id": 21,
+                "mount_path": "/cyberstream/quarktv/fake",
+                "link_method": "download",
+            },
+        )
+        movie = Movie(
+            title="Cloud Transcode Test",
+            original_title="Cloud Transcode Test",
+            year=2026,
+            cover="https://img.example/poster.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add_all([self.source, movie])
+        db.session.commit()
+
+        self.resource = MediaResource(
+            movie_id=movie.id,
+            source_id=self.source.id,
+            path="Movies/Cloud.Transcode.Test.mkv",
+            filename="Cloud.Transcode.Test.mkv",
+            size=1234,
+            label="Movie - 2160P",
+            tech_specs={"resolution": "2160P", "resolution_rank": 2160},
+        )
+        db.session.add(self.resource)
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def _qualities_payload(self):
+        resource_id = str(self.resource.id)
+        return {
+            "resource_id": resource_id,
+            "storage_type": "quarktv",
+            "provider": "QuarkTV",
+            "mode": "provider_cloud_transcode",
+            "default_resolution": "4k",
+            "selected_resolution": "4k",
+            "selected_item": {
+                "resolution": "4k",
+                "label": "4K",
+                "available": True,
+                "url": "https://provider.example/4k.m3u8",
+                "stream_url": f"/api/v1/resources/{resource_id}/stream-transcoded?resolution=4k",
+            },
+            "items": [
+                {
+                    "resolution": "low",
+                    "label": "LD",
+                    "available": True,
+                    "width": 480,
+                    "height": 270,
+                    "url": "https://provider.example/low.m3u8",
+                    "stream_url": f"/api/v1/resources/{resource_id}/stream-transcoded?resolution=low",
+                },
+                {
+                    "resolution": "4k",
+                    "label": "4K",
+                    "available": True,
+                    "width": 3840,
+                    "height": 2160,
+                    "url": "https://provider.example/4k.m3u8",
+                    "stream_url": f"/api/v1/resources/{resource_id}/stream-transcoded?resolution=4k",
+                },
+            ],
+            "warnings": [],
+        }
+
+    def test_streaming_qualities_returns_provider_variants(self):
+        with patch(
+            "backend.app.api.player_routes.build_quark_uc_streaming_qualities",
+            return_value=self._qualities_payload(),
+        ) as mocked:
+            response = self.client.get(f"/api/v1/resources/{self.resource.id}/streaming-qualities")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertEqual("QuarkTV", data["provider"])
+        self.assertEqual("4k", data["default_resolution"])
+        self.assertEqual(["low", "4k"], [item["resolution"] for item in data["items"]])
+        mocked.assert_called_once()
+
+    def test_stream_transcoded_redirects_to_selected_provider_url(self):
+        with patch(
+            "backend.app.api.player_routes.build_quark_uc_streaming_qualities",
+            return_value=self._qualities_payload(),
+        ) as mocked:
+            response = self.client.get(
+                f"/api/v1/resources/{self.resource.id}/stream-transcoded?resolution=4k",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(302, response.status_code)
+        self.assertEqual("https://provider.example/4k.m3u8", response.headers["Location"])
+        mocked.assert_called_once()
 
 
 if __name__ == "__main__":

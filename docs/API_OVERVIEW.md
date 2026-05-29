@@ -126,6 +126,9 @@ X-Cyber-API-Token: <token>
 - `frontend-managed-guangyapan`
 - `frontend-managed-tianyicloud`
 - `frontend-managed-115cloud`
+- `frontend-managed-aliyundrive`
+- `frontend-managed-baidunetdisk`
+- `frontend-managed-123pan`
 - `frontend-managed-quark-uc`
 - `storage-config-flow`
 - `runbook`
@@ -398,14 +401,14 @@ X-Cyber-API-Token: <token>
 - 返回 `health` 字段，包含 `status`、`reason` 和 `message`
 - `status` 可能为 `online|offline|unknown|unsupported`
 - `reason` 为机器可读原因，便于前端和运维快速区分 `dns_resolution_failed`、`auth_failed`、`permission_denied`、`root_not_found`、`timeout` 等问题
-- 托管 `guangyapan`、`tianyicloud`、`115cloud`、`quarktv` 和 `uctv` 的健康响应不会暴露 localhost AList/OpenList 地址、内部挂载路径或运行时元数据
+- 托管 `guangyapan`、`tianyicloud`、`115cloud`、`aliyundrive`、`baidunetdisk`、`123pan`、`quarktv` 和 `uctv` 的健康响应不会暴露 localhost AList/OpenList 地址、内部挂载路径或运行时元数据
 
 ### `GET /api/v1/storage/provider-types`
 列出当前后端真正支持的存储协议与配置字段定义。
 
 说明：
 - 当前稳定支持：`local`、`webdav`、`smb`、`ftp`、`alist`、`openlist`
-- 当前 beta 支持：`guangyapan`、`tianyicloud`、`115cloud`、`quarktv`、`uctv`，分别通过 CyberStream 托管的本机 AList/OpenList 完成短信或扫码授权登录
+- 当前 beta 支持：`guangyapan`、`tianyicloud`、`115cloud`、`aliyundrive`、`baidunetdisk`、`123pan`、`quarktv`、`uctv`，分别通过 CyberStream 托管的本机 AList/OpenList 完成短信、扫码、OAuth 或账号密码授权登录
 - 该接口应作为前端动态表单的首选来源，而不是硬编码协议类型
 - 后续新增来源时，优先扩展该接口和 provider 注册表，而不是散落到多个地方手写判断
 - 每个协议会返回 `capabilities`，用于前端决定是否展示扫描、刷新、播放、预览等入口
@@ -418,7 +421,7 @@ X-Cyber-API-Token: <token>
 - `items[].browse`、`items[].validate_path`、`items[].library_root_path` 可直接驱动前端目录选择器
 - `items[].config_root_key` 区分本地 `root_path` 与远端协议 `root`
 - `range_stream`、`redirect_stream` 用于播放链路能力展示
-- `managed`、`sms_login`、`qr_login` 用于识别托管光鸭/天翼/115/QuarkTV/UCTV 这类无需用户手动配置 AList/OpenList 的来源
+- `managed`、`sms_login`、`qr_login`、`oauth_login`、`password_login` 用于识别托管光鸭/天翼/115/阿里云盘/百度网盘/123Pan/QuarkTV/UCTV 这类无需用户手动配置 AList/OpenList 的来源
 
 ### `POST /api/v1/storage/managed/guangyapan/sms/start`
 启动托管光鸭云盘短信登录。
@@ -505,6 +508,94 @@ X-Cyber-API-Token: <token>
 - 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
 - 播放时后端会请求 localhost OpenList 的 `/d/...`，拿到 115 最终 302 直链后再返回给前端；不会把本机 OpenList 地址暴露给安卓端
 
+### `POST /api/v1/storage/managed/aliyundrive/qr/start`
+启动托管阿里云盘扫码登录。
+
+请求体：
+- `name` / `source_name`：可选，存储源显示名，默认 `Aliyundrive`
+- `root_folder_id`：可选，OpenList `AliyundriveOpen` 技术根目录 ID，默认 `root`
+- `drive_type`：可选，`default`、`resource` 或 `backup`，默认 `resource`
+- `alipan_type`：可选，`default` 或 `alipanTV`，默认 `default`
+
+说明：
+- 后端先启动阿里云盘 OpenAPI 二维码会话；用户确认后才创建 localhost OpenList `AliyundriveOpen` 挂载
+- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 响应不返回 OpenList 地址、OpenList token、阿里 token、二维码 sid、内部 storage id 或内部挂载路径
+- `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-aliyundrive`
+
+### `POST /api/v1/storage/managed/aliyundrive/qr/poll`
+轮询托管阿里云盘扫码结果。
+
+请求体：
+- `source_id` / `id`：`qr/start` 返回的存储源 ID
+
+说明：
+- 未扫码时返回 `authenticated=false`、`auth_state=qr_pending`、`pending_reason=waiting_for_scan`
+- 已扫码但未确认时返回 `authenticated=false`、`auth_state=qr_pending`、`pending_reason=waiting_for_confirm`
+- 二维码过期或取消时返回 `auth_state=qr_expired` / `qr_canceled`，前端应停止轮询并重新发起扫码
+- 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
+- 播放时后端会请求 localhost OpenList 的 `/d/...`，拿到阿里云盘最终 302 直链后再返回给前端；不会把本机 OpenList 地址暴露给安卓端
+
+### `POST /api/v1/storage/managed/baidunetdisk/oauth/start`
+启动托管百度网盘 OAuth 授权登录。
+
+请求体：
+- `name` / `source_name`：可选，存储源显示名，默认 `Baidu Netdisk`
+- `root_path` / `cloud_root_path` / `root_folder_path`：可选，百度网盘侧根路径，默认 `/`
+- `download_api`：可选，默认 `official`；普通用户先不要暴露
+
+说明：
+- 后端创建 `baidunetdisk` pending 来源并返回百度开放平台 `authorization_url`
+- 自有百度 OAuth 应用模式返回 `callback_mode=redirect`，前端打开 `authorization_url` 后继续轮询 `oauth/poll`；百度回调由后端公开 callback 接收
+- AList 公开默认 OAuth 应用模式返回 `callback_mode=oob` 和 `requires_authorization_code=true`，前端需要让用户提交百度页面显示的授权码到 `oauth/complete`
+- 响应不返回 OpenList 地址、OpenList token、百度 access token / refresh token、内部 storage id、内部挂载路径或 OAuth state
+- `oauth_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-baidunetdisk`
+
+### `POST /api/v1/storage/managed/baidunetdisk/oauth/complete`
+提交百度 OOB 授权码并完成托管挂载。仅在 `oauth/start` 返回 `callback_mode=oob` 时使用。
+
+请求体：
+- `source_id` / `id`：`oauth/start` 返回的存储源 ID
+- `authorization_code` / `code`：百度授权页显示的授权码
+
+说明：
+- 成功后返回 `authenticated=true`、`auth_state=ready` 和 ready 状态的 `source`
+- 授权码只提交给 CyberStream 后端；前端不要保存 access token、refresh token 或授权码
+
+### `POST /api/v1/storage/managed/baidunetdisk/oauth/poll`
+轮询托管百度网盘 OAuth 授权状态。
+
+请求体：
+- `source_id` / `id`：`oauth/start` 返回的存储源 ID
+
+说明：
+- 授权未完成时返回 `authenticated=false`、`auth_state=oauth_pending`、`pending_reason=waiting_for_authorization`
+- 授权失败时返回 `auth_state=oauth_failed` 和 `error_message`，前端应停止轮询并让用户重新授权
+- 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
+- 百度网盘直链需要特定 User-Agent，Web 端资源播放矩阵会返回 `web_player.supported=false` 和 `recommended_action=download_pc_client`；前端不要进入网页播放器，应提示使用 PC 客户端。PC 模式由本地后端处理百度上游 User-Agent。
+
+### `GET /api/v1/storage/managed/baidunetdisk/oauth/callback`
+百度开放平台回调地址。前端不需要主动调用；后端用它交换 token、创建 localhost OpenList `BaiduNetdisk` 挂载并更新对应 `baidunetdisk` 来源状态。
+
+### `POST /api/v1/storage/managed/123pan/login`
+启动托管 123 云盘账号密码登录。
+
+请求体：
+- `name` / `source_name`：可选，存储源显示名，默认 `123Pan`
+- `username` / `account`：必填，123 云盘账号、手机号或邮箱
+- `password`：必填，123 云盘账号密码
+- `root_folder_id`：可选，OpenList `123Pan` 技术根目录 ID，默认 `0`
+- `platform`：可选，OpenList `123Pan` 请求头 platform，默认 `web`
+
+说明：
+- 123Pan 当前不是扫码或短信流程，前端不要展示扫码 UI
+- 后端会调用仅本机可访问的 OpenList 管理接口创建 `123Pan` 挂载，成功后直接返回 ready 状态的 CyberStream 存储源
+- 响应不返回 OpenList 地址、OpenList token、123Pan 密码、内部 storage id 或内部挂载路径
+- 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源可立即浏览、扫描和播放
+- 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-123pan`
+
 ### `POST /api/v1/storage/managed/quarktv/qr/start`
 启动托管 QuarkTV 扫码登录。
 
@@ -531,6 +622,7 @@ X-Cyber-API-Token: <token>
 - 若响应里带新的 `qr_code_data_url`，前端应替换当前二维码
 - 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
 - 播放时后端会请求 localhost OpenList 的 `/d/...`，拿到夸克网盘最终 302 直链后再返回给前端；不会把本机 OpenList 地址暴露给安卓端
+- 夸克原始下载直链实测不适合作为 Web 播放入口；前端播放页应优先读取资源 `playback.cloud_transcode`，再调用 `GET /api/v1/resources/<id>/streaming-qualities` 获取可选转码画质
 
 ### `POST /api/v1/storage/managed/uctv/qr/start`
 启动托管 UCTV 扫码登录。
@@ -546,6 +638,36 @@ X-Cyber-API-Token: <token>
 
 ### `POST /api/v1/storage/managed/uctv/qr/poll`
 轮询托管 UCTV 扫码结果。请求体和响应字段与 QuarkTV poll 一致。
+
+### `GET /api/v1/resources/<id>/streaming-qualities`
+查询 QuarkTV/UCTV 资源的 provider 云端转码画质列表。
+
+请求参数：
+- `resolution`：可选，指定希望选中的画质。合法值：`low`、`normal`、`high`、`super`、`2k`、`4k`
+- `quality`：`resolution` 的兼容别名，新前端优先使用 `resolution`
+
+响应说明：
+- 仅 `storage_type=quarktv/uctv` 的资源支持
+- `data.default_resolution` 是 provider 默认档，例如 `4k`
+- `data.selected_item` 是后端选中的可播放档；不传 `resolution` 时优先默认档，否则选最高可用档
+- `data.items[]` 每项包含 `resolution`、`label`、`available`、`trans_status`、`width`、`height`、`size`、`format`、`bitrate`、`dolby_vision`、`stream_url` 和 `url`
+- 前端只展示 `available=true` 的档位
+- `items[].stream_url` 是 CyberStream 的 302 播放入口；`items[].url` 是 provider 直链，可能过期。前端优先播放 `stream_url`
+
+### `GET /api/v1/resources/<id>/stream-transcoded`
+按指定 QuarkTV/UCTV 云端转码画质播放，返回 `302` 到 provider 转码直链。
+
+请求参数：
+- `resolution`：可选，合法值同上；不传则使用 provider 默认档或最高可用档
+- `quality`：兼容别名
+
+错误说明：
+- `40074`：资源来源不支持云端转码
+- `40075`：画质参数非法或资源路径为空
+- `40404`：后端无法在 provider 中按资源路径找到文件
+- `40912`：来源未 ready 或没有 refresh token
+- `40913`：请求的画质当前不可用
+- `50290`-`50294`：访问 OpenList 或 QuarkTV/UCTV TV API 失败
 
 ### `POST /api/v1/storage/sources`
 新增存储源。
@@ -566,6 +688,9 @@ X-Cyber-API-Token: <token>
 - `guangyapan` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/guangyapan/sms/*`
 - `tianyicloud` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/tianyicloud/qr/*`
 - `115cloud` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/115cloud/qr/*`
+- `aliyundrive` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/aliyundrive/qr/*`
+- `baidunetdisk` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/baidunetdisk/oauth/*`
+- `123pan` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/123pan/login`
 - `quarktv` 和 `uctv` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/quarktv/qr/*` 或 `storage/managed/uctv/qr/*`
 - 不支持的配置字段会直接报错，避免脏配置落库
 
@@ -587,7 +712,7 @@ X-Cyber-API-Token: <token>
 说明：
 - 若该来源下仍有资源，当前默认不允许直接删除
 - 需要显式传 `keep_metadata=true`，或先做资源迁移/解绑
-- 删除托管 `guangyapan` / `tianyicloud` / `115cloud` / `quarktv` / `uctv` 来源时，后端会尽量同步删除 localhost AList/OpenList 中对应的内部挂载；失败只记日志，不影响 CyberStream 来源删除
+- 删除托管 `guangyapan` / `tianyicloud` / `115cloud` / `aliyundrive` / `baidunetdisk` / `123pan` / `quarktv` / `uctv` 来源时，后端会尽量同步删除 localhost AList/OpenList 中对应的内部挂载；失败只记日志，不影响 CyberStream 来源删除
 
 ### `POST /api/v1/storage/sources/<id>/scan`
 扫描指定存储源。
@@ -621,7 +746,7 @@ X-Cyber-API-Token: <token>
 - `dirs_only`：可选，默认 `false`
 
 说明：
-- 当前用于 `alist/openlist/guangyapan/tianyicloud/115cloud/quarktv/uctv`，底层调用上游 `/api/fs/list` 并传 `refresh=true`
+- 当前用于 `alist/openlist/guangyapan/tianyicloud/115cloud/aliyundrive/baidunetdisk/123pan/quarktv/uctv`，底层调用上游 `/api/fs/list` 并传 `refresh=true`
 - 只刷新上游目录缓存并返回刷新后的目录列表，不触发扫描、不触发刮削、不写入媒体库
 - 返回结构与 `browse` 基本一致，额外带 `refreshed` 和 `refresh_path`
 - 不支持目录刷新的存储源返回 `40042`
@@ -1039,6 +1164,8 @@ X-Cyber-API-Token: <token>
   - `flag_is_4k/flag_is_1080p/flag_is_hdr/flag_is_hdr10/flag_is_hdr10_plus/flag_is_hlg/flag_is_dolby_vision/flag_is_remux/flag_is_uhd_bluray/flag_is_lossless_audio/flag_is_original_quality/flag_is_movie_feature/flag_imax/flag_ten_bit`：解析得到的布尔辅助特征
   - `extra_tags`：仅放结构化字段覆盖不了的额外标签，例如 `IMAX`
 - `playback.stream_url` 是后端播放入口；外部播放器也可以使用该地址，AList/OpenList 会继续由该入口 302 到上游 `/d/...` 直链
+- 百度网盘资源的网页播放被后端显式禁用：`playback.storage_type=baidunetdisk` 时 `playback.web_player.supported=false`、`web_player.reason=baidunetdisk_requires_pc_client`、`web_player.recommended_action=download_pc_client`。前端 Web 端不要直接使用 `stream_url`，应提示用户下载/使用 PC 客户端。PC 模式可读取 `external_player.requires_local_backend=true` 和 `requires_user_agent_rewrite=true`，由 PC 本地后端负责改写百度上游 User-Agent。
+- QuarkTV/UCTV 资源会额外返回 `playback.cloud_transcode`。当 `cloud_transcode.supported=true` 时，前端播放页应调用 `cloud_transcode.qualities_endpoint` 获取 `low/normal/high/super/2k/4k` 可用档位，并优先播放每个档位的 `stream_url`。`playback.stream_url` 仍保留为原始下载链路兼容入口，但可能不能被 Web 播放器播放。
 - 后端生成的播放、音频转码和字幕绝对 URL 会信任反向代理 `X-Forwarded-Proto` / `X-Forwarded-Host`；若反代未传这些头，可设置 `CYBER_BACKEND_PUBLIC_BASE_URL=http://<domain>` 或 `https://<domain>` 明确外部地址，后端会原样保留该 scheme
 - `playback.subtitles.items` 当前会发现与视频同目录、同文件名前缀的外挂字幕，也会包含用户确认后绑定的在线字幕缓存；支持 `srt/ass/ssa/vtt/sub/sup`，每个字幕项包含 `id`、`source`、`filename`、`display_name`、`format`、`language`、`is_default`、`url` 和 `web_player` 等字段；前端展示字幕名称优先使用 `display_name`，`filename` 保留为实际文件名/缓存文件名
 - 字幕项的 `url` 保留原始字幕流，主要给外部播放器使用；网页播放器应优先读取 `web_player.url`。当原始字幕为 `srt/ass/ssa` 时，`web_player.url` 会自动追加 `format=vtt`，后端动态转成 HTML5 `<track>` 可加载的 WebVTT；启用 Super CDN 后，用户绑定的在线/手动字幕会优先返回 `china_all` 桶中的原始字幕和 WebVTT CDN URL；`sub/sup` 当前不支持浏览器字幕

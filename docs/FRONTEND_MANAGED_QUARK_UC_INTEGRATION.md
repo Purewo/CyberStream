@@ -178,6 +178,107 @@ For pure preview before creating a media library, call saved-source browse. For 
 
 CyberStream resolves the local OpenList `/d` redirect and returns the final provider URL to the frontend. Clients must play the URL returned by CyberStream playback APIs; they never receive or need the localhost OpenList address.
 
+QuarkTV/UCTV raw download links are not reliable for web playback. For video playback UI, prefer the cloud transcoding contract exposed in `playback.cloud_transcode`.
+
+Resource playback payload:
+
+```json
+{
+  "playback": {
+    "storage_type": "quarktv",
+    "stream_url": "/api/v1/resources/{resource_id}/stream",
+    "cloud_transcode": {
+      "supported": true,
+      "provider": "quarktv",
+      "provider_name": "QuarkTV",
+      "mode": "provider_cloud_transcode",
+      "qualities_endpoint": "/api/v1/resources/{resource_id}/streaming-qualities",
+      "stream_endpoint": "/api/v1/resources/{resource_id}/stream-transcoded",
+      "resolution_param": "resolution",
+      "available_resolutions": ["low", "normal", "high", "super", "2k", "4k"]
+    },
+    "warnings": [
+      {
+        "code": "quark_uc_download_link_not_web_playable",
+        "message": "QuarkTV/UCTV raw download links may not play in web players; use playback.cloud_transcode."
+      }
+    ]
+  }
+}
+```
+
+Fetch available provider transcoding qualities:
+
+```http
+GET /api/v1/resources/{resource_id}/streaming-qualities
+```
+
+Response fields:
+
+- `default_resolution`: provider default quality, for example `4k`.
+- `selected_resolution` / `selected_item`: backend-selected playable quality. If the request includes `?resolution=super`, the selected item will be that quality or the API returns `409`.
+- `items[].resolution`: one of `low`, `normal`, `high`, `super`, `2k`, `4k`.
+- `items[].available`: only `true` items should be shown as playable choices.
+- `items[].width` / `height` / `size` / `bitrate` / `format`: display metadata returned by the provider.
+- `items[].stream_url`: CyberStream 302 endpoint for this exact quality.
+- `items[].url`: provider transcoded direct URL. It is not a localhost OpenList URL and may expire. Frontend can prefer `stream_url`.
+
+Example:
+
+```json
+{
+  "code": 200,
+  "data": {
+    "resource_id": "11111111-1111-1111-1111-111111111111",
+    "storage_type": "quarktv",
+    "provider": "QuarkTV",
+    "mode": "provider_cloud_transcode",
+    "default_resolution": "4k",
+    "selected_resolution": "4k",
+    "items": [
+      {
+        "resolution": "low",
+        "label": "LD",
+        "available": true,
+        "width": 480,
+        "height": 270,
+        "size": 157900849,
+        "trans_status": "success",
+        "stream_url": "/api/v1/resources/{resource_id}/stream-transcoded?resolution=low"
+      },
+      {
+        "resolution": "super",
+        "label": "FHD",
+        "available": true,
+        "width": 1440,
+        "height": 810,
+        "size": 688010711,
+        "trans_status": "success",
+        "stream_url": "/api/v1/resources/{resource_id}/stream-transcoded?resolution=super"
+      },
+      {
+        "resolution": "4k",
+        "label": "4K",
+        "available": true,
+        "width": 3840,
+        "height": 2160,
+        "size": 3368152792,
+        "trans_status": "success",
+        "stream_url": "/api/v1/resources/{resource_id}/stream-transcoded?resolution=4k"
+      }
+    ]
+  }
+}
+```
+
+Play a selected quality:
+
+```http
+GET /api/v1/resources/{resource_id}/stream-transcoded?resolution=super
+```
+
+The response is a `302` redirect to the provider transcoded URL. `quality` is accepted as a compatibility alias, but new frontend code should use `resolution`.
+
 ## Deletion
 
 ```http
@@ -191,8 +292,13 @@ Deleting a managed `quarktv` or `uctv` source also best-effort deletes the corre
 - `40001`: missing required field, usually `source_id`.
 - `40036`: invalid field type or invalid enum, for example `link_method`.
 - `40061`: wrong source type, missing internal OpenList storage id, or source not ready.
+- `40074`: resource source does not support cloud transcoding.
+- `40075`: unsupported transcoding resolution or empty resource path.
+- `40404`: provider file path cannot be resolved to a QuarkTV/UCTV file id.
+- `40913`: requested transcoding resolution is not available.
 - `40060`: managed OpenList is disabled or not configured.
 - `50260`: localhost OpenList admin call failed.
+- `50290`-`50294`: provider TV API or token refresh failed.
 
 ## Frontend Rules
 
@@ -200,3 +306,4 @@ Deleting a managed `quarktv` or `uctv` source also best-effort deletes the corre
 - Do not try `/v1/...`, `/managed/QuarkTV/...`, or generic `/storage/sources` creation for these managed providers.
 - Do not expose or persist OpenList `openlist_storage_id` or `mount_path`; backend strips them from response `source.config`.
 - Treat `actions` as the authority for whether preview, scan, stream, or refresh buttons are enabled.
+- For QuarkTV/UCTV playback, prefer `playback.cloud_transcode.qualities_endpoint` and play `items[].stream_url`; raw `playback.stream_url` is still present for compatibility but may not play in web players.

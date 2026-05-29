@@ -41,6 +41,10 @@ from backend.app.services.playback import (
     build_external_playback_manifest,
     guess_video_mime_type,
 )
+from backend.app.services.quark_uc_transcode import (
+    QuarkUCTranscodeError,
+    build_quark_uc_streaming_qualities,
+)
 from backend.app.services.subtitle_settings import (
     SubtitleSettingsError,
     build_subtitle_settings_payload,
@@ -280,6 +284,62 @@ def stream_resource(id):
     except Exception as e:
         logger.exception("Unhandled stream error resource_id=%s error=%s", id, e)
         return Response("Internal Stream Error", status=500)
+
+
+@player_bp.route('/resources/<uuid:id>/streaming-qualities', methods=['GET'])
+def get_resource_streaming_qualities(id):
+    resource = db.session.get(MediaResource, str(id))
+    if not resource:
+        return api_error(code=40403, msg="Resource not found", http_status=404)
+
+    selected_resolution = request.args.get("resolution") or request.args.get("quality")
+    try:
+        data = build_quark_uc_streaming_qualities(
+            resource,
+            selected_resolution=selected_resolution,
+        )
+        return api_response(data=data, msg="resource streaming qualities")
+    except QuarkUCTranscodeError as e:
+        return api_error(code=e.code, msg=e.message, http_status=e.http_status)
+    except Exception as e:
+        logger.exception("Streaming qualities failed resource_id=%s error=%s", id, e)
+        return api_error(code=50082, msg="Streaming qualities failed", http_status=500)
+
+
+@player_bp.route('/resources/<uuid:id>/stream-transcoded', methods=['GET'])
+def stream_resource_transcoded(id):
+    resource = db.session.get(MediaResource, str(id))
+    if not resource:
+        logger.warning("Transcoded stream resource not found id=%s", id)
+        return Response("Resource not found", status=404)
+
+    selected_resolution = request.args.get("resolution") or request.args.get("quality")
+    try:
+        data = build_quark_uc_streaming_qualities(
+            resource,
+            selected_resolution=selected_resolution,
+        )
+        selected_item = data.get("selected_item") or {}
+        redirect_url = selected_item.get("url")
+        if not redirect_url:
+            raise QuarkUCTranscodeError(
+                "No transcoded stream URL is available",
+                code=40914,
+                http_status=409,
+            )
+        logger.info(
+            "Transcoded stream redirect resource_id=%s storage_type=%s resolution=%s",
+            id,
+            data.get("storage_type"),
+            selected_item.get("resolution"),
+        )
+        return redirect(redirect_url, code=302)
+    except QuarkUCTranscodeError as e:
+        logger.warning("Transcoded stream rejected resource_id=%s error=%s", id, e.message)
+        return Response(e.message, status=e.http_status)
+    except Exception as e:
+        logger.exception("Unhandled transcoded stream error resource_id=%s error=%s", id, e)
+        return Response("Internal Transcoded Stream Error", status=500)
 
 
 @player_bp.route('/resources/<uuid:id>/external-playback', methods=['GET'])
