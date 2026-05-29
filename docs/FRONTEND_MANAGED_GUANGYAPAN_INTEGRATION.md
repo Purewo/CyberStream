@@ -117,6 +117,28 @@ Content-Type: application/json
 
 前端只需要保存 `data.source.id`，用于下一步提交验证码。`alist_storage_id`、`mount_path` 这类内部字段不会出现在普通 `StorageSource.config` 响应里，前端也不应通过其他方式读取或依赖。
 
+## 重新登录已有来源
+
+如果光鸭登录态失效，不要新建存储源。对原 `source.id` 重新发送短信：
+
+```http
+POST /api/v1/storage/managed/guangyapan/sms/restart
+Content-Type: application/json
+```
+
+```json
+{
+  "source_id": 3,
+  "phone_number": "+861380001234"
+}
+```
+
+- `source_id` / `id` 必填，必须是已有 `guangyapan` 来源。
+- `phone_number` 必填。后端只保存脱敏手机号，重新登录时必须重新提交明文手机号。
+- `root_path` / `cloud_root_path` 可选；不传则沿用当前 `source.config.cloud_root_path`。
+
+成功后仍返回同一个 `source.id`，`auth_state=sms_pending`，前端继续调用 `sms/verify` 提交验证码。资源索引和媒体库绑定不会被重建。
+
 ## 校验短信验证码
 
 ```http
@@ -242,7 +264,7 @@ DELETE /api/v1/storage/sources/{id}
 
 ## 前端接入清单
 
-- 光鸭走 `storage/managed/guangyapan/sms/start` 和 `sms/verify`，不要走普通 AList 表单。
+- 光鸭首次挂载走 `storage/managed/guangyapan/sms/start`，已有来源重新登录走 `sms/restart`，验证码提交走 `sms/verify`；不要走普通 AList 表单。
 - UI 只要求手机号、短信验证码；`captcha_token` 只有后端确认需要时再加。
 - 只保存 `source.id`、`source.config.auth_state`、`source.actions` 和脱敏手机号展示字段。
 - `auth_state !== "ready"` 时禁用浏览、扫描、绑定和播放。

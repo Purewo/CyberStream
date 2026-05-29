@@ -34,8 +34,9 @@ class FakeManagedAListClient:
             "root_path": root_path,
             "captcha_token": captcha_token,
         })
+        storage_id = 77 + len(self.created_requests) - 1
         return {
-            "storage_id": 77,
+            "storage_id": storage_id,
             "mount_path": "/cyberstream/guangyapan/fake",
             "phone_number_masked": "*******1234",
             "cloud_root_path": root_path or "/",
@@ -110,6 +111,51 @@ class ManagedGuangYaPanRouteTests(unittest.TestCase):
             [{"phone_number": "+861380001234", "root_path": "电影", "captcha_token": "captcha"}],
             FakeManagedAListClient.created_requests,
         )
+
+    def test_restart_sms_replaces_alist_storage_without_new_source(self):
+        source = StorageSource(
+            name="光鸭测试",
+            type="guangyapan",
+            config={
+                "alist_storage_id": 76,
+                "mount_path": "/cyberstream/guangyapan/old",
+                "auth_state": "ready",
+                "phone_number_masked": "*******1234",
+                "cloud_root_path": "/电影",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.id
+
+        with patch("backend.app.api.storage_routes.ManagedAListClient", FakeManagedAListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/guangyapan/sms/restart",
+                json={
+                    "source_id": source_id,
+                    "phone_number": "+861380001234",
+                    "captcha_token": "captcha",
+                },
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["verification_restarted"])
+        self.assertTrue(payload["data"]["verification_sent"])
+        self.assertEqual("sms_pending", payload["data"]["auth_state"])
+        self.assertEqual(source_id, payload["data"]["source"]["id"])
+        self.assertEqual("sms_pending", payload["data"]["source"]["config"]["auth_state"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_scan"])
+        self.assertEqual([76], FakeManagedAListClient.deleted_storage_ids)
+        self.assertEqual(
+            [{"phone_number": "+861380001234", "root_path": "/电影", "captcha_token": "captcha"}],
+            FakeManagedAListClient.created_requests,
+        )
+        saved = db.session.get(StorageSource, source_id)
+        self.assertEqual(76, payload["data"]["replaced_alist_storage_id"])
+        self.assertEqual(77, saved.config["alist_storage_id"])
+        self.assertEqual("sms_pending", saved.config["auth_state"])
+        self.assertEqual(1, StorageSource.query.count())
 
     def test_verify_sms_marks_source_ready(self):
         source = StorageSource(

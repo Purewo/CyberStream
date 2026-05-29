@@ -138,6 +138,46 @@ class ManagedBaiduNetdiskRouteTests(unittest.TestCase):
             FakeManagedOpenListClient.created_requests,
         )
 
+    def test_restart_oauth_preserves_source_and_keeps_old_openlist_until_ready(self):
+        source = StorageSource(
+            name="Baidu test",
+            type="baidunetdisk",
+            config={
+                "openlist_storage_id": 210,
+                "mount_path": "/cyberstream/baidunetdisk/old",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "root_folder_path": "/",
+                "download_api": "official",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.id
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/baidunetdisk/oauth/restart",
+                json={"source_id": source_id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["oauth_restarted"])
+        self.assertTrue(payload["data"]["oauth_started"])
+        self.assertEqual("oauth_pending", payload["data"]["auth_state"])
+        self.assertEqual(210, payload["data"]["replaced_openlist_storage_id"])
+        self.assertFalse(payload["data"]["old_openlist_storage_deleted"])
+        self.assertEqual(source_id, payload["data"]["source"]["id"])
+        self.assertEqual("oauth_pending", payload["data"]["source"]["config"]["auth_state"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_preview"])
+        self.assertEqual([], FakeManagedOpenListClient.deleted_storage_ids)
+        saved = db.session.get(StorageSource, source_id)
+        self.assertEqual(210, saved.config["openlist_storage_id"])
+        self.assertEqual("baidu-state", saved.config["oauth_state"])
+        self.assertEqual("oauth_pending", saved.config["auth_state"])
+        self.assertEqual(1, StorageSource.query.count())
+
     def test_start_oob_oauth_returns_authorization_code_contract(self):
         FakeManagedOpenListClient.callback_mode = "oob"
         with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
@@ -222,6 +262,8 @@ class ManagedBaiduNetdiskRouteTests(unittest.TestCase):
             name="Baidu test",
             type="baidunetdisk",
             config={
+                "openlist_storage_id": 210,
+                "mount_path": "/cyberstream/baidunetdisk/old",
                 "auth_state": "oauth_pending",
                 "cloud_root_path": "/",
                 "root_folder_path": "/",
@@ -249,6 +291,7 @@ class ManagedBaiduNetdiskRouteTests(unittest.TestCase):
         self.assertNotIn("oauth_state", stored.config)
         self.assertNotIn("oauth_callback_mode", stored.config)
         self.assertNotIn("oauth_redirect_uri", stored.config)
+        self.assertEqual([210], FakeManagedOpenListClient.deleted_storage_ids)
 
     def test_delete_ready_managed_source_removes_openlist_storage_best_effort(self):
         source = StorageSource(

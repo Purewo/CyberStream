@@ -119,11 +119,13 @@ class OpenApiContractTests(unittest.TestCase):
         paths = openapi["paths"]
 
         self.assertIn("/api/v1/storage/managed/guangyapan/sms/start", paths)
+        self.assertIn("/api/v1/storage/managed/guangyapan/sms/restart", paths)
         self.assertIn("/api/v1/storage/managed/guangyapan/sms/verify", paths)
         doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
         self.assertIn("frontend-managed-guangyapan", doc_key_enum)
         self.assertIn("ConfigGuangYaPan", schemas)
         self.assertIn("ManagedGuangYaPanSmsStartRequest", schemas)
+        self.assertIn("ManagedGuangYaPanSmsRestartRequest", schemas)
         self.assertIn("ManagedGuangYaPanSmsVerifyRequest", schemas)
         self.assertIn("guangyapan", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("managed", schemas["StorageProviderCapabilities"]["properties"])
@@ -135,12 +137,15 @@ class OpenApiContractTests(unittest.TestCase):
         paths = openapi["paths"]
 
         self.assertIn("/api/v1/storage/managed/tianyicloud/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/tianyicloud/qr/restart", paths)
         self.assertIn("/api/v1/storage/managed/tianyicloud/qr/poll", paths)
         doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
         self.assertIn("frontend-managed-tianyicloud", doc_key_enum)
         self.assertIn("ConfigTianYiCloud", schemas)
         self.assertIn("ManagedTianYiCloudQrStartRequest", schemas)
+        self.assertIn("ManagedTianYiCloudQrRestartRequest", schemas)
         self.assertIn("ManagedTianYiCloudQrPollRequest", schemas)
+        self.assertIn("root_folder_id", schemas["ConfigTianYiCloud"]["properties"])
         self.assertIn("tianyicloud", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("qr_login", schemas["StorageProviderCapabilities"]["properties"])
 
@@ -150,12 +155,15 @@ class OpenApiContractTests(unittest.TestCase):
         paths = openapi["paths"]
 
         self.assertIn("/api/v1/storage/managed/115cloud/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/115cloud/qr/restart", paths)
         self.assertIn("/api/v1/storage/managed/115cloud/qr/poll", paths)
         doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
         self.assertIn("frontend-managed-115cloud", doc_key_enum)
         self.assertIn("Config115Cloud", schemas)
         self.assertIn("Managed115CloudQrStartRequest", schemas)
+        self.assertIn("Managed115CloudQrRestartRequest", schemas)
         self.assertIn("Managed115CloudQrPollRequest", schemas)
+        self.assertIn("root_folder_id", schemas["Config115Cloud"]["properties"])
         self.assertIn("115cloud", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("qr_login", schemas["StorageProviderCapabilities"]["properties"])
 
@@ -165,11 +173,13 @@ class OpenApiContractTests(unittest.TestCase):
         paths = openapi["paths"]
 
         self.assertIn("/api/v1/storage/managed/aliyundrive/qr/start", paths)
+        self.assertIn("/api/v1/storage/managed/aliyundrive/qr/restart", paths)
         self.assertIn("/api/v1/storage/managed/aliyundrive/qr/poll", paths)
         doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
         self.assertIn("frontend-managed-aliyundrive", doc_key_enum)
         self.assertIn("ConfigAliyundrive", schemas)
         self.assertIn("ManagedAliyundriveQrStartRequest", schemas)
+        self.assertIn("ManagedAliyundriveQrRestartRequest", schemas)
         self.assertIn("ManagedAliyundriveQrPollRequest", schemas)
         self.assertIn("aliyundrive", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("qr_login", schemas["StorageProviderCapabilities"]["properties"])
@@ -180,6 +190,7 @@ class OpenApiContractTests(unittest.TestCase):
         paths = openapi["paths"]
 
         self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/start", paths)
+        self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/restart", paths)
         self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/complete", paths)
         self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/poll", paths)
         self.assertIn("/api/v1/storage/managed/baidunetdisk/oauth/callback", paths)
@@ -187,6 +198,7 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("frontend-managed-baidunetdisk", doc_key_enum)
         self.assertIn("ConfigBaiduNetdisk", schemas)
         self.assertIn("ManagedBaiduNetdiskOAuthStartRequest", schemas)
+        self.assertIn("ManagedBaiduNetdiskOAuthRestartRequest", schemas)
         self.assertIn("ManagedBaiduNetdiskOAuthCompleteRequest", schemas)
         self.assertIn("ManagedBaiduNetdiskOAuthPollRequest", schemas)
         self.assertIn("baidunetdisk", schemas["StorageSource"]["properties"]["type"]["enum"])
@@ -198,10 +210,12 @@ class OpenApiContractTests(unittest.TestCase):
         paths = openapi["paths"]
 
         self.assertIn("/api/v1/storage/managed/123pan/login", paths)
+        self.assertIn("/api/v1/storage/managed/123pan/login/restart", paths)
         doc_key_enum = paths["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
         self.assertIn("frontend-managed-123pan", doc_key_enum)
         self.assertIn("Config123Pan", schemas)
         self.assertIn("Managed123PanLoginRequest", schemas)
+        self.assertIn("Managed123PanLoginRestartRequest", schemas)
         self.assertIn("Managed123PanLoginResponse", schemas)
         self.assertIn("123pan", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("password_login", schemas["StorageProviderCapabilities"]["properties"])

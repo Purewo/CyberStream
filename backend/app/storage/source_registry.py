@@ -471,6 +471,13 @@ SOURCE_TYPE_DEFINITIONS = {
                 'default': '/',
                 'description': '天翼云盘侧根路径，仅用于展示',
             },
+            {
+                'name': 'root_folder_id',
+                'type': 'string',
+                'required': False,
+                'default': '-11',
+                'description': 'OpenList 189CloudTV root_folder_id',
+            },
         ],
     },
     '115cloud': {
@@ -523,6 +530,13 @@ SOURCE_TYPE_DEFINITIONS = {
                 'required': False,
                 'default': 'wechatmini',
                 'description': '115 二维码登录端类型：web、android、ios、tv、alipaymini、wechatmini 或 qandroid',
+            },
+            {
+                'name': 'root_folder_id',
+                'type': 'string',
+                'required': False,
+                'default': '0',
+                'description': 'OpenList 115 Cloud root_folder_id',
             },
             {
                 'name': 'qr_uid',
@@ -1158,6 +1172,9 @@ def _normalize_post_config_fields(s_type, config):
         config['cloud_type'] = config['cloud_type'].strip().lower() or 'personal'
         if config['cloud_type'] not in {'personal', 'family'}:
             raise StorageProviderError("Invalid config field value: cloud_type should be personal or family", code=40038)
+    if normalized_type == 'tianyicloud' and 'root_folder_id' in config and isinstance(config.get('root_folder_id'), str):
+        default_root = '' if config.get('cloud_type') == 'family' else '-11'
+        config['root_folder_id'] = config['root_folder_id'].strip() or default_root
 
     if normalized_type == '115cloud' and 'qrcode_source' in config and isinstance(config.get('qrcode_source'), str):
         config['qrcode_source'] = config['qrcode_source'].strip().lower() or 'wechatmini'
@@ -1166,6 +1183,8 @@ def _normalize_post_config_fields(s_type, config):
                 "Invalid config field value: qrcode_source should be web, android, ios, tv, alipaymini, wechatmini or qandroid",
                 code=40038,
             )
+    if normalized_type == '115cloud' and 'root_folder_id' in config and isinstance(config.get('root_folder_id'), str):
+        config['root_folder_id'] = config['root_folder_id'].strip() or '0'
 
     if normalized_type == 'aliyundrive':
         if 'root_folder_id' in config and isinstance(config.get('root_folder_id'), str):

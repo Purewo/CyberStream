@@ -102,6 +102,26 @@ Content-Type: application/json
 - 内部 OpenList mount path
 - OAuth state
 
+## 2.1 重新授权已有来源
+
+如果百度网盘授权失效，不要新建存储源。对原 `source.id` 重新发起 OAuth：
+
+```http
+POST /api/v1/storage/managed/baidunetdisk/oauth/restart
+Content-Type: application/json
+```
+
+```json
+{
+  "source_id": 12
+}
+```
+
+- `source_id` / `id` 必填，必须是已有 `baidunetdisk` 来源。
+- `root_path` / `cloud_root_path` / `root_folder_path`、`download_api` 可选；不传则沿用当前 source 配置。
+
+成功后仍返回同一个 `source.id`，`auth_state=oauth_pending`，前端打开新的 `authorization_url`，再按原有 `oauth/poll` 或 `oauth/complete` 流程收口。百度的新 OpenList 挂载要等授权完成后才创建，因此旧挂载会先保留，授权成功创建新挂载后后端再清理旧挂载。资源索引和媒体库绑定不会被重建。
+
 ## 3. 授权完成
 
 ### 3.1 redirect 模式：轮询 callback 结果
@@ -161,7 +181,7 @@ Content-Type: application/json
 }
 ```
 
-前端停止当前轮询，提示用户重新授权。重新授权走新的 `oauth/start`。
+前端停止当前轮询，提示用户重新授权。已有来源重新授权走 `oauth/restart`，首次挂载才走 `oauth/start`。
 
 #### 授权完成
 

@@ -33,13 +33,15 @@ class FakeManagedOpenListClient:
             "root_folder_id": root_folder_id,
             "cloud_type": cloud_type,
         })
+        storage_id = 88 + len(self.created_requests) - 1
         return {
-            "storage_id": 88,
+            "storage_id": storage_id,
             "mount_path": "/cyberstream/tianyicloud/fake",
             "auth_state": "qr_pending",
             "authenticated": False,
             "cloud_type": cloud_type,
             "cloud_root_path": "/",
+            "root_folder_id": root_folder_id or "-11",
             "qr_code_data_url": "data:image/jpeg;base64,ZmFrZS1xcg==",
             "qr_content": "qr-uuid",
         }
@@ -55,6 +57,7 @@ class FakeManagedOpenListClient:
                 "authenticated": False,
                 "cloud_type": "personal",
                 "cloud_root_path": "/",
+                "root_folder_id": "-11",
                 "pending_reason": "waiting_for_scan",
             }
         result["storage_id"] = storage_id
@@ -115,6 +118,47 @@ class ManagedTianYiCloudRouteTests(unittest.TestCase):
             [{"root_folder_id": "", "cloud_type": "personal"}],
             FakeManagedOpenListClient.created_requests,
         )
+
+    def test_restart_qr_replaces_openlist_storage_without_new_source(self):
+        source = StorageSource(
+            name="天翼云盘测试",
+            type="tianyicloud",
+            config={
+                "openlist_storage_id": 87,
+                "mount_path": "/cyberstream/tianyicloud/old",
+                "auth_state": "ready",
+                "cloud_type": "personal",
+                "cloud_root_path": "/",
+                "root_folder_id": "-11",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.id
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/tianyicloud/qr/restart",
+                json={"source_id": source_id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["qr_restarted"])
+        self.assertEqual("qr_pending", payload["data"]["auth_state"])
+        self.assertEqual(source_id, payload["data"]["source"]["id"])
+        self.assertEqual("qr_pending", payload["data"]["source"]["config"]["auth_state"])
+        self.assertEqual("-11", payload["data"]["source"]["config"]["root_folder_id"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_scan"])
+        self.assertEqual([87], FakeManagedOpenListClient.deleted_storage_ids)
+        self.assertEqual(
+            [{"root_folder_id": "-11", "cloud_type": "personal"}],
+            FakeManagedOpenListClient.created_requests,
+        )
+        saved = db.session.get(StorageSource, source_id)
+        self.assertEqual(88, saved.config["openlist_storage_id"])
+        self.assertEqual("qr_pending", saved.config["auth_state"])
+        self.assertEqual(1, StorageSource.query.count())
 
     def test_poll_pending_keeps_source_locked(self):
         source = StorageSource(

@@ -36,12 +36,14 @@ class FakeManagedOpenListClient:
             "root_folder_id": root_folder_id,
             "qrcode_source": qrcode_source,
         })
+        storage_id = 115 + len(self.created_requests) - 1
         return {
-            "storage_id": 115,
+            "storage_id": storage_id,
             "mount_path": "/cyberstream/115cloud/fake",
             "auth_state": "qr_pending",
             "authenticated": False,
             "cloud_root_path": "/",
+            "root_folder_id": root_folder_id or "0",
             "qrcode_source": qrcode_source,
             "qr_uid": "115-uid",
             "qr_sign": "115-sign",
@@ -61,6 +63,7 @@ class FakeManagedOpenListClient:
                 "auth_state": "qr_pending",
                 "authenticated": False,
                 "cloud_root_path": "/",
+                "root_folder_id": "0",
                 "qrcode_source": "wechatmini",
                 "pending_reason": "waiting_for_scan",
                 "qr_status": 0,
@@ -143,6 +146,50 @@ class Managed115CloudRouteTests(unittest.TestCase):
             [{"root_folder_id": "", "qrcode_source": "web"}],
             FakeManagedOpenListClient.created_requests,
         )
+
+    def test_restart_qr_replaces_openlist_storage_without_new_source(self):
+        source = StorageSource(
+            name="115 test",
+            type="115cloud",
+            config={
+                "openlist_storage_id": 114,
+                "mount_path": "/cyberstream/115cloud/old",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "root_folder_id": "0",
+                "qrcode_source": "wechatmini",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.id
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/115cloud/qr/restart",
+                json={"source_id": source_id, "qrcode_source": "web"},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["qr_restarted"])
+        self.assertTrue(payload["data"]["qr_started"])
+        self.assertEqual("qr_pending", payload["data"]["auth_state"])
+        self.assertEqual(source_id, payload["data"]["source"]["id"])
+        self.assertEqual("web", payload["data"]["source"]["config"]["qrcode_source"])
+        self.assertEqual("0", payload["data"]["source"]["config"]["root_folder_id"])
+        self.assertNotIn("qr_uid", payload["data"]["source"]["config"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_scan"])
+        self.assertEqual([114], FakeManagedOpenListClient.deleted_storage_ids)
+        self.assertEqual(
+            [{"root_folder_id": "0", "qrcode_source": "web"}],
+            FakeManagedOpenListClient.created_requests,
+        )
+        saved = db.session.get(StorageSource, source_id)
+        self.assertEqual(115, saved.config["openlist_storage_id"])
+        self.assertEqual("115-uid", saved.config["qr_uid"])
+        self.assertEqual("qr_pending", saved.config["auth_state"])
+        self.assertEqual(1, StorageSource.query.count())
 
     def test_poll_pending_keeps_source_locked_and_updates_state(self):
         source = StorageSource(

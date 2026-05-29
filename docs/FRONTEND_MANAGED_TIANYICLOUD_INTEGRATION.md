@@ -81,7 +81,8 @@ Content-Type: application/json
       "config": {
         "auth_state": "qr_pending",
         "cloud_type": "personal",
-        "cloud_root_path": "/"
+        "cloud_root_path": "/",
+        "root_folder_id": "-11"
       },
       "actions": {
         "can_preview": false,
@@ -100,6 +101,26 @@ Content-Type: application/json
 - 保存 `source.id`，后续轮询使用。
 - 不要依赖 `qr_content` 做业务判断；它只是给需要原始扫码内容的客户端备用。
 - 响应中的 `source.config` 不包含 `openlist_storage_id` 和 `mount_path`，这是预期的隐私保护。
+
+## 2.1 重新登录已有来源
+
+如果天翼云盘登录态失效，不要新建存储源。对原 `source.id` 重新生成二维码：
+
+```http
+POST /api/v1/storage/managed/tianyicloud/qr/restart
+Content-Type: application/json
+```
+
+```json
+{
+  "source_id": 12
+}
+```
+
+- `source_id` / `id` 必填，必须是已有 `tianyicloud` 来源。
+- `cloud_type`、`root_folder_id` 可选；不传则沿用当前 source 配置。
+
+成功后仍返回同一个 `source.id`，`auth_state=qr_pending`，前端继续调用 `qr/poll`。资源索引和媒体库绑定不会被重建。
 
 ## 3. 轮询扫码结果
 

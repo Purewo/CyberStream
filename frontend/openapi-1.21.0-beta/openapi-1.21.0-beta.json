@@ -5740,6 +5740,69 @@
         }
       }
     },
+    "/api/v1/storage/managed/guangyapan/sms/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新启动托管 GuangYaPan 短信登录",
+        "description": "用于光鸭登录态失效后的重新短信验证；后端保留同一个 CyberStream source_id，只替换 localhost AList 内部挂载。",
+        "operationId": "restartManagedGuangYaPanSms",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedGuangYaPanSmsRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "验证码已重新发送，原存储源回到 sms_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedGuangYaPanSmsRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管运行时未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList/OpenList 或网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/storage/managed/guangyapan/sms/verify": {
       "post": {
         "summary": "🟠 [已开发未验证] 校验托管光鸭云盘短信验证码",
@@ -5856,6 +5919,69 @@
         }
       }
     },
+    "/api/v1/storage/managed/tianyicloud/qr/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新启动托管 TianYiCloud 扫码登录",
+        "description": "用于天翼云盘登录态失效后的重新扫码；后端保留同一个 CyberStream source_id，只替换 localhost OpenList 内部挂载。",
+        "operationId": "restartManagedTianYiCloudQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedTianYiCloudQrRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已重新生成，原存储源回到 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedTianYiCloudQrRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管运行时未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList/OpenList 或网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/storage/managed/tianyicloud/qr/poll": {
       "post": {
         "summary": "🟠 [已开发未验证] 轮询托管天翼云盘扫码结果",
@@ -5961,6 +6087,69 @@
           },
           "502": {
             "description": "托管 OpenList 或 115 账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/115cloud/qr/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新启动托管 115 Cloud 扫码登录",
+        "description": "用于 115 登录态失效后的重新扫码；后端保留同一个 CyberStream source_id，只替换 localhost OpenList 内部挂载。",
+        "operationId": "restartManaged115CloudQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Managed115CloudQrRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已重新生成，原存储源回到 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Managed115CloudQrRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管运行时未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList/OpenList 或网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
             "content": {
               "application/json": {
                 "schema": {
@@ -6446,6 +6635,69 @@
         }
       }
     },
+    "/api/v1/storage/managed/aliyundrive/qr/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新启动托管 Aliyundrive 扫码登录",
+        "description": "用于阿里云盘登录态失效后的重新扫码；后端保留同一个 CyberStream source_id。旧 OpenList 挂载会保留到扫码成功并创建新挂载后再清理。",
+        "operationId": "restartManagedAliyundriveQr",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedAliyundriveQrRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "二维码已重新生成，原存储源回到 qr_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedAliyundriveQrRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管运行时未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList/OpenList 或网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/storage/managed/aliyundrive/qr/poll": {
       "post": {
         "summary": "🟠 [已开发未验证] 轮询托管阿里云盘扫码结果",
@@ -6551,6 +6803,69 @@
           },
           "502": {
             "description": "托管 OpenList 或百度 OAuth 接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/baidunetdisk/oauth/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新启动托管 Baidu Netdisk OAuth",
+        "description": "用于百度网盘授权失效后的重新授权；后端保留同一个 CyberStream source_id。旧 OpenList 挂载会保留到授权成功并创建新挂载后再清理。",
+        "operationId": "restartManagedBaiduNetdiskOAuth",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth 已重新开始，原存储源回到 oauth_pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管运行时未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList/OpenList 或网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
             "content": {
               "application/json": {
                 "schema": {
@@ -6799,6 +7114,69 @@
           },
           "502": {
             "description": "托管 OpenList 或 123Pan 账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/storage/managed/123pan/login/restart": {
+      "post": {
+        "summary": "🟠 [已开发未验证] 重新执行托管 123Pan 账号登录",
+        "description": "用于 123Pan 登录态失效后的重新账号密码登录；后端保留同一个 CyberStream source_id，只替换 localhost OpenList 内部挂载。",
+        "operationId": "restartManaged123PanLogin",
+        "x-lifecycle-status": "implemented_unverified",
+        "tags": [
+          "Storage"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Managed123PanLoginRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "账号已重新登录，原存储源保持 ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Managed123PanLoginRestartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误、来源类型不匹配或托管运行时未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "托管 AList/OpenList 或网盘账号接口调用失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "存储源不存在",
             "content": {
               "application/json": {
                 "schema": {
@@ -17533,7 +17911,7 @@
       "ConfigTianYiCloud": {
         "type": "object",
         "title": "TianYiCloud Managed Config",
-        "description": "CyberStream 托管 OpenList 生成的天翼云盘来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_type、cloud_root_path 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
+        "description": "CyberStream 托管 OpenList 生成的天翼云盘来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_type、cloud_root_path、root_folder_id 等展示字段；openlist_storage_id/mount_path 为后端内部字段，不会在普通 source 响应中暴露。",
         "required": [
           "openlist_storage_id",
           "mount_path"
@@ -17569,6 +17947,12 @@
             "default": "personal",
             "description": "OpenList 189CloudTV 云盘类型。当前前端先使用默认 personal。"
           },
+          "root_folder_id": {
+            "type": "string",
+            "default": "-11",
+            "description": "OpenList 189CloudTV 技术根目录 ID；用于重新登录时保持同一个挂载根目录。",
+            "example": "-11"
+          },
           "cloud_root_path": {
             "type": "string",
             "default": "/",
@@ -17580,7 +17964,7 @@
       "Config115Cloud": {
         "type": "object",
         "title": "115 Cloud Managed Config",
-        "description": "CyberStream 托管 OpenList 生成的 115 云盘来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、qrcode_source 等展示字段；openlist_storage_id/mount_path/qr_uid/qr_sign/qr_time 为后端内部字段，不会在普通 source 响应中暴露。",
+        "description": "CyberStream 托管 OpenList 生成的 115 云盘来源配置；前端不应手工创建，使用托管扫码接口。StorageSource.config 响应只返回 auth_state、cloud_root_path、root_folder_id、qrcode_source 等展示字段；openlist_storage_id/mount_path/qr_uid/qr_sign/qr_time 为后端内部字段，不会在普通 source 响应中暴露。",
         "required": [
           "openlist_storage_id",
           "mount_path"
@@ -17614,6 +17998,12 @@
             "default": "/",
             "description": "115 云盘侧根路径，仅用于展示。",
             "example": "/"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "default": "0",
+            "description": "OpenList 115 Cloud 技术根目录 ID；用于重新登录时保持同一个挂载根目录。",
+            "example": "0"
           },
           "qrcode_source": {
             "type": "string",
@@ -19150,6 +19540,541 @@
             "properties": {
               "data": {
                 "$ref": "#/components/schemas/ManagedQuarkUCTVQrRestartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedGuangYaPanSmsRestartRequest": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "phone_number"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "已有 CyberStream GuangYaPan 存储源 ID；重新登录不会创建新的 source。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "光鸭手机号。后端不保存明文手机号，重新登录时必须重新提交。"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "可选；光鸭侧根路径。不传则沿用当前 source.config.cloud_root_path。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "captcha_token": {
+            "type": "string",
+            "description": "可选验证码 token。"
+          }
+        }
+      },
+      "ManagedGuangYaPanSmsRestartData": {
+        "type": "object",
+        "properties": {
+          "verification_restarted": {
+            "type": "boolean"
+          },
+          "verification_sent": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "sms_pending"
+            ]
+          },
+          "replaced_alist_storage_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "被替换的 localhost AList 内部 storage id；仅用于调试。"
+          },
+          "old_alist_storage_deleted": {
+            "type": "boolean",
+            "description": "旧 localhost AList 挂载是否已成功删除。"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedGuangYaPanSmsRestartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedGuangYaPanSmsRestartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedTianYiCloudQrRestartRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "已有 CyberStream TianYiCloud 存储源 ID；重新登录不会创建新的 source。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "cloud_type": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "family"
+            ],
+            "description": "可选；不传则沿用当前 source.config.cloud_type。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "可选；不传则沿用当前 source.config.root_folder_id。"
+          }
+        }
+      },
+      "ManagedTianYiCloudQrRestartData": {
+        "type": "object",
+        "properties": {
+          "qr_restarted": {
+            "type": "boolean"
+          },
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending"
+            ]
+          },
+          "replaced_openlist_storage_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "被替换的 localhost OpenList 内部 storage id；仅用于调试。"
+          },
+          "old_openlist_storage_deleted": {
+            "type": "boolean",
+            "description": "旧 localhost OpenList 挂载是否已成功删除。"
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "可直接渲染的二维码 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedTianYiCloudQrRestartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedTianYiCloudQrRestartData"
+              }
+            }
+          }
+        ]
+      },
+      "Managed115CloudQrRestartRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "已有 CyberStream 115 Cloud 存储源 ID；重新登录不会创建新的 source。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "可选；不传则沿用当前 source.config.root_folder_id。"
+          },
+          "qrcode_source": {
+            "type": "string",
+            "enum": [
+              "web",
+              "android",
+              "ios",
+              "tv",
+              "alipaymini",
+              "wechatmini",
+              "qandroid"
+            ],
+            "description": "可选；不传则沿用当前 source.config.qrcode_source。"
+          }
+        }
+      },
+      "Managed115CloudQrRestartData": {
+        "type": "object",
+        "properties": {
+          "qr_restarted": {
+            "type": "boolean"
+          },
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending",
+              "ready"
+            ]
+          },
+          "replaced_openlist_storage_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "被替换的 localhost OpenList 内部 storage id；仅用于调试。"
+          },
+          "old_openlist_storage_deleted": {
+            "type": "boolean",
+            "description": "旧 localhost OpenList 挂载是否已成功删除。"
+          },
+          "qr_code_data_url": {
+            "type": "string",
+            "description": "可直接渲染的二维码 data URL。"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "Managed115CloudQrRestartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Managed115CloudQrRestartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedAliyundriveQrRestartRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "已有 CyberStream Aliyundrive 存储源 ID；重新登录不会创建新的 source。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "可选；不传则沿用当前 source.config.root_folder_id。"
+          },
+          "drive_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "resource",
+              "backup"
+            ],
+            "description": "可选；不传则沿用当前 source.config.drive_type。"
+          },
+          "alipan_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "alipanTV"
+            ],
+            "description": "可选；不传则沿用当前 source.config.alipan_type。"
+          }
+        }
+      },
+      "ManagedAliyundriveQrRestartData": {
+        "type": "object",
+        "properties": {
+          "qr_restarted": {
+            "type": "boolean"
+          },
+          "qr_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "qr_pending"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "qr_status": {
+            "type": "string",
+            "nullable": true
+          },
+          "qr_code_url": {
+            "type": "string"
+          },
+          "qr_code_data_url": {
+            "type": "string"
+          },
+          "qr_content": {
+            "type": "string",
+            "nullable": true
+          },
+          "replaced_openlist_storage_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "被替换的 localhost OpenList 内部 storage id；阿里云盘会在扫码成功创建新挂载后清理旧挂载。"
+          },
+          "old_openlist_storage_deleted": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedAliyundriveQrRestartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedAliyundriveQrRestartData"
+              }
+            }
+          }
+        ]
+      },
+      "ManagedBaiduNetdiskOAuthRestartRequest": {
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "已有 CyberStream Baidu Netdisk 存储源 ID；重新授权不会创建新的 source。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "root_path": {
+            "type": "string",
+            "description": "可选；不传则沿用当前 source.config.root_folder_path。"
+          },
+          "cloud_root_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "root_folder_path": {
+            "type": "string",
+            "description": "root_path 的兼容别名。"
+          },
+          "download_api": {
+            "type": "string",
+            "enum": [
+              "official",
+              "crack",
+              "crack_video"
+            ],
+            "description": "可选；不传则沿用当前 source.config.download_api。"
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthRestartData": {
+        "type": "object",
+        "properties": {
+          "oauth_restarted": {
+            "type": "boolean"
+          },
+          "oauth_started": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "oauth_pending"
+            ]
+          },
+          "pending_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorization_url": {
+            "type": "string"
+          },
+          "callback_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "callback_mode": {
+            "type": "string",
+            "enum": [
+              "redirect",
+              "oob"
+            ]
+          },
+          "requires_authorization_code": {
+            "type": "boolean"
+          },
+          "authorization_code_submit_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "replaced_openlist_storage_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "被替换的 localhost OpenList 内部 storage id；百度会在授权完成创建新挂载后清理旧挂载。"
+          },
+          "old_openlist_storage_deleted": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "ManagedBaiduNetdiskOAuthRestartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ManagedBaiduNetdiskOAuthRestartData"
+              }
+            }
+          }
+        ]
+      },
+      "Managed123PanLoginRestartRequest": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "description": "已有 CyberStream 123Pan 存储源 ID；重新登录不会创建新的 source。",
+            "example": 12
+          },
+          "id": {
+            "type": "integer",
+            "description": "source_id 的兼容别名。"
+          },
+          "username": {
+            "type": "string",
+            "description": "123Pan 账号、手机号或邮箱。后端不保存明文账号，重新登录时必须重新提交。"
+          },
+          "account": {
+            "type": "string",
+            "description": "username 的兼容别名。"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "description": "123Pan 账号密码；只提交给 CyberStream 后端，响应不会返回。"
+          },
+          "root_folder_id": {
+            "type": "string",
+            "description": "可选；不传则沿用当前 source.config.root_folder_id。"
+          },
+          "platform": {
+            "type": "string",
+            "description": "可选；不传则沿用当前 source.config.platform。"
+          }
+        }
+      },
+      "Managed123PanLoginRestartData": {
+        "type": "object",
+        "properties": {
+          "login_restarted": {
+            "type": "boolean"
+          },
+          "authenticated": {
+            "type": "boolean"
+          },
+          "auth_state": {
+            "type": "string",
+            "enum": [
+              "ready"
+            ]
+          },
+          "replaced_openlist_storage_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "被替换的 localhost OpenList 内部 storage id；仅用于调试。"
+          },
+          "old_openlist_storage_deleted": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StorageSource"
+          }
+        }
+      },
+      "Managed123PanLoginRestartResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Managed123PanLoginRestartData"
               }
             }
           }

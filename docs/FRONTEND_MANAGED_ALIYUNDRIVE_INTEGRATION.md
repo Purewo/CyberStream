@@ -105,6 +105,26 @@ Content-Type: application/json
 - 内部 OpenList mount path
 - 阿里云盘二维码 sid
 
+## 2.1 重新登录已有来源
+
+如果阿里云盘登录态失效，不要新建存储源。对原 `source.id` 重新发起扫码：
+
+```http
+POST /api/v1/storage/managed/aliyundrive/qr/restart
+Content-Type: application/json
+```
+
+```json
+{
+  "source_id": 12
+}
+```
+
+- `source_id` / `id` 必填，必须是已有 `aliyundrive` 来源。
+- `root_folder_id`、`drive_type`、`alipan_type` 可选；不传则沿用当前 source 配置。
+
+成功后仍返回同一个 `source.id`，`auth_state=qr_pending`，前端继续调用 `qr/poll`。阿里云盘的新 OpenList 挂载要等扫码成功后才创建，因此旧挂载会先保留，扫码成功创建新挂载后后端再清理旧挂载。资源索引和媒体库绑定不会被重建。
+
 ## 3. 轮询扫码状态
 
 ```http
@@ -198,7 +218,7 @@ Content-Type: application/json
 }
 ```
 
-前端应停止当前轮询，提示重新发起扫码。重新扫码走新的 `qr/start`。
+前端应停止当前轮询，提示重新发起扫码。已有来源重新扫码走 `qr/restart`，首次挂载才走 `qr/start`。
 
 ### 3.4 登录完成
 
@@ -268,7 +288,7 @@ POST /api/v1/storage/sources/{source_id}/scan
 
 ## 7. 前端规则
 
-- 使用 `/api/v1/storage/managed/aliyundrive/qr/start` 和 `/api/v1/storage/managed/aliyundrive/qr/poll`
+- 使用 `/api/v1/storage/managed/aliyundrive/qr/start`、`/api/v1/storage/managed/aliyundrive/qr/restart` 和 `/api/v1/storage/managed/aliyundrive/qr/poll`
 - 轮询间隔建议 2 到 3 秒，登录完成、过期、取消或用户关闭弹窗后停止
 - 不要调用 OpenList，不要解析 OpenList HTML，不要保存隐藏字段
 - `source.actions` 是是否开放预览、扫描、播放和刷新的唯一依据

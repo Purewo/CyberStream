@@ -439,6 +439,19 @@ X-Cyber-API-Token: <token>
 - `sms_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`，前端不要展示浏览、扫描、绑定或播放入口
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-guangyapan`
 
+### `POST /api/v1/storage/managed/guangyapan/sms/restart`
+对已有光鸭云盘存储源重新发起短信登录。
+
+请求体：
+- `source_id` / `id`：必填，已有光鸭存储源 ID
+- `phone_number`：必填，后端不保存明文手机号，重新登录必须重新提交
+- `root_path` / `cloud_root_path`：可选，不传则沿用当前 `source.config.cloud_root_path`
+- `captcha_token`：可选
+
+说明：
+- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 成功后该来源回到 `config.auth_state=sms_pending`，前端继续调用 `sms/verify`
+
 ### `POST /api/v1/storage/managed/guangyapan/sms/verify`
 提交短信验证码，完成托管光鸭云盘登录。
 
@@ -467,6 +480,18 @@ X-Cyber-API-Token: <token>
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-tianyicloud`
 
+### `POST /api/v1/storage/managed/tianyicloud/qr/restart`
+对已有天翼云盘存储源重新发起扫码登录。
+
+请求体：
+- `source_id` / `id`：必填，已有天翼云盘存储源 ID
+- `cloud_type`：可选，不传则沿用当前 `source.config.cloud_type`
+- `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
+
+说明：
+- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `qr/poll`
+
 ### `POST /api/v1/storage/managed/tianyicloud/qr/poll`
 轮询托管天翼云盘扫码结果。
 
@@ -494,6 +519,18 @@ X-Cyber-API-Token: <token>
 - 响应不返回 OpenList 地址、OpenList token、115 cookie、内部 storage id、内部挂载路径或二维码 uid/sign/time
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-115cloud`
+
+### `POST /api/v1/storage/managed/115cloud/qr/restart`
+对已有 115 云盘存储源重新发起扫码登录。
+
+请求体：
+- `source_id` / `id`：必填，已有 115 云盘存储源 ID
+- `qrcode_source`：可选，不传则沿用当前 `source.config.qrcode_source`
+- `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
+
+说明：
+- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `qr/poll`
 
 ### `POST /api/v1/storage/managed/115cloud/qr/poll`
 轮询托管 115 云盘扫码结果。
@@ -524,6 +561,20 @@ X-Cyber-API-Token: <token>
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-aliyundrive`
 
+### `POST /api/v1/storage/managed/aliyundrive/qr/restart`
+对已有阿里云盘存储源重新发起扫码登录。
+
+请求体：
+- `source_id` / `id`：必填，已有阿里云盘存储源 ID
+- `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
+- `drive_type`：可选，不传则沿用当前 `source.config.drive_type`
+- `alipan_type`：可选，不传则沿用当前 `source.config.alipan_type`
+
+说明：
+- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `qr/poll`
+- 阿里云盘扫码成功后才创建新的 localhost OpenList 挂载；旧挂载会保留到新挂载创建成功后再清理
+
 ### `POST /api/v1/storage/managed/aliyundrive/qr/poll`
 轮询托管阿里云盘扫码结果。
 
@@ -552,6 +603,19 @@ X-Cyber-API-Token: <token>
 - 响应不返回 OpenList 地址、OpenList token、百度 access token / refresh token、内部 storage id、内部挂载路径或 OAuth state
 - `oauth_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-baidunetdisk`
+
+### `POST /api/v1/storage/managed/baidunetdisk/oauth/restart`
+对已有百度网盘存储源重新发起 OAuth 授权。
+
+请求体：
+- `source_id` / `id`：必填，已有百度网盘存储源 ID
+- `root_path` / `cloud_root_path` / `root_folder_path`：可选，不传则沿用当前 source 配置
+- `download_api`：可选，不传则沿用当前 `source.config.download_api`
+
+说明：
+- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 成功后该来源回到 `config.auth_state=oauth_pending`，前端打开新的 `authorization_url`
+- 百度授权完成后才创建新的 localhost OpenList 挂载；旧挂载会保留到新挂载创建成功后再清理
 
 ### `POST /api/v1/storage/managed/baidunetdisk/oauth/complete`
 提交百度 OOB 授权码并完成托管挂载。仅在 `oauth/start` 返回 `callback_mode=oob` 时使用。
@@ -595,6 +659,20 @@ X-Cyber-API-Token: <token>
 - 响应不返回 OpenList 地址、OpenList token、123Pan 密码、内部 storage id 或内部挂载路径
 - 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源可立即浏览、扫描和播放
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-123pan`
+
+### `POST /api/v1/storage/managed/123pan/login/restart`
+对已有 123Pan 存储源重新执行账号密码登录。
+
+请求体：
+- `source_id` / `id`：必填，已有 123Pan 存储源 ID
+- `username` / `account`：必填，后端不保存明文账号，重新登录必须重新提交
+- `password`：必填，123Pan 账号密码
+- `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
+- `platform`：可选，不传则沿用当前 `source.config.platform`
+
+说明：
+- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 成功后 `authenticated=true` 且 `config.auth_state=ready`
 
 ### `POST /api/v1/storage/managed/quarktv/qr/start`
 启动托管 QuarkTV 扫码登录。

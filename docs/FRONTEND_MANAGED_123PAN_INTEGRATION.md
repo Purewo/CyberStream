@@ -89,6 +89,29 @@ Success response:
 
 The response never exposes OpenList `openlist_storage_id`, `mount_path`, the account password, or the localhost OpenList address.
 
+## Re-login Existing Source
+
+If a 123Pan login becomes invalid, do not create a new CyberStream source. Re-login on the existing source:
+
+```http
+POST /api/v1/storage/managed/123pan/login/restart
+Content-Type: application/json
+```
+
+```json
+{
+  "source_id": 12,
+  "username": "13800000000",
+  "password": "account-password"
+}
+```
+
+- `source_id` or `id`: required existing `123pan` source id.
+- `username` / `account` and `password`: required. CyberStream does not store the raw account or password, so the frontend must ask the user again.
+- `root_folder_id` and `platform`: optional. If omitted, backend keeps the existing source config.
+
+Success keeps the same `source.id`, returns `auth_state=ready`, and preserves existing resource indexes and library bindings.
+
 ## Preview After Login
 
 Use the normal saved-source browse endpoint:
@@ -123,7 +146,7 @@ Deleting a managed `123pan` source also best-effort deletes the corresponding lo
 
 ## Frontend Rules
 
-- Use exactly `/api/v1/storage/managed/123pan/login`.
+- Use exactly `/api/v1/storage/managed/123pan/login` for first login and `/api/v1/storage/managed/123pan/login/restart` for existing-source re-login.
 - Do not try `/v1/...`, `/managed/123Pan/...`, or generic `/storage/sources` creation for this managed provider.
 - Do not persist or display the password after submit.
 - Do not expose or persist OpenList `openlist_storage_id` or `mount_path`; backend strips them from response `source.config`.

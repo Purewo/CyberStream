@@ -137,6 +137,51 @@ class ManagedAliyundriveRouteTests(unittest.TestCase):
             FakeManagedOpenListClient.created_requests,
         )
 
+    def test_restart_qr_preserves_source_and_keeps_old_openlist_until_ready(self):
+        source = StorageSource(
+            name="Ali test",
+            type="aliyundrive",
+            config={
+                "openlist_storage_id": 187,
+                "mount_path": "/cyberstream/aliyundrive/old",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "root_folder_id": "root",
+                "drive_type": "resource",
+                "alipan_type": "default",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.id
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/aliyundrive/qr/restart",
+                json={"source_id": source_id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["qr_restarted"])
+        self.assertTrue(payload["data"]["qr_started"])
+        self.assertEqual("qr_pending", payload["data"]["auth_state"])
+        self.assertEqual(187, payload["data"]["replaced_openlist_storage_id"])
+        self.assertFalse(payload["data"]["old_openlist_storage_deleted"])
+        self.assertEqual(source_id, payload["data"]["source"]["id"])
+        self.assertEqual("qr_pending", payload["data"]["source"]["config"]["auth_state"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_scan"])
+        self.assertEqual([], FakeManagedOpenListClient.deleted_storage_ids)
+        self.assertEqual(
+            [{"root_folder_id": "root", "drive_type": "resource", "alipan_type": "default"}],
+            FakeManagedOpenListClient.created_requests,
+        )
+        saved = db.session.get(StorageSource, source_id)
+        self.assertEqual(187, saved.config["openlist_storage_id"])
+        self.assertEqual("ali-sid", saved.config["qr_sid"])
+        self.assertEqual("qr_pending", saved.config["auth_state"])
+        self.assertEqual(1, StorageSource.query.count())
+
     def test_poll_pending_keeps_source_locked_and_qr_session(self):
         source = StorageSource(
             name="Ali test",
@@ -186,6 +231,8 @@ class ManagedAliyundriveRouteTests(unittest.TestCase):
             name="Ali test",
             type="aliyundrive",
             config={
+                "openlist_storage_id": 187,
+                "mount_path": "/cyberstream/aliyundrive/old",
                 "auth_state": "qr_pending",
                 "cloud_root_path": "/",
                 "root_folder_id": "root",
@@ -230,6 +277,7 @@ class ManagedAliyundriveRouteTests(unittest.TestCase):
         self.assertEqual("ready", stored.config["auth_state"])
         self.assertNotIn("qr_sid", stored.config)
         self.assertNotIn("auth_provider", stored.config)
+        self.assertEqual([187], FakeManagedOpenListClient.deleted_storage_ids)
 
     def test_delete_ready_managed_source_removes_openlist_storage_best_effort(self):
         source = StorageSource(

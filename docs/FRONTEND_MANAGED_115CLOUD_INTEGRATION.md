@@ -76,6 +76,7 @@ Content-Type: application/json
       "config": {
         "auth_state": "qr_pending",
         "cloud_root_path": "/",
+        "root_folder_id": "0",
         "qrcode_source": "wechatmini"
       },
       "actions": {
@@ -99,6 +100,27 @@ Content-Type: application/json
 - 内部 OpenList storage id
 - 内部 OpenList mount path
 - 115 二维码 uid/sign/time
+
+## 2.1 重新登录已有来源
+
+如果 115 登录态失效或二维码过期后需要重新扫码，不要新建存储源。对原 `source.id` 重启二维码：
+
+```http
+POST /api/v1/storage/managed/115cloud/qr/restart
+Content-Type: application/json
+```
+
+```json
+{
+  "source_id": 12,
+  "qrcode_source": "wechatmini"
+}
+```
+
+- `source_id` / `id` 必填，必须是已有 `115cloud` 来源。
+- `qrcode_source`、`root_folder_id` 可选；不传则沿用当前 source 配置。
+
+成功后仍返回同一个 `source.id`，`auth_state=qr_pending`，前端继续调用 `qr/poll`。资源索引和媒体库绑定不会被重建。
 
 ## 3. 轮询扫码状态
 
@@ -196,7 +218,7 @@ Content-Type: application/json
 }
 ```
 
-前端应停止当前轮询，提示重新发起扫码。重新扫码走新的 `qr/start`。
+前端应停止当前轮询，提示重新发起扫码。已有来源重新扫码走 `qr/restart`，首次挂载才走 `qr/start`。
 
 ### 3.4 登录完成
 
@@ -254,7 +276,7 @@ DELETE /api/v1/storage/sources/{source_id}
 
 ## 6. 前端注意事项
 
-- 使用准确路径：`/api/v1/storage/managed/115cloud/qr/start` 和 `/api/v1/storage/managed/115cloud/qr/poll`
+- 使用准确路径：`/api/v1/storage/managed/115cloud/qr/start`、`/api/v1/storage/managed/115cloud/qr/restart` 和 `/api/v1/storage/managed/115cloud/qr/poll`
 - 不要猜 `/v1/...`、`/storage/managed/115/...`、`/storage/managed/115Cloud/...`
 - `qr_pending` 是正常轮询状态，业务码仍为 `200`
 - 只有 `auth_state=ready` 才能浏览、扫描、刷新和播放

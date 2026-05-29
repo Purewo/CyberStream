@@ -512,6 +512,7 @@ class ManagedOpenListClient(ManagedAListClient):
             "mount_path": storage.get("mount_path"),
             "cloud_type": addition.get("type") or "personal",
             "cloud_root_path": "/",
+            "root_folder_id": addition.get("root_folder_id") or "",
             "authenticated": bool(authenticated),
             "auth_state": "ready" if authenticated else "qr_pending",
         }
@@ -671,6 +672,7 @@ class ManagedOpenListClient(ManagedAListClient):
             "storage_id": int(storage_id),
             "mount_path": storage.get("mount_path"),
             "cloud_root_path": "/",
+            "root_folder_id": addition.get("root_folder_id") or "0",
             "qrcode_source": addition.get("qrcode_source") or self.DEFAULT_115_QRCODE_SOURCE,
             "authenticated": bool(authenticated),
             "auth_state": auth_state or ("ready" if authenticated else "qr_pending"),

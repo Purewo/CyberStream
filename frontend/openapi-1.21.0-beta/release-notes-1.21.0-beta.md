@@ -15,6 +15,7 @@
 - QuarkTV/UCTV 原始下载直链保留为兼容入口，但前端 Web 播放应优先使用 `cloud_transcode`，避免 raw download URL 无法在线播放。
 - QuarkTV/UCTV 挂载时 `link_method` 明确支持 `download` / `streaming` 用户选择；`source.config` 会返回当前选择。
 - 新增 `POST /api/v1/storage/managed/{quarktv|uctv}/qr/restart`，用于登录态被踢后在同一个 `source_id` 上重新扫码，不重建 CyberStream 存储源、不破坏资源索引和媒体库绑定。
+- 新增光鸭、天翼、115、阿里云盘、百度网盘、123Pan 的 existing-source 重新登录入口；前端应优先用 restart/relogin 保留原 `source_id`，不要为了重新授权创建新来源。
 
 ## 资源库影片筛选
 

@@ -33,8 +33,9 @@ class FakeManagedOpenListClient:
             "root_folder_id": root_folder_id,
             "platform": platform,
         })
+        storage_id = 123 + len(self.created_requests) - 1
         return {
-            "storage_id": 123,
+            "storage_id": storage_id,
             "mount_path": "/cyberstream/123pan/fake",
             "auth_state": "ready",
             "authenticated": True,
@@ -122,6 +123,57 @@ class Managed123PanRouteTests(unittest.TestCase):
         self.assertEqual(40001, payload["code"])
         self.assertIn("password", payload["msg"])
         self.assertEqual([], FakeManagedOpenListClient.created_requests)
+
+    def test_restart_login_replaces_openlist_storage_without_new_source(self):
+        source = StorageSource(
+            name="123 test",
+            type="123pan",
+            config={
+                "openlist_storage_id": 122,
+                "mount_path": "/cyberstream/123pan/old",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "root_folder_id": "0",
+                "account_name_masked": "13*****0000",
+                "platform": "web",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        source_id = source.id
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/123pan/login/restart",
+                json={
+                    "source_id": source_id,
+                    "username": "13800000000",
+                    "password": "secret",
+                },
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["login_restarted"])
+        self.assertTrue(payload["data"]["authenticated"])
+        self.assertEqual("ready", payload["data"]["auth_state"])
+        self.assertEqual(source_id, payload["data"]["source"]["id"])
+        self.assertEqual("13*****0000", payload["data"]["source"]["config"]["account_name_masked"])
+        self.assertTrue(payload["data"]["source"]["actions"]["can_scan"])
+        self.assertEqual([122], FakeManagedOpenListClient.deleted_storage_ids)
+        self.assertEqual(
+            [{
+                "username": "13800000000",
+                "password": "secret",
+                "root_folder_id": "0",
+                "platform": "web",
+            }],
+            FakeManagedOpenListClient.created_requests,
+        )
+        saved = db.session.get(StorageSource, source_id)
+        self.assertEqual(123, saved.config["openlist_storage_id"])
+        self.assertEqual("ready", saved.config["auth_state"])
+        self.assertEqual(1, StorageSource.query.count())
 
     def test_delete_managed_source_removes_openlist_storage_best_effort(self):
         source = StorageSource(

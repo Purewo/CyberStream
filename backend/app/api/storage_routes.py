@@ -121,6 +121,57 @@ def _managed_alist_error_response(error):
     return api_error(code=error.code, msg=error.message, http_status=http_status)
 
 
+def _parse_source_id(payload):
+    source_id = payload.get('source_id') or payload.get('id')
+    if not source_id:
+        return None, api_error(code=40001, msg="Missing required field: source_id")
+    try:
+        return int(source_id), None
+    except (TypeError, ValueError):
+        return None, api_error(code=40036, msg="Invalid field type: source_id should be integer")
+
+
+def _load_managed_source(payload, source_type, display_name):
+    source_id, error_response = _parse_source_id(payload)
+    if error_response:
+        return None, None, error_response
+    source = db.session.get(StorageSource, source_id)
+    if not source:
+        return source_id, None, api_error(code=40402, msg="Source not found", http_status=404)
+    if source.type != source_type:
+        return source_id, source, api_error(code=40061, msg=f"Storage source is not a managed {display_name} source")
+    return source_id, source, None
+
+
+def _config_int(config, key):
+    try:
+        value = int((config or {}).get(key) or 0)
+    except (TypeError, ValueError):
+        return None
+    return value or None
+
+
+def _delete_replaced_runtime_storage(client, display_name, source_id, storage_id, new_storage_id=None):
+    if not storage_id:
+        return False
+    try:
+        if new_storage_id is not None and int(storage_id) == int(new_storage_id):
+            return False
+    except (TypeError, ValueError):
+        pass
+    try:
+        client.delete_storage(storage_id)
+        return True
+    except Exception:
+        logger.exception(
+            "Delete replaced managed %s runtime storage failed source_id=%s storage_id=%s",
+            display_name,
+            source_id,
+            storage_id,
+        )
+        return False
+
+
 def _vault_error_response(error):
     return api_error(code=error.code, msg=error.msg, http_status=error.http_status)
 
@@ -142,6 +193,7 @@ def _build_tianyicloud_source_config(state, auth_state):
         "auth_state": auth_state,
         "cloud_type": state.get("cloud_type") or "personal",
         "cloud_root_path": state.get("cloud_root_path") or "/",
+        "root_folder_id": str(state.get("root_folder_id") or ""),
     }
 
 
@@ -151,6 +203,7 @@ def _build_115cloud_source_config(state, auth_state):
         "mount_path": state["mount_path"],
         "auth_state": auth_state,
         "cloud_root_path": state.get("cloud_root_path") or "/",
+        "root_folder_id": str(state.get("root_folder_id") or "0"),
         "qrcode_source": state.get("qrcode_source") or ManagedOpenListClient.DEFAULT_115_QRCODE_SOURCE,
     }
     for key in ("qr_uid", "qr_sign", "qr_time"):
@@ -238,6 +291,7 @@ def _oauth_html(title, message):
 
 def _complete_baidunetdisk_oauth_source(source, code):
     source_config = source.config or {}
+    old_storage_id = _config_int(source_config, "openlist_storage_id")
     callback_mode = str(source_config.get("oauth_callback_mode") or "redirect").strip().lower()
     redirect_uri = str(source_config.get("oauth_redirect_uri") or "").strip()
     if not redirect_uri:
@@ -255,6 +309,15 @@ def _complete_baidunetdisk_oauth_source(source, code):
         next_config.pop(key, None)
     source.config = normalize_source_config('baidunetdisk', next_config)
     db.session.commit()
+    old_storage_deleted = _delete_replaced_runtime_storage(
+        client,
+        "Baidu Netdisk",
+        source.id,
+        old_storage_id,
+        login_state.get("storage_id"),
+    )
+    login_state["replaced_openlist_storage_id"] = old_storage_id
+    login_state["old_openlist_storage_deleted"] = old_storage_deleted
     return login_state
 
 
@@ -428,6 +491,78 @@ def start_managed_guangyapan_sms():
         return api_error(code=50016, msg="Start GuangYaPan SMS login failed", http_status=500)
 
 
+@storage_bp.route('/storage/managed/guangyapan/sms/restart', methods=['POST'])
+def restart_managed_guangyapan_sms():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, 'guangyapan', 'GuangYaPan')
+    if error_response:
+        return error_response
+
+    phone_number = (payload.get('phone_number') or '').strip()
+    if not phone_number:
+        return api_error(code=40001, msg="Missing required field: phone_number")
+
+    source_config = source.config or {}
+    root_path = (
+        payload.get('root_path')
+        or payload.get('cloud_root_path')
+        or source_config.get("cloud_root_path")
+        or ""
+    )
+    root_path = str(root_path).strip()
+    captcha_token = (payload.get('captcha_token') or '').strip()
+    old_storage_id = _config_int(source_config, "alist_storage_id")
+
+    storage_state = None
+    old_storage_deleted = False
+    try:
+        client = ManagedAListClient()
+        storage_state = client.create_guangyapan_storage(
+            phone_number=phone_number,
+            root_path=root_path,
+            captcha_token=captcha_token,
+        )
+        next_config = dict(source_config)
+        next_config.update(_build_guangyapan_source_config(storage_state, auth_state='sms_pending'))
+        source.config = normalize_source_config('guangyapan', next_config)
+        db.session.commit()
+        old_storage_deleted = _delete_replaced_runtime_storage(
+            client,
+            "GuangYaPan",
+            source_id,
+            old_storage_id,
+            storage_state["storage_id"],
+        )
+        return api_response(data={
+            "verification_restarted": True,
+            "verification_sent": True,
+            "auth_state": "sms_pending",
+            "replaced_alist_storage_id": old_storage_id,
+            "old_alist_storage_deleted": old_storage_deleted,
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedAListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed AList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedAListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed AList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Restart managed GuangYaPan SMS failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50016, msg="Restart GuangYaPan SMS login failed", http_status=500)
+
+
 @storage_bp.route('/storage/managed/guangyapan/sms/verify', methods=['POST'])
 def verify_managed_guangyapan_sms():
     payload = _get_json_payload()
@@ -534,6 +669,73 @@ def start_managed_tianyicloud_qr():
         return api_error(code=50018, msg="Start TianYiCloud QR login failed", http_status=500)
 
 
+@storage_bp.route('/storage/managed/tianyicloud/qr/restart', methods=['POST'])
+def restart_managed_tianyicloud_qr():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, 'tianyicloud', 'TianYiCloud')
+    if error_response:
+        return error_response
+
+    source_config = source.config or {}
+    cloud_type = str(payload.get('cloud_type') or source_config.get("cloud_type") or 'personal').strip().lower()
+    root_folder_id = str(
+        payload.get('root_folder_id')
+        if payload.get('root_folder_id') is not None
+        else source_config.get("root_folder_id") or ''
+    ).strip()
+    old_storage_id = _config_int(source_config, "openlist_storage_id")
+
+    storage_state = None
+    old_storage_deleted = False
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_tianyicloud_storage(
+            root_folder_id=root_folder_id,
+            cloud_type=cloud_type,
+        )
+        next_config = dict(source_config)
+        next_config.update(_build_tianyicloud_source_config(storage_state, auth_state='qr_pending'))
+        source.config = normalize_source_config('tianyicloud', next_config)
+        db.session.commit()
+        old_storage_deleted = _delete_replaced_runtime_storage(
+            client,
+            "TianYiCloud",
+            source_id,
+            old_storage_id,
+            storage_state["storage_id"],
+        )
+        return api_response(data={
+            "qr_restarted": True,
+            "qr_started": True,
+            "auth_state": "qr_pending",
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": old_storage_deleted,
+            "qr_code_data_url": storage_state["qr_code_data_url"],
+            "qr_content": storage_state.get("qr_content"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Restart managed TianYiCloud QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50018, msg="Restart TianYiCloud QR login failed", http_status=500)
+
+
 @storage_bp.route('/storage/managed/tianyicloud/qr/poll', methods=['POST'])
 def poll_managed_tianyicloud_qr():
     payload = _get_json_payload()
@@ -577,6 +779,7 @@ def poll_managed_tianyicloud_qr():
             "mount_path": login_state["mount_path"],
             "auth_state": "ready",
             "cloud_type": login_state.get("cloud_type") or source_config.get("cloud_type") or "personal",
+            "root_folder_id": str(login_state.get("root_folder_id") or source_config.get("root_folder_id") or ""),
         })
         source.config = normalize_source_config('tianyicloud', next_config)
         db.session.commit()
@@ -655,6 +858,80 @@ def start_managed_115cloud_qr():
         return api_error(code=50022, msg="Start 115 Cloud QR login failed", http_status=500)
 
 
+@storage_bp.route('/storage/managed/115cloud/qr/restart', methods=['POST'])
+def restart_managed_115cloud_qr():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, '115cloud', '115 Cloud')
+    if error_response:
+        return error_response
+
+    source_config = source.config or {}
+    root_folder_id = str(
+        payload.get('root_folder_id')
+        if payload.get('root_folder_id') is not None
+        else source_config.get("root_folder_id") or ''
+    ).strip()
+    qrcode_source = str(
+        payload.get('qrcode_source')
+        or source_config.get("qrcode_source")
+        or ManagedOpenListClient.DEFAULT_115_QRCODE_SOURCE
+    ).strip().lower()
+    old_storage_id = _config_int(source_config, "openlist_storage_id")
+
+    storage_state = None
+    old_storage_deleted = False
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_115cloud_storage(
+            root_folder_id=root_folder_id,
+            qrcode_source=qrcode_source,
+        )
+        auth_state = storage_state.get("auth_state") or "qr_pending"
+        next_config = dict(source_config)
+        next_config.update(_build_115cloud_source_config(storage_state, auth_state=auth_state))
+        source.config = normalize_source_config('115cloud', next_config)
+        db.session.commit()
+        old_storage_deleted = _delete_replaced_runtime_storage(
+            client,
+            "115 Cloud",
+            source_id,
+            old_storage_id,
+            storage_state["storage_id"],
+        )
+        data = {
+            "qr_restarted": True,
+            "qr_started": auth_state != "ready",
+            "auth_state": auth_state,
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": old_storage_deleted,
+            "source": source.to_dict(),
+        }
+        if storage_state.get("qr_code_data_url"):
+            data["qr_code_data_url"] = storage_state["qr_code_data_url"]
+            data["qr_content"] = storage_state.get("qr_content")
+        return api_response(data=data)
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Restart managed 115 Cloud QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50022, msg="Restart 115 Cloud QR login failed", http_status=500)
+
+
 @storage_bp.route('/storage/managed/115cloud/qr/poll', methods=['POST'])
 def poll_managed_115cloud_qr():
     payload = _get_json_payload()
@@ -697,6 +974,7 @@ def poll_managed_115cloud_qr():
                 "mount_path": login_state.get("mount_path") or source_config.get("mount_path"),
                 "auth_state": auth_state,
                 "cloud_root_path": login_state.get("cloud_root_path") or source_config.get("cloud_root_path") or "/",
+                "root_folder_id": str(login_state.get("root_folder_id") or source_config.get("root_folder_id") or "0"),
                 "qrcode_source": (
                     login_state.get("qrcode_source")
                     or source_config.get("qrcode_source")
@@ -724,6 +1002,7 @@ def poll_managed_115cloud_qr():
             "mount_path": login_state["mount_path"],
             "auth_state": "ready",
             "cloud_root_path": login_state.get("cloud_root_path") or source_config.get("cloud_root_path") or "/",
+            "root_folder_id": str(login_state.get("root_folder_id") or source_config.get("root_folder_id") or "0"),
             "qrcode_source": (
                 login_state.get("qrcode_source")
                 or source_config.get("qrcode_source")
@@ -798,6 +1077,59 @@ def start_managed_aliyundrive_qr():
         return api_error(code=50024, msg="Start Aliyundrive QR login failed", http_status=500)
 
 
+@storage_bp.route('/storage/managed/aliyundrive/qr/restart', methods=['POST'])
+def restart_managed_aliyundrive_qr():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, 'aliyundrive', 'Aliyundrive')
+    if error_response:
+        return error_response
+
+    source_config = source.config or {}
+    root_folder_id = str(
+        payload.get('root_folder_id')
+        if payload.get('root_folder_id') is not None
+        else source_config.get("root_folder_id") or 'root'
+    ).strip()
+    drive_type = str(payload.get('drive_type') or source_config.get("drive_type") or 'resource').strip().lower()
+    alipan_type = str(payload.get('alipan_type') or source_config.get("alipan_type") or 'default').strip()
+    old_storage_id = _config_int(source_config, "openlist_storage_id")
+
+    try:
+        client = ManagedOpenListClient()
+        login_state = client.start_aliyundrive_qr(
+            root_folder_id=root_folder_id,
+            drive_type=drive_type,
+            alipan_type=alipan_type,
+        )
+        next_config = dict(source_config)
+        next_config.update(_build_aliyundrive_source_config(login_state, auth_state='qr_pending'))
+        source.config = normalize_source_config('aliyundrive', next_config)
+        db.session.commit()
+        return api_response(data={
+            "qr_restarted": True,
+            "qr_started": True,
+            "auth_state": "qr_pending",
+            "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+            "qr_status": login_state.get("qr_status"),
+            "qr_code_url": login_state["qr_code_url"],
+            "qr_code_data_url": login_state["qr_code_data_url"],
+            "qr_content": login_state.get("qr_content"),
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": False,
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Restart managed Aliyundrive QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50024, msg="Restart Aliyundrive QR login failed", http_status=500)
+
+
 @storage_bp.route('/storage/managed/aliyundrive/qr/poll', methods=['POST'])
 def poll_managed_aliyundrive_qr():
     payload = _get_json_payload()
@@ -818,6 +1150,7 @@ def poll_managed_aliyundrive_qr():
 
     try:
         source_config = source.config or {}
+        old_storage_id = _config_int(source_config, "openlist_storage_id")
         if str(source_config.get("auth_state") or "").strip().lower() == "ready":
             return api_response(data={
                 "authenticated": True,
@@ -860,10 +1193,19 @@ def poll_managed_aliyundrive_qr():
             next_config.pop(key, None)
         source.config = normalize_source_config('aliyundrive', next_config)
         db.session.commit()
+        old_storage_deleted = _delete_replaced_runtime_storage(
+            client,
+            "Aliyundrive",
+            source_id,
+            old_storage_id,
+            login_state.get("storage_id"),
+        )
         return api_response(data={
             "authenticated": True,
             "auth_state": "ready",
             "qr_status": login_state.get("qr_status"),
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": old_storage_deleted,
             "source": source.to_dict(),
         })
     except ManagedAListError as e:
@@ -926,6 +1268,66 @@ def start_managed_baidunetdisk_oauth():
         db.session.rollback()
         logger.exception("Start managed Baidu Netdisk OAuth failed error=%s", e)
         return api_error(code=50026, msg="Start Baidu Netdisk OAuth failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/baidunetdisk/oauth/restart', methods=['POST'])
+def restart_managed_baidunetdisk_oauth():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, 'baidunetdisk', 'Baidu Netdisk')
+    if error_response:
+        return error_response
+
+    source_config = source.config or {}
+    root_path = str(
+        payload.get('root_path')
+        or payload.get('cloud_root_path')
+        or payload.get('root_folder_path')
+        or source_config.get("root_folder_path")
+        or source_config.get("cloud_root_path")
+        or ''
+    ).strip()
+    download_api = str(payload.get('download_api') or source_config.get("download_api") or 'official').strip().lower()
+    old_storage_id = _config_int(source_config, "openlist_storage_id")
+
+    try:
+        redirect_uri = api_url_for("storage.callback_managed_baidunetdisk_oauth")
+        client = ManagedOpenListClient()
+        oauth_state = client.start_baidunetdisk_oauth(
+            redirect_uri=redirect_uri,
+            root_path=root_path,
+            download_api=download_api,
+        )
+        next_config = dict(source_config)
+        next_config.update(_build_baidunetdisk_source_config(oauth_state, auth_state='oauth_pending'))
+        next_config.pop("oauth_error", None)
+        source.config = normalize_source_config('baidunetdisk', next_config)
+        db.session.commit()
+        return api_response(data={
+            "oauth_restarted": True,
+            "oauth_started": True,
+            "auth_state": "oauth_pending",
+            "pending_reason": oauth_state.get("pending_reason") or "waiting_for_authorization",
+            "authorization_url": oauth_state["authorization_url"],
+            "callback_url": None if oauth_state.get("requires_authorization_code") else redirect_uri,
+            "callback_mode": oauth_state.get("callback_mode") or "redirect",
+            "requires_authorization_code": bool(oauth_state.get("requires_authorization_code")),
+            "authorization_code_submit_url": api_url_for("storage.complete_managed_baidunetdisk_oauth")
+            if oauth_state.get("requires_authorization_code")
+            else None,
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": False,
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Restart managed Baidu Netdisk OAuth failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50026, msg="Restart Baidu Netdisk OAuth failed", http_status=500)
 
 
 @storage_bp.route('/storage/managed/baidunetdisk/oauth/poll', methods=['POST'])
@@ -1000,10 +1402,12 @@ def complete_managed_baidunetdisk_oauth():
         })
 
     try:
-        _complete_baidunetdisk_oauth_source(source, authorization_code)
+        login_state = _complete_baidunetdisk_oauth_source(source, authorization_code)
         return api_response(data={
             "authenticated": True,
             "auth_state": "ready",
+            "replaced_openlist_storage_id": login_state.get("replaced_openlist_storage_id"),
+            "old_openlist_storage_deleted": bool(login_state.get("old_openlist_storage_deleted")),
             "source": source.to_dict(),
         })
     except ManagedAListError as e:
@@ -1144,6 +1548,80 @@ def login_managed_123pan():
                 logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
         logger.exception("Login managed 123Pan failed error=%s", e)
         return api_error(code=50028, msg="Login 123Pan failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/123pan/login/restart', methods=['POST'])
+def restart_managed_123pan_login():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, '123pan', '123Pan')
+    if error_response:
+        return error_response
+
+    username = str(payload.get('username') or payload.get('account') or '').strip()
+    password = str(payload.get('password') or '')
+    if not username:
+        return api_error(code=40001, msg="Missing required field: username")
+    if not password:
+        return api_error(code=40001, msg="Missing required field: password")
+
+    source_config = source.config or {}
+    root_folder_id = str(
+        payload.get('root_folder_id')
+        if payload.get('root_folder_id') is not None
+        else source_config.get("root_folder_id") or ''
+    ).strip()
+    platform = str(payload.get('platform') or source_config.get("platform") or 'web').strip()
+    old_storage_id = _config_int(source_config, "openlist_storage_id")
+
+    storage_state = None
+    old_storage_deleted = False
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_123pan_storage(
+            username=username,
+            password=password,
+            root_folder_id=root_folder_id,
+            platform=platform,
+        )
+        next_config = dict(source_config)
+        next_config.update(_build_123pan_source_config(storage_state, auth_state='ready'))
+        source.config = normalize_source_config('123pan', next_config)
+        db.session.commit()
+        old_storage_deleted = _delete_replaced_runtime_storage(
+            client,
+            "123Pan",
+            source_id,
+            old_storage_id,
+            storage_state["storage_id"],
+        )
+        return api_response(data={
+            "login_restarted": True,
+            "authenticated": True,
+            "auth_state": "ready",
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": old_storage_deleted,
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Restart managed 123Pan login failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50028, msg="Restart 123Pan login failed", http_status=500)
 
 
 def _start_managed_quark_uc_qr(source_type):
