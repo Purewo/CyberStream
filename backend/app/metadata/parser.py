@@ -25,6 +25,9 @@ class PathMetadataParser:
         )
         self.re_episode = re.compile(r'(?i)(?:E|EP|第)\s*(\d+)(?:集)?(?=[\s._\-]|$)')
         self.re_s_e = re.compile(r'(?i)S(\d+)[.\s_-]*E(\d+)')
+        self.re_s_parenthesized_episode = re.compile(
+            r'(?i)(?<![A-Z0-9])S(?P<season>\d{1,2})(?!\d)[\s._-]*[\(\[（【]\s*0*(?P<episode>\d{1,3})\s*[\)\]）】]'
+        )
         self.re_inline_chinese_season_episode = re.compile(
             r'(?i)^(?P<title>.+?)(?<!\d)(?:[\s._\-]*第\s*)?'
             r'(?P<season>\d{1,2}|[一二三四五六七八九十]{1,3})'
@@ -107,6 +110,7 @@ class PathMetadataParser:
         if not text:
             return ""
         text = self.re_year.sub('', text)
+        text = self.re_s_parenthesized_episode.sub(' ', text)
         text = re.sub(r'(?i)(?:Season|S|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Part|Vol)?', ' ', text)
         text = self.re_noise.sub('', text)
         text = re.sub(r'\[.*?\]', '', text)
@@ -180,6 +184,7 @@ class PathMetadataParser:
             return inline["title"]
 
         name = (filename or '').rsplit('.', 1)[0]
+        name = self.re_s_parenthesized_episode.sub(' ', name)
         name = self.re_episode_token.sub(' ', name)
         name = re.sub(r'^\d+[\s\.]+', '', name)
         return self.clean_name(name)
@@ -188,6 +193,13 @@ class PathMetadataParser:
         m1 = self.re_s_e.search(filename)
         if m1:
             return int(m1.group(1)), int(m1.group(2))
+
+        m1b = self.re_s_parenthesized_episode.search(filename)
+        if m1b:
+            season = int(m1b.group('season'))
+            episode = int(m1b.group('episode'))
+            if 1 <= season <= 99 and 1 <= episode <= 200:
+                return season, episode
 
         inline = self.extract_inline_chinese_season_episode(filename)
         if inline:

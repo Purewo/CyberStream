@@ -152,6 +152,21 @@ class ManualContentRoutesTests(unittest.TestCase):
         self.assertIn(episode_movie.id, review_movie_ids)
         self.assertFalse(queue_movie_ids & review_movie_ids)
 
+    def test_other_videos_excludes_pending_review_movies(self):
+        pending_movie = self._movie("Pending Raw", scraper_source="LOCAL_FALLBACK")
+        pending_movie.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PENDING_REVIEW
+        db.session.commit()
+        pending_resource = self._resource(pending_movie, "raw/Pending.Raw.mp4")
+
+        queue_response = self.client.get("/api/v1/other-videos?page_size=20")
+
+        self.assertEqual(200, queue_response.status_code)
+        queue_resource_ids = {
+            item["resource_id"]
+            for item in queue_response.get_json()["data"]["items"]
+        }
+        self.assertNotIn(pending_resource.id, queue_resource_ids)
+
     def test_other_videos_exposes_metadata_match_actions(self):
         movie = self._movie("旧占位标题")
         resource = self._resource(movie, "电影合集/Star.Wars.1977.2160p.mkv")

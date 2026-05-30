@@ -44,8 +44,7 @@ Request body:
 ```json
 {
   "name": "QuarkTV",
-  "root_folder_id": "0",
-  "link_method": "download"
+  "root_folder_id": "0"
 }
 ```
 
@@ -53,9 +52,8 @@ Fields:
 
 - `name` or `source_name`: optional source display name.
 - `root_folder_id`: optional OpenList root folder id. Default is `0`.
-- `link_method`: optional, `download` or `streaming`. Default is `download`. The frontend should expose this as a user choice when mounting QuarkTV:
-  - `download`: OpenList download link mode.
-  - `streaming`: OpenList streaming link mode. For Web/Android playback, prefer this as the UI default.
+
+Do not expose a download/streaming mount-mode selector. CyberStream always creates the OpenList QuarkTV mount in `download` mode so `/api/v1/resources/{id}/stream` remains the original-file path for PC/external players. Web playback uses the separate `playback.cloud_transcode` contract returned per resource.
 
 Success response:
 
@@ -73,8 +71,7 @@ Success response:
       "config": {
         "auth_state": "qr_pending",
         "cloud_root_path": "/",
-        "root_folder_id": "0",
-        "link_method": "download"
+        "root_folder_id": "0"
       },
       "actions": {
         "can_preview": false,
@@ -141,8 +138,7 @@ Ready response:
       "config": {
         "auth_state": "ready",
         "cloud_root_path": "/",
-        "root_folder_id": "0",
-        "link_method": "download"
+        "root_folder_id": "0"
       },
       "actions": {
         "can_preview": true,
@@ -170,15 +166,13 @@ Request body:
 
 ```json
 {
-  "source_id": 12,
-  "link_method": "streaming"
+  "source_id": 12
 }
 ```
 
 Fields:
 
 - `source_id` or `id`: required existing CyberStream QuarkTV source id.
-- `link_method`: optional, `download` or `streaming`. If omitted, backend keeps the source's previous `config.link_method`.
 - `root_folder_id`: optional. If omitted, backend keeps the source's previous `config.root_folder_id`.
 
 Success response:
@@ -200,8 +194,7 @@ Success response:
       "config": {
         "auth_state": "qr_pending",
         "cloud_root_path": "/",
-        "root_folder_id": "0",
-        "link_method": "streaming"
+        "root_folder_id": "0"
       },
       "actions": {
         "can_preview": false,
@@ -242,7 +235,12 @@ For pure preview before creating a media library, call saved-source browse. For 
 
 CyberStream resolves the local OpenList `/d` redirect and returns the final provider URL to the frontend. Clients must play the URL returned by CyberStream playback APIs; they never receive or need the localhost OpenList address.
 
-QuarkTV/UCTV raw download links are not reliable for web playback. For video playback UI, prefer the cloud transcoding contract exposed in `playback.cloud_transcode`.
+QuarkTV/UCTV expose two playback interfaces at the same time:
+
+- PC/external player original file: use `playback.external_player.url` or `playback.stream_url`, both point to `/api/v1/resources/{resource_id}/stream`.
+- Web player cloud transcode: use `playback.cloud_transcode.qualities_endpoint`, then play `items[].stream_url` or `playback.cloud_transcode.stream_endpoint?resolution=...`.
+
+Do not create a second QuarkTV/UCTV mount to get both modes. A second mount can consume another TV-device slot and trigger provider device-limit errors.
 
 Resource playback payload:
 
@@ -251,6 +249,17 @@ Resource playback payload:
   "playback": {
     "storage_type": "quarktv",
     "stream_url": "/api/v1/resources/{resource_id}/stream",
+    "web_player": {
+      "supported": false,
+      "url": null,
+      "reason": "quark_uc_raw_download_not_web_playable",
+      "recommended_action": "use_cloud_transcode"
+    },
+    "external_player": {
+      "supported": true,
+      "url": "/api/v1/resources/{resource_id}/stream",
+      "url_type": "http_stream"
+    },
     "cloud_transcode": {
       "supported": true,
       "provider": "quarktv",
@@ -259,7 +268,9 @@ Resource playback payload:
       "qualities_endpoint": "/api/v1/resources/{resource_id}/streaming-qualities",
       "stream_endpoint": "/api/v1/resources/{resource_id}/stream-transcoded",
       "resolution_param": "resolution",
-      "available_resolutions": ["low", "normal", "high", "super", "2k", "4k"]
+      "available_resolutions": ["low", "normal", "high", "super", "2k", "4k"],
+      "recommended_for": ["web_player"],
+      "quality_semantics": "provider_cloud_transcode_not_original_file"
     },
     "warnings": [
       {
@@ -276,6 +287,10 @@ Fetch available provider transcoding qualities:
 ```http
 GET /api/v1/resources/{resource_id}/streaming-qualities
 ```
+
+This endpoint is shared by every provider that supports CyberStream `playback.cloud_transcode`.
+For QuarkTV/UCTV the valid resolution keys are `low`, `normal`, `high`, `super`, `2k`, and `4k`.
+Other providers, such as Aliyundrive, use their own keys; frontend code should always read `items[].resolution` from the response instead of hard-coding a global enum.
 
 Response fields:
 
@@ -354,7 +369,7 @@ Deleting a managed `quarktv` or `uctv` source also best-effort deletes the corre
 ## Errors
 
 - `40001`: missing required field, usually `source_id`.
-- `40036`: invalid field type or invalid enum, for example `link_method`.
+- `40036`: invalid field type or invalid enum.
 - `40061`: wrong source type, missing internal OpenList storage id, or source not ready.
 - `40074`: resource source does not support cloud transcoding.
 - `40075`: unsupported transcoding resolution or empty resource path.
@@ -370,4 +385,6 @@ Deleting a managed `quarktv` or `uctv` source also best-effort deletes the corre
 - Do not try `/v1/...`, `/managed/QuarkTV/...`, or generic `/storage/sources` creation for these managed providers.
 - Do not expose or persist OpenList `openlist_storage_id` or `mount_path`; backend strips them from response `source.config`.
 - Treat `actions` as the authority for whether preview, scan, stream, or refresh buttons are enabled.
-- For QuarkTV/UCTV playback, prefer `playback.cloud_transcode.qualities_endpoint` and play `items[].stream_url`; raw `playback.stream_url` is still present for compatibility but may not play in web players.
+- For QuarkTV/UCTV Web playback, use `playback.cloud_transcode.qualities_endpoint` and play `items[].stream_url`.
+- For QuarkTV/UCTV PC/external playback, use `playback.external_player.url` or `playback.stream_url`; this is the original-file path.
+- Do not show a mount-time `download`/`streaming` selector and do not create duplicate QuarkTV/UCTV sources for playback mode switching.

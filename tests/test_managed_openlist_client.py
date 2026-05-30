@@ -93,13 +93,85 @@ class FakeOpenListSession:
         })
 
 
+class FakeTianYiCloudPCOpenListSession:
+    def __init__(self, create_qr=True, poll_ready=False, pending_message="QR code has not been scanned yet"):
+        self.headers = {}
+        self.trust_env = True
+        self.create_qr = create_qr
+        self.poll_ready = poll_ready
+        self.pending_message = pending_message
+        self.deleted = []
+        self.updated = False
+        self.created_payload = None
+
+    def post(self, url, json=None, params=None, headers=None, timeout=None, verify=None):
+        if url.endswith("/api/admin/storage/create"):
+            self.created_payload = json
+            if self.create_qr:
+                return FakeResponse({"code": 500, "message": QR_MESSAGE, "data": {"id": 188}})
+            return FakeResponse({"code": 500, "message": "driver init failed", "data": {"id": 188}})
+        if url.endswith("/api/admin/storage/update"):
+            self.updated = True
+            if self.poll_ready:
+                return FakeResponse({"code": 200, "data": None})
+            return FakeResponse({"code": 500, "message": self.pending_message, "data": None})
+        if url.endswith("/api/admin/storage/delete"):
+            self.deleted.append(int(params["id"]))
+            return FakeResponse({"code": 200, "data": None})
+        raise AssertionError(url)
+
+    def get(self, url, params=None, headers=None, timeout=None, verify=None):
+        if not url.endswith("/api/admin/storage/get"):
+            raise AssertionError(url)
+        addition = {
+            "login_type": "qrcode",
+            "username": "",
+            "password": "",
+            "validate_code": "",
+            "access_token": "pc-access" if self.updated and self.poll_ready else "",
+            "refresh_token": "pc-refresh" if self.updated and self.poll_ready else "",
+            "root_folder_id": "-11",
+            "order_by": "filename",
+            "order_direction": "asc",
+            "type": "personal",
+            "family_id": "",
+            "upload_method": "stream",
+            "upload_thread": "3",
+            "family_transfer": False,
+            "rapid_upload": False,
+            "no_use_ocr": True,
+            "generate_torrent": False,
+        }
+        return FakeResponse({
+            "code": 200,
+            "data": {
+                "id": int(params["id"]),
+                "driver": "189CloudPC",
+                "mount_path": "/cyberstream/tianyicloud-pc/test",
+                "status": QR_MESSAGE if not addition["access_token"] else "work",
+                "addition": json.dumps(addition),
+            },
+        })
+
+
 class FakeQuarkUCTVOpenListSession:
-    def __init__(self, driver="QuarkTV", create_qr=True, poll_ready=False):
+    def __init__(
+        self,
+        driver="QuarkTV",
+        create_qr=True,
+        poll_ready=False,
+        pending_message="code is empty",
+        pending_status=QUARK_UC_QR_MESSAGE,
+        ready_status="work",
+    ):
         self.headers = {}
         self.trust_env = True
         self.driver = driver
         self.create_qr = create_qr
         self.poll_ready = poll_ready
+        self.pending_message = pending_message
+        self.pending_status = pending_status
+        self.ready_status = ready_status
         self.deleted = []
         self.updated = False
         self.created_payload = None
@@ -114,7 +186,7 @@ class FakeQuarkUCTVOpenListSession:
             self.updated = True
             if self.poll_ready:
                 return FakeResponse({"code": 200, "data": None})
-            return FakeResponse({"code": 500, "message": "code is empty", "data": None})
+            return FakeResponse({"code": 500, "message": self.pending_message, "data": None})
         if url.endswith("/api/admin/storage/delete"):
             self.deleted.append(int(params["id"]))
             return FakeResponse({"code": 200, "data": None})
@@ -139,7 +211,7 @@ class FakeQuarkUCTVOpenListSession:
                 "id": int(params["id"]),
                 "driver": self.driver,
                 "mount_path": f"/cyberstream/{self.driver.lower()}/test",
-                "status": QUARK_UC_QR_MESSAGE if not addition["refresh_token"] else "work",
+                "status": self.pending_status if not addition["refresh_token"] else self.ready_status,
                 "addition": json.dumps(addition),
             },
         })
@@ -488,7 +560,62 @@ class ManagedOpenListClientTests(unittest.TestCase):
         self.assertEqual("ready", state["auth_state"])
         self.assertEqual("/cyberstream/tianyicloud/test", state["mount_path"])
 
-    def test_quarktv_qr_start_extracts_data_url_and_keeps_openlist_storage(self):
+    def test_pc_qr_start_uses_189cloudpc_driver(self):
+        session = FakeTianYiCloudPCOpenListSession(create_qr=True)
+        client = self.create_client(session)
+
+        started = client.create_tianyicloud_pc_qr_storage()
+
+        self.assertEqual(188, started["storage_id"])
+        self.assertEqual("pc_qr", started["login_mode"])
+        self.assertEqual("qr_pending", started["auth_state"])
+        self.assertEqual("data:image/jpeg;base64,ZmFrZS1xcg==", started["qr_code_data_url"])
+        self.assertEqual("qr-uuid", started["qr_content"])
+        self.assertEqual("/cyberstream/tianyicloud-pc/test", started["mount_path"])
+        self.assertEqual("189CloudPC", session.created_payload["driver"])
+        addition = json.loads(session.created_payload["addition"])
+        self.assertEqual("qrcode", addition["login_type"])
+        self.assertEqual("-11", addition["root_folder_id"])
+        self.assertEqual([], session.deleted)
+
+    def test_pc_qr_poll_reports_pending_until_scan_finishes(self):
+        session = FakeTianYiCloudPCOpenListSession(poll_ready=False)
+        client = self.create_client(session)
+
+        state = client.poll_tianyicloud_pc_qr_storage(188)
+
+        self.assertFalse(state["authenticated"])
+        self.assertEqual("qr_pending", state["auth_state"])
+        self.assertEqual("pc_qr", state["login_mode"])
+        self.assertEqual("waiting_for_scan", state["pending_reason"])
+        self.assertEqual("data:image/jpeg;base64,ZmFrZS1xcg==", state["qr_code_data_url"])
+        self.assertTrue(session.updated)
+
+    def test_pc_qr_poll_marks_ready_after_openlist_update_succeeds(self):
+        session = FakeTianYiCloudPCOpenListSession(poll_ready=True)
+        client = self.create_client(session)
+
+        state = client.poll_tianyicloud_pc_qr_storage(188)
+
+        self.assertTrue(state["authenticated"])
+        self.assertEqual("ready", state["auth_state"])
+        self.assertEqual("pc_qr", state["login_mode"])
+        self.assertEqual("/cyberstream/tianyicloud-pc/test", state["mount_path"])
+
+    def test_pc_qr_poll_reports_expired_state(self):
+        session = FakeTianYiCloudPCOpenListSession(
+            poll_ready=False,
+            pending_message="QR code expired, please try again",
+        )
+        client = self.create_client(session)
+
+        state = client.poll_tianyicloud_pc_qr_storage(188)
+
+        self.assertFalse(state["authenticated"])
+        self.assertEqual("qr_expired", state["auth_state"])
+        self.assertEqual("qr_expired", state["pending_reason"])
+
+    def test_quarktv_qr_start_extracts_data_url_and_forces_download_link_method(self):
         session = FakeQuarkUCTVOpenListSession(driver="QuarkTV", create_qr=True)
         client = self.create_client(session)
 
@@ -498,8 +625,12 @@ class ManagedOpenListClientTests(unittest.TestCase):
         self.assertEqual("qr_pending", started["auth_state"])
         self.assertEqual("data:image/jpeg;base64,cXVhcmstdWMtcXI=", started["qr_code_data_url"])
         self.assertIsNone(started["qr_content"])
-        self.assertEqual("streaming", started["link_method"])
+        self.assertEqual("download", started["link_method"])
         self.assertEqual("QuarkTV", session.created_payload["driver"])
+        self.assertEqual(
+            "download",
+            json.loads(session.created_payload["addition"])["link_method"],
+        )
         self.assertIn("/quarktv/", session.created_payload["mount_path"])
         self.assertEqual([], session.deleted)
 
@@ -533,6 +664,55 @@ class ManagedOpenListClientTests(unittest.TestCase):
         self.assertEqual("qr_pending", state["auth_state"])
         self.assertEqual("waiting_for_scan", state["pending_reason"])
         self.assertEqual("data:image/jpeg;base64,cXVhcmstdWMtcXI=", state["qr_code_data_url"])
+        self.assertTrue(session.updated)
+
+    def test_quark_uc_qr_poll_treats_chinese_unconfirmed_authorization_as_pending(self):
+        session = FakeQuarkUCTVOpenListSession(
+            driver="QuarkTV",
+            poll_ready=False,
+            pending_message="failed init storage: 用户未确认授权",
+            pending_status="用户未确认授权",
+        )
+        client = self.create_client(session)
+
+        state = client.poll_quark_uc_tv_storage(99, "quarktv")
+
+        self.assertFalse(state["authenticated"])
+        self.assertEqual("qr_pending", state["auth_state"])
+        self.assertEqual("waiting_for_scan", state["pending_reason"])
+        self.assertNotIn("qr_code_data_url", state)
+        self.assertTrue(session.updated)
+
+    def test_quark_uc_qr_poll_reports_chinese_expired_qr_code(self):
+        session = FakeQuarkUCTVOpenListSession(
+            driver="QuarkTV",
+            poll_ready=False,
+            pending_message="failed init storage: 授权码Code二维码过期",
+            pending_status="授权码Code二维码过期",
+        )
+        client = self.create_client(session)
+
+        state = client.poll_quark_uc_tv_storage(99, "quarktv")
+
+        self.assertFalse(state["authenticated"])
+        self.assertEqual("qr_expired", state["auth_state"])
+        self.assertEqual("qr_expired", state["pending_reason"])
+        self.assertNotIn("qr_code_data_url", state)
+        self.assertTrue(session.updated)
+
+    def test_quark_uc_qr_poll_reports_device_limit_after_token_update(self):
+        session = FakeQuarkUCTVOpenListSession(
+            driver="QuarkTV",
+            poll_ready=True,
+            ready_status="\u8bbe\u5907\u6570\u8d85\u9650",
+        )
+        client = self.create_client(session)
+
+        state = client.poll_quark_uc_tv_storage(99, "quarktv")
+
+        self.assertFalse(state["authenticated"])
+        self.assertEqual("device_limit", state["auth_state"])
+        self.assertEqual("device_limit", state["pending_reason"])
         self.assertTrue(session.updated)
 
     def test_quark_uc_qr_poll_marks_ready_after_openlist_update_succeeds(self):
@@ -688,7 +868,7 @@ class ManagedOpenListClientTests(unittest.TestCase):
         self.assertEqual("oauth_pending", started["auth_state"])
         self.assertEqual("waiting_for_authorization", started["pending_reason"])
         self.assertEqual("/电影", started["root_folder_path"])
-        self.assertEqual("official", started["download_api"])
+        self.assertEqual("crack_video", started["download_api"])
         self.assertIn("https://openapi.baidu.com/oauth/2.0/authorize?", started["authorization_url"])
         self.assertIn("client_id=baidu-client-id", started["authorization_url"])
         self.assertIn(

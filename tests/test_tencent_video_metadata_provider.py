@@ -27,10 +27,11 @@ class FakeTencentResponse:
 
 
 class FakeTencentSession:
-    def __init__(self):
+    def __init__(self, cover_page_text=None):
         self.trust_env = True
         self.posts = []
         self.gets = []
+        self.cover_page_text = cover_page_text
 
     def post(self, url, headers=None, json=None, timeout=None):
         self.posts.append({
@@ -49,19 +50,20 @@ class FakeTencentSession:
                         {
                             "doc": {"dataType": 2, "id": "mzc00200z195unq"},
                             "videoInfo": {
-                                "title": "诛仙 第3季",
+                                "title": "Immortal S03",
                                 "year": 2025,
-                                "typeName": "动漫",
-                                "area": "内地",
-                                "descrip": "兽神出世。",
+                                "typeName": "Animation",
+                                "area": "CN",
+                                "descrip": "Beast returns.",
                                 "imgUrl": "https://vcover-vt-pic.puui.qpic.cn/poster/260",
-                                "imgTag": '{"4":{"info":{"text":"全26集"}}}',
-                                "actors": ["边江", "段艺璇"],
+                                "imgTag": '{"4":{"info":{"text":"\\u5168 26 \\u96c6"}}}',
+                                "actors": ["Alice", "Bob"],
+                                "directors": ["Director A"],
                                 "coverDoc": {
                                     "richTags": [
-                                        {"text": "评分 9.4"},
-                                        {"text": "东方仙侠"},
-                                        {"text": "国漫"},
+                                        {"text": "\u8bc4\u5206 9.4"},
+                                        {"text": "Fantasy"},
+                                        {"text": "Chinese animation"},
                                     ],
                                 },
                             },
@@ -69,7 +71,7 @@ class FakeTencentSession:
                         {
                             "doc": {"dataType": 1, "id": "short-video"},
                             "videoInfo": {
-                                "title": "<em>诛仙3</em>解说短视频",
+                                "title": "<em>Immortal S03</em> recap",
                                 "year": 0,
                             },
                         },
@@ -84,37 +86,39 @@ class FakeTencentSession:
             "headers": headers or {},
             "timeout": timeout,
         })
+        if self.cover_page_text is not None:
+            return FakeTencentResponse(text=self.cover_page_text)
         return FakeTencentResponse(text="""
 <!doctype html>
 <html>
 <head>
-<meta itemprop="name" name="title" content="诛仙第3季_动漫_高清完整版视频在线观看_腾讯视频">
-<meta itemprop="description" name="description" content="《诛仙第3季》高清在线观看，领衔主演:边江,段艺璇,锦鲤,剧情简介:兽神出世。">
-<meta itemprop="contentLocation" content="内地">
-<meta property="og:video:tag" content="诛仙 第3季">
-<meta property="og:video:tag" content="动漫">
-<meta property="og:video:tag" content="边江">
-<meta property="og:video:tag" content="东方仙侠">
+<meta itemprop="name" name="title" content="Immortal S03_Animation_Tencent Video">
+<meta itemprop="description" name="description" content="Watch Immortal S03. Starring: Alice, Bob. Beast returns.">
+<meta itemprop="contentLocation" content="CN">
+<meta property="og:video:tag" content="Immortal S03">
+<meta property="og:video:tag" content="Animation">
+<meta property="og:video:tag" content="Alice">
+<meta property="og:video:tag" content="Fantasy">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@graph": [{
     "@type": "VideoObject",
-    "name": "诛仙_01",
-    "description": "兽神出世。",
+    "name": "Immortal_01",
+    "description": "Beast returns.",
     "thumbnailUrl": ["https://vcover-hz-pic.puui.qpic.cn/backdrop/0"],
     "datePublished": "2025-06-12T00:00:00+08:00",
-    "actor": [{"@type": "Person", "name": "边江"}, {"@type": "Person", "name": "段艺璇"}],
+    "actor": [{"@type": "Person", "name": "Alice"}, {"@type": "Person", "name": "Bob"}],
     "partOfSeries": {
       "@type": "TVSeries",
-      "name": "诛仙 第3季",
+      "name": "Immortal S03",
       "url": "https://v.qq.com/x/cover/mzc00200z195unq.html",
       "numberOfEpisodes": 26,
-      "description": "兽神出世。",
+      "description": "Beast returns.",
       "image": "https://vcover-vt-pic.puui.qpic.cn/poster/0",
-      "genre": ["仙侠"],
+      "genre": ["Fantasy"],
       "datePublished": "2025-06-12T00:00:00+08:00",
-      "countryOfOrigin": {"@type": "Country", "name": "内地"}
+      "countryOfOrigin": {"@type": "Country", "name": "CN"}
     }
   }]
 }
@@ -126,29 +130,53 @@ class FakeTencentSession:
 
 
 class TencentVideoMetadataProviderTests(unittest.TestCase):
-    def build_provider(self):
+    def build_provider(self, cover_page_text=None):
         provider = TencentVideoMetadataProvider()
-        provider.session = FakeTencentSession()
+        provider.session = FakeTencentSession(cover_page_text=cover_page_text)
         return provider
 
     def test_search_candidates_uses_single_search_request_and_filters_short_videos(self):
         provider = self.build_provider()
 
-        result = provider.search_candidates("诛仙3", limit=5, media_type_hint="tv")
+        result = provider.search_candidates("Immortal S03", limit=5, media_type_hint="tv")
 
         self.assertEqual(1, len(result.items))
         item = result.items[0]
         self.assertEqual("tencent_video", item["provider"])
         self.assertEqual("tencent_video/mzc00200z195unq", item["candidate_id"])
-        self.assertEqual("诛仙 第3季", item["title"])
+        self.assertEqual("Immortal S03", item["title"])
         self.assertEqual(2025, item["year"])
         self.assertEqual(26, item["episode_count"])
         self.assertEqual(3, item["season"])
         self.assertEqual(9.4, item["rating"])
-        self.assertIn("东方仙侠", item["category"])
+        self.assertIn("Fantasy", item["category"])
+        self.assertEqual(["Alice", "Bob"], item["actors"])
+        self.assertEqual(["Director A"], item["directors"])
+        self.assertEqual("CN", item["country"])
         self.assertEqual(1, len(provider.session.posts))
-        self.assertEqual("诛仙3", provider.session.posts[0]["json"]["query"])
+        self.assertEqual("Immortal S03", provider.session.posts[0]["json"]["query"])
         self.assertEqual([], provider.session.gets)
+
+    def test_search_candidates_do_not_force_movie_when_episode_evidence_is_tv(self):
+        provider = self.build_provider()
+
+        result = provider.search_candidates("Immortal S03", limit=5, media_type_hint="movie")
+
+        self.assertEqual(1, len(result.items))
+        self.assertEqual("tv", result.items[0]["media_type"])
+        self.assertEqual(26, result.items[0]["episode_count"])
+
+    def test_search_candidates_use_tencent_tv_category_over_movie_hint(self):
+        provider = self.build_provider()
+        payload = provider.session.post("", json={}).json()
+        item = payload["data"]["normalList"]["itemList"][0]
+        item["videoInfo"]["imgTag"] = ""
+        item["videoInfo"]["typeName"] = "\u7535\u89c6\u5267"
+
+        candidate = provider._candidate_from_search_item(item, media_type_hint="movie")
+
+        self.assertEqual("tv", candidate["media_type"])
+        self.assertEqual(["\u7535\u89c6\u5267"], candidate["category"][:1])
 
     def test_get_details_reads_cover_page_metadata_without_playback_fields(self):
         provider = self.build_provider()
@@ -159,16 +187,16 @@ class TencentVideoMetadataProviderTests(unittest.TestCase):
         metadata = result.metadata
         self.assertEqual("tencent_video/mzc00200z195unq", metadata["tmdb_id"])
         self.assertEqual("TENCENT_VIDEO", metadata["scraper_source"])
-        self.assertEqual("诛仙 第3季", metadata["title"])
+        self.assertEqual("Immortal S03", metadata["title"])
         self.assertEqual(2025, metadata["year"])
-        self.assertEqual("内地", metadata["country"])
-        self.assertEqual(["边江", "段艺璇"], metadata["actors"])
+        self.assertEqual("CN", metadata["country"])
+        self.assertEqual(["Alice", "Bob"], metadata["actors"])
         self.assertEqual("https://v.qq.com/x/cover/mzc00200z195unq.html", metadata["source_url"])
         self.assertEqual([
             {
                 "season": 3,
-                "title": "诛仙 第3季",
-                "overview": "兽神出世。",
+                "title": "Immortal S03",
+                "overview": "Beast returns.",
                 "air_date": "2025-06-12",
                 "poster": "https://vcover-vt-pic.puui.qpic.cn/poster/0",
                 "episode_count": 26,
@@ -177,11 +205,58 @@ class TencentVideoMetadataProviderTests(unittest.TestCase):
         self.assertNotIn("play_url", metadata)
         self.assertNotIn("stream_url", metadata)
 
+    def test_get_details_falls_back_to_cached_search_candidate_for_empty_cover_page(self):
+        provider = self.build_provider("""
+<!doctype html>
+<html>
+<head>
+<meta name="description" content="Tencent Video landing shell">
+</head>
+<body></body>
+</html>
+""")
+        search_result = provider.search_candidates("Immortal S03", limit=5, media_type_hint="tv")
+        candidate_id = search_result.items[0]["candidate_id"]
+
+        result = provider.get_details(candidate_id, media_type_hint="tv")
+
+        self.assertIsNotNone(result)
+        self.assertEqual("search_candidate_cache", result.raw["matched_from"])
+        self.assertEqual(0.75, result.confidence)
+        metadata = result.metadata
+        self.assertEqual(candidate_id, metadata["tmdb_id"])
+        self.assertEqual("TENCENT_VIDEO", metadata["scraper_source"])
+        self.assertEqual("Immortal S03", metadata["title"])
+        self.assertEqual(2025, metadata["year"])
+        self.assertEqual("https://vcover-vt-pic.puui.qpic.cn/poster/260", metadata["cover"])
+        self.assertEqual(["Alice", "Bob"], metadata["actors"])
+        self.assertEqual("CN", metadata["country"])
+        self.assertNotIn("play_url", metadata)
+        self.assertNotIn("stream_url", metadata)
+
+    def test_cached_details_keep_tv_evidence_over_movie_hint(self):
+        provider = self.build_provider("""
+<!doctype html>
+<html>
+<head>
+<meta name="description" content="Tencent Video landing shell">
+</head>
+<body></body>
+</html>
+""")
+        search_result = provider.search_candidates("Immortal S03", limit=5, media_type_hint="movie")
+        candidate_id = search_result.items[0]["candidate_id"]
+
+        result = provider.get_details(candidate_id, media_type_hint="movie")
+
+        self.assertIsNotNone(result)
+        self.assertEqual("tv", result.metadata["media_type_hint"])
+
     def test_scrape_is_manual_only_and_does_not_call_network(self):
         provider = self.build_provider()
 
         attempt = provider.scrape(
-            ScrapeContext(title="诛仙3", year=None, source_id=1, content_type="tv"),
+            ScrapeContext(title="Immortal S03", year=None, source_id=1, content_type="tv"),
             media_type_hint="tv",
         )
 

@@ -15,6 +15,7 @@ from backend.app.models import StorageSource
 
 
 class FakeManagedOpenListClient:
+    DEFAULT_BAIDUNETDISK_DOWNLOAD_API = "crack_video"
     created_requests = []
     completed_requests = []
     deleted_storage_ids = []
@@ -133,7 +134,7 @@ class ManagedBaiduNetdiskRouteTests(unittest.TestCase):
             [{
                 "redirect_uri": "https://cyberstream.example/api/v1/storage/managed/baidunetdisk/oauth/callback",
                 "root_path": "",
-                "download_api": "official",
+                "download_api": "crack_video",
             }],
             FakeManagedOpenListClient.created_requests,
         )

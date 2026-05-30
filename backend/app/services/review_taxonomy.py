@@ -172,9 +172,9 @@ ACTIONS = {
     "catalog_publish": {
         "id": "catalog_publish",
         "label": "发布到目录",
-        "description": "只控制普通影视库可见性；有 blocker 时必须显式 force。",
-        "method": "PATCH",
-        "endpoint_template": "/api/v1/movies/{movie_id}/catalog-visibility",
+        "description": "发布待审批条目；有 blocker 时必须显式 force。",
+        "method": "POST",
+        "endpoint": "/api/v1/metadata/pending-review/publish",
     },
 }
 
@@ -495,6 +495,11 @@ def build_review_taxonomy():
                     "status": Movie.CATALOG_VISIBILITY_PUBLISHED,
                     "label": "手动发布",
                     "description": "管理员显式发布；存在 blocker 时必须传 force=true。",
+                },
+                {
+                    "status": Movie.CATALOG_VISIBILITY_PENDING_REVIEW,
+                    "label": "待审批",
+                    "description": "可疑刮削结果进入待审批池，不进入普通影视库，确认后再发布。",
                 },
                 {
                     "status": Movie.CATALOG_VISIBILITY_HIDDEN,

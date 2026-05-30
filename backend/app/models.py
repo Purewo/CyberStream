@@ -82,10 +82,13 @@ class StorageSource(db.Model):
                 provider = provider_factory.create(normalized_type, self.config or {})
                 health = provider.check_connection() or health
             except Exception as e:
+                error_message = str(e)
                 health = {
                     "status": "offline",
-                    "message": str(e),
+                    "message": error_message,
                 }
+                if "device limit" in error_message.lower():
+                    health["reason"] = "device_limit"
 
         ready_for_actions = True
         if normalized_type in {"guangyapan", "tianyicloud", "115cloud", "aliyundrive", "baidunetdisk", "123pan", "quarktv", "uctv"}:
@@ -457,10 +460,19 @@ class Movie(db.Model):
     CATALOG_VISIBILITY_AUTO = "auto"
     CATALOG_VISIBILITY_PUBLISHED = "published"
     CATALOG_VISIBILITY_HIDDEN = "hidden"
+    CATALOG_VISIBILITY_PENDING_REVIEW = "pending_review"
     CATALOG_VISIBILITY_STATUSES = {
         CATALOG_VISIBILITY_AUTO,
         CATALOG_VISIBILITY_PUBLISHED,
         CATALOG_VISIBILITY_HIDDEN,
+        CATALOG_VISIBILITY_PENDING_REVIEW,
+    }
+    PENDING_REVIEW_ISSUE_CODES = {
+        "fallback_pipeline_match",
+        "placeholder_metadata",
+        "local_only_metadata",
+        "low_confidence_resources",
+        "poster_missing",
     }
 
     QUALITY_BADGE_REMUX = "Remux"
@@ -1044,6 +1056,32 @@ class Movie(db.Model):
             "issues": issues,
         }
 
+    def should_enter_pending_review(self, snapshot=None):
+        snapshot = snapshot or self.get_metadata_snapshot()
+        state = snapshot.get("state") or {}
+        issue_codes = set(state.get("issue_codes") or [])
+        if state.get("is_placeholder") or state.get("is_local_only"):
+            return True
+        if state.get("confidence") == "low":
+            return True
+        return bool(issue_codes & self.PENDING_REVIEW_ISSUE_CODES)
+
+    def apply_pending_review_default(self, *, created=False, previously_visible=False, note=None):
+        status = self.normalize_catalog_visibility_status(self.catalog_visibility_status) or self.CATALOG_VISIBILITY_AUTO
+        if status == self.CATALOG_VISIBILITY_PENDING_REVIEW:
+            return False
+        if status != self.CATALOG_VISIBILITY_AUTO:
+            return False
+        if not self.should_enter_pending_review():
+            return False
+        if not created and previously_visible:
+            return False
+
+        self.catalog_visibility_status = self.CATALOG_VISIBILITY_PENDING_REVIEW
+        self.catalog_visibility_note = note or "auto_pending_review:suspicious_metadata"
+        self.catalog_visibility_updated_at = datetime.utcnow()
+        return True
+
     @classmethod
     def normalize_catalog_visibility_status(cls, status):
         status = (status or cls.CATALOG_VISIBILITY_AUTO).strip().lower() if isinstance(status, str) else cls.CATALOG_VISIBILITY_AUTO
@@ -1069,7 +1107,13 @@ class Movie(db.Model):
             warnings.append("overview_missing")
 
         auto_visible = title_ready and metadata_ready and (poster_ready or not poster_required)
-        if status == self.CATALOG_VISIBILITY_HIDDEN:
+        response_auto_visible = auto_visible
+        if status == self.CATALOG_VISIBILITY_PENDING_REVIEW:
+            is_visible = False
+            effective_status = "pending_review"
+            reason = "pending_review"
+            response_auto_visible = False
+        elif status == self.CATALOG_VISIBILITY_HIDDEN:
             is_visible = False
             effective_status = "hidden"
             reason = "manual_hidden"
@@ -1091,7 +1135,7 @@ class Movie(db.Model):
             "effective_status": effective_status,
             "is_visible": is_visible,
             "is_manual": status in {self.CATALOG_VISIBILITY_PUBLISHED, self.CATALOG_VISIBILITY_HIDDEN},
-            "auto_visible": auto_visible,
+            "auto_visible": response_auto_visible,
             "reason": reason,
             "blockers": blockers,
             "warnings": warnings,

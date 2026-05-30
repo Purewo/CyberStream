@@ -680,10 +680,10 @@ X-Cyber-API-Token: <token>
 请求体：
 - `name` / `source_name`：可选，存储源显示名，默认 `QuarkTV`
 - `root_folder_id`：可选，OpenList `QuarkTV` 技术根目录 ID，默认 `0`
-- `link_method`：可选，`download` 或 `streaming`，默认 `download`
 
 说明：
-- 前端挂载 QuarkTV 时应给用户提供 `download` 和 `streaming` 两个选项；后端会把选择持久化到 `source.config.link_method`。Web/Android 播放场景建议 UI 默认选 `streaming`
+- 前端不要提供 `download` / `streaming` 挂载模式选择；后端固定使用 OpenList `download` 原文件链路
+- Web 播放通过资源 `playback.cloud_transcode` 获取云端转码入口；PC/外部播放器通过 `playback.external_player` 或 `/api/v1/resources/<id>/stream` 获取原文件入口
 - 后端会调用仅本机可访问的 OpenList 管理接口创建 `QuarkTV` 挂载，并返回二维码 data URL
 - 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
 - 响应不返回 OpenList 地址、OpenList token、夸克 token、内部 storage id 或内部挂载路径
@@ -695,7 +695,6 @@ X-Cyber-API-Token: <token>
 
 请求体：
 - `source_id` / `id`：必填，已有 QuarkTV 存储源 ID
-- `link_method`：可选，`download` 或 `streaming`；不传则沿用当前 `source.config.link_method`
 - `root_folder_id`：可选；不传则沿用当前 `source.config.root_folder_id`
 
 说明：
@@ -715,7 +714,7 @@ X-Cyber-API-Token: <token>
 - 若响应里带新的 `qr_code_data_url`，前端应替换当前二维码
 - 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源才可浏览、扫描和播放
 - 播放时后端会请求 localhost OpenList 的 `/d/...`，拿到夸克网盘最终 302 直链后再返回给前端；不会把本机 OpenList 地址暴露给安卓端
-- 夸克原始下载直链实测不适合作为 Web 播放入口；前端播放页应优先读取资源 `playback.cloud_transcode`，再调用 `GET /api/v1/resources/<id>/streaming-qualities` 获取可选转码画质
+- 夸克原始下载直链作为 PC/外部播放器入口；Web 播放页应读取资源 `playback.cloud_transcode`，再调用 `GET /api/v1/resources/<id>/streaming-qualities` 获取可选转码画质
 
 ### `POST /api/v1/storage/managed/uctv/qr/start`
 启动托管 UCTV 扫码登录。
@@ -723,7 +722,6 @@ X-Cyber-API-Token: <token>
 请求体：
 - `name` / `source_name`：可选，存储源显示名，默认 `UCTV`
 - `root_folder_id`：可选，OpenList `UCTV` 技术根目录 ID，默认 `0`
-- `link_method`：可选，`download` 或 `streaming`，默认 `download`
 
 说明：
 - 合约与 QuarkTV 一致，返回 `type=uctv` 的 CyberStream 存储源
@@ -736,22 +734,23 @@ X-Cyber-API-Token: <token>
 轮询托管 UCTV 扫码结果。请求体和响应字段与 QuarkTV poll 一致。
 
 ### `GET /api/v1/resources/<id>/streaming-qualities`
-查询 QuarkTV/UCTV 资源的 provider 云端转码画质列表。
+查询支持 provider 云端转码的资源画质列表。当前支持 `quarktv`、`uctv` 和 `aliyundrive`。
 
 请求参数：
-- `resolution`：可选，指定希望选中的画质。合法值：`low`、`normal`、`high`、`super`、`2k`、`4k`
+- `resolution`：可选，指定希望选中的画质。QuarkTV/UCTV 使用 `low`、`normal`、`high`、`super`、`2k`、`4k`；Aliyundrive 通常使用 `ld`、`sd`、`hd`、`fhd`、`qhd`、`4k`，也可能返回 provider template id
 - `quality`：`resolution` 的兼容别名，新前端优先使用 `resolution`
 
 响应说明：
-- 仅 `storage_type=quarktv/uctv` 的资源支持
-- `data.default_resolution` 是 provider 默认档，例如 `4k`
+- 仅 `storage_type=quarktv/uctv/aliyundrive` 的资源支持
+- `data.default_resolution` 是 provider 默认档或后端选中的默认可播档，例如 `4k` / `fhd`
 - `data.selected_item` 是后端选中的可播放档；不传 `resolution` 时优先默认档，否则选最高可用档
-- `data.items[]` 每项包含 `resolution`、`label`、`available`、`trans_status`、`width`、`height`、`size`、`format`、`bitrate`、`dolby_vision`、`stream_url` 和 `url`
+- `data.items[]` 每项包含 `resolution`、`label`、`available`、`trans_status`、`width`、`height`、`size`、`format`、`bitrate`、`stream_url` 和 `url`；QuarkTV/UCTV 还可能返回 `dolby_vision`，Aliyundrive 还可能返回 `provider_template_id` / `provider_label`
 - 前端只展示 `available=true` 的档位
-- `items[].stream_url` 是 CyberStream 的 302 播放入口；`items[].url` 是 provider 直链，可能过期。前端优先播放 `stream_url`
+- `items[].stream_url` 是 CyberStream 的 302 Web 转码播放入口；`items[].url` 是 provider 转码直链，可能过期。前端优先播放 `stream_url`
+- 该接口返回 provider 云端转码流，不代表原文件原盘质量；原文件入口使用资源 `playback.external_player.url` 或 `/api/v1/resources/<id>/stream`
 
 ### `GET /api/v1/resources/<id>/stream-transcoded`
-按指定 QuarkTV/UCTV 云端转码画质播放，返回 `302` 到 provider 转码直链。
+按指定 provider 云端转码画质播放，返回 `302` 到 provider 转码直链。
 
 请求参数：
 - `resolution`：可选，合法值同上；不传则使用 provider 默认档或最高可用档
@@ -763,7 +762,7 @@ X-Cyber-API-Token: <token>
 - `40404`：后端无法在 provider 中按资源路径找到文件
 - `40912`：来源未 ready 或没有 refresh token
 - `40913`：请求的画质当前不可用
-- `50290`-`50294`：访问 OpenList 或 QuarkTV/UCTV TV API 失败
+- `50290`-`50294`：访问 OpenList、Aliyundrive video_preview 或 QuarkTV/UCTV TV API 失败
 
 ### `POST /api/v1/storage/sources`
 新增存储源。
@@ -1152,6 +1151,7 @@ X-Cyber-API-Token: <token>
 说明：
 - 默认只返回未手工归档、未带季集号的 `LOCAL_FALLBACK`、`LOCAL_ORPHAN`、未知来源等需要人工整理的单文件资源
 - 带 `season` 的剧集资源不进入该队列；缺集、重复集号、集号缺失和季资料问题统一走 `/api/v1/metadata/episode-review-items`
+- `catalog_visibility.status=pending_review` 的条目不进入该队列；它们统一从 `/api/v1/metadata/work-items?effective_status=pending_review` 审核
 - `include_manual=true` 时也可把已手工归档的资源重新纳入列表
 - 每条返回 `resource_info`、`playback`、`metadata_state`、`catalog_visibility` 和手工归档所需的动作入口；这里的 `metadata_issues` 不包含剧集审查问题码
 - 每条同时返回 `metadata_match_context` 与 `actions.match_metadata`，用于把明显是真实电影/剧集的资源走“搜索候选 -> 预览匹配 -> 确认覆盖”流程，而不是强制手工创建
@@ -1261,7 +1261,9 @@ X-Cyber-API-Token: <token>
   - `extra_tags`：仅放结构化字段覆盖不了的额外标签，例如 `IMAX`
 - `playback.stream_url` 是后端播放入口；外部播放器也可以使用该地址，AList/OpenList 会继续由该入口 302 到上游 `/d/...` 直链
 - 百度网盘资源的网页播放被后端显式禁用：`playback.storage_type=baidunetdisk` 时 `playback.web_player.supported=false`、`web_player.reason=baidunetdisk_requires_pc_client`、`web_player.recommended_action=download_pc_client`。前端 Web 端不要直接使用 `stream_url`，应提示用户下载/使用 PC 客户端。PC 模式可读取 `external_player.requires_local_backend=true` 和 `requires_user_agent_rewrite=true`，由 PC 本地后端负责改写百度上游 User-Agent。
-- QuarkTV/UCTV 资源会额外返回 `playback.cloud_transcode`。当 `cloud_transcode.supported=true` 时，前端播放页应调用 `cloud_transcode.qualities_endpoint` 获取 `low/normal/high/super/2k/4k` 可用档位，并优先播放每个档位的 `stream_url`。`playback.stream_url` 仍保留为原始下载链路兼容入口，但可能不能被 Web 播放器播放。
+- QuarkTV/UCTV 资源会同时返回原文件入口和云端转码入口。PC/外部播放器使用 `playback.external_player.url` 或 `playback.stream_url`，这是原文件 raw stream；Web 播放器使用 `playback.cloud_transcode.qualities_endpoint` 获取 `low/normal/high/super/2k/4k` 可用档位，并播放每个档位的 `items[].stream_url`。
+- Aliyundrive 资源也会返回 `playback.cloud_transcode`。阿里云盘 raw stream 仍可用于网页/外部播放器；云端转码入口是可选清晰度播放路径，常见档位为 `ld/sd/hd/fhd/qhd/4k`，具体以 `streaming-qualities` 返回的 `items[]` 为准。
+- `cloud_transcode.quality_semantics=provider_cloud_transcode_not_original_file` 表示该入口是 provider 云端转码，不代表原盘质量。
 - 后端生成的播放、音频转码和字幕绝对 URL 会信任反向代理 `X-Forwarded-Proto` / `X-Forwarded-Host`；若反代未传这些头，可设置 `CYBER_BACKEND_PUBLIC_BASE_URL=http://<domain>` 或 `https://<domain>` 明确外部地址，后端会原样保留该 scheme
 - `playback.subtitles.items` 当前会发现与视频同目录、同文件名前缀的外挂字幕，也会包含用户确认后绑定的在线字幕缓存；支持 `srt/ass/ssa/vtt/sub/sup`，每个字幕项包含 `id`、`source`、`filename`、`display_name`、`format`、`language`、`is_default`、`url` 和 `web_player` 等字段；前端展示字幕名称优先使用 `display_name`，`filename` 保留为实际文件名/缓存文件名
 - 字幕项的 `url` 保留原始字幕流，主要给外部播放器使用；网页播放器应优先读取 `web_player.url`。当原始字幕为 `srt/ass/ssa` 时，`web_player.url` 会自动追加 `format=vtt`，后端动态转成 HTML5 `<track>` 可加载的 WebVTT；启用 Super CDN 后，用户绑定的在线/手动字幕会优先返回 `china_all` 桶中的原始字幕和 WebVTT CDN URL；`sub/sup` 当前不支持浏览器字幕
@@ -1792,13 +1794,30 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - `metadata_review_priority`
 - `metadata_issue_code`
 - `needs_attention`
+- `effective_status`，可传 `pending_review/published/hidden`
 
 说明：
 - 每个条目都带 `metadata_state`、`metadata_actions`、`metadata_diagnostics`、`metadata_issues`
+- `effective_status=pending_review` 返回批量刮削或历史回填进入待审批池的影片，默认不进入普通影视库和其他视频队列
 - 剧集诊断问题会进入 `metadata_issues`，前端可用 `metadata_issue_code=missing_episode_numbers|duplicate_episode_numbers|episode_number_missing|episode_count_mismatch` 直接打开复核列表
 - 适合前端直接渲染“待处理元数据列表”，不用自己拼装详情字段
 - 当前统计基于已入库影片和资源，不扫描磁盘
 - `metadata_issue_code` 与条目自身 `metadata_issues[].code` 使用同一套后端计算逻辑，前端从筛选项点入后不会出现“筛选项有计数但列表无法命中”的来源粗筛偏差
+
+### `POST /api/v1/metadata/pending-review/backfill`
+把历史遗留的可疑 `auto` 条目回填到待审批池。
+
+请求体：
+- `dry_run`，默认 `true`；为 `true` 时只返回候选，不写库
+- `movie_ids`，可选；指定后只检查这些影片
+- `limit`，未传 `movie_ids` 时最多扫描多少影片，默认 `500`
+- `include_visible`，默认 `false`；避免宽口径清理时把当前自动可见影片降入待审批
+- `note`，可选，写入 `catalog_visibility_note`
+
+说明：
+- 使用后端统一的 `Movie.should_enter_pending_review()` 判定，不由前端按来源自行推断
+- 只处理 `catalog_visibility.status=auto` 且有资源的非手工条目
+- 宽口径调用建议先 `dry_run=true`；历史“其他视频”遗留项可先取对应 `movie_ids` 后定向执行
 
 ### `GET /api/v1/metadata/episode-review-items`
 返回剧集复核队列，不触发扫描。

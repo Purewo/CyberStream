@@ -252,7 +252,7 @@ class StorageProtocolSupportTests(unittest.TestCase):
         self.assertIsNone(ready_error)
         self.assertEqual(211, ready_config["openlist_storage_id"])
         self.assertEqual("/cyberstream/baidunetdisk/demo", ready_config["mount_path"])
-        self.assertEqual("official", ready_config["download_api"])
+        self.assertEqual("crack_video", ready_config["download_api"])
 
     def test_normalize_123pan_config_supports_managed_source(self):
         config, error = _normalize_storage_config(
@@ -291,7 +291,7 @@ class StorageProtocolSupportTests(unittest.TestCase):
         self.assertEqual(23, config["openlist_storage_id"])
         self.assertEqual("/cyberstream/quarktv/demo", config["mount_path"])
         self.assertEqual("ready", config["auth_state"])
-        self.assertEqual("streaming", config["link_method"])
+        self.assertNotIn("link_method", config)
 
     def test_normalize_uctv_config_supports_managed_source(self):
         config, error = _normalize_storage_config(
@@ -308,7 +308,7 @@ class StorageProtocolSupportTests(unittest.TestCase):
         self.assertEqual(24, config["openlist_storage_id"])
         self.assertEqual("/cyberstream/uctv/demo", config["mount_path"])
         self.assertEqual("ready", config["auth_state"])
-        self.assertEqual("download", config["link_method"])
+        self.assertNotIn("link_method", config)
 
     def test_add_source_accepts_smb(self):
         response = self.client.post(

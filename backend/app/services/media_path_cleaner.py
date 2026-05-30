@@ -40,6 +40,9 @@ class MediaPathCleaner:
         )
         self.re_episode = re.compile(r'(?i)(?:E|EP|第)\s*(\d+)(?:集|\s|$)')
         self.re_s_e = re.compile(r'(?i)S(\d+)[.\s_-]*E(\d+)')
+        self.re_s_parenthesized_episode = re.compile(
+            r'(?i)(?<![A-Z0-9])S(?P<season>\d{1,2})(?!\d)[\s._-]*[\(\[（【]\s*0*(?P<episode>\d{1,3})\s*[\)\]）】]'
+        )
         self.re_inline_chinese_season_episode = re.compile(
             r'(?i)^(?P<title>.+?)(?<!\d)(?:[\s._\-]*第\s*)?'
             r'(?P<season>\d{1,2}|[一二三四五六七八九十]{1,3})'
@@ -150,6 +153,7 @@ class MediaPathCleaner:
             return ""
         text = self.re_resolution_pair.sub(' ', text)
         text = self.re_audio_channel.sub(' ', text)
+        text = self.re_s_parenthesized_episode.sub(' ', text)
         text = self.re_s_e.sub(' ', text)
         text = self.re_episode.sub(' ', text)
         text = re.sub(r'(?i)(?:Season|S|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Part|Vol)?', ' ', text)
@@ -179,6 +183,13 @@ class MediaPathCleaner:
         m1 = self.re_s_e.search(filename)
         if m1:
             return int(m1.group(1)), int(m1.group(2))
+
+        m1b = self.re_s_parenthesized_episode.search(filename)
+        if m1b:
+            season = int(m1b.group('season'))
+            episode = int(m1b.group('episode'))
+            if 1 <= season <= 99 and 1 <= episode <= 200:
+                return season, episode
 
         inline = self._extract_inline_chinese_season_episode(filename)
         if inline:
@@ -264,6 +275,7 @@ class MediaPathCleaner:
         base_name = filename.rsplit('.', 1)[0]
         if re.fullmatch(r'\d{1,4}', base_name.strip()):
             return ""
+        base_name = self.re_s_parenthesized_episode.sub(' ', base_name)
         base_name = self.re_s_e.sub(' ', base_name)
         base_name = self.re_episode.sub(' ', base_name)
         base_name = self.re_loose_episode_suffix.sub(' ', base_name)

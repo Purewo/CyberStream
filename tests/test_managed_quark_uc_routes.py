@@ -17,6 +17,7 @@ from backend.app.models import StorageSource
 class FakeManagedOpenListClient:
     created_requests = []
     deleted_storage_ids = []
+    operation_log = []
     poll_result = None
 
     def __init__(self):
@@ -26,9 +27,11 @@ class FakeManagedOpenListClient:
     def reset(cls):
         cls.created_requests = []
         cls.deleted_storage_ids = []
+        cls.operation_log = []
         cls.poll_result = None
 
     def create_quark_uc_tv_storage(self, kind, root_folder_id="", link_method="download"):
+        self.operation_log.append(f"create:{kind}")
         self.created_requests.append({
             "kind": kind,
             "root_folder_id": root_folder_id,
@@ -64,6 +67,7 @@ class FakeManagedOpenListClient:
         return result
 
     def delete_storage(self, storage_id):
+        self.operation_log.append(f"delete:{int(storage_id)}")
         self.deleted_storage_ids.append(int(storage_id))
 
 
@@ -115,9 +119,9 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
         self.assertEqual("qr_pending", source.config["auth_state"])
         self.assertEqual(99, source.config["openlist_storage_id"])
         self.assertEqual("0", source.config["root_folder_id"])
-        self.assertEqual("streaming", source.config["link_method"])
+        self.assertNotIn("link_method", source.config)
         self.assertEqual(
-            [{"kind": "quarktv", "root_folder_id": "", "link_method": "streaming"}],
+            [{"kind": "quarktv", "root_folder_id": "", "link_method": "download"}],
             FakeManagedOpenListClient.created_requests,
         )
 
@@ -172,11 +176,12 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
         self.assertEqual(source_id, payload["data"]["source"]["id"])
         self.assertEqual("qr_pending", payload["data"]["source"]["config"]["auth_state"])
         self.assertEqual("root-1", payload["data"]["source"]["config"]["root_folder_id"])
-        self.assertEqual("streaming", payload["data"]["source"]["config"]["link_method"])
+        self.assertNotIn("link_method", payload["data"]["source"]["config"])
         self.assertFalse(payload["data"]["source"]["actions"]["can_stream"])
         self.assertEqual([41], FakeManagedOpenListClient.deleted_storage_ids)
+        self.assertEqual(["delete:41", "create:quarktv"], FakeManagedOpenListClient.operation_log)
         self.assertEqual(
-            [{"kind": "quarktv", "root_folder_id": "root-1", "link_method": "streaming"}],
+            [{"kind": "quarktv", "root_folder_id": "root-1", "link_method": "download"}],
             FakeManagedOpenListClient.created_requests,
         )
 
@@ -186,7 +191,7 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
         self.assertEqual("/cyberstream/quarktv/fake", saved_source.config["mount_path"])
         self.assertEqual("qr_pending", saved_source.config["auth_state"])
         self.assertEqual("root-1", saved_source.config["root_folder_id"])
-        self.assertEqual("streaming", saved_source.config["link_method"])
+        self.assertNotIn("link_method", saved_source.config)
         self.assertEqual(1, StorageSource.query.count())
 
     def test_restart_qr_rejects_wrong_source_type(self):
@@ -244,6 +249,81 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
         self.assertEqual("qr_pending", payload["data"]["auth_state"])
         self.assertFalse(payload["data"]["source"]["actions"]["can_preview"])
         self.assertEqual("qr_pending", db.session.get(StorageSource, source.id).config["auth_state"])
+
+    def test_poll_expired_qr_returns_business_state(self):
+        source = StorageSource(
+            name="Quark test",
+            type="quarktv",
+            config={
+                "openlist_storage_id": 99,
+                "mount_path": "/cyberstream/quarktv/fake",
+                "auth_state": "qr_pending",
+                "cloud_root_path": "/",
+                "link_method": "download",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        FakeManagedOpenListClient.poll_result = {
+            "storage_id": 99,
+            "mount_path": "/cyberstream/quarktv/fake",
+            "auth_state": "qr_expired",
+            "authenticated": False,
+            "pending_reason": "qr_expired",
+            "cloud_root_path": "/",
+            "link_method": "download",
+        }
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/quarktv/qr/poll",
+                json={"source_id": source.id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertFalse(payload["data"]["authenticated"])
+        self.assertEqual("qr_expired", payload["data"]["auth_state"])
+        self.assertEqual("qr_expired", payload["data"]["pending_reason"])
+        self.assertEqual("qr_pending", db.session.get(StorageSource, source.id).config["auth_state"])
+
+    def test_poll_device_limit_locks_source_actions(self):
+        source = StorageSource(
+            name="Quark test",
+            type="quarktv",
+            config={
+                "openlist_storage_id": 99,
+                "mount_path": "/cyberstream/quarktv/fake",
+                "auth_state": "qr_pending",
+                "cloud_root_path": "/",
+                "link_method": "download",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        FakeManagedOpenListClient.poll_result = {
+            "storage_id": 99,
+            "mount_path": "/cyberstream/quarktv/fake",
+            "auth_state": "device_limit",
+            "authenticated": False,
+            "pending_reason": "device_limit",
+            "cloud_root_path": "/",
+            "link_method": "download",
+        }
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/quarktv/qr/poll",
+                json={"source_id": source.id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertFalse(payload["data"]["authenticated"])
+        self.assertEqual("device_limit", payload["data"]["auth_state"])
+        self.assertEqual("device_limit", payload["data"]["pending_reason"])
+        self.assertEqual("device_limit", db.session.get(StorageSource, source.id).config["auth_state"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_stream"])
 
     def test_poll_ready_marks_source_ready(self):
         source = StorageSource(
@@ -321,18 +401,21 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
         db.session.add(source)
         db.session.commit()
 
-        with patch(
-            "backend.app.providers.managed_alist.AListProvider.check_connection",
-            return_value={
-                "status": "online",
-                "reason": "ok",
-                "message": "openlist reachable",
-                "base_url": "http://127.0.0.1:5245",
-                "root": "/cyberstream/quarktv/fake",
-                "platform": "openlist",
-                "site_title": "OpenList",
-                "version": "dev",
-            },
+        with (
+            patch(
+                "backend.app.providers.managed_alist.AListProvider.check_connection",
+                return_value={
+                    "status": "online",
+                    "reason": "ok",
+                    "message": "openlist reachable",
+                    "base_url": "http://127.0.0.1:5245",
+                    "root": "/cyberstream/quarktv/fake",
+                    "platform": "openlist",
+                    "site_title": "OpenList",
+                    "version": "dev",
+                },
+            ),
+            patch("backend.app.providers.managed_alist.QuarkUCManagedOpenListProvider.list_items", return_value=[]),
         ):
             response = self.client.get(f"/api/v1/storage/sources/{source.id}/health")
 
@@ -342,6 +425,69 @@ class ManagedQuarkUCTVRouteTests(unittest.TestCase):
         self.assertNotIn("base_url", health)
         self.assertNotIn("root", health)
         self.assertNotIn("platform", health)
+
+    def test_health_reports_quark_device_limit_from_root_listing(self):
+        source = StorageSource(
+            name="Quark test",
+            type="quarktv",
+            config={
+                "openlist_storage_id": 99,
+                "mount_path": "/cyberstream/quarktv/fake",
+                "auth_state": "ready",
+                "cloud_root_path": "/",
+                "link_method": "download",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        with (
+            patch(
+                "backend.app.providers.managed_alist.AListProvider.check_connection",
+                return_value={
+                    "status": "online",
+                    "reason": "ok",
+                    "message": "openlist reachable",
+                },
+            ),
+            patch(
+                "backend.app.providers.managed_alist.QuarkUCManagedOpenListProvider.list_items",
+                side_effect=RuntimeError(
+                    "openlist api error 500: failed get objs: "
+                    "failed to list objs: \u8bbe\u5907\u6570\u8d85\u9650"
+                ),
+            ),
+        ):
+            response = self.client.get(f"/api/v1/storage/sources/{source.id}/health")
+
+        health = response.get_json()["data"]["health"]
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("offline", health["status"])
+        self.assertEqual("device_limit", health["reason"])
+        self.assertEqual("QuarkTV device limit reached", health["message"])
+
+    def test_health_keeps_device_limit_reason_after_poll_locks_source(self):
+        source = StorageSource(
+            name="Quark test",
+            type="quarktv",
+            config={
+                "openlist_storage_id": 99,
+                "mount_path": "/cyberstream/quarktv/fake",
+                "auth_state": "device_limit",
+                "cloud_root_path": "/",
+                "link_method": "download",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/storage/sources/{source.id}/health")
+
+        health = response.get_json()["data"]["health"]
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("offline", health["status"])
+        self.assertEqual("device_limit", health["reason"])
+        self.assertEqual("QuarkTV device limit reached", health["message"])
 
 
 if __name__ == "__main__":

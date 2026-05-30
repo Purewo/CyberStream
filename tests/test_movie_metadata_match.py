@@ -387,5 +387,78 @@ class MovieMetadataMatchTests(unittest.TestCase):
         self.assertEqual("Season 1", season.title)
 
 
+    def test_applying_tv_match_repairs_parenthesized_episode_resources(self):
+        movie = Movie(
+            tmdb_id="loc-tang",
+            title="Tang Changan",
+            original_title="Tang Changan",
+            year=2025,
+            scraper_source="LOCAL_FALLBACK",
+        )
+        db.session.add(movie)
+        db.session.flush()
+        first = MediaResource(
+            movie_id=movie.id,
+            path="Shows/Tang Changan/tang.2025.2160p.WEB-DL.S03 (1).mkv",
+            filename="tang.2025.2160p.WEB-DL.S03 (1).mkv",
+            label="Movie - 2160P",
+            tech_specs={
+                "resolution": "2160P",
+                "features": {"is_movie_feature": True},
+                "metadata_trace": {"media_type_hint": "movie"},
+            },
+        )
+        tenth = MediaResource(
+            movie_id=movie.id,
+            path="Shows/Tang Changan/tang.2025.2160p.WEB-DL.S03 (10).mkv",
+            filename="tang.2025.2160p.WEB-DL.S03 (10).mkv",
+            label="Movie - 2160P",
+            tech_specs={
+                "resolution": "2160P",
+                "features": {"is_movie_feature": True},
+                "metadata_trace": {"media_type_hint": "movie"},
+            },
+        )
+        db.session.add_all([first, tenth])
+        db.session.commit()
+
+        tmdb_payload = {
+            "tmdb_id": "tv/12345",
+            "title": "Tang Changan",
+            "original_title": "Tang Changan",
+            "year": 2025,
+            "rating": 8.0,
+            "description": "series",
+            "cover": "poster",
+            "background_cover": "",
+            "category": ["TV"],
+            "director": "Director",
+            "actors": [],
+            "country": "CN",
+            "scraper_source": "TMDB",
+            "media_type_hint": "tv",
+            "season_metadata": [{"season": 3, "title": "Season 3", "episode_count": 40}],
+        }
+
+        with patch("backend.app.api.library_routes.scraper.get_movie_details", return_value=tmdb_payload):
+            response = self.client.post(
+                f"/api/v1/movies/{movie.id}/metadata/match",
+                json={"tmdb_id": "tv/12345", "media_type_hint": "movie", "apply": True},
+            )
+
+        self.assertEqual(200, response.status_code)
+        refreshed_first = db.session.get(MediaResource, first.id)
+        refreshed_tenth = db.session.get(MediaResource, tenth.id)
+        self.assertEqual((3, 1), (refreshed_first.season, refreshed_first.episode))
+        self.assertEqual((3, 10), (refreshed_tenth.season, refreshed_tenth.episode))
+        self.assertEqual("S03E01 - 2160P", refreshed_first.label)
+        self.assertFalse(refreshed_first.tech_specs["features"]["is_movie_feature"])
+        self.assertEqual("tv", refreshed_first.tech_specs["metadata_trace"]["media_type_hint"])
+
+        season = MovieSeasonMetadata.query.filter_by(movie_id=movie.id, season=3).first()
+        self.assertIsNotNone(season)
+        self.assertEqual(40, season.episode_count)
+
+
 if __name__ == "__main__":
     unittest.main()

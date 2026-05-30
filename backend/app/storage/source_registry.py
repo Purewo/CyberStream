@@ -436,7 +436,7 @@ SOURCE_TYPE_DEFINITIONS = {
             'qr_login': True,
         },
         'secret_fields': [],
-        'hidden_fields': ['openlist_storage_id', 'mount_path'],
+        'hidden_fields': ['openlist_storage_id', 'mount_path', 'login_mode'],
         'config_fields': [
             {
                 'name': 'openlist_storage_id',
@@ -477,6 +477,12 @@ SOURCE_TYPE_DEFINITIONS = {
                 'required': False,
                 'default': '-11',
                 'description': 'OpenList 189CloudTV root_folder_id',
+            },
+            {
+                'name': 'login_mode',
+                'type': 'string',
+                'required': False,
+                'description': 'CyberStream internal TianYiCloud login mode; omitted for default TV QR, pc_qr for experimental PC QR.',
             },
         ],
     },
@@ -699,7 +705,7 @@ SOURCE_TYPE_DEFINITIONS = {
                 'name': 'download_api',
                 'type': 'string',
                 'required': False,
-                'default': 'official',
+                'default': 'crack_video',
                 'description': 'OpenList 下载接口：official、crack 或 crack_video',
             },
             {
@@ -811,6 +817,7 @@ SOURCE_TYPE_DEFINITIONS = {
         },
         'secret_fields': [],
         'hidden_fields': ['openlist_storage_id', 'mount_path'],
+        'legacy_config_fields': ['link_method'],
         'config_fields': [
             {
                 'name': 'openlist_storage_id',
@@ -845,13 +852,6 @@ SOURCE_TYPE_DEFINITIONS = {
                 'default': '0',
                 'description': 'OpenList QuarkTV root_folder_id',
             },
-            {
-                'name': 'link_method',
-                'type': 'string',
-                'required': False,
-                'default': 'download',
-                'description': 'OpenList 获取视频链接方式：download 或 streaming',
-            },
         ],
     },
     'uctv': {
@@ -871,6 +871,7 @@ SOURCE_TYPE_DEFINITIONS = {
         },
         'secret_fields': [],
         'hidden_fields': ['openlist_storage_id', 'mount_path'],
+        'legacy_config_fields': ['link_method'],
         'config_fields': [
             {
                 'name': 'openlist_storage_id',
@@ -904,13 +905,6 @@ SOURCE_TYPE_DEFINITIONS = {
                 'required': False,
                 'default': '0',
                 'description': 'OpenList UCTV root_folder_id',
-            },
-            {
-                'name': 'link_method',
-                'type': 'string',
-                'required': False,
-                'default': 'download',
-                'description': 'OpenList 获取视频链接方式：download 或 streaming',
             },
         ],
     },
@@ -974,6 +968,7 @@ def normalize_source_config(s_type, config):
     raw_config = dict(config)
     normalized = {}
     allowed_field_names = set()
+    legacy_field_names = set(definition.get('legacy_config_fields', []))
 
     for field in definition.get('config_fields', []):
         field_name = field['name']
@@ -1001,7 +996,7 @@ def normalize_source_config(s_type, config):
 
     unknown_keys = sorted([
         key for key in raw_config.keys()
-        if key not in allowed_field_names and key not in LEGACY_CONFIG_ALIASES
+        if key not in allowed_field_names and key not in legacy_field_names and key not in LEGACY_CONFIG_ALIASES
     ])
     if unknown_keys:
         raise StorageProviderError(
@@ -1175,6 +1170,12 @@ def _normalize_post_config_fields(s_type, config):
     if normalized_type == 'tianyicloud' and 'root_folder_id' in config and isinstance(config.get('root_folder_id'), str):
         default_root = '' if config.get('cloud_type') == 'family' else '-11'
         config['root_folder_id'] = config['root_folder_id'].strip() or default_root
+    if normalized_type == 'tianyicloud' and 'login_mode' in config and isinstance(config.get('login_mode'), str):
+        config['login_mode'] = config['login_mode'].strip().lower()
+        if config['login_mode'] not in {'', 'pc_qr'}:
+            raise StorageProviderError("Invalid config field value: login_mode should be pc_qr", code=40038)
+        if not config['login_mode']:
+            config.pop('login_mode', None)
 
     if normalized_type == '115cloud' and 'qrcode_source' in config and isinstance(config.get('qrcode_source'), str):
         config['qrcode_source'] = config['qrcode_source'].strip().lower() or 'wechatmini'
@@ -1219,7 +1220,7 @@ def _normalize_post_config_fields(s_type, config):
         if 'root_folder_path' in config and isinstance(config.get('root_folder_path'), str):
             config['root_folder_path'] = _normalize_remote_root(config.get('root_folder_path'))
         if 'download_api' in config and isinstance(config.get('download_api'), str):
-            config['download_api'] = config['download_api'].strip().lower() or 'official'
+            config['download_api'] = config['download_api'].strip().lower() or 'crack_video'
             if config['download_api'] not in {'official', 'crack', 'crack_video'}:
                 raise StorageProviderError(
                     "Invalid config field value: download_api should be official, crack or crack_video",

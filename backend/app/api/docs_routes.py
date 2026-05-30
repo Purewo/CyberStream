@@ -98,6 +98,12 @@ DOCUMENTS = {
         "format": "markdown",
         "content_type": "text/markdown; charset=utf-8",
     },
+    "experimental-tianyicloud-pc-qr": {
+        "title": "Experimental TianYiCloud PC QR Integration",
+        "path": "docs/EXPERIMENTAL_TIANYICLOUD_PC_QR.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
     "frontend-managed-115cloud": {
         "title": "Frontend Managed 115 Cloud Integration",
         "path": "docs/FRONTEND_MANAGED_115CLOUD_INTEGRATION.md",

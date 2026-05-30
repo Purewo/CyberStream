@@ -39,7 +39,10 @@ def _apply_public_movie_visibility_filter(query):
         db.or_(
             visibility_status == Movie.CATALOG_VISIBILITY_PUBLISHED,
             db.and_(
-                visibility_status != Movie.CATALOG_VISIBILITY_HIDDEN,
+                visibility_status.notin_([
+                    Movie.CATALOG_VISIBILITY_HIDDEN,
+                    Movie.CATALOG_VISIBILITY_PENDING_REVIEW,
+                ]),
                 auto_visible,
             ),
         )

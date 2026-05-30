@@ -192,7 +192,12 @@ class PlaybackCapabilitiesTests(unittest.TestCase):
         self.assertIsNone(playback["audio"]["server_transcode"]["endpoint"])
 
     def test_baidunetdisk_disables_web_playback_but_keeps_pc_handoff(self):
-        source = StorageSource(id=1, name="Baidu", type="baidunetdisk", config={"auth_state": "ready"})
+        source = StorageSource(
+            id=1,
+            name="Baidu",
+            type="baidunetdisk",
+            config={"auth_state": "ready", "download_api": "crack_video"},
+        )
         resource = MediaResource(
             id="11111111-1111-1111-1111-111111111111",
             source=source,
@@ -233,6 +238,41 @@ class PlaybackCapabilitiesTests(unittest.TestCase):
             manifest["stream"]["reason"],
         )
 
+    def test_baidunetdisk_official_download_api_disables_pc_handoff(self):
+        source = StorageSource(
+            id=1,
+            name="Baidu",
+            type="baidunetdisk",
+            config={"auth_state": "ready", "download_api": "official"},
+        )
+        resource = MediaResource(
+            id="11111111-1111-1111-1111-111111111111",
+            source=source,
+            filename="Movie.mkv",
+            path="Movie.mkv",
+        )
+
+        playback = build_resource_playback(resource, resource_info={"technical": {}}, ffmpeg_available=True)
+
+        self.assertFalse(playback["external_player"]["supported"])
+        self.assertIsNone(playback["external_player"]["url"])
+        self.assertFalse(playback["external_player"]["requires_user_agent_rewrite"])
+        self.assertEqual(
+            "baidunetdisk_official_download_api_sign_error",
+            playback["external_player"]["reason"],
+        )
+        self.assertIn(
+            "baidunetdisk_official_download_api_sign_error",
+            {warning["code"] for warning in playback["warnings"]},
+        )
+
+        manifest = build_external_playback_manifest(
+            resource,
+            resource_payload={"resource_info": {"technical": {}}, "playback": playback},
+        )
+        self.assertFalse(manifest["handoff"]["supported"])
+        self.assertIsNone(manifest["stream"]["url"])
+
     def test_quarktv_exposes_cloud_transcode_capability(self):
         source = StorageSource(
             id=1,
@@ -242,7 +282,6 @@ class PlaybackCapabilitiesTests(unittest.TestCase):
                 "auth_state": "ready",
                 "openlist_storage_id": 21,
                 "mount_path": "/cyberstream/quarktv/fake",
-                "link_method": "download",
             },
         )
         resource = MediaResource(
@@ -254,8 +293,19 @@ class PlaybackCapabilitiesTests(unittest.TestCase):
 
         playback = build_resource_playback(resource, resource_info={"technical": {}}, ffmpeg_available=True)
 
+        self.assertFalse(playback["web_player"]["supported"])
+        self.assertIsNone(playback["web_player"]["url"])
+        self.assertEqual("quark_uc_raw_download_not_web_playable", playback["web_player"]["reason"])
+        self.assertEqual("use_cloud_transcode", playback["web_player"]["recommended_action"])
+        self.assertTrue(playback["external_player"]["supported"])
+        self.assertEqual(playback["stream_url"], playback["external_player"]["url"])
         self.assertTrue(playback["cloud_transcode"]["supported"])
         self.assertEqual("quarktv", playback["cloud_transcode"]["provider"])
+        self.assertEqual(["web_player"], playback["cloud_transcode"]["recommended_for"])
+        self.assertEqual(
+            "provider_cloud_transcode_not_original_file",
+            playback["cloud_transcode"]["quality_semantics"],
+        )
         self.assertEqual(
             "/api/v1/resources/11111111-1111-1111-1111-111111111111/streaming-qualities",
             playback["cloud_transcode"]["qualities_endpoint"],
@@ -266,6 +316,42 @@ class PlaybackCapabilitiesTests(unittest.TestCase):
         )
         self.assertIn("4k", playback["cloud_transcode"]["available_resolutions"])
         self.assertIn(
+            "quark_uc_download_link_not_web_playable",
+            {warning["code"] for warning in playback["warnings"]},
+        )
+
+    def test_aliyundrive_exposes_cloud_transcode_capability_without_disabling_raw_stream(self):
+        source = StorageSource(
+            id=1,
+            name="Aliyundrive",
+            type="aliyundrive",
+            config={
+                "auth_state": "ready",
+                "openlist_storage_id": 33,
+                "mount_path": "/cyberstream/aliyundrive/fake",
+            },
+        )
+        resource = MediaResource(
+            id="11111111-1111-1111-1111-111111111111",
+            source=source,
+            filename="Movie.mkv",
+            path="Movies/Movie.mkv",
+        )
+
+        playback = build_resource_playback(resource, resource_info={"technical": {}}, ffmpeg_available=True)
+
+        self.assertTrue(playback["web_player"]["supported"])
+        self.assertEqual(playback["stream_url"], playback["web_player"]["url"])
+        self.assertTrue(playback["cloud_transcode"]["supported"])
+        self.assertEqual("aliyundrive", playback["cloud_transcode"]["provider"])
+        self.assertEqual("Aliyundrive", playback["cloud_transcode"]["provider_name"])
+        self.assertEqual(["web_player"], playback["cloud_transcode"]["recommended_for"])
+        self.assertEqual(
+            "provider_cloud_transcode_not_original_file",
+            playback["cloud_transcode"]["quality_semantics"],
+        )
+        self.assertIn("fhd", playback["cloud_transcode"]["available_resolutions"])
+        self.assertNotIn(
             "quark_uc_download_link_not_web_playable",
             {warning["code"] for warning in playback["warnings"]},
         )

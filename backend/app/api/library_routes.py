@@ -587,7 +587,7 @@ def _normalize_catalog_visibility_payload(payload):
 
     status = Movie.normalize_catalog_visibility_status(raw_status)
     if not status:
-        raise MetadataValidationError(code=40030, msg="Invalid field value: status should be auto, published, or hidden")
+        raise MetadataValidationError(code=40030, msg="Invalid field value: status should be auto, published, hidden, or pending_review")
 
     raw_note = payload.get('note')
     if raw_note is not None and not isinstance(raw_note, str):
@@ -1230,7 +1230,7 @@ def _normalize_manual_content_payload(payload):
         raw_status = Movie.CATALOG_VISIBILITY_HIDDEN
     catalog_visibility_status = Movie.normalize_catalog_visibility_status(raw_status)
     if not catalog_visibility_status:
-        raise MetadataValidationError(code=40030, msg="Invalid field value: status should be auto, published, or hidden")
+        raise MetadataValidationError(code=40030, msg="Invalid field value: status should be auto, published, hidden, or pending_review")
 
     note = _normalize_optional_text_field('note', payload.get('note')) if 'note' in payload else None
     resources = _normalize_manual_resource_items(payload)
@@ -1700,6 +1700,119 @@ def _build_resource_label(resource, season, episode):
     if resolution:
         return f"{label_prefix} - {resolution}"
     return label_prefix
+
+
+def _metadata_describes_tv(meta_data):
+    if not isinstance(meta_data, dict):
+        return False
+    media_type = str(meta_data.get("media_type_hint") or "").strip().lower()
+    if media_type == "tv":
+        return True
+    tmdb_id = str(meta_data.get("tmdb_id") or "").strip().lower()
+    if tmdb_id.startswith("tv/"):
+        return True
+    if meta_data.get("season_metadata"):
+        return True
+
+    markers = (
+        "\u7535\u89c6\u5267",
+        "\u5267\u96c6",
+        "\u8fde\u7eed\u5267",
+        "\u756a\u5267",
+        "\u7efc\u827a",
+        "tv series",
+        "tv show",
+        "television",
+        "series",
+    )
+    categories = meta_data.get("category") or []
+    if isinstance(categories, str):
+        categories = [categories]
+    for item in categories:
+        text = str(item or "").strip().lower()
+        if any(marker in text for marker in markers):
+            return True
+    return False
+
+
+def _first_metadata_season(meta_data):
+    for item in (meta_data or {}).get("season_metadata") or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            season = int(item.get("season"))
+        except (TypeError, ValueError):
+            continue
+        if season > 0:
+            return season
+    return None
+
+
+def _repair_tv_resource_episode_metadata(movie, meta_data):
+    if not _metadata_describes_tv(meta_data):
+        return {"updated": 0, "updated_resource_ids": []}
+
+    cleaner = MediaPathCleaner()
+    default_season = _first_metadata_season(meta_data)
+    updated_resource_ids = []
+
+    for resource in movie.resources.order_by(MediaResource.path.asc()).all():
+        changed = False
+        episode_changed = False
+        parsed = cleaner.parse_path_metadata(resource.path or resource.filename or "")
+        suggested_episode = parsed.episode
+        suggested_season = parsed.season
+        if suggested_episode is not None and suggested_season is None:
+            suggested_season = resource.season if resource.season is not None else default_season
+
+        if suggested_season is not None and suggested_episode is not None:
+            if resource.season != suggested_season:
+                resource.season = suggested_season
+                changed = True
+                episode_changed = True
+            if resource.episode != suggested_episode:
+                resource.episode = suggested_episode
+                changed = True
+                episode_changed = True
+
+        specs = dict(resource.tech_specs or {})
+        features = dict(specs.get("features") or {})
+        if features.get("is_movie_feature") is not False:
+            features["is_movie_feature"] = False
+            specs["features"] = features
+            changed = True
+
+        trace = dict(specs.get("metadata_trace") or {})
+        trace_changed = False
+        if trace.get("media_type_hint") != "tv":
+            trace["media_type_hint"] = "tv"
+            trace_changed = True
+        if parsed.parse_strategy and trace.get("parse_strategy") != parsed.parse_strategy:
+            trace["parse_strategy"] = parsed.parse_strategy
+            trace_changed = True
+        if parsed.parse_mode and trace.get("parse_layer") != parsed.parse_mode:
+            trace["parse_layer"] = parsed.parse_mode
+            trace_changed = True
+        if trace_changed:
+            specs["metadata_trace"] = trace
+            changed = True
+
+        if specs != (resource.tech_specs or {}):
+            resource.tech_specs = specs
+
+        next_label = _build_resource_label(resource, resource.season, resource.episode)
+        if (episode_changed or resource.label is None) and resource.label != next_label:
+            resource.label = next_label
+            changed = True
+
+        if changed:
+            resource.metadata_edited_at = datetime.utcnow()
+            updated_resource_ids.append(resource.id)
+
+    return {
+        "updated": len(updated_resource_ids),
+        "updated_resource_ids": updated_resource_ids,
+    }
 
 
 def _is_newer_user_history(candidate, current):
@@ -2920,6 +3033,214 @@ def _build_metadata_work_items(query, page, page_size):
     }
 
 
+def _normalize_pending_review_publish_payload(payload):
+    if not isinstance(payload, dict) or not payload:
+        raise MetadataValidationError(code=40000, msg="No input data")
+
+    movie_ids = _normalize_string_list(
+        payload.get("movie_ids") or payload.get("ids"),
+        default=None,
+        field_name="movie_ids",
+    )
+    if not movie_ids:
+        raise MetadataValidationError(code=40022, msg="Invalid field value: movie_ids should be a non-empty array")
+    if len(movie_ids) > 500:
+        raise MetadataValidationError(code=40095, msg="Invalid field value: movie_ids cannot exceed 500")
+
+    note = _normalize_optional_text_field("note", payload.get("note")) if "note" in payload else None
+    return {
+        "movie_ids": movie_ids,
+        "force": _normalize_boolean_payload_field(payload, "force", default=False),
+        "note": note,
+    }
+
+
+def _normalize_pending_review_backfill_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    movie_ids = _normalize_string_list(
+        payload.get("movie_ids") or payload.get("ids"),
+        default=None,
+        field_name="movie_ids",
+    )
+    if movie_ids and len(movie_ids) > 5000:
+        raise MetadataValidationError(code=40096, msg="Invalid field value: movie_ids cannot exceed 5000")
+
+    note = _normalize_optional_text_field("note", payload.get("note")) if "note" in payload else None
+    return {
+        "movie_ids": movie_ids,
+        "limit": _normalize_limited_int(payload.get("limit"), 500, minimum=1, maximum=5000, field_name="limit"),
+        "dry_run": _normalize_boolean_payload_field(payload, "dry_run", default=True),
+        "include_visible": _normalize_boolean_payload_field(payload, "include_visible", default=False),
+        "note": note,
+    }
+
+
+def _build_pending_review_backfill_item(movie, snapshot, before_visibility, *, action, after_visibility=None):
+    state = snapshot.get("state") or {}
+    return {
+        "movie_id": movie.id,
+        "title": movie.title,
+        "year": movie.year,
+        "action": action,
+        "scraper_source": movie.scraper_source,
+        "metadata_state": {
+            "source_code": state.get("source_code"),
+            "source_group": state.get("source_group"),
+            "confidence": state.get("confidence"),
+            "is_placeholder": bool(state.get("is_placeholder")),
+            "is_local_only": bool(state.get("is_local_only")),
+            "issue_codes": state.get("issue_codes") or [],
+            "primary_issue_code": state.get("primary_issue_code"),
+            "review_priority": state.get("review_priority"),
+        },
+        "catalog_visibility_before": before_visibility,
+        "catalog_visibility_after": after_visibility,
+    }
+
+
+def _backfill_pending_review_movies(movie_ids=None, *, limit=500, dry_run=True, include_visible=False, note=None):
+    candidates = []
+    updated = []
+    skipped = []
+    failed = []
+    scanned = 0
+    track_skips = bool(movie_ids)
+
+    if movie_ids:
+        movies_by_id = {
+            movie.id: movie
+            for movie in Movie.query.filter(Movie.id.in_(movie_ids)).all()
+        }
+        movies = []
+        for movie_id in movie_ids:
+            movie = movies_by_id.get(movie_id)
+            if movie:
+                movies.append(movie)
+            else:
+                failed.append({"movie_id": movie_id, "reason": "not_found"})
+    else:
+        visibility_status = db.func.coalesce(Movie.catalog_visibility_status, Movie.CATALOG_VISIBILITY_AUTO)
+        movies = (
+            Movie.query
+            .filter(visibility_status == Movie.CATALOG_VISIBILITY_AUTO)
+            .filter(Movie.resources.any())
+            .order_by(Movie.updated_at.desc(), Movie.id.asc())
+            .limit(limit)
+            .all()
+        )
+
+    for movie in movies:
+        scanned += 1
+        current_status = Movie.normalize_catalog_visibility_status(movie.catalog_visibility_status) or Movie.CATALOG_VISIBILITY_AUTO
+        before_visibility = movie.get_catalog_visibility_state()
+
+        if current_status != Movie.CATALOG_VISIBILITY_AUTO:
+            if track_skips:
+                skipped.append({"movie_id": movie.id, "reason": "not_auto", "status": current_status})
+            continue
+        if movie.is_manual_content():
+            if track_skips:
+                skipped.append({"movie_id": movie.id, "reason": "manual_content"})
+            continue
+        if movie.resources.count() == 0:
+            if track_skips:
+                skipped.append({"movie_id": movie.id, "reason": "no_resources"})
+            continue
+        if before_visibility["is_visible"] and not include_visible:
+            if track_skips:
+                skipped.append({"movie_id": movie.id, "reason": "auto_visible"})
+            continue
+
+        snapshot = movie.get_metadata_snapshot()
+        if not movie.should_enter_pending_review(snapshot):
+            if track_skips:
+                skipped.append({
+                    "movie_id": movie.id,
+                    "reason": "metadata_not_suspicious",
+                    "issue_codes": (snapshot.get("state") or {}).get("issue_codes") or [],
+                })
+            continue
+
+        item = _build_pending_review_backfill_item(
+            movie,
+            snapshot,
+            before_visibility,
+            action="would_set_pending_review" if dry_run else "set_pending_review",
+        )
+        candidates.append(item)
+        if dry_run:
+            continue
+
+        movie.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PENDING_REVIEW
+        movie.catalog_visibility_note = note or "backfill_pending_review:suspicious_metadata"
+        movie.catalog_visibility_updated_at = datetime.utcnow()
+        item["catalog_visibility_after"] = movie.get_catalog_visibility_state()
+        updated.append(item)
+
+    return {
+        "dry_run": dry_run,
+        "include_visible": include_visible,
+        "candidates": candidates,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+        "summary": {
+            "scanned": scanned,
+            "candidates": len(candidates),
+            "updated": len(updated),
+            "skipped": len(skipped),
+            "failed": len(failed),
+        },
+    }
+
+
+def _publish_pending_review_movies(movie_ids, *, force=False, note=None):
+    published = []
+    failed = []
+
+    for movie_id in movie_ids:
+        movie = db.session.get(Movie, movie_id)
+        if not movie:
+            failed.append({"movie_id": movie_id, "reason": "not_found"})
+            continue
+
+        current_state = movie.get_catalog_visibility_state()
+        if current_state["status"] != Movie.CATALOG_VISIBILITY_PENDING_REVIEW:
+            failed.append({
+                "movie_id": movie.id,
+                "reason": "not_pending_review",
+                "status": current_state["status"],
+            })
+            continue
+
+        if current_state["requires_force"] and not force:
+            failed.append({
+                "movie_id": movie.id,
+                "reason": "requires_force",
+                "blockers": current_state["blockers"],
+            })
+            continue
+
+        movie.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PUBLISHED
+        movie.catalog_visibility_note = note
+        movie.catalog_visibility_updated_at = datetime.utcnow()
+        published.append({
+            "movie_id": movie.id,
+            "title": movie.title,
+            "catalog_visibility": movie.get_catalog_visibility_state(),
+        })
+
+    return {
+        "published": published,
+        "failed": failed,
+        "summary": {
+            "total": len(movie_ids),
+            "published": len(published),
+            "failed": len(failed),
+        },
+    }
+
+
 def _build_metadata_batch_result(
     movie,
     resolution=None,
@@ -2989,6 +3310,7 @@ def _apply_metadata_rescrape_result(movie, result, unlock_fields=None):
     meta_data = dict(resolution.meta_data or {})
     target_tmdb_id = meta_data.get('tmdb_id') or resolution.resolved_tmdb_id
     target_tmdb_id = str(target_tmdb_id).strip() if target_tmdb_id else None
+    previously_visible = movie.is_visible_in_catalog()
 
     # Trace source resources before a merge so reparented/replaced resources retain
     # the decision trail produced for this scrape run.
@@ -3007,6 +3329,7 @@ def _apply_metadata_rescrape_result(movie, result, unlock_fields=None):
                 Movie.id != movie.id,
             ).first()
         if target_movie:
+            previously_visible = target_movie.is_visible_in_catalog()
             merge_result = scanner_adapter.merge_movie_records(movie, target_movie)
             movie = target_movie
         else:
@@ -3019,6 +3342,9 @@ def _apply_metadata_rescrape_result(movie, result, unlock_fields=None):
         respect_locked=True,
     )
     season_result = _sync_movie_season_metadata(movie, meta_data)
+    _repair_tv_resource_episode_metadata(movie, meta_data)
+    if movie.apply_pending_review_default(previously_visible=previously_visible):
+        updated_fields.append("catalog_visibility_status")
     return {
         "movie": movie,
         "resolution": resolution,
@@ -3655,6 +3981,7 @@ def list_metadata_work_items():
     metadata_source_group = request.args.get('metadata_source_group')
     metadata_review_priority = request.args.get('metadata_review_priority')
     metadata_issue_code = request.args.get('metadata_issue_code')
+    effective_status = request.args.get('effective_status')
     raw_needs_attention = request.args.get('needs_attention')
     keyword = request.args.get('keyword')
 
@@ -3668,9 +3995,57 @@ def list_metadata_work_items():
         metadata_review_priority=metadata_review_priority,
         needs_attention=needs_attention,
         metadata_issue_code=metadata_issue_code,
+        effective_status=effective_status,
     ).order_by(Movie.updated_at.desc(), Movie.id.asc())
 
     return api_response(data=_build_metadata_work_items(query, page, page_size))
+
+
+@library_bp.route('/metadata/pending-review/publish', methods=['POST'])
+def publish_pending_review_movies():
+    try:
+        normalized = _normalize_pending_review_publish_payload(_get_json_payload())
+        data = _publish_pending_review_movies(
+            normalized["movie_ids"],
+            force=normalized["force"],
+            note=normalized["note"],
+        )
+        db.session.commit()
+        clear_user_access_cache()
+        return api_response(data=data, msg="Pending review movies published")
+    except MetadataValidationError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.msg)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Pending review publish failed error=%s", e)
+        return api_error(code=50019, msg="Pending review publish failed", http_status=500)
+
+
+@library_bp.route('/metadata/pending-review/backfill', methods=['POST'])
+def backfill_pending_review_movies():
+    try:
+        normalized = _normalize_pending_review_backfill_payload(_get_json_payload())
+        data = _backfill_pending_review_movies(
+            movie_ids=normalized["movie_ids"],
+            limit=normalized["limit"],
+            dry_run=normalized["dry_run"],
+            include_visible=normalized["include_visible"],
+            note=normalized["note"],
+        )
+        if normalized["dry_run"]:
+            return api_response(data=data, msg="Pending review backfill planned")
+
+        db.session.commit()
+        clear_user_access_cache()
+        return api_response(data=data, msg="Pending review backfill applied")
+    except MetadataValidationError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.msg)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Pending review backfill failed error=%s", e)
+        return api_error(code=50020, msg="Pending review backfill failed", http_status=500)
 
 
 @library_bp.route('/metadata/episode-review-items', methods=['GET'])
@@ -3791,6 +4166,8 @@ def list_other_videos():
         )
 
     source_state = db.func.upper(Movie.scraper_source)
+    visibility_status = db.func.coalesce(Movie.catalog_visibility_status, Movie.CATALOG_VISIBILITY_AUTO)
+    query = query.filter(visibility_status != Movie.CATALOG_VISIBILITY_PENDING_REVIEW)
     non_attention_sources = list(Movie.get_metadata_non_attention_sources())
     manual_sources = list(Movie.MANUAL_CONTENT_SOURCES)
     manual_source_condition = source_state.in_(manual_sources)
@@ -3915,6 +4292,7 @@ def list_movies():
     metadata_source_group = request.args.get('metadata_source_group')
     metadata_review_priority = request.args.get('metadata_review_priority')
     metadata_issue_code = request.args.get('metadata_issue_code')
+    effective_status = request.args.get('effective_status')
     raw_needs_attention = request.args.get('needs_attention')
     sort_by = request.args.get('sort_by', 'date_added')
     order = request.args.get('order', 'desc')
@@ -3922,7 +4300,7 @@ def list_movies():
     needs_attention = None
     if raw_needs_attention is not None:
         needs_attention = raw_needs_attention.strip().lower() in ('1', 'true', 'yes')
-    elif not any([metadata_source_group, metadata_review_priority, metadata_issue_code]):
+    elif not any([metadata_source_group, metadata_review_priority, metadata_issue_code, effective_status]):
         needs_attention = False
 
     query = build_movie_list_query(
@@ -3935,6 +4313,7 @@ def list_movies():
         metadata_review_priority=metadata_review_priority,
         needs_attention=needs_attention,
         metadata_issue_code=metadata_issue_code,
+        effective_status=effective_status,
     )
 
     sort_column = resolve_movie_sort_column(sort_by)
@@ -3976,17 +4355,11 @@ def update_movie_catalog_visibility(id):
     except MetadataValidationError as e:
         return api_error(code=e.code, msg=e.msg)
 
-    current_state = movie.get_catalog_visibility_state()
-    if status == Movie.CATALOG_VISIBILITY_PUBLISHED and current_state["requires_force"] and not force:
-        return api_response(
-            data={
-                "movie_id": movie.id,
-                "catalog_visibility": current_state,
-                "required_force": True,
-            },
-            code=40901,
-            msg="Catalog publish requires force because metadata is not public-ready",
-            http_status=409,
+    if status == Movie.CATALOG_VISIBILITY_PUBLISHED:
+        return api_error(
+            code=41010,
+            msg="Legacy single-item publish is removed; use /api/v1/metadata/pending-review/publish",
+            http_status=410,
         )
 
     try:
@@ -4704,12 +5077,14 @@ def refresh_movie_metadata(id):
     update_payload = _build_external_metadata_update_payload(meta_data)
 
     try:
+        previously_visible = movie.is_visible_in_catalog()
         target_movie = Movie.query.filter(
             Movie.tmdb_id == target_tmdb_id,
             Movie.id != movie.id,
         ).first()
         merge_result = None
         if target_movie:
+            previously_visible = target_movie.is_visible_in_catalog()
             merge_result = scanner_adapter.merge_movie_records(movie, target_movie)
             movie = target_movie
         else:
@@ -4722,6 +5097,9 @@ def refresh_movie_metadata(id):
             respect_locked=True,
         )
         _sync_movie_season_metadata(movie, meta_data)
+        _repair_tv_resource_episode_metadata(movie, meta_data)
+        if movie.apply_pending_review_default(previously_visible=previously_visible):
+            updated_fields.append("catalog_visibility_status")
         db.session.commit()
         logger.info(
             "Movie metadata refreshed movie_id=%s tmdb_id=%s fields=%s unlocked=%s merged=%s",
@@ -5175,12 +5553,14 @@ def match_movie_metadata(id):
     source_movie_id = movie.id
 
     try:
+        previously_visible = movie.is_visible_in_catalog()
         target_movie = Movie.query.filter(
             Movie.tmdb_id == target_tmdb_id,
             Movie.id != movie.id,
         ).first()
         merge_result = None
         if target_movie:
+            previously_visible = target_movie.is_visible_in_catalog()
             merge_result = scanner_adapter.merge_movie_records(movie, target_movie)
             movie = target_movie
         else:
@@ -5193,6 +5573,9 @@ def match_movie_metadata(id):
             respect_locked=True,
         )
         _sync_movie_season_metadata(movie, meta_data)
+        _repair_tv_resource_episode_metadata(movie, meta_data)
+        if movie.apply_pending_review_default(previously_visible=previously_visible):
+            updated_fields.append("catalog_visibility_status")
         db.session.commit()
         logger.info(
             "Movie metadata matched movie_id=%s tmdb_id=%s fields=%s unlocked=%s merged=%s",
@@ -5213,6 +5596,7 @@ def match_movie_metadata(id):
                 Movie.id != source_movie_id,
             ).first()
             if source_movie and target_movie:
+                previously_visible = target_movie.is_visible_in_catalog()
                 scanner_adapter.merge_movie_records(source_movie, target_movie)
                 updated_fields, _ = scanner_adapter.update_movie_metadata(
                     target_movie,
@@ -5221,6 +5605,9 @@ def match_movie_metadata(id):
                     respect_locked=True,
                 )
                 _sync_movie_season_metadata(target_movie, meta_data)
+                _repair_tv_resource_episode_metadata(target_movie, meta_data)
+                if target_movie.apply_pending_review_default(previously_visible=previously_visible):
+                    updated_fields.append("catalog_visibility_status")
                 db.session.commit()
                 logger.info(
                     "Movie metadata matched after integrity merge movie_id=%s tmdb_id=%s fields=%s",

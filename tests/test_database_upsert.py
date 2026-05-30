@@ -156,6 +156,77 @@ class DatabaseUpsertTests(unittest.TestCase):
         self.assertEqual("tv/100", refreshed.tmdb_id)
         self.assertEqual("The Day of the Jackal", refreshed.title)
 
+    def test_suspicious_new_upsert_defaults_to_pending_review(self):
+        adapter = MovieDatabaseAdapter()
+
+        result = adapter.upsert_movie(
+            {
+                "tmdb_id": "movie/low-confidence",
+                "title": "Low Confidence",
+                "original_title": "Low Confidence",
+                "year": 2026,
+                "description": "overview",
+                "cover": "poster",
+                "scraper_source": "TMDB",
+            },
+            {
+                "path": "movies/Low.Confidence.mkv",
+                "tech_specs": {
+                    "size": 100,
+                    "resolution": "1080p",
+                    "metadata_trace": {
+                        "confidence": "low",
+                        "scrape_layer": "fallback",
+                    },
+                },
+                "season": None,
+                "episode": None,
+                "label": "Movie - 1080p",
+            },
+            self.source.id,
+        )
+
+        movie = Movie.query.filter_by(tmdb_id="movie/low-confidence").first()
+        self.assertEqual("Saved", result["msg"])
+        self.assertEqual(Movie.CATALOG_VISIBILITY_PENDING_REVIEW, movie.catalog_visibility_status)
+        visibility = movie.get_catalog_visibility_state()
+        self.assertEqual("pending_review", visibility["effective_status"])
+        self.assertFalse(visibility["is_visible"])
+
+    def test_high_confidence_new_upsert_keeps_auto_visibility(self):
+        adapter = MovieDatabaseAdapter()
+
+        adapter.upsert_movie(
+            {
+                "tmdb_id": "movie/high-confidence",
+                "title": "High Confidence",
+                "original_title": "High Confidence",
+                "year": 2026,
+                "description": "overview",
+                "cover": "poster",
+                "scraper_source": "TMDB_STRICT",
+            },
+            {
+                "path": "movies/High.Confidence.mkv",
+                "tech_specs": {
+                    "size": 100,
+                    "resolution": "1080p",
+                    "metadata_trace": {
+                        "confidence": "high",
+                        "scrape_layer": "structured",
+                    },
+                },
+                "season": None,
+                "episode": None,
+                "label": "Movie - 1080p",
+            },
+            self.source.id,
+        )
+
+        movie = Movie.query.filter_by(tmdb_id="movie/high-confidence").first()
+        self.assertEqual(Movie.CATALOG_VISIBILITY_AUTO, movie.catalog_visibility_status)
+        self.assertTrue(movie.get_catalog_visibility_state()["is_visible"])
+
 
 if __name__ == "__main__":
     unittest.main()

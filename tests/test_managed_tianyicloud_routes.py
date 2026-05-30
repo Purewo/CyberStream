@@ -16,8 +16,10 @@ from backend.app.models import StorageSource
 
 class FakeManagedOpenListClient:
     created_requests = []
+    pc_qr_created_requests = []
     deleted_storage_ids = []
     poll_result = None
+    pc_qr_poll_result = None
 
     def __init__(self):
         pass
@@ -25,8 +27,10 @@ class FakeManagedOpenListClient:
     @classmethod
     def reset(cls):
         cls.created_requests = []
+        cls.pc_qr_created_requests = []
         cls.deleted_storage_ids = []
         cls.poll_result = None
+        cls.pc_qr_poll_result = None
 
     def create_tianyicloud_storage(self, root_folder_id="", cloud_type="personal"):
         self.created_requests.append({
@@ -46,6 +50,25 @@ class FakeManagedOpenListClient:
             "qr_content": "qr-uuid",
         }
 
+    def create_tianyicloud_pc_qr_storage(self, root_folder_id="", cloud_type="personal"):
+        self.pc_qr_created_requests.append({
+            "root_folder_id": root_folder_id,
+            "cloud_type": cloud_type,
+        })
+        storage_id = 188 + len(self.pc_qr_created_requests) - 1
+        return {
+            "storage_id": storage_id,
+            "mount_path": "/cyberstream/tianyicloud-pc/fake",
+            "auth_state": "qr_pending",
+            "authenticated": False,
+            "cloud_type": cloud_type,
+            "cloud_root_path": "/",
+            "root_folder_id": root_folder_id or "-11",
+            "login_mode": "pc_qr",
+            "qr_code_data_url": "data:image/jpeg;base64,cGMtcXI=",
+            "qr_content": "pc-qr-uuid",
+        }
+
     def poll_tianyicloud_storage(self, storage_id):
         if self.poll_result is not None:
             result = dict(self.poll_result)
@@ -59,6 +82,26 @@ class FakeManagedOpenListClient:
                 "cloud_root_path": "/",
                 "root_folder_id": "-11",
                 "pending_reason": "waiting_for_scan",
+            }
+        result["storage_id"] = storage_id
+        return result
+
+    def poll_tianyicloud_pc_qr_storage(self, storage_id):
+        if self.pc_qr_poll_result is not None:
+            result = dict(self.pc_qr_poll_result)
+        else:
+            result = {
+                "storage_id": storage_id,
+                "mount_path": "/cyberstream/tianyicloud-pc/fake",
+                "auth_state": "qr_pending",
+                "authenticated": False,
+                "cloud_type": "personal",
+                "cloud_root_path": "/",
+                "root_folder_id": "-11",
+                "login_mode": "pc_qr",
+                "pending_reason": "waiting_for_scan",
+                "qr_code_data_url": "data:image/jpeg;base64,cGMtcXI=",
+                "qr_content": "pc-qr-uuid",
             }
         result["storage_id"] = storage_id
         return result
@@ -226,6 +269,109 @@ class ManagedTianYiCloudRouteTests(unittest.TestCase):
         self.assertTrue(payload["data"]["source"]["actions"]["can_scan"])
         self.assertTrue(payload["data"]["source"]["actions"]["can_stream"])
         self.assertEqual("ready", db.session.get(StorageSource, source.id).config["auth_state"])
+
+    def test_start_pc_qr_creates_hidden_experimental_source(self):
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/tianyicloud/pc-qr/start",
+                json={
+                    "name": "TianYiCloud PC QR",
+                    "cloud_type": "personal",
+                },
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["experimental"])
+        self.assertEqual("pc_qr", payload["data"]["login_mode"])
+        self.assertTrue(payload["data"]["qr_started"])
+        self.assertEqual("data:image/jpeg;base64,cGMtcXI=", payload["data"]["qr_code_data_url"])
+        source_data = payload["data"]["source"]
+        self.assertEqual("tianyicloud", source_data["type"])
+        self.assertNotIn("openlist_storage_id", source_data["config"])
+        self.assertNotIn("mount_path", source_data["config"])
+        self.assertNotIn("login_mode", source_data["config"])
+
+        source = StorageSource.query.first()
+        self.assertEqual("pc_qr", source.config["login_mode"])
+        self.assertEqual(188, source.config["openlist_storage_id"])
+        self.assertEqual(
+            [{"root_folder_id": "", "cloud_type": "personal"}],
+            FakeManagedOpenListClient.pc_qr_created_requests,
+        )
+
+    def test_poll_pc_qr_pending_returns_experimental_state(self):
+        source = StorageSource(
+            name="TianYiCloud PC QR",
+            type="tianyicloud",
+            config={
+                "openlist_storage_id": 188,
+                "mount_path": "/cyberstream/tianyicloud-pc/fake",
+                "auth_state": "qr_pending",
+                "cloud_type": "personal",
+                "cloud_root_path": "/",
+                "login_mode": "pc_qr",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/tianyicloud/pc-qr/poll",
+                json={"source_id": source.id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["experimental"])
+        self.assertEqual("pc_qr", payload["data"]["login_mode"])
+        self.assertFalse(payload["data"]["authenticated"])
+        self.assertEqual("qr_pending", payload["data"]["auth_state"])
+        self.assertEqual("waiting_for_scan", payload["data"]["pending_reason"])
+        self.assertEqual("data:image/jpeg;base64,cGMtcXI=", payload["data"]["qr_code_data_url"])
+
+    def test_poll_pc_qr_ready_marks_source_ready(self):
+        source = StorageSource(
+            name="TianYiCloud PC QR",
+            type="tianyicloud",
+            config={
+                "openlist_storage_id": 188,
+                "mount_path": "/cyberstream/tianyicloud-pc/fake",
+                "auth_state": "qr_pending",
+                "cloud_type": "personal",
+                "cloud_root_path": "/",
+                "login_mode": "pc_qr",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+        FakeManagedOpenListClient.pc_qr_poll_result = {
+            "mount_path": "/cyberstream/tianyicloud-pc/fake",
+            "auth_state": "ready",
+            "authenticated": True,
+            "cloud_type": "personal",
+            "cloud_root_path": "/",
+            "root_folder_id": "-11",
+            "login_mode": "pc_qr",
+        }
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.post(
+                "/api/v1/storage/managed/tianyicloud/pc-qr/poll",
+                json={"source_id": source.id},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(payload["data"]["authenticated"])
+        self.assertEqual("pc_qr", payload["data"]["login_mode"])
+        self.assertEqual("ready", payload["data"]["source"]["config"]["auth_state"])
+        self.assertNotIn("login_mode", payload["data"]["source"]["config"])
+        self.assertTrue(payload["data"]["source"]["actions"]["can_preview"])
+        saved = db.session.get(StorageSource, source.id)
+        self.assertEqual("ready", saved.config["auth_state"])
+        self.assertEqual("pc_qr", saved.config["login_mode"])
 
     def test_delete_managed_source_removes_openlist_storage_best_effort(self):
         source = StorageSource(

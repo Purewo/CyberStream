@@ -41,10 +41,7 @@ from backend.app.services.playback import (
     build_external_playback_manifest,
     guess_video_mime_type,
 )
-from backend.app.services.quark_uc_transcode import (
-    QuarkUCTranscodeError,
-    build_quark_uc_streaming_qualities,
-)
+from backend.app.services.cloud_transcode import CloudTranscodeError, build_streaming_qualities
 from backend.app.services.subtitle_settings import (
     SubtitleSettingsError,
     build_subtitle_settings_payload,
@@ -294,12 +291,12 @@ def get_resource_streaming_qualities(id):
 
     selected_resolution = request.args.get("resolution") or request.args.get("quality")
     try:
-        data = build_quark_uc_streaming_qualities(
+        data = build_streaming_qualities(
             resource,
             selected_resolution=selected_resolution,
         )
         return api_response(data=data, msg="resource streaming qualities")
-    except QuarkUCTranscodeError as e:
+    except CloudTranscodeError as e:
         return api_error(code=e.code, msg=e.message, http_status=e.http_status)
     except Exception as e:
         logger.exception("Streaming qualities failed resource_id=%s error=%s", id, e)
@@ -315,14 +312,14 @@ def stream_resource_transcoded(id):
 
     selected_resolution = request.args.get("resolution") or request.args.get("quality")
     try:
-        data = build_quark_uc_streaming_qualities(
+        data = build_streaming_qualities(
             resource,
             selected_resolution=selected_resolution,
         )
         selected_item = data.get("selected_item") or {}
         redirect_url = selected_item.get("url")
         if not redirect_url:
-            raise QuarkUCTranscodeError(
+            raise CloudTranscodeError(
                 "No transcoded stream URL is available",
                 code=40914,
                 http_status=409,
@@ -334,7 +331,7 @@ def stream_resource_transcoded(id):
             selected_item.get("resolution"),
         )
         return redirect(redirect_url, code=302)
-    except QuarkUCTranscodeError as e:
+    except CloudTranscodeError as e:
         logger.warning("Transcoded stream rejected resource_id=%s error=%s", id, e.message)
         return Response(e.message, status=e.http_status)
     except Exception as e:

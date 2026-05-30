@@ -81,41 +81,41 @@ class CatalogVisibilityTests(unittest.TestCase):
         self.assertNotIn(movie.id, self._list_movie_ids())
         self.assertNotIn(movie.id, self._list_movie_ids({"needs_attention": "true"}))
 
-    def test_publish_requires_force_when_movie_is_not_public_ready(self):
-        movie = self._movie("Raw", scraper_source="LOCAL_FALLBACK", cover="")
+    def test_pending_review_keeps_ready_movie_out_of_public_catalog(self):
+        movie = self._movie("Pending Ready")
 
-        blocked_response = self.client.patch(
+        response = self.client.patch(
             f"/api/v1/movies/{movie.id}/catalog-visibility",
-            json={"status": "published"},
+            json={"status": "pending_review", "note": "check before publish"},
         )
 
-        self.assertEqual(409, blocked_response.status_code)
-        blocked_payload = blocked_response.get_json()
-        self.assertEqual(40901, blocked_payload["code"])
-        self.assertTrue(blocked_payload["data"]["required_force"])
-        blockers = blocked_payload["data"]["catalog_visibility"]["blockers"]
-        self.assertIn("metadata_needs_attention", blockers)
-        self.assertIn("poster_missing", blockers)
+        self.assertEqual(200, response.status_code)
+        visibility = response.get_json()["data"]["catalog_visibility"]
+        self.assertEqual("pending_review", visibility["status"])
+        self.assertEqual("pending_review", visibility["effective_status"])
+        self.assertFalse(visibility["is_visible"])
+        self.assertFalse(visibility["auto_visible"])
+        self.assertEqual("pending_review", visibility["reason"])
         self.assertNotIn(movie.id, self._list_movie_ids())
 
-        published_response = self.client.patch(
+    def test_legacy_catalog_visibility_patch_cannot_publish(self):
+        movie = self._movie("Raw", scraper_source="LOCAL_FALLBACK", cover="")
+
+        response = self.client.patch(
             f"/api/v1/movies/{movie.id}/catalog-visibility",
             json={"status": "published", "force": True, "note": "manual catalog item"},
         )
 
-        self.assertEqual(200, published_response.status_code)
-        visibility = published_response.get_json()["data"]["catalog_visibility"]
-        self.assertEqual("published", visibility["status"])
-        self.assertTrue(visibility["is_visible"])
-        self.assertEqual("manual_published", visibility["reason"])
-        self.assertIn(movie.id, self._list_movie_ids())
+        self.assertEqual(410, response.status_code)
+        payload = response.get_json()
+        self.assertEqual(41010, payload["code"])
+        self.assertIn("/api/v1/metadata/pending-review/publish", payload["msg"])
+        self.assertNotIn(movie.id, self._list_movie_ids())
 
     def test_auto_reset_returns_to_implicit_visibility_rules(self):
         movie = self._movie("Reset", scraper_source="LOCAL_FALLBACK", cover="")
-        self.client.patch(
-            f"/api/v1/movies/{movie.id}/catalog-visibility",
-            json={"status": "published", "force": True},
-        )
+        movie.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PUBLISHED
+        db.session.commit()
         self.assertIn(movie.id, self._list_movie_ids())
 
         response = self.client.patch(

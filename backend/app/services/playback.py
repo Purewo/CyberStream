@@ -12,9 +12,9 @@ from backend.app.services.audio_transcode import (
     is_ffmpeg_available as _is_ffmpeg_available,
 )
 from backend.app.storage.source_registry import get_source_capabilities
+from backend.app.services.cloud_transcode import build_cloud_transcode_playback
 from backend.app.services.quark_uc_transcode import (
     QUARK_UC_STREAMING_SOURCE_TYPES,
-    build_quark_uc_cloud_transcode_playback,
 )
 from backend.app.services.subtitle_settings import get_subtitle_settings_for_playback
 from backend.app.services.urls import api_url_for
@@ -81,6 +81,15 @@ BAIDUNETDISK_WEB_PLAYER_UNSUPPORTED_MESSAGE = (
     "Baidu Netdisk web playback is not supported. Please use the PC client."
 )
 BAIDUNETDISK_UA_REWRITE_REASON = "baidunetdisk_requires_user_agent_rewrite"
+BAIDUNETDISK_OFFICIAL_DOWNLOAD_API_UNPLAYABLE_REASON = "baidunetdisk_official_download_api_sign_error"
+BAIDUNETDISK_OFFICIAL_DOWNLOAD_API_UNPLAYABLE_MESSAGE = (
+    "Baidu Netdisk official download API links fail with sign error; switch download_api to crack_video."
+)
+BAIDUNETDISK_EXTERNAL_PLAYER_DOWNLOAD_APIS = {"crack", "crack_video"}
+QUARK_UC_RAW_DOWNLOAD_WEB_UNSUPPORTED_REASON = "quark_uc_raw_download_not_web_playable"
+QUARK_UC_RAW_DOWNLOAD_WEB_UNSUPPORTED_MESSAGE = (
+    "QuarkTV/UCTV raw download stream is reserved for PC/external players; use cloud_transcode for web playback."
+)
 
 
 def guess_video_mime_type(resource):
@@ -234,14 +243,21 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None,
     transcode_supported = bool(ffmpeg_input_supported)
     transcode_available = bool(transcode_supported and ffmpeg_ready)
     baidunetdisk_web_blocked = source_type == "baidunetdisk"
-    cloud_transcode = build_quark_uc_cloud_transcode_playback(resource, source_type)
+    cloud_transcode = build_cloud_transcode_playback(resource, source_type)
     source_config = getattr(getattr(resource, "source", None), "config", None) or {}
-    quark_uc_download_link = (
-        source_type in QUARK_UC_STREAMING_SOURCE_TYPES
-        and str(source_config.get("link_method") or "download").strip().lower() == "download"
+    baidunetdisk_download_api = str(source_config.get("download_api") or "").strip().lower()
+    baidunetdisk_external_blocked = (
+        baidunetdisk_web_blocked
+        and baidunetdisk_download_api not in BAIDUNETDISK_EXTERNAL_PLAYER_DOWNLOAD_APIS
     )
-    web_player_supported = bool(stream_supported and stream_url and not baidunetdisk_web_blocked)
-    external_player_supported = bool(stream_supported and stream_url)
+    quark_uc_raw_download_link = source_type in QUARK_UC_STREAMING_SOURCE_TYPES
+    web_player_supported = bool(
+        stream_supported
+        and stream_url
+        and not baidunetdisk_web_blocked
+        and not quark_uc_raw_download_link
+    )
+    external_player_supported = bool(stream_supported and stream_url and not baidunetdisk_external_blocked)
     playback_modes = []
 
     if redirect_supported:
@@ -274,7 +290,12 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None,
             "code": BAIDUNETDISK_WEB_PLAYER_UNSUPPORTED_REASON,
             "message": BAIDUNETDISK_WEB_PLAYER_UNSUPPORTED_MESSAGE,
         })
-    if quark_uc_download_link:
+    if baidunetdisk_external_blocked:
+        warnings.append({
+            "code": BAIDUNETDISK_OFFICIAL_DOWNLOAD_API_UNPLAYABLE_REASON,
+            "message": BAIDUNETDISK_OFFICIAL_DOWNLOAD_API_UNPLAYABLE_MESSAGE,
+        })
+    if quark_uc_raw_download_link:
         warnings.append({
             "code": "quark_uc_download_link_not_web_playable",
             "message": "QuarkTV/UCTV raw download links may not play in web players; use playback.cloud_transcode.",
@@ -295,19 +316,36 @@ def build_resource_playback(resource, resource_info=None, ffmpeg_available=None,
             "range_supported": bool(range_supported and web_player_supported),
             "audio_decode_status": audio_state["web_decode_status"],
             "needs_server_audio_transcode": needs_audio_transcode,
-            "reason": BAIDUNETDISK_WEB_PLAYER_UNSUPPORTED_REASON if baidunetdisk_web_blocked else None,
-            "message": BAIDUNETDISK_WEB_PLAYER_UNSUPPORTED_MESSAGE if baidunetdisk_web_blocked else None,
-            "recommended_action": "download_pc_client" if baidunetdisk_web_blocked else None,
+            "reason": (
+                BAIDUNETDISK_WEB_PLAYER_UNSUPPORTED_REASON
+                if baidunetdisk_web_blocked
+                else (QUARK_UC_RAW_DOWNLOAD_WEB_UNSUPPORTED_REASON if quark_uc_raw_download_link else None)
+            ),
+            "message": (
+                BAIDUNETDISK_WEB_PLAYER_UNSUPPORTED_MESSAGE
+                if baidunetdisk_web_blocked
+                else (QUARK_UC_RAW_DOWNLOAD_WEB_UNSUPPORTED_MESSAGE if quark_uc_raw_download_link else None)
+            ),
+            "recommended_action": (
+                "download_pc_client"
+                if baidunetdisk_web_blocked
+                else ("use_cloud_transcode" if quark_uc_raw_download_link else None)
+            ),
         },
         "external_player": {
             "supported": external_player_supported,
-            "url": stream_url,
+            "url": stream_url if external_player_supported else None,
             "url_type": "http_stream",
             "subtitle_urls": subtitle_urls,
             "subtitle_placeholder_url": None,
             "requires_local_backend": baidunetdisk_web_blocked,
-            "requires_user_agent_rewrite": baidunetdisk_web_blocked,
-            "reason": BAIDUNETDISK_UA_REWRITE_REASON if baidunetdisk_web_blocked else None,
+            "requires_user_agent_rewrite": bool(baidunetdisk_web_blocked and not baidunetdisk_external_blocked),
+            "download_api": baidunetdisk_download_api if baidunetdisk_web_blocked else None,
+            "reason": (
+                BAIDUNETDISK_OFFICIAL_DOWNLOAD_API_UNPLAYABLE_REASON
+                if baidunetdisk_external_blocked
+                else (BAIDUNETDISK_UA_REWRITE_REASON if baidunetdisk_web_blocked else None)
+            ),
         },
         "subtitles": subtitle_payload,
         "audio": {
@@ -387,7 +425,7 @@ def build_external_playback_manifest(resource, resource_payload=None):
         (item for item in subtitle_items if item.get("id") == default_subtitle_id),
         subtitle_items[0] if subtitle_items else None,
     )
-    stream_url = playback.get("stream_url")
+    stream_url = external_player.get("url") or (playback.get("stream_url") if external_player.get("supported") else None)
     supported = bool(external_player.get("supported") and stream_url)
 
     return {

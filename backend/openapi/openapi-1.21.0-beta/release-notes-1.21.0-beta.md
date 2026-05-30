@@ -9,11 +9,12 @@
 
 ## QuarkTV / UCTV 云端转码播放
 
-- 新增 `GET /api/v1/resources/{id}/streaming-qualities`，返回 QuarkTV/UCTV provider 云端转码画质列表。
+- 新增 `GET /api/v1/resources/{id}/streaming-qualities`，返回 provider 云端转码画质列表；当前支持 QuarkTV、UCTV 和 Aliyundrive。
 - 新增 `GET /api/v1/resources/{id}/stream-transcoded?resolution=...`，按指定画质 302 到 provider 转码直链。
-- `ResourcePlayback` 新增 `cloud_transcode`，前端可据此发现 `qualities_endpoint`、`stream_endpoint` 和支持的 `low/normal/high/super/2k/4k` 档位。
-- QuarkTV/UCTV 原始下载直链保留为兼容入口，但前端 Web 播放应优先使用 `cloud_transcode`，避免 raw download URL 无法在线播放。
-- QuarkTV/UCTV 挂载时 `link_method` 明确支持 `download` / `streaming` 用户选择；`source.config` 会返回当前选择。
+- `ResourcePlayback` 新增 `cloud_transcode`，前端可据此发现 `qualities_endpoint`、`stream_endpoint` 和 provider-specific 档位；QuarkTV/UCTV 常见为 `low/normal/high/super/2k/4k`，Aliyundrive 常见为 `ld/sd/hd/fhd/qhd/4k`。
+- QuarkTV/UCTV 原始下载直链保留为 PC/外部播放器入口；前端 Web 播放应优先使用 `cloud_transcode`，避免 raw download URL 无法在线播放。
+- QuarkTV/UCTV 挂载固定使用 OpenList `download` 原文件链路，不再要求前端提供 `download` / `streaming` 用户选择；同一个资源响应会同时暴露 raw stream 与 cloud transcode 入口。
+- Aliyundrive 新增云端转码适配，后端通过托管 OpenList `video_preview` 能力获取清晰度列表；Aliyundrive raw stream 仍保留为网页/外部播放器原文件入口。
 - 新增 `POST /api/v1/storage/managed/{quarktv|uctv}/qr/restart`，用于登录态被踢后在同一个 `source_id` 上重新扫码，不重建 CyberStream 存储源、不破坏资源索引和媒体库绑定。
 - 新增光鸭、天翼、115、阿里云盘、百度网盘、123Pan 的 existing-source 重新登录入口；前端应优先用 restart/relogin 保留原 `source_id`，不要为了重新授权创建新来源。
 
@@ -29,6 +30,7 @@
 - `GET /api/v1/other-videos`
 - `POST /api/v1/movies/manual`
 - `POST /api/v1/movies/{id}/resources/attach`
+- `POST /api/v1/metadata/pending-review/backfill`
 
 用途：
 
@@ -42,6 +44,7 @@
 - 新建手工条目默认 `catalog_visibility_status=hidden`，不会污染当前普通影视库。
 - 手工来源为 `LOCAL_MANUAL_MOVIE` / `LOCAL_MANUAL_TV`，默认不进入 `needs_attention` 元数据工作台。
 - 接口只修改数据库索引和资源元数据，不移动、不删除实体视频文件。
+- `catalog_visibility.status=pending_review` 的条目不再出现在 `/other-videos`；历史遗留的可疑 `auto` 条目可用 backfill 先 dry-run 再回填到待审批池。
 
 ## 电视剧资源按季 hydrate
 

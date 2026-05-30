@@ -81,6 +81,12 @@ class MovieDatabaseAdapter:
         resource.episode = resource_info.get('episode')
         resource.label = resource_info.get('label')
 
+    def _apply_pending_review_default(self, movie, *, created=False, previously_visible=False):
+        return movie.apply_pending_review_default(
+            created=created,
+            previously_visible=previously_visible,
+        )
+
     def _normalize_resource_path(self, path):
         return str(path or '').replace('\\', '/').strip().strip('/')
 
@@ -416,10 +422,12 @@ class MovieDatabaseAdapter:
         if not movie or not resource:
             return None
 
+        previously_visible = movie.is_visible_in_catalog()
         self._apply_movie_metadata(movie, meta_data, overwrite=False)
         self.sync_movie_season_metadata(movie, meta_data.get('season_metadata'), prune_missing=True)
         tech_specs = self._build_resource_tech_specs(resource_info)
         self._apply_resource_fields(resource, movie, resource_info, rel_path, tech_specs)
+        self._apply_pending_review_default(movie, previously_visible=previously_visible)
         db.session.commit()
         logger.info("Recovered media resource upsert after duplicate race source_id=%s path=%s", source_id, rel_path)
         return {"msg": "Saved", "title": movie.title, "deduped": True}
@@ -433,6 +441,8 @@ class MovieDatabaseAdapter:
 
         movie = Movie.query.filter_by(tmdb_id=tmdb_id).first()
         reused_local_replacement_movie = False
+        created_movie = False
+        previously_visible = False
         rel_path = resource_info['path']
 
         if not movie:
@@ -444,16 +454,19 @@ class MovieDatabaseAdapter:
             self._apply_movie_metadata(movie, meta_data, overwrite=True)
             db.session.add(movie)
             db.session.commit()
+            created_movie = True
             logger.info("Inserted movie title=%s id=%s", movie.title, movie.id)
-        elif not reused_local_replacement_movie:
-            self._apply_movie_metadata(movie, meta_data, overwrite=False)
         else:
-            logger.info(
-                "Reused existing movie for local replacement source_id=%s path=%s movie_id=%s",
-                source_id,
-                rel_path,
-                movie.id,
-            )
+            previously_visible = movie.is_visible_in_catalog()
+            if not reused_local_replacement_movie:
+                self._apply_movie_metadata(movie, meta_data, overwrite=False)
+            else:
+                logger.info(
+                    "Reused existing movie for local replacement source_id=%s path=%s movie_id=%s",
+                    source_id,
+                    rel_path,
+                    movie.id,
+                )
 
         if not reused_local_replacement_movie:
             self.sync_movie_season_metadata(movie, meta_data.get('season_metadata'), prune_missing=True)
@@ -485,6 +498,11 @@ class MovieDatabaseAdapter:
             )
             self._apply_resource_fields(resource, movie, resource_info, rel_path, tech_specs)
             db.session.add(resource)
+        self._apply_pending_review_default(
+            movie,
+            created=created_movie,
+            previously_visible=previously_visible,
+        )
 
         try:
             db.session.commit()

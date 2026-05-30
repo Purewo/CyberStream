@@ -24,7 +24,7 @@ def _flask_rule_to_openapi_path(rule):
 
 class OpenApiContractTests(unittest.TestCase):
     def _load_openapi(self):
-        return json.loads(OPENAPI_PATH.read_text())
+        return json.loads(OPENAPI_PATH.read_text(encoding="utf-8"))
 
     def test_openapi_paths_match_registered_runtime_routes(self):
         app = create_app({
@@ -203,6 +203,14 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("ManagedBaiduNetdiskOAuthPollRequest", schemas)
         self.assertIn("baidunetdisk", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("oauth_login", schemas["StorageProviderCapabilities"]["properties"])
+        self.assertEqual(
+            "crack_video",
+            schemas["ConfigBaiduNetdisk"]["properties"]["download_api"]["default"],
+        )
+        self.assertEqual(
+            "crack_video",
+            schemas["ManagedBaiduNetdiskOAuthStartRequest"]["properties"]["download_api"]["default"],
+        )
 
     def test_managed_123pan_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
@@ -241,6 +249,10 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("ManagedQuarkUCTVQrPollRequest", schemas)
         self.assertIn("root_folder_id", schemas["ConfigQuarkTV"]["properties"])
         self.assertIn("root_folder_id", schemas["ConfigUCTV"]["properties"])
+        self.assertNotIn("link_method", schemas["ConfigQuarkTV"]["properties"])
+        self.assertNotIn("link_method", schemas["ConfigUCTV"]["properties"])
+        self.assertNotIn("link_method", schemas["ManagedQuarkUCTVQrStartRequest"]["properties"])
+        self.assertNotIn("link_method", schemas["ManagedQuarkUCTVQrRestartRequest"]["properties"])
         self.assertIn("quarktv", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("uctv", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("/api/v1/resources/{id}/streaming-qualities", paths)
@@ -248,6 +260,15 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("ResourceCloudTranscodePlayback", schemas)
         self.assertIn("ResourceCloudTranscodeQualities", schemas)
         self.assertIn("cloud_transcode", schemas["ResourcePlayback"]["properties"])
+        cloud_props = schemas["ResourceCloudTranscodePlayback"]["properties"]
+        self.assertIn("recommended_for", cloud_props)
+        self.assertIn("quality_semantics", cloud_props)
+        self.assertIn("aliyundrive", cloud_props["provider"]["enum"])
+        self.assertIn(
+            "aliyundrive",
+            schemas["ResourceCloudTranscodeQualities"]["properties"]["storage_type"]["enum"],
+        )
+        self.assertNotIn("enum", schemas["ResourceCloudTranscodeQualityItem"]["properties"]["resolution"])
 
     def test_library_scan_openapi_documents_refresh_contract(self):
         openapi = self._load_openapi()
@@ -297,6 +318,10 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("catalog_visibility", schemas["MovieSimple"]["properties"])
         self.assertIn("MovieCatalogVisibility", schemas)
         self.assertIn("MovieCatalogVisibilityUpdateRequest", schemas)
+        self.assertIn("pending_review", schemas["MovieCatalogVisibility"]["properties"]["status"]["enum"])
+        self.assertIn("pending_review", schemas["MovieCatalogVisibility"]["properties"]["effective_status"]["enum"])
+        self.assertIn("pending_review", schemas["MovieCatalogVisibilityUpdateRequest"]["properties"]["status"]["enum"])
+        self.assertNotIn("published", schemas["MovieCatalogVisibilityUpdateRequest"]["properties"]["status"]["enum"])
 
     def test_image_cache_openapi_documents_status_and_preload_contract(self):
         openapi = self._load_openapi()
@@ -426,6 +451,8 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("/api/v1/metadata/review-taxonomy", paths)
         self.assertIn("/api/v1/metadata/re-scrape/plan", paths)
         self.assertIn("/api/v1/metadata/re-scrape/jobs", paths)
+        self.assertIn("/api/v1/metadata/pending-review/publish", paths)
+        self.assertIn("/api/v1/metadata/pending-review/backfill", paths)
         self.assertIn("/api/v1/metadata/episode-review-items", paths)
         self.assertIn("/api/v1/jobs", paths)
         self.assertIn("/api/v1/jobs/prune", paths)
@@ -433,6 +460,8 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("MetadataQualitySummaryResponse", schemas)
         self.assertIn("MetadataReviewTaxonomyResponse", schemas)
         self.assertIn("MetadataReScrapePlanResponse", schemas)
+        self.assertIn("PendingReviewBackfillRequest", schemas)
+        self.assertIn("PendingReviewBackfillResponse", schemas)
         self.assertIn("EpisodeReviewQueueResponse", schemas)
         self.assertIn("BackgroundJob", schemas)
         self.assertIn("BackgroundJobListResponse", schemas)
@@ -498,6 +527,7 @@ class OpenApiContractTests(unittest.TestCase):
         external_player_properties = schemas["ResourceExternalPlayerPlayback"]["properties"]
         self.assertIn("requires_local_backend", external_player_properties)
         self.assertIn("requires_user_agent_rewrite", external_player_properties)
+        self.assertIn("download_api", external_player_properties)
         stream_properties = schemas["ResourceExternalPlaybackStream"]["properties"]
         self.assertIn("requires_local_backend", stream_properties)
         self.assertIn("requires_user_agent_rewrite", stream_properties)

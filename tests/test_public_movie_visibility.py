@@ -74,6 +74,9 @@ class PublicMovieVisibilityTests(unittest.TestCase):
             scraper_source="LOCAL_FALLBACK",
             category=["剧情"],
         )
+        pending_movie = self._movie("Pending Review")
+        pending_movie.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PENDING_REVIEW
+        db.session.commit()
 
         default_response = self.client.get("/api/v1/movies?page_size=20")
         self.assertEqual(200, default_response.status_code)
@@ -83,6 +86,7 @@ class PublicMovieVisibilityTests(unittest.TestCase):
         self.assertNotIn(raw_movie.id, default_ids)
         self.assertNotIn(no_poster_tmdb.id, default_ids)
         self.assertNotIn(fallback_movie.id, default_ids)
+        self.assertNotIn(pending_movie.id, default_ids)
 
         attention_response = self.client.get("/api/v1/movies?needs_attention=true&page_size=20")
         self.assertEqual(200, attention_response.status_code)

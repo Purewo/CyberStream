@@ -79,10 +79,27 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
     APP_ID = "10718"
     DATA_VERSION = "26022601"
     FRONT_VERSION = "26041606"
+    TV_CATEGORY_KEYWORDS = (
+        "\u7535\u89c6\u5267",
+        "\u5267\u96c6",
+        "\u8fde\u7eed\u5267",
+        "\u756a\u5267",
+        "\u7efc\u827a",
+        "tv series",
+        "tv show",
+        "television",
+        "series",
+    )
+    MOVIE_CATEGORY_KEYWORDS = (
+        "\u7535\u5f71",
+        "movie",
+        "film",
+    )
 
     def __init__(self):
         self.session = requests.Session()
         self.session.trust_env = False
+        self._candidate_cache = {}
 
     def describe(self):
         data = super().describe()
@@ -360,6 +377,33 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
                 categories.append(text)
         return categories[:8]
 
+    def _category_indicates_tv(self, categories):
+        for item in categories or []:
+            text = self._plain_text(item).lower()
+            if any(keyword in text for keyword in self.TV_CATEGORY_KEYWORDS):
+                return True
+        return False
+
+    def _category_indicates_movie(self, categories):
+        for item in categories or []:
+            text = self._plain_text(item).lower()
+            if any(keyword in text for keyword in self.MOVIE_CATEGORY_KEYWORDS):
+                return True
+        return False
+
+    def _media_type_from_evidence(self, media_type_hint=None, episode_count=None, categories=None, source_media_type=None):
+        if episode_count and episode_count > 1:
+            return "tv"
+        if self._category_indicates_tv(categories):
+            return "tv"
+        if self._category_indicates_movie(categories):
+            return "movie"
+        if source_media_type in {"movie", "tv"}:
+            return source_media_type
+        if media_type_hint in {"movie", "tv"}:
+            return media_type_hint
+        return "movie"
+
     def _candidate_from_search_item(self, item, media_type_hint=None):
         doc = item.get("doc") if isinstance(item, dict) else None
         video_info = item.get("videoInfo") if isinstance(item, dict) else None
@@ -379,9 +423,14 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
             if self._plain_text(actor)
         ]
         episode_count = self._episode_count_from_video_info(video_info)
-        media_type = media_type_hint if media_type_hint in {"movie", "tv"} else ("tv" if episode_count and episode_count > 1 else "movie")
         cover_doc = video_info.get("coverDoc") or {}
         rating = self._rating_from_tags(cover_doc.get("richTags") or [])
+        category = self._category_from_video_info(video_info, actors)
+        media_type = self._media_type_from_evidence(
+            media_type_hint=media_type_hint,
+            episode_count=episode_count,
+            categories=category,
+        )
 
         return {
             "provider": self.name,
@@ -404,7 +453,14 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
             "popularity": self._plain_text(cover_doc.get("chaseNum")),
             "vote_average": rating,
             "rating": rating,
-            "category": self._category_from_video_info(video_info, actors),
+            "category": category,
+            "actors": actors,
+            "directors": [
+                self._plain_text(director)
+                for director in (video_info.get("directors") or [])
+                if self._plain_text(director)
+            ],
+            "country": self._plain_text(video_info.get("area")),
         }
 
     def _safe_int(self, value):
@@ -447,10 +503,83 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
         for item in item_list:
             candidate = self._candidate_from_search_item(item, media_type_hint=media_type_hint)
             if candidate:
+                self._cache_candidate(candidate)
                 candidates.append(candidate)
             if len(candidates) >= max(limit, 0):
                 break
         return CandidateSearchResult(items=candidates)
+
+    def _cache_candidate(self, candidate):
+        candidate_id = candidate.get("candidate_id") if isinstance(candidate, dict) else None
+        cid, _ = self._parse_candidate_id(candidate_id)
+        if not cid:
+            return
+        self._candidate_cache[cid] = dict(candidate)
+
+    def _metadata_from_cached_candidate(self, cid, media_type_hint=None):
+        candidate = self._candidate_cache.get(cid)
+        if not candidate:
+            return None
+
+        title = self._normalize_title(candidate.get("title") or candidate.get("original_title"))
+        if not title:
+            return None
+
+        season = self._safe_positive_int(candidate.get("season"))
+        episode_count = self._safe_positive_int(candidate.get("episode_count"))
+        poster = self._plain_text(candidate.get("poster_url") or candidate.get("poster"))
+        backdrop = self._plain_text(candidate.get("backdrop_url") or candidate.get("background_cover"))
+        overview = self._plain_text(candidate.get("overview") or candidate.get("description"))
+        source_url = self._plain_text(candidate.get("source_url")) or self._source_url(cid)
+        category = [
+            self._plain_text(item)
+            for item in (candidate.get("category") or [])
+            if self._plain_text(item)
+        ][:8]
+        media_type = self._media_type_from_evidence(
+            media_type_hint=media_type_hint,
+            episode_count=episode_count,
+            categories=category,
+            source_media_type=candidate.get("media_type"),
+        )
+
+        season_metadata = []
+        if media_type == "tv" and season:
+            season_metadata.append({
+                "season": season,
+                "title": title,
+                "overview": overview,
+                "air_date": None,
+                "poster": poster,
+                "episode_count": episode_count,
+            })
+
+        return {
+            "tmdb_id": self._candidate_id(cid),
+            "title": title,
+            "original_title": self._normalize_title(candidate.get("original_title")) or title,
+            "year": self._safe_int(candidate.get("year")),
+            "rating": float(candidate.get("rating") or candidate.get("vote_average") or 0),
+            "description": overview,
+            "cover": poster,
+            "background_cover": backdrop if backdrop != poster else "",
+            "source_url": source_url,
+            "category": category,
+            "director": ", ".join(
+                self._plain_text(item)
+                for item in (candidate.get("directors") or [])
+                if self._plain_text(item)
+            ),
+            "actors": [
+                self._plain_text(item)
+                for item in (candidate.get("actors") or [])
+                if self._plain_text(item)
+            ],
+            "country": self._plain_text(candidate.get("country")),
+            "scraper_source": "TENCENT_VIDEO",
+            "media_type_hint": media_type,
+            "season_metadata": season_metadata,
+        }
 
     def _candidate_from_metadata(self, metadata, cid):
         return {
@@ -613,12 +742,17 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
             meta.get("datePublished"),
         )
         year = self._year_from_date(date_published)
-        episode_count = self._safe_positive_int(series_node.get("numberOfEpisodes"))
         season = self._season_number_from_title(title)
-        media_type = media_type_hint if media_type_hint in {"movie", "tv"} else ("tv" if episode_count and episode_count > 1 else "movie")
+        episode_count = self._safe_positive_int(series_node.get("numberOfEpisodes"))
         cover = self._image_url(series_node.get("image")) or self._plain_text(meta.get("image") or meta.get("og:image"))
         backdrop = self._image_url(video_node.get("thumbnailUrl"))
         country = self._country_from_series(series_node) or self._plain_text(meta.get("contentLocation"))
+        category = self._extract_categories(parser, video_node, series_node, title, actors)
+        media_type = self._media_type_from_evidence(
+            media_type_hint=media_type_hint,
+            episode_count=episode_count,
+            categories=category,
+        )
 
         season_metadata = []
         if media_type == "tv" and season:
@@ -641,7 +775,7 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
             "cover": cover,
             "background_cover": backdrop if backdrop != cover else "",
             "source_url": source_url,
-            "category": self._extract_categories(parser, video_node, series_node, title, actors),
+            "category": category,
             "director": "",
             "actors": actors,
             "country": country or "",
@@ -668,16 +802,20 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
             return None
 
         metadata = self._metadata_from_page(cid, html_text, media_type_hint=media_type_hint)
+        matched_from = "candidate_id"
+        if not metadata:
+            metadata = self._metadata_from_cached_candidate(cid, media_type_hint=media_type_hint)
+            matched_from = "search_candidate_cache"
         if not metadata:
             return None
 
         return ScrapeResult(
             metadata=metadata,
             provider=self.name,
-            confidence=0.85,
+            confidence=0.85 if matched_from == "candidate_id" else 0.75,
             matched_id=metadata["tmdb_id"],
             raw={
-                "matched_from": "candidate_id",
+                "matched_from": matched_from,
                 "manual_only": True,
                 "tencent_video_cid": cid,
                 "source_url": source_url,

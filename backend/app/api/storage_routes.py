@@ -24,6 +24,8 @@ from backend.app.utils.response import api_error, api_response
 logger = logging.getLogger(__name__)
 
 storage_bp = Blueprint('storage', __name__, url_prefix='/api/v1')
+BAIDUNETDISK_DEFAULT_DOWNLOAD_API = "crack_video"
+QUARK_UC_OPENLIST_LINK_METHOD = "download"
 
 
 def _normalize_relative_path(path_value):
@@ -187,7 +189,7 @@ def _build_guangyapan_source_config(state, auth_state):
 
 
 def _build_tianyicloud_source_config(state, auth_state):
-    return {
+    config = {
         "openlist_storage_id": int(state["storage_id"]),
         "mount_path": state["mount_path"],
         "auth_state": auth_state,
@@ -195,6 +197,9 @@ def _build_tianyicloud_source_config(state, auth_state):
         "cloud_root_path": state.get("cloud_root_path") or "/",
         "root_folder_id": str(state.get("root_folder_id") or ""),
     }
+    if state.get("login_mode"):
+        config["login_mode"] = state["login_mode"]
+    return config
 
 
 def _build_115cloud_source_config(state, auth_state):
@@ -236,7 +241,7 @@ def _build_baidunetdisk_source_config(state, auth_state):
         "auth_state": auth_state,
         "cloud_root_path": state.get("cloud_root_path") or "/",
         "root_folder_path": state.get("root_folder_path") or state.get("cloud_root_path") or "/",
-        "download_api": state.get("download_api") or "official",
+        "download_api": state.get("download_api") or BAIDUNETDISK_DEFAULT_DOWNLOAD_API,
     }
     if state.get("storage_id") is not None:
         config["openlist_storage_id"] = int(state["storage_id"])
@@ -251,6 +256,17 @@ def _build_baidunetdisk_source_config(state, auth_state):
     if state.get("oauth_error"):
         config["oauth_error"] = state["oauth_error"]
     return config
+
+
+def _select_baidunetdisk_download_api(raw_value=None, current_value=None):
+    allowed = {"official", "crack", "crack_video"}
+    raw_text = str(raw_value or "").strip().lower()
+    if raw_text:
+        return raw_text
+    current_text = str(current_value or "").strip().lower()
+    if current_text in allowed and current_text != "official":
+        return current_text
+    return BAIDUNETDISK_DEFAULT_DOWNLOAD_API
 
 
 def _build_123pan_source_config(state, auth_state):
@@ -301,7 +317,7 @@ def _complete_baidunetdisk_oauth_source(source, code):
         code=code,
         redirect_uri=redirect_uri,
         root_path=source_config.get("root_folder_path") or source_config.get("cloud_root_path") or "/",
-        download_api=source_config.get("download_api") or "official",
+        download_api=_select_baidunetdisk_download_api(current_value=source_config.get("download_api")),
     )
     next_config = dict(source_config)
     next_config.update(_build_baidunetdisk_source_config(login_state, auth_state='ready'))
@@ -340,7 +356,6 @@ def _build_quark_uc_source_config(state, auth_state):
         "auth_state": auth_state,
         "cloud_root_path": state.get("cloud_root_path") or "/",
         "root_folder_id": str(state.get("root_folder_id") or "0"),
-        "link_method": state.get("link_method") or "download",
     }
 
 
@@ -800,6 +815,198 @@ def poll_managed_tianyicloud_qr():
         return api_error(code=50019, msg="Poll TianYiCloud QR login failed", http_status=500)
 
 
+@storage_bp.route('/storage/managed/tianyicloud/pc-qr/start', methods=['POST'])
+def start_managed_tianyicloud_pc_qr_experimental():
+    payload = _get_json_payload()
+    name = (payload.get('name') or payload.get('source_name') or 'TianYiCloud PC QR').strip()
+    cloud_type = str(payload.get('cloud_type') or 'personal').strip().lower()
+    root_folder_id = str(payload.get('root_folder_id') or '').strip()
+
+    if not name:
+        return api_error(code=40038, msg="Invalid field value: name cannot be empty")
+
+    storage_state = None
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_tianyicloud_pc_qr_storage(
+            root_folder_id=root_folder_id,
+            cloud_type=cloud_type,
+        )
+        auth_state = storage_state.get("auth_state") or "qr_pending"
+        source_config = normalize_source_config(
+            'tianyicloud',
+            _build_tianyicloud_source_config(storage_state, auth_state=auth_state),
+        )
+        source = StorageSource(name=name, type='tianyicloud', config=source_config)
+        db.session.add(source)
+        db.session.commit()
+        return api_response(data={
+            "experimental": True,
+            "login_mode": "pc_qr",
+            "qr_started": True,
+            "auth_state": auth_state,
+            "qr_code_data_url": storage_state["qr_code_data_url"],
+            "qr_content": storage_state.get("qr_content"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList PC QR storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList PC QR storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Start managed TianYiCloud PC QR failed error=%s", e)
+        return api_error(code=50018, msg="Start TianYiCloud PC QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/tianyicloud/pc-qr/restart', methods=['POST'])
+def restart_managed_tianyicloud_pc_qr_experimental():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, 'tianyicloud', 'TianYiCloud')
+    if error_response:
+        return error_response
+
+    source_config = source.config or {}
+    cloud_type = str(payload.get('cloud_type') or source_config.get("cloud_type") or 'personal').strip().lower()
+    root_folder_id = str(
+        payload.get('root_folder_id')
+        if payload.get('root_folder_id') is not None
+        else source_config.get("root_folder_id") or ''
+    ).strip()
+    old_storage_id = _config_int(source_config, "openlist_storage_id")
+
+    storage_state = None
+    old_storage_deleted = False
+    try:
+        client = ManagedOpenListClient()
+        storage_state = client.create_tianyicloud_pc_qr_storage(
+            root_folder_id=root_folder_id,
+            cloud_type=cloud_type,
+        )
+        auth_state = storage_state.get("auth_state") or "qr_pending"
+        next_config = dict(source_config)
+        next_config.update(_build_tianyicloud_source_config(storage_state, auth_state=auth_state))
+        source.config = normalize_source_config('tianyicloud', next_config)
+        db.session.commit()
+        old_storage_deleted = _delete_replaced_runtime_storage(
+            client,
+            "TianYiCloud PC QR",
+            source_id,
+            old_storage_id,
+            storage_state["storage_id"],
+        )
+        return api_response(data={
+            "experimental": True,
+            "login_mode": "pc_qr",
+            "qr_restarted": True,
+            "qr_started": True,
+            "auth_state": auth_state,
+            "replaced_openlist_storage_id": old_storage_id,
+            "old_openlist_storage_deleted": old_storage_deleted,
+            "qr_code_data_url": storage_state["qr_code_data_url"],
+            "qr_content": storage_state.get("qr_content"),
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList PC QR storage failed id=%s", storage_state.get("storage_id"))
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        if storage_state and storage_state.get("storage_id"):
+            try:
+                ManagedOpenListClient().delete_storage(storage_state["storage_id"])
+            except Exception:
+                logger.exception("Rollback managed OpenList PC QR storage failed id=%s", storage_state.get("storage_id"))
+        logger.exception("Restart managed TianYiCloud PC QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50018, msg="Restart TianYiCloud PC QR login failed", http_status=500)
+
+
+@storage_bp.route('/storage/managed/tianyicloud/pc-qr/poll', methods=['POST'])
+def poll_managed_tianyicloud_pc_qr_experimental():
+    payload = _get_json_payload()
+    source_id, source, error_response = _load_managed_source(payload, 'tianyicloud', 'TianYiCloud')
+    if error_response:
+        return error_response
+
+    try:
+        source_config = source.config or {}
+        if source_config.get("login_mode") != "pc_qr":
+            return api_error(code=40061, msg="Storage source is not a TianYiCloud PC QR experimental source")
+        storage_id = int(source_config.get("openlist_storage_id") or 0)
+        if not storage_id:
+            return api_error(code=40061, msg="Managed TianYiCloud source has no OpenList storage id")
+        client = ManagedOpenListClient()
+        login_state = client.poll_tianyicloud_pc_qr_storage(storage_id)
+        if not login_state.get("authenticated"):
+            auth_state = login_state.get("auth_state") or "qr_pending"
+            if auth_state != source_config.get("auth_state"):
+                next_config = dict(source_config)
+                next_config["auth_state"] = auth_state
+                source.config = normalize_source_config('tianyicloud', next_config)
+                db.session.commit()
+            data = {
+                "experimental": True,
+                "login_mode": "pc_qr",
+                "authenticated": False,
+                "auth_state": auth_state,
+                "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+                "source": source.to_dict(),
+            }
+            if login_state.get("qr_code_data_url"):
+                data["qr_code_data_url"] = login_state["qr_code_data_url"]
+                data["qr_content"] = login_state.get("qr_content")
+            return api_response(data=data)
+
+        next_config = dict(source_config)
+        next_config.update({
+            "openlist_storage_id": storage_id,
+            "mount_path": login_state["mount_path"],
+            "auth_state": "ready",
+            "cloud_type": login_state.get("cloud_type") or source_config.get("cloud_type") or "personal",
+            "root_folder_id": str(login_state.get("root_folder_id") or source_config.get("root_folder_id") or ""),
+            "login_mode": "pc_qr",
+        })
+        source.config = normalize_source_config('tianyicloud', next_config)
+        db.session.commit()
+        return api_response(data={
+            "experimental": True,
+            "login_mode": "pc_qr",
+            "authenticated": True,
+            "auth_state": "ready",
+            "source": source.to_dict(),
+        })
+    except ManagedAListError as e:
+        db.session.rollback()
+        return _managed_alist_error_response(e)
+    except StorageProviderError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message)
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Poll managed TianYiCloud PC QR failed source_id=%s error=%s", source_id, e)
+        return api_error(code=50019, msg="Poll TianYiCloud PC QR login failed", http_status=500)
+
+
 @storage_bp.route('/storage/managed/115cloud/qr/start', methods=['POST'])
 def start_managed_115cloud_qr():
     payload = _get_json_payload()
@@ -1225,7 +1432,7 @@ def start_managed_baidunetdisk_oauth():
     payload = _get_json_payload()
     name = (payload.get('name') or payload.get('source_name') or 'Baidu Netdisk').strip()
     root_path = str(payload.get('root_path') or payload.get('cloud_root_path') or payload.get('root_folder_path') or '').strip()
-    download_api = str(payload.get('download_api') or 'official').strip().lower()
+    download_api = _select_baidunetdisk_download_api(payload.get('download_api'))
 
     if not name:
         return api_error(code=40038, msg="Invalid field value: name cannot be empty")
@@ -1286,7 +1493,10 @@ def restart_managed_baidunetdisk_oauth():
         or source_config.get("cloud_root_path")
         or ''
     ).strip()
-    download_api = str(payload.get('download_api') or source_config.get("download_api") or 'official').strip().lower()
+    download_api = _select_baidunetdisk_download_api(
+        payload.get('download_api'),
+        current_value=source_config.get("download_api"),
+    )
     old_storage_id = _config_int(source_config, "openlist_storage_id")
 
     try:
@@ -1629,7 +1839,6 @@ def _start_managed_quark_uc_qr(source_type):
     payload = _get_json_payload()
     name = (payload.get('name') or payload.get('source_name') or provider_meta["default_name"]).strip()
     root_folder_id = str(payload.get('root_folder_id') or '').strip()
-    link_method = str(payload.get('link_method') or 'download').strip().lower()
 
     if not name:
         return api_error(code=40038, msg="Invalid field value: name cannot be empty")
@@ -1640,7 +1849,7 @@ def _start_managed_quark_uc_qr(source_type):
         storage_state = client.create_quark_uc_tv_storage(
             kind=source_type,
             root_folder_id=root_folder_id,
-            link_method=link_method,
+            link_method=QUARK_UC_OPENLIST_LINK_METHOD,
         )
         source_config = normalize_source_config(
             source_type,
@@ -1702,9 +1911,6 @@ def _restart_managed_quark_uc_qr(source_type):
         if payload.get('root_folder_id') is not None
         else source_config.get("root_folder_id") or "0"
     ).strip() or "0"
-    link_method = str(payload.get('link_method') or source_config.get("link_method") or 'download').strip().lower()
-    if link_method not in {'download', 'streaming'}:
-        return api_error(code=40038, msg="Invalid field value: link_method should be download or streaming")
     old_storage_id = None
     try:
         old_storage_id = int(source_config.get("openlist_storage_id") or 0) or None
@@ -1715,26 +1921,22 @@ def _restart_managed_quark_uc_qr(source_type):
     old_storage_deleted = False
     try:
         client = ManagedOpenListClient()
+        if old_storage_id:
+            old_storage_deleted = _delete_replaced_runtime_storage(
+                client,
+                provider_meta["display_name"],
+                source_id,
+                old_storage_id,
+            )
         storage_state = client.create_quark_uc_tv_storage(
             kind=source_type,
             root_folder_id=root_folder_id,
-            link_method=link_method,
+            link_method=QUARK_UC_OPENLIST_LINK_METHOD,
         )
         next_config = dict(source_config)
         next_config.update(_build_quark_uc_source_config(storage_state, auth_state='qr_pending'))
         source.config = normalize_source_config(source_type, next_config)
         db.session.commit()
-        if old_storage_id and old_storage_id != int(storage_state["storage_id"]):
-            try:
-                client.delete_storage(old_storage_id)
-                old_storage_deleted = True
-            except Exception:
-                logger.exception(
-                    "Delete stale managed OpenList storage after %s relogin failed source_id=%s storage_id=%s",
-                    provider_meta["display_name"],
-                    source_id,
-                    old_storage_id,
-                )
         return api_response(data={
             "qr_restarted": True,
             "qr_started": True,
@@ -1813,10 +2015,18 @@ def _poll_managed_quark_uc_qr(source_type):
         client = ManagedOpenListClient()
         login_state = client.poll_quark_uc_tv_storage(storage_id, source_type)
         if not login_state.get("authenticated"):
+            auth_state = login_state.get("auth_state") or "qr_pending"
+            if auth_state == "device_limit":
+                next_config = dict(source_config)
+                next_config["auth_state"] = "device_limit"
+                source.config = normalize_source_config(source_type, next_config)
+                db.session.commit()
             data = {
                 "authenticated": False,
-                "auth_state": "qr_pending",
-                "pending_reason": login_state.get("pending_reason") or "waiting_for_scan",
+                "auth_state": auth_state,
+                "pending_reason": login_state.get("pending_reason") or (
+                    "qr_expired" if auth_state == "qr_expired" else "waiting_for_scan"
+                ),
                 "source": source.to_dict(),
             }
             if login_state.get("qr_code_data_url"):
@@ -1831,7 +2041,6 @@ def _poll_managed_quark_uc_qr(source_type):
             "auth_state": "ready",
             "cloud_root_path": login_state.get("cloud_root_path") or source_config.get("cloud_root_path") or "/",
             "root_folder_id": str(login_state.get("root_folder_id") or source_config.get("root_folder_id") or "0"),
-            "link_method": login_state.get("link_method") or source_config.get("link_method") or "download",
         })
         source.config = normalize_source_config(source_type, next_config)
         db.session.commit()

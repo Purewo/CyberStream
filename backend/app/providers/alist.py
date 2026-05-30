@@ -269,6 +269,26 @@ class AListProvider(StorageProvider):
             raise ValueError(f"{self.platform} api error {code}: {message}")
         return payload.get('data')
 
+    @staticmethod
+    def _is_auth_error(error):
+        text = str(error or '').lower()
+        markers = (
+            "api error 401",
+            "http error 401",
+            "unauthorized",
+            "authorization",
+            "invalid token",
+            "token is invalid",
+            "token expired",
+            "token",
+            "登录",
+            "登陆",
+            "鉴权",
+            "认证",
+            "授权",
+        )
+        return any(marker in text for marker in markers)
+
     def _get_token(self):
         if self._resolved_token:
             return self._resolved_token
@@ -333,14 +353,26 @@ class AListProvider(StorageProvider):
         return headers
 
     def _api_post(self, path, payload):
-        response = self.session.post(
-            self._api_url(path),
-            json=payload,
-            headers=self._request_headers(self._build_api_headers()),
-            timeout=self.timeout,
-            verify=self.verify_ssl,
-        )
-        return self._parse_api_response(response)
+        def send():
+            return self.session.post(
+                self._api_url(path),
+                json=payload,
+                headers=self._request_headers(self._build_api_headers()),
+                timeout=self.timeout,
+                verify=self.verify_ssl,
+            )
+
+        response = send()
+        try:
+            return self._parse_api_response(response)
+        except ValueError as exc:
+            can_refresh_token = self.username and self.password and not str(self.token or '').strip()
+            if not can_refresh_token or not self._is_auth_error(exc):
+                raise
+            self._resolved_token = None
+            self._clear_cached_token()
+            response = send()
+            return self._parse_api_response(response)
 
     def _get_entry(self, relative_path):
         return self._api_post(

@@ -134,6 +134,29 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
             needs_review=False,
         )
 
+    def test_spaced_season_parenthesized_episode_is_tv_episode(self):
+        self.assert_metadata(
+            "Shows/Tang Changan/tang.2025.2160p.WEB-DL.S03 (1).mkv",
+            title="Tang Changan",
+            year=None,
+            season=3,
+            episode=1,
+            parse_mode="standard",
+            parse_strategy="flat_episode",
+            needs_review=False,
+        )
+
+    def test_metadata_pipeline_parser_matches_spaced_season_parenthesized_episode(self):
+        parser = PathMetadataParser()
+        parsed = parser.parse("Shows/Tang Changan/tang.2025.2160p.WEB-DL.S03 (10).mkv")
+
+        self.assertEqual("Tang Changan", parsed.title)
+        self.assertEqual(3, parsed.season)
+        self.assertEqual(10, parsed.episode)
+        self.assertEqual("tv", parsed.media_type_hint)
+        self.assertEqual("strict", parsed.parse_layer)
+        self.assertEqual("flat_sxxexx", parsed.parse_strategy)
+
     def test_metadata_pipeline_parser_matches_inline_chinese_season_episode(self):
         parser = PathMetadataParser()
         parsed = parser.parse("独立资源/未分类/剑来2-第01集.mp4")

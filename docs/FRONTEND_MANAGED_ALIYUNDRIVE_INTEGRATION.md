@@ -267,6 +267,90 @@ POST /api/v1/storage/sources/{source_id}/scan
 
 播放仍走 CyberStream 播放 API。CyberStream 会解析本机 OpenList `/d` 的 302，前端只使用后端返回的播放地址。
 
+### 4.1 云端转码清晰度
+
+Aliyundrive 支持 provider 云端转码清晰度列表。前端不要直接调用 OpenList `/api/fs/other`，也不要保存 OpenList 挂载路径；只读取资源详情里的统一播放合约：
+
+```json
+{
+  "playback": {
+    "storage_type": "aliyundrive",
+    "stream_url": "/api/v1/resources/{resource_id}/stream",
+    "web_player": {
+      "supported": true,
+      "url": "/api/v1/resources/{resource_id}/stream"
+    },
+    "external_player": {
+      "supported": true,
+      "url": "/api/v1/resources/{resource_id}/stream"
+    },
+    "cloud_transcode": {
+      "supported": true,
+      "provider": "aliyundrive",
+      "provider_name": "Aliyundrive",
+      "mode": "provider_cloud_transcode",
+      "qualities_endpoint": "/api/v1/resources/{resource_id}/streaming-qualities",
+      "stream_endpoint": "/api/v1/resources/{resource_id}/stream-transcoded",
+      "resolution_param": "resolution",
+      "available_resolutions": ["ld", "sd", "hd", "fhd", "qhd", "4k"],
+      "recommended_for": ["web_player"],
+      "quality_semantics": "provider_cloud_transcode_not_original_file"
+    }
+  }
+}
+```
+
+获取实际可用档位：
+
+```http
+GET /api/v1/resources/{resource_id}/streaming-qualities
+```
+
+响应示例：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "storage_type": "aliyundrive",
+    "provider": "Aliyundrive",
+    "mode": "provider_cloud_transcode",
+    "default_resolution": "fhd",
+    "selected_resolution": "fhd",
+    "items": [
+      {
+        "resolution": "hd",
+        "label": "HD",
+        "available": true,
+        "provider_template_id": "HD",
+        "provider_label": "HD",
+        "height": 720,
+        "url": "https://provider.example/hd.m3u8",
+        "stream_url": "/api/v1/resources/{resource_id}/stream-transcoded?resolution=hd"
+      },
+      {
+        "resolution": "fhd",
+        "label": "FHD",
+        "available": true,
+        "provider_template_id": "FHD",
+        "provider_label": "FHD",
+        "height": 1080,
+        "url": "https://provider.example/fhd.m3u8",
+        "stream_url": "/api/v1/resources/{resource_id}/stream-transcoded?resolution=fhd"
+      }
+    ]
+  }
+}
+```
+
+前端规则：
+
+- 是否展示清晰度选择只看 `playback.cloud_transcode.supported`，不要按网盘名称硬编码。
+- 只展示 `items[].available=true` 的档位，播放时优先使用 `items[].stream_url`。
+- `items[].url` 是 provider 直链，可能过期；前端不需要持久化。
+- Aliyundrive 的 raw stream 和 cloud transcode 可以同时存在。raw stream 是原文件入口；cloud transcode 是云端转码入口，不代表原盘质量。
+- `resolution` 是后端返回的选择键。Aliyundrive 常见为 `ld/sd/hd/fhd/qhd/4k`，但如果 provider 返回重复模板，后端可能用 `provider_template_id` 作为 `resolution`，前端必须按原样传回。
+
 ## 5. 后端授权模式
 
 后端支持以下阿里云盘授权模式：

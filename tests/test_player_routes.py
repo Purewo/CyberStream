@@ -239,7 +239,7 @@ class CloudTranscodeRouteTests(unittest.TestCase):
 
     def test_streaming_qualities_returns_provider_variants(self):
         with patch(
-            "backend.app.api.player_routes.build_quark_uc_streaming_qualities",
+            "backend.app.api.player_routes.build_streaming_qualities",
             return_value=self._qualities_payload(),
         ) as mocked:
             response = self.client.get(f"/api/v1/resources/{self.resource.id}/streaming-qualities")
@@ -253,7 +253,7 @@ class CloudTranscodeRouteTests(unittest.TestCase):
 
     def test_stream_transcoded_redirects_to_selected_provider_url(self):
         with patch(
-            "backend.app.api.player_routes.build_quark_uc_streaming_qualities",
+            "backend.app.api.player_routes.build_streaming_qualities",
             return_value=self._qualities_payload(),
         ) as mocked:
             response = self.client.get(

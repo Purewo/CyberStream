@@ -99,7 +99,10 @@ def apply_public_movie_visibility_filter(query):
         db.or_(
             visibility_status == Movie.CATALOG_VISIBILITY_PUBLISHED,
             db.and_(
-                visibility_status != Movie.CATALOG_VISIBILITY_HIDDEN,
+                visibility_status.notin_([
+                    Movie.CATALOG_VISIBILITY_HIDDEN,
+                    Movie.CATALOG_VISIBILITY_PENDING_REVIEW,
+                ]),
                 auto_visible,
             ),
         )
@@ -834,6 +837,7 @@ def build_movie_list_query(
     metadata_review_priority=None,
     needs_attention=None,
     metadata_issue_code=None,
+    effective_status=None,
 ):
     """构造电影列表查询。排序由调用方继续补充。"""
     query = Movie.query
@@ -883,6 +887,29 @@ def build_movie_list_query(
 
     if metadata_issue_code:
         query = _filter_movies_by_metadata_issue_code(query, metadata_issue_code)
+
+    if effective_status:
+        normalized_effective_status = str(effective_status).strip().lower()
+        visibility_status = db.func.coalesce(Movie.catalog_visibility_status, Movie.CATALOG_VISIBILITY_AUTO)
+        if normalized_effective_status == Movie.CATALOG_VISIBILITY_PENDING_REVIEW:
+            query = query.filter(visibility_status == Movie.CATALOG_VISIBILITY_PENDING_REVIEW)
+        elif normalized_effective_status == Movie.CATALOG_VISIBILITY_PUBLISHED:
+            query = apply_public_movie_visibility_filter(query)
+        elif normalized_effective_status == Movie.CATALOG_VISIBILITY_HIDDEN:
+            manual_auto_visible = db.func.upper(Movie.scraper_source).in_(list(Movie.MANUAL_CONTENT_SOURCES))
+            auto_visible = db.and_(
+                db.func.upper(Movie.scraper_source).in_(list(Movie.get_metadata_non_attention_sources())),
+                db.or_(
+                    db.and_(Movie.cover.isnot(None), Movie.cover != ""),
+                    manual_auto_visible,
+                ),
+            )
+            query = query.filter(db.or_(
+                visibility_status == Movie.CATALOG_VISIBILITY_HIDDEN,
+                db.and_(visibility_status == Movie.CATALOG_VISIBILITY_AUTO, db.not_(auto_visible)),
+            ))
+        else:
+            query = query.filter(db.false())
 
     return apply_current_user_movie_visibility_filter(query)
 

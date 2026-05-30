@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import socket
 import unittest
 from unittest.mock import patch
 
@@ -101,6 +102,24 @@ class FakeSession:
         raise AssertionError(url)
 
 
+class ExpiredTokenSession(FakeSession):
+    def __init__(self):
+        super().__init__()
+        self.login_count = 0
+
+    def post(self, url, json=None, headers=None, timeout=None, verify=None):
+        if url.endswith('/api/auth/login'):
+            self.calls.append(("POST", url, json, headers))
+            self.login_count += 1
+            return FakeResponse({"code": 200, "data": {"token": f"login-token-{self.login_count}"}})
+        if url.endswith('/api/fs/get'):
+            self.calls.append(("POST", url, json, headers))
+            if (headers or {}).get("Authorization") == "login-token-1":
+                return FakeResponse({"code": 401, "message": "invalid token"})
+            return FakeResponse({"code": 200, "data": {"name": "library", "is_dir": True}})
+        return super().post(url, json=json, headers=headers, timeout=timeout, verify=verify)
+
+
 class AListProviderTests(unittest.TestCase):
     def setUp(self):
         AListProvider._endpoint_cache.clear()
@@ -144,8 +163,8 @@ class AListProviderTests(unittest.TestCase):
             "_resolve_base_url",
             return_value="http://alist.local:5244",
         ), patch("socket.getaddrinfo", return_value=[
-            (2, 1, 6, "", ("192.0.2.10", 5244)),
-            (10, 1, 6, "", ("2001:db8::10", 5244, 0, 0)),
+            (socket.AF_INET, 1, 6, "", ("192.0.2.10", 5244)),
+            (socket.AF_INET6, 1, 6, "", ("2001:db8::10", 5244, 0, 0)),
         ]), patch.object(AListProvider, "_probe_candidate", side_effect=[True]):
             provider = AListProvider(
                 {
@@ -166,8 +185,8 @@ class AListProviderTests(unittest.TestCase):
             "_resolve_base_url",
             return_value="http://alist.local:5244",
         ), patch("socket.getaddrinfo", return_value=[
-            (2, 1, 6, "", ("192.0.2.10", 5244)),
-            (10, 1, 6, "", ("2001:db8::10", 5244, 0, 0)),
+            (socket.AF_INET, 1, 6, "", ("192.0.2.10", 5244)),
+            (socket.AF_INET6, 1, 6, "", ("2001:db8::10", 5244, 0, 0)),
         ]), patch.object(AListProvider, "_probe_candidate", side_effect=[False, True]):
             provider = AListProvider(
                 {
@@ -209,8 +228,8 @@ class AListProviderTests(unittest.TestCase):
             "_resolve_base_url",
             return_value="https://alist.local:5244",
         ), patch("socket.getaddrinfo", return_value=[
-            (2, 1, 6, "", ("192.0.2.10", 5244)),
-            (10, 1, 6, "", ("2001:db8::10", 5244, 0, 0)),
+            (socket.AF_INET, 1, 6, "", ("192.0.2.10", 5244)),
+            (socket.AF_INET6, 1, 6, "", ("2001:db8::10", 5244, 0, 0)),
         ]), patch.object(AListProvider, "_probe_candidate", side_effect=[True]):
             provider = AListProvider(
                 {
@@ -258,6 +277,27 @@ class AListProviderTests(unittest.TestCase):
         self.assertTrue(provider.path_exists(""))
         self.assertTrue(provider.path_exists("电影"))
         self.assertFalse(provider.path_exists("电影/movie.mkv"))
+
+    def test_api_post_refreshes_cached_login_token_once_on_auth_error(self):
+        provider = self.create_provider()
+        provider.session = ExpiredTokenSession()
+
+        self.assertTrue(provider.path_exists(""))
+
+        login_calls = [
+            call
+            for call in provider.session.calls
+            if call[0] == "POST" and call[1].endswith('/api/auth/login')
+        ]
+        fs_get_calls = [
+            call
+            for call in provider.session.calls
+            if call[0] == "POST" and call[1].endswith('/api/fs/get')
+        ]
+        self.assertEqual(2, len(login_calls))
+        self.assertEqual(2, len(fs_get_calls))
+        self.assertEqual("login-token-1", fs_get_calls[0][3]["Authorization"])
+        self.assertEqual("login-token-2", fs_get_calls[1][3]["Authorization"])
 
     def test_read_text_fetches_raw_url(self):
         provider = self.create_provider(token="static-token")

@@ -116,6 +116,97 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
             reason="tmdb_match",
         )
 
+    def test_work_items_can_filter_pending_review_catalog_status(self):
+        pending = self._add_movie(title="Pending Review", scraper_source="TMDB", cover="poster")
+        pending.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PENDING_REVIEW
+        public = self._add_movie(title="Public Ready", scraper_source="TMDB", cover="poster")
+        db.session.commit()
+
+        response = self.client.get(
+            "/api/v1/metadata/work-items",
+            query_string={"effective_status": "pending_review", "page_size": 20},
+        )
+
+        self.assertEqual(200, response.status_code)
+        items = response.get_json()["data"]["items"]
+        ids = [item["id"] for item in items]
+        self.assertIn(pending.id, ids)
+        self.assertNotIn(public.id, ids)
+        item = next(item for item in items if item["id"] == pending.id)
+        self.assertEqual("pending_review", item["catalog_visibility"]["effective_status"])
+
+    def test_pending_review_publish_batch_requires_force_for_blockers(self):
+        pending = self._add_movie(title="Raw Pending", scraper_source="LOCAL_FALLBACK", cover="")
+        pending.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PENDING_REVIEW
+        public = self._add_movie(title="Already Public", scraper_source="TMDB", cover="poster")
+        db.session.commit()
+
+        blocked_response = self.client.post(
+            "/api/v1/metadata/pending-review/publish",
+            json={"movie_ids": [pending.id, public.id]},
+        )
+
+        self.assertEqual(200, blocked_response.status_code)
+        blocked_data = blocked_response.get_json()["data"]
+        self.assertEqual([], blocked_data["published"])
+        failed = {item["movie_id"]: item for item in blocked_data["failed"]}
+        self.assertEqual("requires_force", failed[pending.id]["reason"])
+        self.assertIn("metadata_needs_attention", failed[pending.id]["blockers"])
+        self.assertEqual("not_pending_review", failed[public.id]["reason"])
+
+        publish_response = self.client.post(
+            "/api/v1/metadata/pending-review/publish",
+            json={"movie_ids": [pending.id], "force": True},
+        )
+
+        self.assertEqual(200, publish_response.status_code)
+        data = publish_response.get_json()["data"]
+        self.assertEqual([pending.id], [item["movie_id"] for item in data["published"]])
+        self.assertEqual([], data["failed"])
+        refreshed = db.session.get(Movie, pending.id)
+        self.assertEqual(Movie.CATALOG_VISIBILITY_PUBLISHED, refreshed.catalog_visibility_status)
+
+    def test_pending_review_backfill_promotes_historical_auto_hidden_candidates(self):
+        legacy = self._add_movie(title="Legacy Raw", scraper_source="LOCAL_FALLBACK", cover="")
+        self._add_resource(legacy, path="movies/Legacy.Raw.S01E01.mkv")
+        ready = self._add_movie(title="Ready Public", scraper_source="TMDB", cover="poster")
+        self._add_resource(ready, path="movies/Ready.Public.S01E01.mkv")
+
+        dry_run_response = self.client.post(
+            "/api/v1/metadata/pending-review/backfill",
+            json={"dry_run": True, "limit": 10},
+        )
+
+        self.assertEqual(200, dry_run_response.status_code)
+        dry_run_data = dry_run_response.get_json()["data"]
+        self.assertTrue(dry_run_data["dry_run"])
+        self.assertEqual([legacy.id], [item["movie_id"] for item in dry_run_data["candidates"]])
+        self.assertEqual(0, dry_run_data["summary"]["updated"])
+        self.assertEqual(Movie.CATALOG_VISIBILITY_AUTO, db.session.get(Movie, legacy.id).catalog_visibility_status)
+
+        apply_response = self.client.post(
+            "/api/v1/metadata/pending-review/backfill",
+            json={"dry_run": False, "limit": 10},
+        )
+
+        self.assertEqual(200, apply_response.status_code)
+        data = apply_response.get_json()["data"]
+        self.assertFalse(data["dry_run"])
+        self.assertEqual([legacy.id], [item["movie_id"] for item in data["updated"]])
+        self.assertEqual(1, data["summary"]["updated"])
+        refreshed = db.session.get(Movie, legacy.id)
+        self.assertEqual(Movie.CATALOG_VISIBILITY_PENDING_REVIEW, refreshed.catalog_visibility_status)
+        self.assertEqual(Movie.CATALOG_VISIBILITY_AUTO, db.session.get(Movie, ready.id).catalog_visibility_status)
+
+        pending_response = self.client.get(
+            "/api/v1/metadata/work-items",
+            query_string={"effective_status": "pending_review", "page_size": 20},
+        )
+        self.assertEqual(200, pending_response.status_code)
+        pending_ids = [item["id"] for item in pending_response.get_json()["data"]["items"]]
+        self.assertIn(legacy.id, pending_ids)
+        self.assertNotIn(ready.id, pending_ids)
+
     def test_batch_re_scrape_reports_apply_status_and_error_category(self):
         updated_movie = self._add_movie()
         failed_movie = self._add_movie(title="空资源")

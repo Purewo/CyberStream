@@ -408,7 +408,7 @@ def _cached_path(movie_id: str, kind: str, metadata: dict | None = None) -> Path
 def _relative_cache_path(path: Path) -> str:
     root = _cache_root().resolve()
     try:
-        return str(path.resolve().relative_to(root))
+        return path.resolve().relative_to(root).as_posix()
     except ValueError:
         return path.name
 

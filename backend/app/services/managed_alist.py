@@ -301,6 +301,21 @@ class ManagedAListClient:
         )
         self._parse_response(response, "delete storage")
 
+    def fs_other(self, path, method, data=None):
+        normalized_path = self._normalize_mount_path(path)
+        response = self.session.post(
+            self._url("/api/fs/other"),
+            json={
+                "path": normalized_path,
+                "method": str(method or "").strip(),
+                "data": data or {},
+            },
+            headers=self._headers(),
+            timeout=self.timeout,
+            verify=self.verify_ssl,
+        )
+        return self._parse_response(response, "fs other")
+
     @staticmethod
     def _addition(storage):
         try:
@@ -419,6 +434,7 @@ class ManagedOpenListClient(ManagedAListClient):
     _BAIDUNETDISK_AUTHORIZE_URL = "https://openapi.baidu.com/oauth/2.0/authorize"
     _BAIDUNETDISK_TOKEN_URL = "https://openapi.baidu.com/oauth/2.0/token"
     _BAIDUNETDISK_RENEW_API_URL = "https://api.oplist.org/baiduyun/renewapi"
+    DEFAULT_BAIDUNETDISK_DOWNLOAD_API = "crack_video"
     _QUARK_UC_DEFINITIONS = {
         "quarktv": {
             "driver": "QuarkTV",
@@ -429,6 +445,7 @@ class ManagedOpenListClient(ManagedAListClient):
             "display_name": "UCTV",
         },
     }
+    _QUARK_UC_OPENLIST_LINK_METHOD = "download"
 
     @staticmethod
     def _normalize_123pan_root_id(root_folder_id):
@@ -519,6 +536,56 @@ class ManagedOpenListClient(ManagedAListClient):
         if qr_payload:
             state.update(qr_payload)
         return state
+
+    def _build_tianyicloud_pc_qr_state(self, storage_id, storage, authenticated, qr_payload=None, auth_state=None):
+        addition = self._tianyicloud_addition(storage)
+        state = {
+            "storage_id": int(storage_id),
+            "mount_path": storage.get("mount_path"),
+            "cloud_type": addition.get("type") or "personal",
+            "cloud_root_path": "/",
+            "root_folder_id": addition.get("root_folder_id") or "",
+            "authenticated": bool(authenticated),
+            "auth_state": auth_state or ("ready" if authenticated else "qr_pending"),
+            "login_mode": "pc_qr",
+        }
+        if qr_payload:
+            state.update(qr_payload)
+        return state
+
+    @staticmethod
+    def _is_tianyicloud_pc_qr_pending(message):
+        normalized = str(message or "").lower()
+        pending_markers = (
+            "need verify",
+            "qr code has not been scanned",
+            "qr code has been scanned",
+            "please scan",
+            "please confirm",
+            "qrcodeloginstate",
+            "waiting for scan",
+            "waiting_for_scan",
+            "not scanned",
+            "pending",
+        )
+        return any(marker in normalized for marker in pending_markers)
+
+    @staticmethod
+    def _is_tianyicloud_pc_qr_expired(message):
+        normalized = str(message or "").lower()
+        expired_markers = (
+            "qr code expired",
+            "qrcode expired",
+            "expired, please try again",
+        )
+        return any(marker in normalized for marker in expired_markers)
+
+    @staticmethod
+    def _tianyicloud_pc_qr_pending_reason(message):
+        normalized = str(message or "").lower()
+        if "has been scanned" in normalized or "confirm" in normalized:
+            return "waiting_for_confirm"
+        return "waiting_for_scan"
 
     @staticmethod
     def _normalize_115_root_id(root_folder_id):
@@ -706,10 +773,7 @@ class ManagedOpenListClient(ManagedAListClient):
 
     @staticmethod
     def _normalize_quark_uc_link_method(link_method):
-        normalized = str(link_method or "download").strip().lower()
-        if normalized not in {"download", "streaming"}:
-            raise ManagedAListError("Invalid QuarkTV/UCTV link method", code=40036)
-        return normalized
+        return ManagedOpenListClient._QUARK_UC_OPENLIST_LINK_METHOD
 
     def _quark_uc_addition(self, storage):
         try:
@@ -733,12 +797,38 @@ class ManagedOpenListClient(ManagedAListClient):
             "not scanned",
             "not login",
             "not logged",
+            "用户未确认授权",
+            "未确认授权",
             "qrcode",
             "qr code",
             "waiting",
             "pending",
         )
         return any(marker in normalized for marker in pending_markers)
+
+    @staticmethod
+    def _is_quark_uc_qr_expired(message):
+        normalized = str(message or "").lower()
+        expired_markers = (
+            "二维码过期",
+            "qrcode expired",
+            "qr code expired",
+            "code expired",
+        )
+        return any(marker in normalized for marker in expired_markers)
+
+    @staticmethod
+    def _is_quark_uc_device_limit(message):
+        normalized = str(message or "").lower()
+        device_limit_markers = (
+            "设备数超限",
+            "设备数量超限",
+            "device limit",
+            "device count",
+            "too many devices",
+            "devices exceeded",
+        )
+        return any(marker in normalized for marker in device_limit_markers)
 
     def _build_quark_uc_state(self, kind, storage_id, storage, authenticated, qr_payload=None):
         addition = self._quark_uc_addition(storage)
@@ -1295,7 +1385,7 @@ class ManagedOpenListClient(ManagedAListClient):
 
     @staticmethod
     def _normalize_baidunetdisk_download_api(download_api):
-        normalized = str(download_api or "official").strip().lower()
+        normalized = str(download_api or ManagedOpenListClient.DEFAULT_BAIDUNETDISK_DOWNLOAD_API).strip().lower()
         if normalized not in {"official", "crack", "crack_video"}:
             raise ManagedAListError("Invalid Baidu Netdisk download API", code=40036)
         return normalized
@@ -1357,7 +1447,7 @@ class ManagedOpenListClient(ManagedAListClient):
             raise ManagedAListError(f"Baidu Netdisk {operation} failed: {message}")
         return payload if isinstance(payload, dict) else {}
 
-    def start_baidunetdisk_oauth(self, redirect_uri, root_path="/", download_api="official"):
+    def start_baidunetdisk_oauth(self, redirect_uri, root_path="/", download_api=None):
         root_path = self._normalize_baidunetdisk_root_path(root_path)
         download_api = self._normalize_baidunetdisk_download_api(download_api)
         auth_config = self._baidunetdisk_oauth_config()
@@ -1425,7 +1515,7 @@ class ManagedOpenListClient(ManagedAListClient):
         self,
         authenticated,
         root_path="/",
-        download_api="official",
+        download_api=None,
         storage_id=None,
         storage=None,
         auth_state=None,
@@ -1434,7 +1524,7 @@ class ManagedOpenListClient(ManagedAListClient):
         state = {
             "cloud_root_path": root_path,
             "root_folder_path": root_path,
-            "download_api": download_api,
+            "download_api": download_api or self.DEFAULT_BAIDUNETDISK_DOWNLOAD_API,
             "authenticated": bool(authenticated),
             "auth_state": auth_state or ("ready" if authenticated else "oauth_pending"),
         }
@@ -1524,7 +1614,7 @@ class ManagedOpenListClient(ManagedAListClient):
             download_api=download_api,
         )
 
-    def complete_baidunetdisk_oauth(self, code, redirect_uri, root_path="/", download_api="official"):
+    def complete_baidunetdisk_oauth(self, code, redirect_uri, root_path="/", download_api=None):
         root_path = self._normalize_baidunetdisk_root_path(root_path)
         download_api = self._normalize_baidunetdisk_download_api(download_api)
         auth_config = self._baidunetdisk_oauth_config()
@@ -1702,6 +1792,129 @@ class ManagedOpenListClient(ManagedAListClient):
             storage_id=storage_id,
             storage=verified,
             authenticated=bool(verified_addition.get("access_token")),
+        )
+
+    def create_tianyicloud_pc_qr_storage(self, root_folder_id="", cloud_type="personal"):
+        cloud_type = self._normalize_tianyicloud_type(cloud_type)
+        root_folder_id = self._normalize_tianyicloud_root_id(root_folder_id, cloud_type)
+        mount_path = self._new_openlist_mount_path("tianyicloud-pc")
+        addition = {
+            "login_type": "qrcode",
+            "username": "",
+            "password": "",
+            "validate_code": "",
+            "access_token": "",
+            "refresh_token": "",
+            "root_folder_id": root_folder_id,
+            "order_by": "filename",
+            "order_direction": "asc",
+            "type": cloud_type,
+            "family_id": "",
+            "upload_method": "stream",
+            "upload_thread": "3",
+            "family_transfer": False,
+            "rapid_upload": False,
+            "no_use_ocr": True,
+            "generate_torrent": False,
+        }
+        payload = {
+            "mount_path": mount_path,
+            "driver": "189CloudPC",
+            "cache_expiration": 30,
+            "addition": json.dumps(addition, ensure_ascii=False),
+            "remark": "Managed by CyberStream experimental TianYiCloud PC QR",
+            "disabled": False,
+            "disable_index": False,
+            "enable_sign": False,
+            "web_proxy": False,
+            "webdav_policy": "302_redirect",
+            "proxy_range": False,
+            "down_proxy_url": "",
+            "down_proxy_sign": True,
+        }
+
+        try:
+            created = self.create_storage(payload)
+        except ManagedAListError as exc:
+            storage_id = (exc.data or {}).get("id") if isinstance(exc.data, dict) else None
+            qr_payload = self._extract_openlist_qr(exc.message)
+            if storage_id is not None and qr_payload:
+                storage = self.get_storage(storage_id)
+                return self._build_tianyicloud_pc_qr_state(
+                    storage_id=storage_id,
+                    storage=storage,
+                    authenticated=False,
+                    qr_payload=qr_payload,
+                )
+            if storage_id is not None:
+                try:
+                    self.delete_storage(storage_id)
+                except Exception:
+                    pass
+            raise
+
+        storage_id = created.get("id")
+        if storage_id is None:
+            raise ManagedAListError("Managed OpenList did not return a storage id")
+        storage = self.get_storage(storage_id)
+        addition = self._tianyicloud_addition(storage)
+        if addition.get("access_token") or addition.get("refresh_token"):
+            return self._build_tianyicloud_pc_qr_state(storage_id, storage, authenticated=True)
+        qr_payload = self._extract_openlist_qr(storage.get("status"))
+        if qr_payload:
+            return self._build_tianyicloud_pc_qr_state(
+                storage_id=storage_id,
+                storage=storage,
+                authenticated=False,
+                qr_payload=qr_payload,
+            )
+        try:
+            self.delete_storage(storage_id)
+        except Exception:
+            pass
+        raise ManagedAListError("Managed OpenList did not return a TianYiCloud PC QR code")
+
+    def poll_tianyicloud_pc_qr_storage(self, storage_id):
+        storage = self.get_storage(storage_id)
+        if storage.get("driver") != "189CloudPC":
+            raise ManagedAListError("Managed OpenList storage is not TianYiCloud PC QR", code=40061)
+
+        addition = self._tianyicloud_addition(storage)
+        if addition.get("access_token") or addition.get("refresh_token"):
+            return self._build_tianyicloud_pc_qr_state(storage_id, storage, authenticated=True)
+        current_qr_payload = self._extract_openlist_qr(storage.get("status"))
+
+        try:
+            self.update_storage(storage)
+        except ManagedAListError as exc:
+            if self._is_tianyicloud_pc_qr_expired(exc.message):
+                state = self._build_tianyicloud_pc_qr_state(
+                    storage_id=storage_id,
+                    storage=storage,
+                    authenticated=False,
+                    auth_state="qr_expired",
+                )
+                state["pending_reason"] = "qr_expired"
+                return state
+
+            qr_payload = self._extract_openlist_qr(exc.message) or current_qr_payload
+            if qr_payload or self._is_tianyicloud_pc_qr_pending(exc.message):
+                state = self._build_tianyicloud_pc_qr_state(
+                    storage_id=storage_id,
+                    storage=storage,
+                    authenticated=False,
+                    qr_payload=qr_payload,
+                )
+                state["pending_reason"] = self._tianyicloud_pc_qr_pending_reason(exc.message)
+                return state
+            raise
+
+        verified = self.get_storage(storage_id)
+        verified_addition = self._tianyicloud_addition(verified)
+        return self._build_tianyicloud_pc_qr_state(
+            storage_id=storage_id,
+            storage=verified,
+            authenticated=bool(verified_addition.get("access_token") or verified_addition.get("refresh_token")),
         )
 
     def create_115cloud_storage(self, root_folder_id="", qrcode_source=None):
@@ -1911,6 +2124,11 @@ class ManagedOpenListClient(ManagedAListClient):
             )
 
         addition = self._quark_uc_addition(storage)
+        if self._is_quark_uc_device_limit(storage.get("status")):
+            state = self._build_quark_uc_state(kind, storage_id, storage, authenticated=False)
+            state["auth_state"] = "device_limit"
+            state["pending_reason"] = "device_limit"
+            return state
         if addition.get("refresh_token"):
             return self._build_quark_uc_state(kind, storage_id, storage, authenticated=True)
         current_qr_payload = self._extract_openlist_qr(storage.get("status"))
@@ -1919,6 +2137,26 @@ class ManagedOpenListClient(ManagedAListClient):
             self.update_storage(storage)
         except ManagedAListError as exc:
             qr_payload = self._extract_openlist_qr(exc.message) or current_qr_payload
+            if self._is_quark_uc_qr_expired(exc.message):
+                state = self._build_quark_uc_state(
+                    kind=kind,
+                    storage_id=storage_id,
+                    storage=storage,
+                    authenticated=False,
+                )
+                state["auth_state"] = "qr_expired"
+                state["pending_reason"] = "qr_expired"
+                return state
+            if self._is_quark_uc_device_limit(exc.message):
+                state = self._build_quark_uc_state(
+                    kind=kind,
+                    storage_id=storage_id,
+                    storage=storage,
+                    authenticated=False,
+                )
+                state["auth_state"] = "device_limit"
+                state["pending_reason"] = "device_limit"
+                return state
             if qr_payload or self._is_quark_uc_qr_pending(exc.message):
                 state = self._build_quark_uc_state(
                     kind=kind,
@@ -1932,6 +2170,11 @@ class ManagedOpenListClient(ManagedAListClient):
             raise
 
         verified = self.get_storage(storage_id)
+        if self._is_quark_uc_device_limit(verified.get("status")):
+            state = self._build_quark_uc_state(kind, storage_id, verified, authenticated=False)
+            state["auth_state"] = "device_limit"
+            state["pending_reason"] = "device_limit"
+            return state
         verified_addition = self._quark_uc_addition(verified)
         return self._build_quark_uc_state(
             kind=kind,

@@ -48,6 +48,7 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertIn("frontend-review-workbench", keys)
         self.assertIn("frontend-managed-guangyapan", keys)
         self.assertIn("frontend-managed-tianyicloud", keys)
+        self.assertIn("experimental-tianyicloud-pc-qr", keys)
         self.assertIn("frontend-managed-115cloud", keys)
         self.assertIn("frontend-managed-aliyundrive", keys)
         self.assertIn("frontend-managed-baidunetdisk", keys)
@@ -132,6 +133,15 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("text/markdown", response.mimetype)
         self.assertIn("storage/managed/tianyicloud/qr/start", response.get_data(as_text=True))
+
+    def test_experimental_tianyicloud_pc_qr_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/experimental-tianyicloud-pc-qr")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        self.assertIn("storage/managed/tianyicloud/pc-qr/start", response.get_data(as_text=True))
 
     def test_managed_115cloud_frontend_guide_is_served_raw(self):
         client = self._create_client()

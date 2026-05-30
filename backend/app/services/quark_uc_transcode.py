@@ -109,11 +109,13 @@ def build_quark_uc_cloud_transcode_playback(resource, source_type):
             "provider_name": None,
             "mode": None,
             "qualities_endpoint": None,
-            "stream_endpoint": None,
-            "resolution_param": "resolution",
-            "available_resolutions": [],
-            "reason": "provider_not_supported",
-        }
+        "stream_endpoint": None,
+        "resolution_param": "resolution",
+        "available_resolutions": [],
+        "recommended_for": [],
+        "quality_semantics": None,
+        "reason": "provider_not_supported",
+    }
     profile = _PROFILES[source_type]
     return {
         "supported": True,
@@ -124,6 +126,8 @@ def build_quark_uc_cloud_transcode_playback(resource, source_type):
         "stream_endpoint": quark_uc_streaming_redirect_url(resource),
         "resolution_param": "resolution",
         "available_resolutions": list(QUARK_UC_STREAMING_RESOLUTIONS),
+        "recommended_for": ["web_player"],
+        "quality_semantics": "provider_cloud_transcode_not_original_file",
         "reason": None,
     }
 

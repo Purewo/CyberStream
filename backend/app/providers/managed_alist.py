@@ -68,6 +68,9 @@ class ManagedOpenListProvider(AListProvider):
     def __init__(self, config):
         source_config = dict(config or {})
         auth_state = str(source_config.get("auth_state") or "").strip().lower()
+        if auth_state == "device_limit":
+            message = getattr(self, "DEVICE_LIMIT_MESSAGE", self.NOT_READY_MESSAGE)
+            raise StorageProviderError(message, code=40061)
         if auth_state and auth_state != "ready":
             raise StorageProviderError(self.NOT_READY_MESSAGE, code=40061)
         if not bool(_config_value("MANAGED_OPENLIST_ENABLED", False)):
@@ -105,6 +108,48 @@ class ManagedOpenListProvider(AListProvider):
             result.pop(internal_field, None)
         if result.get("status") == "online":
             result["message"] = self.HEALTH_MESSAGE
+        return result
+
+
+class QuarkUCManagedOpenListProvider(ManagedOpenListProvider):
+    DEVICE_LIMIT_MESSAGE = "QuarkTV/UCTV device limit reached"
+
+    @staticmethod
+    def _is_device_limit_error(error):
+        text = str(error or "").lower()
+        return any(marker in text for marker in (
+            "设备数超限",
+            "设备数量超限",
+            "device limit",
+            "device count",
+            "too many devices",
+            "devices exceeded",
+        ))
+
+    def check_connection(self):
+        result = super().check_connection()
+        if result.get("status") != "online":
+            return result
+        try:
+            self.list_items("")
+        except Exception as exc:
+            if self._is_device_limit_error(exc):
+                return {
+                    "status": "offline",
+                    "reason": "device_limit",
+                    "message": self.DEVICE_LIMIT_MESSAGE,
+                    "error": str(exc),
+                    "path": "/",
+                    "path_exists": False,
+                }
+            return {
+                "status": "offline",
+                "reason": "request_failed",
+                "message": str(exc),
+                "error": str(exc),
+                "path": "/",
+                "path_exists": False,
+            }
         return result
 
 
@@ -148,17 +193,21 @@ class Pan123Provider(ManagedOpenListProvider):
     HEALTH_MESSAGE = "123Pan reachable"
 
 
-class QuarkTVProvider(ManagedOpenListProvider):
+class QuarkTVProvider(QuarkUCManagedOpenListProvider):
     """CyberStream-managed QuarkTV source backed by a localhost OpenList mount."""
 
+    SOURCE_LABEL = "QuarkTV"
     NOT_READY_MESSAGE = "QuarkTV source has not completed QR login"
     MISSING_MOUNT_MESSAGE = "Missing QuarkTV mount path"
     HEALTH_MESSAGE = "QuarkTV reachable"
+    DEVICE_LIMIT_MESSAGE = "QuarkTV device limit reached"
 
 
-class UCTVProvider(ManagedOpenListProvider):
+class UCTVProvider(QuarkUCManagedOpenListProvider):
     """CyberStream-managed UCTV source backed by a localhost OpenList mount."""
 
+    SOURCE_LABEL = "UCTV"
     NOT_READY_MESSAGE = "UCTV source has not completed QR login"
     MISSING_MOUNT_MESSAGE = "Missing UCTV mount path"
     HEALTH_MESSAGE = "UCTV reachable"
+    DEVICE_LIMIT_MESSAGE = "UCTV device limit reached"
