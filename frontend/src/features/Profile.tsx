@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   User,
   Shield,
@@ -64,10 +64,12 @@ import {
   FileText,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Loader2,
   AlertTriangle,
   ScanLine,
   RefreshCw,
+  QrCode,
   // 成就图标专用——lucide 里 Infinity 是关键字、Image 跟 DOM 全局重名，所以用别名导入
   Moon,
   Eraser,
@@ -572,6 +574,122 @@ const FRONTEND_VERSION = '1.21.1';
 const REPO_URL = 'https://github.com/Purewo/CyberStream';
 const RELEASES_URL = 'https://github.com/Purewo/CyberStream/releases';
 const ISSUES_URL = 'https://github.com/Purewo/CyberStream/issues';
+
+// 自定义赛博风下拉框：原生 <select> 展开是 OS popup，整套 cyber 主题被穿透。
+// 这里用一个 div+button+listbox 自己渲染，能盖掉系统样式，键盘 / outside-click
+// 行为简单跟着自己走。仅用于绑定媒体目录的"选择存储节点"。
+type CyberSelectOption = { value: string | number; label: string; sublabel?: string };
+const CyberSelect: React.FC<{
+  value: string | number | null;
+  options: CyberSelectOption[];
+  onChange: (value: string | number) => void;
+  placeholder?: string;
+  emptyHint?: string;
+  className?: string;
+}> = ({ value, options, onChange, placeholder = '请选择…', emptyHint, className }) => {
+  const [open, setOpen] = useState(false);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [triggerHover, setTriggerHover] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setHoverIdx(null);
+      return;
+    }
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+  const isEmpty = options.length === 0;
+
+  return (
+    <div ref={wrapRef} className={`relative ${className || ''}`}>
+      <button
+        type="button"
+        onClick={() => !isEmpty && setOpen((v) => !v)}
+        onMouseEnter={() => setTriggerHover(true)}
+        onMouseLeave={() => setTriggerHover(false)}
+        disabled={isEmpty}
+        style={{
+          borderColor: triggerHover || open ? 'var(--color-primary)' : 'rgba(0, 243, 255, 0.5)',
+          boxShadow: triggerHover || open ? '0 0 15px rgba(0, 243, 255, 0.3)' : 'none',
+        }}
+        className="w-full bg-black/50 border rounded-lg px-4 py-2.5 text-left text-white font-['Rajdhani'] focus:outline-none transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        <span className="flex-1 truncate">
+          {isEmpty
+            ? emptyHint || '无可选项'
+            : selected
+              ? <>
+                  <span>{selected.label}</span>
+                  {selected.sublabel && (
+                    <span className="text-gray-500 text-xs ml-2 font-mono">{selected.sublabel}</span>
+                  )}
+                </>
+              : <span className="text-gray-500">{placeholder}</span>}
+        </span>
+        <ChevronDown
+          size={16}
+          className={`shrink-0 text-primary/70 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && !isEmpty && (
+        <div
+          className="absolute left-0 right-0 mt-1.5 z-[60] bg-[#0a0a12] rounded-lg max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-1 duration-150"
+          style={{
+            border: '1px solid var(--color-primary)',
+            boxShadow: '0 0 30px rgba(0, 243, 255, 0.25)',
+          }}
+          role="listbox"
+        >
+          {options.map((opt, idx) => {
+            const active = opt.value === value;
+            const hovered = hoverIdx === idx;
+            const highlight = active || hovered;
+            return (
+              <button
+                key={String(opt.value)}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onMouseEnter={() => setHoverIdx(idx)}
+                onMouseLeave={() => setHoverIdx((cur) => (cur === idx ? null : cur))}
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                style={{
+                  backgroundColor: highlight ? 'rgba(0, 243, 255, 0.12)' : 'transparent',
+                  borderLeft: `2px solid ${highlight ? 'var(--color-primary)' : 'transparent'}`,
+                  color: highlight ? 'var(--color-primary)' : '#ffffff',
+                }}
+                className="w-full text-left px-4 py-2.5 font-['Rajdhani'] flex items-center gap-2 transition-colors"
+              >
+                <span className="flex-1 truncate">{opt.label}</span>
+                {opt.sublabel && (
+                  <span className="text-gray-500 text-xs font-mono shrink-0">{opt.sublabel}</span>
+                )}
+                {active && <Check size={14} className="shrink-0 text-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const AboutCard: React.FC = () => {
   const [backendVersion, setBackendVersion] = useState<string | null>(null);
@@ -1199,10 +1317,10 @@ const PersonalPreferencesCard: React.FC<{
             className="bg-black/40 border border-white/10 px-2 py-1.5 text-white outline-none"
           >
             <option value="home">首页</option>
-            <option value="library">媒体库（全部）</option>
+            <option value="library">片库（全部）</option>
             {libraries.map((lib) => (
               <option key={lib.id} value={`library:${lib.id}`}>
-                库 · {lib.name}
+                专辑 · {lib.name}
               </option>
             ))}
           </select>
@@ -1249,6 +1367,18 @@ interface ProfilePageProps {
   libraries?: import("../types").Library[];
   onRefreshLibraries?: () => Promise<void>;
   initialTab?: string;
+  // 打开元数据编辑器（MetadataEditor modal）。
+  // ProfilePage 内嵌的 ReviewWorkbench 会用——审查工作台「待审批」tab 点
+  // 卡片就走这个回调进编辑器。链路：App.tsx setMetadataMovie → 这里 →
+  // ReviewWorkbench → PendingReview → MetadataEditor。
+  onEditMetadata?: (m: Movie) => void;
+  // 进入 Profile 时是否自动打开「接入新链路」modal。
+  // 用于首页空状态卡片"立即绑定"按钮的 deep link：跳 RESOURCES tab 同时
+  // 弹出 AddStorageSourceModal，少一次点击。
+  initialOpenAddResource?: boolean;
+  // 用户关闭「接入新链路」modal 后用来通知 App 把 profileOpenAddResource
+  // 重置回 false，否则用户下次从 navbar 手动进 Profile 又会自动弹出。
+  onConsumeOpenAddResource?: () => void;
   // 保险库会话态。整个 app 共享，从 useUserData 透传过来
   vaultState?: import('../api/user').VaultAccessState | null;
   onRefreshVaultStatus?: () => Promise<import('../api/user').VaultAccessState | null>;
@@ -1288,6 +1418,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   libraries = [],
   onRefreshLibraries = async () => {},
   initialTab = "IDENTITY",
+  onEditMetadata,
+  initialOpenAddResource = false,
+  onConsumeOpenAddResource,
   vaultState = null,
   onRefreshVaultStatus = async () => null,
   onRefreshFavorites = async () => {},
@@ -1303,13 +1436,127 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [pinPromptState, setPinPromptState] = useState<{
     sourceId: number;
     sourceName: string;
-    error?: string;
+    error?: string | null;
   } | null>(null);
   const [pinPromptValue, setPinPromptValue] = useState('');
   const [pinPromptSubmitting, setPinPromptSubmitting] = useState(false);
   // 正在 refresh 的存储源 id —— UI 上让 refresh 图标转起来。同时禁用 click，
   // 避免用户连点导致后端排队。
   const [refreshingSourceId, setRefreshingSourceId] = useState<number | null>(null);
+
+  // ─── QuarkTV / UCTV 重新扫码登录 ───
+  //
+  // 夸克 TV 同账号在其他设备登录会顶号，老 token 失效；后端 source_id 不变，
+  // 但 actions 全部 false。restart 在原 source_id 上发新一轮二维码。
+  // - 弹一个轻量 modal 显示 qr_code_data_url
+  // - 2.5s 一次 poll 同一个 source_id 直到 authenticated=true
+  // - link_method 默认沿用源原配置（restart 接口不传字段就保留）
+  const [reloginState, setReloginState] = useState<{
+    sourceId: number;
+    sourceName: string;
+    slug: 'quarktv' | 'uctv';
+    qrDataUrl: string;
+    polling: boolean;
+    busy: boolean;
+    pendingMsg: string;
+  } | null>(null);
+  const reloginPollTimerRef = useRef<number | null>(null);
+
+  // 取消重新登录：清 timer + 关 modal。pollLoop 里用 reloginState 做 cancellation
+  // sentinel——modal 关闭后 setReloginState(null)，下一次 poll 看到 null 直接退出。
+  const closeReloginModal = () => {
+    if (reloginPollTimerRef.current) {
+      clearTimeout(reloginPollTimerRef.current);
+      reloginPollTimerRef.current = null;
+    }
+    setReloginState(null);
+  };
+
+  // Esc 键关闭重登 modal。挂在 document 上而不是 modal 里，避免 modal 重新渲染
+  // 时丢失监听。reloginState 一存在就挂、关闭时立刻撤。
+  useEffect(() => {
+    if (!reloginState) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeReloginModal();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloginState !== null]);
+
+  // 起一个 poll loop。fresh state 通过闭包传 sourceId / slug，避免依赖 reloginState
+  // 在 setTimeout 闭包里被 stale 锁住。
+  const pollReloginLoop = async (slug: 'quarktv' | 'uctv', sourceId: number) => {
+    const { storageService } = await import('../api');
+    const res = await storageService.pollManagedQrLogin(slug, sourceId);
+    if (!res.ok) {
+      toast.error(res.msg || '轮询失败');
+      closeReloginModal();
+      return;
+    }
+    const data = res.data || {};
+    if (data.authenticated === true && data.auth_state === 'ready') {
+      toast.success('重新登录成功，挂载点已恢复');
+      closeReloginModal();
+      await loadResources();
+      return;
+    }
+    // device_limit：授权拿到 token 但夸克侧设备槽位没释放，访问文件被拒。
+    // 用户得去夸克 App「我的 → 已登录设备」踢掉旧设备，等几分钟槽位释放后
+    // 再点重新扫码。后端 source.health.reason 会同步记录 device_limit。
+    if (data.auth_state === 'device_limit') {
+      toast.error('夸克账号设备数超限，请在夸克 App 中踢掉旧设备后再重新扫码');
+      closeReloginModal();
+      await loadResources();
+      return;
+    }
+    if (data.auth_state === 'qr_expired' || data.auth_state === 'qr_canceled') {
+      toast.error(data.auth_state === 'qr_expired' ? '二维码已过期，请重新发起登录' : '已取消扫码登录');
+      closeReloginModal();
+      return;
+    }
+    setReloginState((prev) => prev && ({ ...prev, pendingMsg: data.pending_reason === 'waiting_for_confirm' ? '已扫码，请在手机上确认登录' : '请用 App 扫描二维码' }));
+    reloginPollTimerRef.current = window.setTimeout(() => pollReloginLoop(slug, sourceId), 2500);
+  };
+
+  const handleStartRelogin = async (
+    sourceId: number,
+    sourceName: string,
+    sourceType: string,
+  ) => {
+    if (sourceType !== 'quarktv' && sourceType !== 'uctv') return;
+    const slug = sourceType as 'quarktv' | 'uctv';
+    setReloginState({
+      sourceId,
+      sourceName,
+      slug,
+      qrDataUrl: '',
+      polling: false,
+      busy: true,
+      pendingMsg: '正在生成二维码…',
+    });
+    const { storageService } = await import('../api');
+    const res = await storageService.restartManagedQrLogin(slug, sourceId);
+    if (!res.ok) {
+      toast.error(res.msg || '重新登录失败');
+      closeReloginModal();
+      return;
+    }
+    const dataUrl = res.data?.qr_code_data_url || '';
+    if (!dataUrl) {
+      toast.error('后端响应缺少 qr_code_data_url');
+      closeReloginModal();
+      return;
+    }
+    setReloginState((prev) => prev && ({
+      ...prev,
+      qrDataUrl: dataUrl,
+      busy: false,
+      polling: true,
+      pendingMsg: '请用 App 扫描二维码',
+    }));
+    reloginPollTimerRef.current = window.setTimeout(() => pollReloginLoop(slug, sourceId), 2500);
+  };
 
   // 手动刷新存储源根目录缓存：调 /v1/storage/sources/{id}/refresh，底层让 alist
   // 重新拉一次 fs/list（refresh=true），不触发扫描和刮削。云盘新增文件但 alist
@@ -1340,7 +1587,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     if (refreshingLibraryId !== null) return;
     const bindings = libraryBindings[libId] || [];
     if (bindings.length === 0) {
-      toast.info('该媒体库还没有绑定目录');
+      toast.info('该专辑还没有绑定目录');
       return;
     }
     setRefreshingLibraryId(libId);
@@ -1401,6 +1648,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     import("../types").StorageSource[]
   >([]);
   const [isAddingResource, setIsAddingResource] = useState(false);
+
+  // 首页空状态 deep link：initialOpenAddResource=true 时进 RESOURCES tab
+  // 顺手把「接入新链路」modal 一并打开，少一次点击。
+  useEffect(() => {
+    if (initialOpenAddResource) {
+      setIsAddingResource(true);
+    }
+  }, [initialOpenAddResource]);
   const [selectedProtocol, setSelectedProtocol] = useState<
     import("../types").StorageProviderType | null
   >(null);
@@ -1587,6 +1842,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   const closeAddModal = () => {
     setIsAddingResource(false);
+    onConsumeOpenAddResource?.();
     setTimeout(() => {
       setSelectedProtocol(null);
       setNewSourceName("");
@@ -1656,31 +1912,27 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       }
       closeAddModal();
     } else {
-      toast.error("添加存储源失败");
+      toast.error("添加挂载点失败");
     }
   };
 
-  const handleDeleteSource = (id: number) => {
+  const handleDeleteSource = (id: number, name: string) => {
     setConfirmAction({
-      message: "确定断开这条链路？",
+      message: "确定删除这个挂载点？",
       onConfirm: async () => {
-        const { storageService } = await import("../api");
-        const result = await storageService.deleteSource(id, { keepMetadata: true });
-        if (result.ok) {
-          toast.success("存储源已断开连接");
-          await loadResources();
-        } else {
-          toast.error(result.msg || "断开存储源失败");
-        }
+        await performDeleteSource(id, name);
       },
     });
   };
 
   // 真正发起删除存储源的请求 + 错误码分支处理。
   // - 200 → 成功路径
+  // - 40040 → PIN 字段格式不合法（6 位数字）。第一次调用没带 PIN 也会撞这里，
+  //   作为"需要 PIN"的隐式信号弹输入框
   // - 40341 → 后端未配置保险柜 PIN，引导去「数据保险库」tab
   // - 40344 → PIN 错误，弹 PIN 输入框（已有 PIN 弹框时只更新 error）
   // - 42900 → 扫描进行中，禁止删除
+  // - 50262 → AList/OpenList 内部挂载删除失败，本地数据保留
   const performDeleteSource = async (id: number, name: string, pin?: string) => {
     const { storageService } = await import("../api");
     const result = await storageService.deleteSource(id, { keepMetadata: false, pin });
@@ -1698,15 +1950,26 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setActiveTab("VAULT");
       return;
     }
-    if (result.code === 40344) {
+    if (result.code === 40344 || result.code === 40040) {
+      // 40344 PIN 错误 / 40040 PIN 格式不合法（首次没带 PIN 也会撞这里）。
       // 已经在 PIN 弹框里 → 提示错误重试；从 confirmAction 进来 → 弹出 PIN 弹框
-      setPinPromptState({ sourceId: id, sourceName: name, error: "PIN 错误，请重试" });
+      const isFirstAttempt = !pin;
+      setPinPromptState({
+        sourceId: id,
+        sourceName: name,
+        error: isFirstAttempt ? null : (result.code === 40344 ? "PIN 错误，请重试" : "PIN 必须是 6 位数字"),
+      });
       setPinPromptValue('');
       return;
     }
     if (result.code === 42900) {
       setPinPromptState(null);
-      toast.error("扫描正在进行，无法删除存储源，请等扫描结束后再试");
+      toast.error("扫描正在进行，无法删除挂载点，请等扫描结束后再试");
+      return;
+    }
+    if (result.code === 50262) {
+      setPinPromptState(null);
+      toast.error("AList/OpenList 挂载删除失败，本地数据已保留，请检查本机服务后重试");
       return;
     }
     toast.error(result.msg || "强制卸载失败");
@@ -1799,7 +2062,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       description: editingLibraryDescription,
     });
     if (success) {
-      toast.success("媒体库更新成功！");
+      toast.success("专辑更新成功！");
       setEditingLibraryId(null);
       await onRefreshLibraries();
     } else {
@@ -1809,13 +2072,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   const handleDeleteLibrary = (id: number) => {
     setConfirmAction({
-      message: "确定要删除此媒体库吗？",
+      message: "确定要删除此专辑吗？",
       desc: "这不会删除物理文件，但会清除其所有内容记录。",
       onConfirm: async () => {
         const { libraryService } = await import("../api");
         const success = await libraryService.deleteLibrary(id);
         if (success) {
-          toast.success("媒体库已删除！");
+          toast.success("专辑已删除！");
           if (editingLibraryId === id) setEditingLibraryId(null);
           await onRefreshLibraries();
         } else {
@@ -1828,7 +2091,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const handleUnbindDirectory = (libraryId: number, bindingId: number) => {
     setConfirmAction({
       message: "确定要解绑此目录吗？",
-      desc: "相关媒体资源将从媒体库中移除。",
+      desc: "相关媒体资源将从专辑中移除。",
       onConfirm: async () => {
         const { libraryService } = await import("../api");
         const success = await libraryService.unbindLibrarySource(
@@ -1848,7 +2111,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   const handleCreateLibrary = async () => {
     if (!newLibraryName.trim()) {
-      toast.warning("请填写库名称");
+      toast.warning("请填写专辑名称");
       return;
     }
     const slug = newLibraryName.toLowerCase().replace(/\s+/g, "-");
@@ -1859,7 +2122,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       newLibraryDescription,
     );
     if (id !== null) {
-      toast.success("媒体库创建成功！");
+      toast.success("专辑创建成功！");
       setIsAddingLibrary(false);
       setNewLibraryName("");
       setNewLibraryDescription("");
@@ -2107,7 +2370,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       case "REVIEW":
         return (
           <div className="animate-in slide-in-from-right-4 fade-in duration-300 -mt-24 -mx-4 md:-mx-12">
-            <ReviewWorkbench onMovieSelect={onMovieSelect} />
+            <ReviewWorkbench onMovieSelect={onMovieSelect} onEditMetadata={onEditMetadata} />
           </div>
         );
       case "VAULT":
@@ -2275,10 +2538,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       在线
                     </div>
                   ) : res.health?.status === "offline" ? (
-                    <div className="absolute top-2 right-2 text-[9px] text-red-500 flex items-center gap-1 font-['Rajdhani'] tracking-widest border border-red-500/30 bg-red-500/10 rounded-full px-2 py-0.5 shadow-[0_0_8px_rgba(239,68,68,0.2)] z-20">
-                      <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>{" "}
-                      离线
-                    </div>
+                    res.health?.reason === 'device_limit' ? (
+                      // 夸克专属：设备数超限。橙色而非红色，告知用户需要去夸克 App 踢设备
+                      <div
+                        className="absolute top-2 right-2 text-[9px] text-amber-400 flex items-center gap-1 font-['Rajdhani'] tracking-widest border border-amber-500/40 bg-amber-500/10 rounded-full px-2 py-0.5 shadow-[0_0_8px_rgba(245,158,11,0.25)] z-20"
+                        title={res.health?.message || '夸克账号设备数超限，请在夸克 App 中踢掉旧设备后重新扫码'}
+                      >
+                        <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse"></div>{" "}
+                        设备超限
+                      </div>
+                    ) : (
+                      <div
+                        className="absolute top-2 right-2 text-[9px] text-red-500 flex items-center gap-1 font-['Rajdhani'] tracking-widest border border-red-500/30 bg-red-500/10 rounded-full px-2 py-0.5 shadow-[0_0_8px_rgba(239,68,68,0.2)] z-20"
+                        title={res.health?.message || '挂载点离线'}
+                      >
+                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>{" "}
+                        离线
+                      </div>
+                    )
                   ) : res.health?.status === "checking" ? (
                     <div className="absolute top-2 right-2 text-[9px] text-cyan-400 flex items-center gap-1 font-['Rajdhani'] tracking-widest border border-cyan-500/30 bg-cyan-500/10 rounded-full px-2 py-0.5 shadow-[0_0_8px_rgba(6,182,212,0.2)] z-20">
                       <Loader2 size={10} className="animate-spin" /> 检测中
@@ -2385,6 +2662,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
                   {/* Operational Toolbar */}
                   <div className="relative z-10 pt-3 border-t border-white/5 flex gap-2 justify-end items-center mt-auto">
+                    {(res.type === 'quarktv' || res.type === 'uctv') && (
+                      <button
+                        title="重新扫码登录（顶号/token 失效后用，不会破坏资源索引）"
+                        onClick={() => handleStartRelogin(res.id, res.name, res.type)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-amber-500/50 text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10 hover:shadow-[0_0_15px_rgba(245,158,11,0.4)] transition-all duration-300 group/btn"
+                      >
+                        <QrCode
+                          size={14}
+                          className="group-hover/btn:scale-110 transition-transform"
+                        />
+                      </button>
+                    )}
                     {res.actions?.can_refresh && (
                       <button
                         title="刷新目录缓存（云盘新增文件但 AList 还没同步时用）"
@@ -2439,7 +2728,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     ) : (
                       <button
                         title="断开/卸载该节点"
-                        onClick={() => handleDeleteSource(res.id)}
+                        onClick={() => handleDeleteSource(res.id, res.name)}
                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-red-500/50 text-red-500/70 hover:text-red-400 hover:bg-red-500/10 hover:shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all duration-300 group/btn"
                       >
                         <Trash2
@@ -2460,7 +2749,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   <Plus size={20} />
                 </div>
                 <span className="font-['Orbitron'] text-xs tracking-widest text-gray-400 group-hover:text-primary transition-colors">
-                  添加全新资源库
+                  添加全新专辑
                 </span>
               </button>
             </div>
@@ -2572,10 +2861,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="flex justify-between items-center bg-[#0a0a12]/80 border border-white/10 p-6 rounded-2xl shadow-lg backdrop-blur-sm">
               <div>
                 <h3 className="text-lg font-['Orbitron'] font-bold text-white flex items-center gap-2">
-                  <Database size={18} /> 媒体库管理
+                  <Database size={18} /> 专辑管理
                 </h3>
                 <p className="text-xs text-gray-400 font-sans mt-1">
-                  创建逻辑分区，并将底层存储目录映射到媒体库
+                  创建逻辑分区，并将底层存储目录映射到专辑
                 </p>
               </div>
               <button
@@ -2628,7 +2917,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         <button
                           onClick={() => handleDeleteLibrary(lib.id)}
                           className="text-white/30 hover:text-red-500 hover:bg-red-500/10 p-1.5 rounded transition-all border border-transparent hover:border-red-500/30"
-                          title="删除媒体库（不影响存储资源）"
+                          title="删除专辑（不影响存储资源）"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -2661,7 +2950,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       <button
                         onClick={() => handleScanLibrary(lib.id, lib.name)}
                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-cyan-500/50 text-cyan-500/70 hover:text-cyan-400 hover:bg-cyan-500/10 hover:shadow-[0_0_15px_rgba(6,182,212,0.4)] transition-all duration-300 group/btn"
-                        title="扫描刮削（扫描并刮削该媒体库已绑定的所有目录）"
+                        title="扫描刮削（扫描并刮削该专辑已绑定的所有目录）"
                         aria-label="扫描刮削"
                       >
                         <Zap size={14} className="group-hover/btn:scale-110 transition-transform" />
@@ -2720,7 +3009,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <div className="col-span-full h-48 border border-dashed border-white/20 flex flex-col items-center justify-center text-gray-500 rounded-xl">
                   <FolderTree size={32} className="mb-2 opacity-50" />
                   <p className="font-['Orbitron'] text-xs">
-                    还未创建任何媒体库分区
+                    还未创建任何专辑分区
                   </p>
                 </div>
               )}
@@ -2755,7 +3044,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             {
               id: "LIBRARIES",
               icon: <Database size={18} />,
-              label: "媒体库管理",
+              label: "专辑管理",
             },
             {
               id: "RESOURCES",
@@ -2846,7 +3135,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               请输入保险柜 PIN
             </h3>
             <p className="text-gray-400 font-['Rajdhani'] mt-3 text-sm">
-              强制卸载存储源「{pinPromptState.sourceName}」需要保险柜 PIN 校验。
+              强制卸载挂载点「{pinPromptState.sourceName}」需要保险柜 PIN 校验。
             </p>
             <p className="text-[11px] text-gray-500 font-sans mt-2">
               如果忘记 PIN 或还没设置，请到「数据保险库」面板配置。
@@ -2931,7 +3220,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <textarea
                   value={newLibraryDescription}
                   onChange={(e) => setNewLibraryDescription(e.target.value)}
-                  placeholder="记录此媒体库的用途与特性..."
+                  placeholder="记录此专辑的用途与特性..."
                   className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white font-['Rajdhani'] focus:outline-none focus:border-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.2)] transition-all h-24 custom-scrollbar resize-none"
                 ></textarea>
               </div>
@@ -2994,7 +3283,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <textarea
                   value={editingLibraryDescription}
                   onChange={(e) => setEditingLibraryDescription(e.target.value)}
-                  placeholder="记录此媒体库的用途与特性..."
+                  placeholder="记录此专辑的用途与特性..."
                   className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-white font-['Rajdhani'] focus:outline-none focus:border-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.2)] transition-all h-24 custom-scrollbar resize-none"
                 ></textarea>
               </div>
@@ -3156,24 +3445,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="flex gap-4 mb-4 shrink-0">
               <div className="flex-1">
                 <label className="block text-[10px] font-['Orbitron'] tracking-widest text-gray-500 mb-2 uppercase">
-                  Select Storage Node
+                  选择挂载点
                 </label>
-                <select
-                  value={bindingSourceId || ""}
-                  onChange={(e) => setBindingSourceId(Number(e.target.value))}
-                  className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-white font-['Rajdhani'] focus:outline-none focus:border-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.2)] transition-all appearance-none cursor-pointer"
-                >
-                  {storageSources.length === 0 && (
-                    <option value="" disabled>
-                      无可用存储节点，请先在资源池挂载
-                    </option>
-                  )}
-                  {storageSources.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.type})
-                    </option>
-                  ))}
-                </select>
+                <CyberSelect
+                  value={bindingSourceId}
+                  onChange={(v) => setBindingSourceId(Number(v))}
+                  placeholder="请选择挂载点"
+                  emptyHint="无可用挂载点，请先在资源池挂载"
+                  options={storageSources.map((s) => ({
+                    value: s.id,
+                    label: s.name,
+                    sublabel: s.type,
+                  }))}
+                />
               </div>
             </div>
 
@@ -3280,7 +3564,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       {isAddingResource && (
         <AddStorageSourceModal
           providerTypes={providerTypes}
-          onClose={closeAddModal}
+          onClose={async () => {
+             // 关弹窗即和后端对账：start 一旦调用后端就建了 source 行（挂失败也留
+             // 一条 offline/error），失败终态不会走 onSuccess，靠这里把失败的挂载
+             // 拉进列表，免得用户手动刷新才看得到。
+             closeAddModal();
+             await loadResources();
+          }}
           onSuccess={async () => {
              closeAddModal();
              await loadResources();
@@ -3289,11 +3579,55 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       )}
 
       {scanningSource && (
-        <ScanSourceModal 
+        <ScanSourceModal
           sourceId={scanningSource.id}
           sourceName={scanningSource.name}
           onClose={() => setScanningSource(null)}
         />
+      )}
+
+      {reloginState && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div
+            className="relative bg-[#0a0a12] rounded-xl p-6 w-[420px] max-w-[92vw]"
+            style={{ border: '1px solid var(--color-primary)', boxShadow: '0 0 30px rgba(0, 243, 255, 0.3)' }}
+          >
+            <button
+              onClick={closeReloginModal}
+              className="absolute top-3 right-3 text-gray-500 hover:text-primary transition-colors"
+              title="关闭"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-base font-['Orbitron'] font-bold text-primary tracking-widest mb-1 flex items-center gap-2">
+              <QrCode size={16} /> 重新扫码登录
+            </h3>
+            <p className="text-[11px] text-gray-500 font-['Rajdhani'] mb-4 truncate">
+              「{reloginState.sourceName}」 · {reloginState.slug === 'quarktv' ? '夸克网盘 TV 版' : 'UC 网盘 TV 版'}
+            </p>
+            <div className="bg-black/40 border border-primary/30 rounded-lg p-4 flex flex-col items-center gap-3">
+              {reloginState.qrDataUrl ? (
+                <img src={reloginState.qrDataUrl} alt="二维码" className="w-56 h-56 bg-white rounded p-2" />
+              ) : (
+                <div className="w-56 h-56 flex items-center justify-center text-gray-500">
+                  <Loader2 size={32} className="animate-spin" />
+                </div>
+              )}
+              <p className="text-xs text-gray-300 font-['Rajdhani'] text-center min-h-[18px]">
+                {reloginState.pendingMsg}
+              </p>
+              {reloginState.polling && (
+                <div className="flex items-center gap-2 text-[10px] text-primary/70 font-['Orbitron'] tracking-widest">
+                  <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></div>
+                  正在轮询登录状态…
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-600 font-['Rajdhani'] mt-3 leading-relaxed">
+              账号在其他设备登录会顶号导致 token 失效。重新扫码不会破坏资源索引和专辑绑定，源 ID 保持不变。
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -13,6 +13,77 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
+// ─── 百度网盘 stream UA 改写 ───
+//
+// 百度网盘 stream URL 经过几层 302 后落到 d.pcs.baidu.com 直链；这条直链
+// 对请求方 UA 敏感，普通浏览器/播放器 UA 上去会被反爬挡掉。AList 的
+// baidu_netdisk driver 默认 UA 就是下面这串，社区验证可用。
+//
+// 触发条件：playback.external_player.requires_user_agent_rewrite === true
+// 或 playback.external_player.reason === 'baidunetdisk_requires_user_agent_rewrite'
+// （后端 schema 里 requires_local_backend / reason 都标记了）。
+//
+// 后端目前不暴露具体 UA 字符串；这里集中一份常量，将来后端把 UA 放进
+// manifest（比如 `external_player.user_agent`）后改一处即可。
+const BAIDU_NETDISK_USER_AGENT = 'netdisk;P2SP;3.0.7.10;netdisk;';
+
+/**
+ * 后端返回的 playback.external_player 里需要 UA 改写的标记。
+ * 调用方拿到 resource detail 后，把 external_player 段切下来传进来判断。
+ */
+export interface PlaybackHandoffHint {
+  requires_user_agent_rewrite?: boolean;
+  reason?: string | null;
+}
+
+/**
+ * 当前资源是否要走 UA 改写。先看显式 boolean，再回退看 reason 里有没有
+ * `_requires_user_agent_rewrite` 后缀（后端可能加新 storage_type 用相同
+ * reason 模式）。两个都 false 时返回 false。
+ */
+export function needsUserAgentRewrite(hint?: PlaybackHandoffHint | null): boolean {
+  if (!hint) return false;
+  if (hint.requires_user_agent_rewrite === true) return true;
+  if (typeof hint.reason === 'string' && /requires_user_agent_rewrite$/i.test(hint.reason)) {
+    return true;
+  }
+  return false;
+}
+
+/** 选要改写成什么 UA。reason 给百度时用百度专用 UA；其他情况返回 null（不改）。 */
+export function pickUserAgentForRewrite(hint?: PlaybackHandoffHint | null): string | null {
+  if (!needsUserAgentRewrite(hint)) return null;
+  // 目前仅百度网盘命中 UA 改写场景；其他 storage_type 将来若需要其他 UA，
+  // 在这里按 reason 分支扩展。
+  if (typeof hint?.reason === 'string' && /baidunetdisk/i.test(hint.reason)) {
+    return BAIDU_NETDISK_USER_AGENT;
+  }
+  // 没标 reason 但 requires_user_agent_rewrite=true 的 fallback：仍用百度默认。
+  return BAIDU_NETDISK_USER_AGENT;
+}
+
+/** 取 PC 本地媒体代理 base URL（http://127.0.0.1:<port>）。lib.rs 启动时
+ *  绑定随机端口；前端外播前调一次拿到 base，用它把 stream URL 包成
+ *  `<base>/stream?u=<encoded>&ua=<encoded>` 喂给 PotPlayer/VLC。
+ *  代理未启动时返回 null（外播降级走原始 URL）。*/
+export async function getMediaProxyBase(): Promise<string | null> {
+  try {
+    const base = await invoke<string | null>('media_proxy_url');
+    return base || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 用本地代理把 stream URL 包成播放器可消费的 URL。base 为 null 时返回
+ *  原 URL（降级——百度网盘外播会 403，但其他云盘正常）。*/
+export function wrapWithMediaProxy(streamUrl: string, ua: string, proxyBase: string | null): string {
+  if (!proxyBase) return streamUrl;
+  const u = encodeURIComponent(streamUrl);
+  const a = encodeURIComponent(ua);
+  return `${proxyBase}/stream?u=${u}&ua=${a}`;
+}
+
 /**
  * Resource metadata as expected by the Rust right-side panel. Mirrors
  * `ResourceMeta` in `pc/src-tauri/src/native_player/meta.rs`.
@@ -43,6 +114,21 @@ export interface NativeResourceMeta {
    *  `sub-add`. Internal/embedded subtitles are NOT in this list — mpv
    *  discovers those itself when the container is loaded. */
   subtitles?: NativeSubtitleMeta[];
+  /** 云端转码画质档位（仅 quarktv / uctv 资源命中）。后端把云盘原始下载链
+   *  转码成多档分辨率；每档一个绝对 stream-transcoded URL，mpv loadfile 可直接
+   *  消费。空 / 缺省 = 不是云转码资源，HUD 不画清晰度菜单，走原始 url 字段。*/
+  qualities?: NativeQualityMeta[];
+}
+
+export interface NativeQualityMeta {
+  /** low / normal / high / super / 2k / 4k */
+  resolution: string;
+  /** 后端给的展示名（LD / HD / FHD / 4K 等）；缺省时 HUD 退到 resolution。 */
+  label?: string;
+  /** 该档位的绝对播放 URL（getTranscodedStreamUrl 已拼好 apiBase origin）。 */
+  url: string;
+  /** 是否后端默认档位（default_resolution）；启动时优先选它起播。 */
+  isDefault?: boolean;
 }
 
 export interface NativeSubtitleMeta {

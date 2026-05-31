@@ -12,10 +12,10 @@ import { ContextMenu } from './components/ui/ContextMenu';
 import { ScanProgressBar } from './components/ui/ScanProgressBar';
 import { BackgroundJobProgressBar } from './components/ui/BackgroundJobProgressBar';
 import { Toaster } from './components/ui/Toaster';
-import { movieService, libraryService, userService } from './api';
+import { movieService, libraryService, userService, resourceService } from './api';
 import { getDeviceId } from './api/core';
 import { getPublicUrlBase, writeClipboard, platform, getApiBase } from './platform';
-import { launchNativePlayer } from './platform/nativePlayer';
+import { launchNativePlayer, needsUserAgentRewrite, pickUserAgentForRewrite } from './platform/nativePlayer';
 import { getStyles, toast } from './utils';
 import { useGlobalHotkeys } from './hooks/useGlobalHotkeys';
 import { Movie, ViewState, PlayOptions } from './types';
@@ -38,6 +38,7 @@ const App = () => {
   const {
     currentView, setCurrentView,
     profileInitialTab, setProfileInitialTab,
+    profileOpenAddResource, setProfileOpenAddResource,
     overlayView, setOverlayView,
     scrollContainerRef, savedScroll, setSavedScroll,
     libraryInitialType, setLibraryInitialType,
@@ -140,7 +141,7 @@ const App = () => {
     switch (action) {
        case 'add_to_library':
          if (libraries.length === 0) {
-           toast.info("当前没有任何片库，请先创建片库。");
+           toast.info("当前没有任何专辑，请先创建专辑。");
            navigateTo('libraries');
          } else {
            setAddToLibraryMovie(movie);
@@ -153,7 +154,7 @@ const App = () => {
            // Then we explicitly exclude it to override directory matches
            const success = await libraryService.createMovieMembership(activeLibraryId, 'exclude', [String(movie.id)]);
            if (success) {
-             toast.success(`《${movie.title}》已从当前片库移除。`);
+             toast.success(`《${movie.title}》已从当前专辑移除。`);
              window.dispatchEvent(new CustomEvent('library-list-dirty'));
            } else {
              toast.error("移除失败，请重试。");
@@ -273,6 +274,8 @@ const App = () => {
       ?? resources[0]?.id
       ?? String(movie.id);
     const startTime = Number(options.startTime) || 0;
+    // 首帧 loadfile 用的 URL：一律用原始 /stream。夸克/UC 现在也是 download
+    // 原文件链路，原始 URL 就能直接播且画质最高；清晰度切换由 HUD 菜单接管。
     const url = movieService.getStreamUrl(currentResourceId);
 
     // 把每条 resource 拍扁成 NativeResourceMeta：附带直链、画质标签、
@@ -306,11 +309,15 @@ const App = () => {
       if (reZh) return reZh[1];
       const reEp = fn.match(/(?:^|[^\w])(?:EP|Ep|ep|E|e)(?:\s*[-.]*\s*)?(\d+)/);
       if (reEp) return reEp[1];
+      // 括号集号 (1) / （1）—— 国内站点常见命名 tang...S03 (1).mkv。
+      // 放在裸数字兜底之前，半角全角都收。
+      const reParen = fn.match(/[(（]\s*(\d{1,3})\s*[)）]/);
+      if (reParen) return reParen[1];
       const reBare = fn.match(/(?:^|\s|-|\[)\s*(\d{1,3})(?:\s|-|\.|\]|$)/);
       if (reBare) return reBare[1];
       return undefined;
     };
-    const nativeResources = resources.map(r => {
+    const nativeResources = await Promise.all(resources.map(async r => {
       const tech = (r as any).resource_info?.technical || {};
       const info: any = (r as any).resource_info || {};
       // displayLabel 优先级和 web Player 行 1936 保持一致：
@@ -397,6 +404,27 @@ const App = () => {
           isDefault: !!s.is_default,
         }))
         .filter((s) => s.id && s.url);
+      // 云端转码画质：凡 cloud_transcode.supported（夸克/UC/阿里等，按字段不按
+      // 网盘名）就拉一次 streaming-qualities，把 available 档位拍扁成 qualities[]，
+      // 让 HUD 画清晰度切换菜单。不支持的资源跳过、零额外请求。失败时 qualities
+      // 为空，HUD 不显示菜单，走原始 url（PC 首帧本就默认原文件）。
+      let qualities: import('./platform/nativePlayer').NativeQualityMeta[] | undefined;
+      if (r.playback?.cloud_transcode?.supported) {
+        try {
+          const q = await resourceService.getStreamingQualities(r.id);
+          const items = (q?.items || []).filter((it) => it.available);
+          if (items.length > 0) {
+            qualities = items.map((it) => ({
+              resolution: it.resolution,
+              label: it.label,
+              url: resourceService.getTranscodedStreamUrl(r.id, it.resolution),
+              isDefault: it.resolution === q?.default_resolution,
+            }));
+          }
+        } catch {
+          /* 拉取失败：qualities 留 undefined，HUD 不画菜单，走原始 url */
+        }
+      }
       return {
         id: r.id,
         url: movieService.getStreamUrl(r.id),
@@ -409,13 +437,31 @@ const App = () => {
         season: r.season,
         badges,
         subtitles,
+        qualities,
       };
-    });
+    }));
+
+    // 夸克/UC 资源：后端 1.21 起把挂载固定为 download 原文件链路，/stream 就是
+    // 可直接播放的原始文件（画质最高、不经转码、不耗 provider 转码资源），是 PC
+    // 的首选入口。所以首帧直接用原始 url，不再覆盖成转码档。清晰度切换仍保留——
+    // qualities 已塞进 nativeResources，HUD 清晰度菜单让用户按需切到转码档。
 
     launchNativePlayer({
       url,
       startTime,
       currentResourceId,
+      // 百度网盘上游 d.pcs.baidu.com 直链对 UA 敏感（普通播放器 UA 会被反爬挡掉）。
+      // 后端 stream URL 走 302 跳到上游，UA 由播放方决定，所以这里要在 mpv
+      // 请求 header 里塞百度专用 UA。判定信号来自 resource.playback.external_player：
+      //   - requires_user_agent_rewrite=true，或
+      //   - reason=baidunetdisk_requires_user_agent_rewrite
+      headers: (() => {
+        const cur = resources.find(r => r.id === currentResourceId) as any;
+        const hint = cur?.playback?.external_player ?? null;
+        if (!needsUserAgentRewrite(hint)) return [];
+        const ua = pickUserAgentForRewrite(hint);
+        return ua ? [['User-Agent', ua] as [string, string]] : [];
+      })(),
       // device_id + api_base 给 Rust 心跳线程发 /v1/user/history 用。
       // api_base 去掉末尾 `/api`，让 Rust 端按 `/api/v1/...` 拼接。
       // sessionId 前缀 `pc-` 方便后端日志区分 PC 与 web 来源。
@@ -455,7 +501,7 @@ const App = () => {
 
         <main className={`flex-1 flex flex-col w-full`}>
           <div style={{ display: overlayView === 'none' ? 'block' : 'none', flex: 1, minHeight: 0 }}>
-            {currentView === 'home' && (<Home onMovieSelect={handleMovieSelect} onViewMore={handleViewCategory} />)} 
+            {currentView === 'home' && (<Home onMovieSelect={handleMovieSelect} onViewMore={handleViewCategory} onRequestBindStorage={() => { setProfileInitialTab('RESOURCES'); setProfileOpenAddResource(true); setCurrentView('profile'); setOverlayView('none'); setTimeout(() => { if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0; }, 0); }} />)}
             {currentView === 'library' && (<Library onMovieSelect={handleMovieSelect} initialType={settings.homepage?.libraryDefaults?.type || libraryInitialType} initialSort={settings.homepage?.libraryDefaults?.sort || 'update_time'} activeLibraryId={activeLibraryId} onRequestBind={() => { setProfileInitialTab('LIBRARIES'); setCurrentView('profile'); setOverlayView('none'); }} />)}
             {currentView === 'libraries' && (<LibrariesList libraries={libraries} onSelectLibrary={(id) => { setActiveLibraryId(id); setCurrentView('library'); }} onAddLibrary={() => setCurrentView('add_library')} />)}
             {currentView === 'add_library' && (<AddLibraryWizard onCancel={() => setCurrentView('libraries')} onSuccess={() => {
@@ -464,9 +510,9 @@ const App = () => {
             }} />)}
             {currentView === 'leaderboard' && (<Leaderboard onMovieSelect={handleMovieSelect} />)} 
             {currentView === 'history' && (<HistoryPage history={history} onMovieSelect={handleMovieSelect} onClearHistory={handleClearHistory} onDeleteHistoryItem={handleDeleteHistoryItem} />)} 
-            {currentView === 'profile' && (<ProfilePage initialTab={profileInitialTab} settings={settings} setSettings={setSettings} favorites={favorites} onToggleFavorite={handleToggleFavorite} onMovieSelect={handleMovieSelect} currentTheme={themeName} setTheme={setThemeName} libraries={libraries} onRefreshLibraries={refreshLibraries} vaultState={vaultState} onRefreshVaultStatus={refreshVaultStatus} onRefreshFavorites={refreshFavorites} />)}
+            {currentView === 'profile' && (<ProfilePage initialTab={profileInitialTab} initialOpenAddResource={profileOpenAddResource} onConsumeOpenAddResource={() => setProfileOpenAddResource(false)} settings={settings} setSettings={setSettings} favorites={favorites} onToggleFavorite={handleToggleFavorite} onMovieSelect={handleMovieSelect} onEditMetadata={setMetadataMovie} currentTheme={themeName} setTheme={setThemeName} libraries={libraries} onRefreshLibraries={refreshLibraries} vaultState={vaultState} onRefreshVaultStatus={refreshVaultStatus} onRefreshFavorites={refreshFavorites} />)}
             {currentView === 'search' && (<SearchResults query={searchQuery} results={searchResults} onMovieSelect={handleMovieSelect} />)} 
-            {currentView === 'review' && (<ReviewWorkbench />)}
+            {currentView === 'review' && (<ReviewWorkbench onMovieSelect={handleMovieSelect} onEditMetadata={setMetadataMovie} />)}
           </div>
           
           {overlayView === 'detail' && selectedMovie && (

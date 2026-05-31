@@ -272,7 +272,7 @@ POST /api/v1/playback/resources/{resource_id}
 DELETE /api/v1/storage/sources/{source_id}
 ```
 
-删除托管 `115cloud` 来源时，CyberStream 会尽量同步删除 localhost OpenList 中对应的内部挂载。OpenList 清理失败只写日志，不阻塞 CyberStream 来源删除。
+删除托管 `115cloud` 来源时，后端会先删除 localhost OpenList 中对应的内部挂载，再删除 CyberStream 本地数据。如果 OpenList 挂载已经不存在，后端继续清理本地数据；如果 OpenList 删除失败，接口返回 `50262`，本地来源和资源数据保留，前端应提示用户检查本机 OpenList 后重试。
 
 ## 6. 前端注意事项
 

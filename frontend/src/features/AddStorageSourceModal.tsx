@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Server, HardDrive, Box, Globe, Network, ChevronLeft, ChevronRight, Cloud, Check, Loader2, Terminal, FolderSearch, FolderTree, FileText, AlertTriangle, Smartphone, KeyRound, RefreshCw, QrCode, ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { X, Server, HardDrive, Box, Globe, Network, ChevronLeft, ChevronRight, Cloud, Check, Loader2, Terminal, FolderSearch, FolderTree, FileText, AlertTriangle, Smartphone, KeyRound, RefreshCw, QrCode, ExternalLink, Eye, EyeOff, Lock, LogIn } from 'lucide-react';
 import { storageService } from '../api';
 import { toast } from '../utils';
 import { shellOpen } from '../platform';
@@ -36,8 +36,8 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
   const isManagedGuangyapan = selectedProtocol?.type === 'guangyapan';
 
   // ─── 托管二维码登录 state（天翼 / 夸克 / UC / 115 / 阿里 共用） ───
-  // 全部走完全一样的两步流程：start → 轮询 poll，差别仅在路径前缀（provider slug）
-  // 和 quarktv/uctv 多一个 link_method 字段（默认 download）。整套 state 抽公用。
+  // 全部走完全一样的两步流程：start → 轮询 poll，差别仅在路径前缀（provider slug）。
+  // 整套 state 抽公用。
   const [tyQrName, setTyQrName] = useState('');
   const [tyQrSourceId, setTyQrSourceId] = useState<number | null>(null);
   const [tyQrDataUrl, setTyQrDataUrl] = useState<string>('');
@@ -49,9 +49,28 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
   // 其他 provider 不读这个 state。
   const [tyQrCodeSource, setTyQrCodeSource] = useState<string>('');
   const [tyQrShowAdvanced, setTyQrShowAdvanced] = useState(false);
+  // 天翼专属实验开关：勾上后走 189CloudPC PC 扫码（pc-qr 实验接口），给 TV 扫码
+  // 反复失败的老账号兜底。仅天翼可见、默认关。⚠️ 实验功能，不在 capabilities。
+  const [tyUsePcQr, setTyUsePcQr] = useState(false);
   const QR_PROVIDER_SLUGS = new Set(['tianyicloud', 'quarktv', 'uctv', '115cloud', 'aliyundrive']);
   const isManagedQrProvider =
     !!selectedProtocol?.type && QR_PROVIDER_SLUGS.has(selectedProtocol.type);
+
+  // 托管网盘的中文名映射 —— 后端 display_name 都是英文（Aliyundrive / Baidu Netdisk
+  // / TianYiCloud …），UI 上对国内用户用中文更直观。基础协议（AList/WebDAV/SMB
+  // 等）不在此表中，保持后端给的英文名。
+  const CN_PROVIDER_NAMES: Record<string, string> = {
+    aliyundrive: '阿里云盘',
+    baidunetdisk: '百度网盘',
+    tianyicloud: '天翼云盘',
+    quarktv: '夸克网盘 TV 版',
+    uctv: 'UC 网盘 TV 版',
+    '115cloud': '115 网盘',
+    guangyapan: '光鸭云盘',
+    '123pan': '123 网盘',
+  };
+  const localizeProviderName = (p: { type: string; display_name?: string }): string =>
+    CN_PROVIDER_NAMES[p.type] || p.display_name || p.type;
 
   // ─── 托管 OAuth 登录 state（百度网盘） ───
   // 走完全独立的两步流程：start 拿 authorization_url → 浏览器跳转 → poll 状态机
@@ -67,6 +86,22 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
   const [oauthPolling, setOauthPolling] = useState(false);
   const [oauthPendingMsg, setOauthPendingMsg] = useState<string>('');
   const oauthPollTimer = useRef<number | null>(null);
+  // callback_mode: 'redirect' = 浏览器跳回回调，前端只 poll；
+  //                'oob'      = 百度页展示授权码，前端要让用户填回再 POST oauth/complete
+  const [oauthCallbackMode, setOauthCallbackMode] = useState<'redirect' | 'oob'>('redirect');
+  const [oauthAuthCode, setOauthAuthCode] = useState('');
+  const [oauthCompleting, setOauthCompleting] = useState(false);
+
+  // ─── 托管账号密码登录 state（123 盘） ───
+  // 单步登录：POST username/password，成功直接 ready。没有 pending/poll。
+  const PASSWORD_PROVIDER_SLUGS = new Set(['123pan']);
+  const isManagedPasswordProvider =
+    !!selectedProtocol?.type && PASSWORD_PROVIDER_SLUGS.has(selectedProtocol.type);
+  const [pwName, setPwName] = useState('');
+  const [pwUsername, setPwUsername] = useState('');
+  const [pwPassword, setPwPassword] = useState('');
+  const [pwShowPassword, setPwShowPassword] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
 
   // 卸载时清掉轮询定时器，避免组件 unmount 后还在 setState
   useEffect(() => {
@@ -120,6 +155,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
     setTyQrBusy(false);
     setTyQrCodeSource('');
     setTyQrShowAdvanced(false);
+    setTyUsePcQr(false);
     if (QR_PROVIDER_SLUGS.has(protocol.type)) {
       setTyQrName(protocol.display_name || protocol.type);
     }
@@ -133,8 +169,19 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
     setOauthPolling(false);
     setOauthPendingMsg('');
     setOauthBusy(false);
+    setOauthCallbackMode('redirect');
+    setOauthAuthCode('');
+    setOauthCompleting(false);
     if (OAUTH_PROVIDER_SLUGS.has(protocol.type)) {
       setOauthName(protocol.display_name || protocol.type);
+    }
+    // 切到密码登录（123 盘）也清一次。
+    setPwUsername('');
+    setPwPassword('');
+    setPwShowPassword(false);
+    setPwBusy(false);
+    if (PASSWORD_PROVIDER_SLUGS.has(protocol.type)) {
+      setPwName(CN_PROVIDER_NAMES[protocol.type] || protocol.display_name || protocol.type);
     }
   };
 
@@ -202,22 +249,24 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
 
   // ─── 托管二维码：发起（天翼 / 夸克 / UC 共用） ───
   // start 成功后立刻把 source.id 落进 state 并启动轮询。
-  // QuarkTV / UCTV 多带一个 link_method=download（文档建议联调期默认值）。
   const handleStartTianyicloudQr = async () => {
     if (!selectedProtocol) return;
     const slug = selectedProtocol.type;
-    const params: { name?: string; link_method?: 'download' | 'streaming'; qrcode_source?: any } = {
-      name: tyQrName.trim() || selectedProtocol.display_name || slug,
-    };
-    if (slug === 'quarktv' || slug === 'uctv') {
-      params.link_method = 'download';
-    }
-    if (slug === '115cloud' && tyQrCodeSource) {
-      params.qrcode_source = tyQrCodeSource;
-    }
+    const name = tyQrName.trim() || localizeProviderName({ type: slug, display_name: selectedProtocol.display_name });
     setTyQrBusy(true);
     try {
-      const res = await storageService.startManagedQrLogin(slug, params);
+      // 天翼 + 实验开关：走 189CloudPC pc-qr 实验链路；否则走正式 qr。
+      const usePcQr = slug === 'tianyicloud' && tyUsePcQr;
+      let res;
+      if (usePcQr) {
+        res = await storageService.pcQrStartTianyicloud({ name });
+      } else {
+        const params: { name?: string; qrcode_source?: any } = { name };
+        if (slug === '115cloud' && tyQrCodeSource) {
+          params.qrcode_source = tyQrCodeSource;
+        }
+        res = await storageService.startManagedQrLogin(slug, params);
+      }
       if (!res.ok) {
         toast.error(res.msg || '生成二维码失败');
         return;
@@ -230,7 +279,9 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
       }
       setTyQrSourceId(sid);
       setTyQrDataUrl(dataUrl);
-      setTyQrPendingMsg(`请用 ${selectedProtocol.display_name || slug} App 扫码并在手机上确认`);
+      setTyQrPendingMsg(usePcQr
+        ? '请用天翼云盘 App 扫码并在手机上确认（PC 扫码实验链路）'
+        : `请用 ${localizeProviderName({ type: slug, display_name: selectedProtocol.display_name })} App 扫码并在手机上确认`);
       setTyQrPolling(true);
       // 2.5s 一次轮询，跟文档建议的 2-3s 节流。
       tyQrPollTimer.current = window.setTimeout(() => pollTianyicloudQrLoop(sid), 2500);
@@ -245,7 +296,10 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
   const pollTianyicloudQrLoop = async (sid: number) => {
     if (!selectedProtocol) return;
     const slug = selectedProtocol.type;
-    const res = await storageService.pollManagedQrLogin(slug, sid);
+    const usePcQr = slug === 'tianyicloud' && tyUsePcQr;
+    const res = usePcQr
+      ? await storageService.pcQrPollTianyicloud(sid)
+      : await storageService.pollManagedQrLogin(slug, sid);
     if (!res.ok) {
       // 单次失败不打断轮询；后端可能瞬时抖动。但要 surface 给用户。
       setTyQrPendingMsg(res.msg || '轮询失败，正在重试');
@@ -257,8 +311,19 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
       setTyQrPolling(false);
       setTyQrPendingMsg('');
       tyQrPollTimer.current = null;
-      toast.success(`${selectedProtocol.display_name || slug} 挂载成功`);
+      toast.success(`${localizeProviderName({ type: slug, display_name: selectedProtocol.display_name })} 挂载成功`);
       onSuccess();
+      return;
+    }
+    // 终态：device_limit。授权 token 拿到了，但夸克账号设备槽位满，OpenList
+    // 列目录被拒。后端把 source 锁成 offline + reason=device_limit；用户得在
+    // 夸克 App 踢掉旧设备等几分钟槽位释放后，回来点「重新生成」。
+    if (data.auth_state === 'device_limit') {
+      setTyQrPolling(false);
+      tyQrPollTimer.current = null;
+      const msg = '夸克账号设备数超限，请在夸克 App「我的-已登录设备」中踢掉旧设备';
+      setTyQrPendingMsg(msg);
+      toast.error(msg);
       return;
     }
     // 终态：二维码过期 / 用户取消。停止轮询，提示用户点「重新生成」。
@@ -290,16 +355,17 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
   };
 
   // ─── 托管 OAuth：发起（百度网盘） ───
-  // start 成功后拿到 authorization_url，立刻用平台 shellOpen 打开浏览器跳转，
-  // 同时把 source.id 落进 state 并启动轮询。OAuth 没有"重新生成"的概念，
-  // 用户取消授权或失败后通过「重新授权」按钮再发一次 start。
+  // start 成功后拿到 authorization_url 和 callback_mode：
+  //   - redirect 模式：浏览器跳转 → 后端 callback 完成 → 前端轮询 poll 拿 ready
+  //   - oob 模式：百度页展示授权码 → 用户粘贴回前端 → 前端 POST oauth/complete
+  // 不论哪种都先把 source.id 落进 state；oob 不需要轮询。
   const handleStartBaiduOauth = async () => {
     if (!selectedProtocol) return;
     const slug = selectedProtocol.type;
     setOauthBusy(true);
     try {
       const res = await storageService.startManagedOauthLogin(slug, {
-        name: oauthName.trim() || selectedProtocol.display_name || slug,
+        name: oauthName.trim() || localizeProviderName({ type: slug, display_name: selectedProtocol.display_name }),
       });
       if (!res.ok) {
         toast.error(res.msg || '启动 OAuth 授权失败');
@@ -307,25 +373,64 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
       }
       const sid = res.data?.source?.id;
       const authUrl = res.data?.authorization_url || '';
+      const mode: 'redirect' | 'oob' = res.data?.callback_mode === 'oob' ? 'oob' : 'redirect';
       if (typeof sid !== 'number' || !authUrl) {
         toast.error('后端响应缺少 source.id 或 authorization_url');
         return;
       }
       setOauthSourceId(sid);
       setOauthAuthUrl(authUrl);
-      setOauthPendingMsg(`已打开浏览器，请在 ${selectedProtocol.display_name || slug} 完成授权`);
-      setOauthPolling(true);
+      setOauthCallbackMode(mode);
+      setOauthAuthCode('');
       try {
         await shellOpen(authUrl);
       } catch (e: any) {
-        // 打开浏览器失败不阻断流程，给个手动复制兜底
         console.warn('[oauth] shellOpen failed', e);
         toast.info('未能自动打开浏览器，请手动点击下方链接');
       }
-      // 2.5s 一次轮询，跟 QR 同节流。
-      oauthPollTimer.current = window.setTimeout(() => pollBaiduOauthLoop(sid), 2500);
+      if (mode === 'oob') {
+        // oob 模式：百度页面展示授权码，前端等用户粘贴；不要轮询。
+        setOauthPolling(false);
+        setOauthPendingMsg('请在百度页面复制授权码，粘贴到下方输入框后提交');
+      } else {
+        // redirect 模式：照旧 2.5s 轮询。
+        setOauthPendingMsg(`已打开浏览器，请在 ${localizeProviderName({ type: slug, display_name: selectedProtocol.display_name })} 完成授权`);
+        setOauthPolling(true);
+        oauthPollTimer.current = window.setTimeout(() => pollBaiduOauthLoop(sid), 2500);
+      }
     } finally {
       setOauthBusy(false);
+    }
+  };
+
+  // ─── 托管 OAuth：oob 模式提交授权码（百度网盘） ───
+  // 用户从百度页面复制授权码粘贴到前端后调这个。成功直接 ready，关弹窗；
+  // 失败让用户改改重试，stay on the same step。
+  const handleSubmitBaiduOauthCode = async () => {
+    if (!selectedProtocol || oauthSourceId === null) return;
+    const slug = selectedProtocol.type;
+    const code = oauthAuthCode.trim();
+    if (!code) {
+      toast.error('请粘贴百度页面显示的授权码');
+      return;
+    }
+    setOauthCompleting(true);
+    try {
+      const res = await storageService.completeManagedOauthLogin(slug, oauthSourceId, code);
+      if (!res.ok) {
+        toast.error(res.msg || '授权码校验失败');
+        return;
+      }
+      const data = res.data || {};
+      if (data.authenticated === true && data.auth_state === 'ready') {
+        toast.success(`${localizeProviderName({ type: slug, display_name: selectedProtocol.display_name })} 挂载成功`);
+        onSuccess();
+        return;
+      }
+      // 后端理论上 ok 时一定 ready，这里兜底防止挂在 oauth_pending 不显眼
+      toast.error(`挂载未就绪 (${data.auth_state ?? 'unknown'})`);
+    } finally {
+      setOauthCompleting(false);
     }
   };
 
@@ -346,7 +451,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
       setOauthPolling(false);
       setOauthPendingMsg('');
       oauthPollTimer.current = null;
-      toast.success(`${selectedProtocol.display_name || slug} 挂载成功`);
+      toast.success(`${localizeProviderName({ type: slug, display_name: selectedProtocol.display_name })} 挂载成功`);
       onSuccess();
       return;
     }
@@ -367,6 +472,43 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
       setOauthPendingMsg(`等待中：${reason}`);
     }
     oauthPollTimer.current = window.setTimeout(() => pollBaiduOauthLoop(sid), 2500);
+  };
+
+  // ─── 托管账号密码登录：登录（123 盘） ───
+  // 单步登录：填 username + password，POST 后后端登录成功就把 source 拉到
+  // ready，没有 pending / poll。前端不持久化密码。
+  const handleLogin123Pan = async () => {
+    if (!selectedProtocol) return;
+    const slug = selectedProtocol.type;
+    const username = pwUsername.trim();
+    const password = pwPassword;
+    if (!username || !password) {
+      toast.error('请填写账号和密码');
+      return;
+    }
+    setPwBusy(true);
+    try {
+      const res = await storageService.loginManaged123Pan({
+        name: pwName.trim() || localizeProviderName({ type: slug, display_name: selectedProtocol.display_name }),
+        username,
+        password,
+      });
+      if (!res.ok) {
+        toast.error(res.msg || '登录失败');
+        return;
+      }
+      const data = res.data || {};
+      if (data.authenticated === true && data.auth_state === 'ready') {
+        // 不在内存里保留密码：登录后立刻清空。
+        setPwPassword('');
+        toast.success(`${localizeProviderName({ type: slug, display_name: selectedProtocol.display_name })} 挂载成功`);
+        onSuccess();
+        return;
+      }
+      toast.error(`挂载未就绪 (${data.auth_state ?? 'unknown'})`);
+    } finally {
+      setPwBusy(false);
+    }
   };
 
   const handlePreviewDirectory = async (pathOverride?: string) => {
@@ -434,19 +576,59 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
       finalConfig,
     );
     if (success) {
-      toast.success("存储节点已成功挂载");
+      toast.success("挂载点已成功挂载");
       onSuccess();
     } else {
-      toast.error("添加存储源失败");
+      toast.error("添加挂载点失败");
     }
   };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+      {/* 给 modal 内所有 input 强制赋赛博风边框样式。避免 CDN Tailwind 偶尔
+          不生成 hover:border-primary/* 这类带 opacity 的 utility——直接用
+          原生 CSS + var(--color-primary)，所有浏览器、所有 input/textarea/select
+          一律命中。data-cyber-input-scope 是 scope 限定，不污染外面。 */}
+      <style>{`
+        [data-cyber-input-scope] input[type="text"],
+        [data-cyber-input-scope] input[type="password"],
+        [data-cyber-input-scope] input[type="number"],
+        [data-cyber-input-scope] input[type="email"],
+        [data-cyber-input-scope] input[type="tel"],
+        [data-cyber-input-scope] input:not([type]),
+        [data-cyber-input-scope] textarea,
+        [data-cyber-input-scope] select {
+          border-color: rgba(0, 243, 255, 0.30) !important;
+          transition: border-color 200ms, box-shadow 200ms, background-color 200ms !important;
+        }
+        [data-cyber-input-scope] input[type="text"]:hover,
+        [data-cyber-input-scope] input[type="password"]:hover,
+        [data-cyber-input-scope] input[type="number"]:hover,
+        [data-cyber-input-scope] input[type="email"]:hover,
+        [data-cyber-input-scope] input[type="tel"]:hover,
+        [data-cyber-input-scope] input:not([type]):hover,
+        [data-cyber-input-scope] textarea:hover,
+        [data-cyber-input-scope] select:hover {
+          border-color: rgba(0, 243, 255, 0.60) !important;
+        }
+        [data-cyber-input-scope] input[type="text"]:focus,
+        [data-cyber-input-scope] input[type="password"]:focus,
+        [data-cyber-input-scope] input[type="number"]:focus,
+        [data-cyber-input-scope] input[type="email"]:focus,
+        [data-cyber-input-scope] input[type="tel"]:focus,
+        [data-cyber-input-scope] input:not([type]):focus,
+        [data-cyber-input-scope] textarea:focus,
+        [data-cyber-input-scope] select:focus {
+          border-color: var(--color-primary) !important;
+          box-shadow: 0 0 15px rgba(0, 243, 255, 0.30) !important;
+          outline: none !important;
+        }
+      `}</style>
       <div
         className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
       ></div>
       <div
+        data-cyber-input-scope
         className={`relative bg-[#0a0a12] border border-white/10 rounded-2xl w-full ${selectedProtocol ? "max-w-5xl max-h-[90vh]" : "max-w-4xl max-h-[90vh]"} flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-8 animate-in zoom-in-95 duration-200 transition-all`}
       >
         <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4 shrink-0">
@@ -467,11 +649,12 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
         {!selectedProtocol ? (
           (() => {
             // 分两类：基础协议（local/alist/openlist/webdav/smb/ftp 等"自架/裸协议"）
-            // 和 网盘（托管型云盘：guangyapan/tianyicloud/quarktv/uctv/115cloud/aliyundrive/baidunetdisk）。
-            // 网盘的硬编码白名单 = QR_PROVIDER_SLUGS ∪ OAUTH_PROVIDER_SLUGS ∪ {guangyapan}；其余都归基础协议。
+            // 和 网盘（托管型云盘：guangyapan/tianyicloud/quarktv/uctv/115cloud/aliyundrive/baidunetdisk/123pan）。
+            // 网盘的硬编码白名单 = QR_PROVIDER_SLUGS ∪ OAUTH_PROVIDER_SLUGS ∪ PASSWORD_PROVIDER_SLUGS ∪ {guangyapan}。
             const CLOUD_DRIVE_TYPES = new Set([
               ...QR_PROVIDER_SLUGS,
               ...OAUTH_PROVIDER_SLUGS,
+              ...PASSWORD_PROVIDER_SLUGS,
               'guangyapan',
             ]);
             const baseProtocols = providerTypes.filter((p) => !CLOUD_DRIVE_TYPES.has(p.type));
@@ -501,6 +684,8 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                       <QrCode size={20} />
                     ) : p.type === "baidunetdisk" ? (
                       <KeyRound size={20} />
+                    ) : p.type === "123pan" ? (
+                      <Lock size={20} />
                     ) : (
                       <Network size={20} />
                     )}
@@ -515,7 +700,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
 
                 <div className="relative z-10 mt-5">
                   <div className="font-['Orbitron'] font-bold text-gray-300 group-hover:text-white transition-colors tracking-wide text-sm">
-                    {p.display_name}
+                    {localizeProviderName(p)}
                   </div>
 
                   <div className="flex gap-1.5 mt-3 flex-wrap">
@@ -588,7 +773,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
               </button>
               <span className="text-primary font-bold flex items-center gap-2 drop-shadow-[0_0_8px_var(--color-primary)] text-lg">
                 <Smartphone size={20} />
-                {selectedProtocol.display_name}
+                {localizeProviderName(selectedProtocol)}
               </span>
               <span className="ml-auto text-[10px] text-gray-500 font-['Rajdhani']">
                 {smsStep === 'phone' ? '步骤 1 / 2 · 发送验证码' : '步骤 2 / 2 · 输入验证码'}
@@ -606,7 +791,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     value={smsName}
                     onChange={(e) => setSmsName(e.target.value)}
                     placeholder="光鸭云盘"
-                    className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all"
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all"
                   />
                 </div>
                 <div>
@@ -618,7 +803,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     value={smsPhone}
                     onChange={(e) => setSmsPhone(e.target.value)}
                     placeholder="+8613800001234"
-                    className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all font-mono"
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all font-mono"
                   />
                   <p className="mt-1.5 text-[10px] text-gray-600 font-['Rajdhani']">
                     建议带 +86 国家码；后端会发送光鸭云盘短信验证码到此号码
@@ -633,7 +818,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     value={smsRootPath}
                     onChange={(e) => setSmsRootPath(e.target.value)}
                     placeholder="留空 = 整个云盘根目录"
-                    className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all font-mono"
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all font-mono"
                   />
                 </div>
                 <div className="text-[11px] text-gray-500 font-['Rajdhani'] bg-white/[0.02] border border-white/5 rounded-lg p-3 leading-relaxed">
@@ -669,7 +854,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     placeholder="收到的验证码"
                     autoFocus
                     inputMode="numeric"
-                    className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-base text-white focus:outline-none transition-all font-mono tracking-[0.3em] text-center"
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-base text-white focus:outline-none transition-all font-mono tracking-[0.3em] text-center"
                   />
                 </div>
                 <div className="flex gap-3">
@@ -721,7 +906,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
               </button>
               <span className="text-primary font-bold flex items-center gap-2 drop-shadow-[0_0_8px_var(--color-primary)] text-lg">
                 <QrCode size={20} />
-                {selectedProtocol.display_name}
+                {localizeProviderName(selectedProtocol)}
               </span>
               <span className="ml-auto text-[10px] text-gray-500 font-['Rajdhani']">
                 {tyQrSourceId === null ? '步骤 1 / 2 · 生成二维码' : '步骤 2 / 2 · 等待扫码'}
@@ -738,12 +923,12 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     type="text"
                     value={tyQrName}
                     onChange={(e) => setTyQrName(e.target.value)}
-                    placeholder={selectedProtocol.display_name || selectedProtocol.type}
-                    className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all"
+                    placeholder={localizeProviderName(selectedProtocol)}
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all"
                   />
                 </div>
                 <div className="text-[11px] text-gray-500 font-['Rajdhani'] bg-white/[0.02] border border-white/5 rounded-lg p-3 leading-relaxed">
-                  CyberStream 自动管理 OpenList，无需手动填写地址或账号。点击下方按钮生成 {selectedProtocol.display_name || selectedProtocol.type} 官方扫码登录二维码。
+                  CyberStream 自动管理 OpenList，无需手动填写地址或账号。点击下方按钮生成 {localizeProviderName(selectedProtocol)} 官方扫码登录二维码。
                 </div>
                 {selectedProtocol.type === 'aliyundrive' && (
                   <div className="text-[11px] text-amber-400/90 font-['Rajdhani'] bg-amber-400/5 border border-amber-400/20 rounded-lg p-3 leading-relaxed flex items-start gap-2">
@@ -774,7 +959,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                         <select
                           value={tyQrCodeSource}
                           onChange={(e) => setTyQrCodeSource(e.target.value)}
-                          className="w-full bg-black/40 border border-white/10 hover:border-white/20 focus:border-primary/50 rounded-lg p-2 text-sm text-white focus:outline-none transition-all font-mono"
+                          className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2 text-sm text-white focus:outline-none transition-all font-mono"
                         >
                           <option value="">默认（微信小程序）</option>
                           <option value="wechatmini">微信小程序 wechatmini</option>
@@ -791,6 +976,27 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                       </div>
                     )}
                   </div>
+                )}
+                {selectedProtocol.type === 'tianyicloud' && (
+                  <button
+                    type="button"
+                    onClick={() => setTyUsePcQr((v) => !v)}
+                    className={`w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition-all ${tyUsePcQr
+                      ? 'bg-amber-400/10 border-amber-400/50'
+                      : 'bg-black/20 border-white/10 hover:border-amber-400/30'}`}
+                  >
+                    <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 ${tyUsePcQr ? 'bg-amber-400 border-amber-400' : 'border-gray-500'}`}>
+                      {tyUsePcQr && <Check size={12} className="text-black" />}
+                    </div>
+                    <div>
+                      <div className="text-[12px] font-['Rajdhani'] font-bold text-amber-300">
+                        PC 扫码登录（实验）
+                      </div>
+                      <div className="text-[10px] text-gray-500 leading-relaxed mt-0.5">
+                        默认走 TV 扫码。若你的天翼账号 TV 扫码反复失败、无法挂载，勾选此项改用 PC 扫码链路（189CloudPC）。实验功能，可能不稳定。
+                      </div>
+                    </div>
+                  </button>
                 )}
                 <button
                   onClick={handleStartTianyicloudQr}
@@ -812,7 +1018,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     {tyQrDataUrl ? (
                       <img
                         src={tyQrDataUrl}
-                        alt={`${selectedProtocol.display_name || selectedProtocol.type} 登录二维码`}
+                        alt={`${localizeProviderName(selectedProtocol)} 登录二维码`}
                         className="w-56 h-56 block"
                       />
                     ) : (
@@ -827,7 +1033,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     ) : (
                       <Check size={14} />
                     )}
-                    {tyQrPendingMsg || `请用 ${selectedProtocol.display_name || selectedProtocol.type} App 扫码登录`}
+                    {tyQrPendingMsg || `请用 ${localizeProviderName(selectedProtocol)} App 扫码登录`}
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -880,10 +1086,14 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
               </button>
               <span className="text-primary font-bold flex items-center gap-2 drop-shadow-[0_0_8px_var(--color-primary)] text-lg">
                 <KeyRound size={20} />
-                {selectedProtocol.display_name}
+                {localizeProviderName(selectedProtocol)}
               </span>
               <span className="ml-auto text-[10px] text-gray-500 font-['Rajdhani']">
-                {oauthSourceId === null ? '步骤 1 / 2 · 启动授权' : '步骤 2 / 2 · 等待授权'}
+                {oauthSourceId === null
+                  ? '步骤 1 / 2 · 启动授权'
+                  : oauthCallbackMode === 'oob'
+                    ? '步骤 2 / 2 · 填写授权码'
+                    : '步骤 2 / 2 · 等待授权'}
               </span>
             </div>
 
@@ -897,12 +1107,12 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     type="text"
                     value={oauthName}
                     onChange={(e) => setOauthName(e.target.value)}
-                    placeholder={selectedProtocol.display_name || selectedProtocol.type}
-                    className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all"
+                    placeholder={localizeProviderName(selectedProtocol)}
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all"
                   />
                 </div>
                 <div className="text-[11px] text-gray-500 font-['Rajdhani'] bg-white/[0.02] border border-white/5 rounded-lg p-3 leading-relaxed">
-                  CyberStream 自动管理 OpenList，无需手动填写地址或账号。点击下方按钮跳转到 {selectedProtocol.display_name || selectedProtocol.type} 官方授权页面完成登录。
+                  CyberStream 自动管理 OpenList，无需手动填写地址或账号。点击下方按钮跳转到 {localizeProviderName(selectedProtocol)} 官方授权页面完成登录。
                 </div>
                 <button
                   onClick={handleStartBaiduOauth}
@@ -916,6 +1126,68 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                   )}
                   开始授权
                 </button>
+              </div>
+            ) : oauthCallbackMode === 'oob' ? (
+              // oob 模式：百度页面给出授权码，前端要让用户填回。不轮询。
+              <div className="space-y-5">
+                <div className="flex flex-col items-center gap-4 py-2">
+                  <div className="w-20 h-20 rounded-full bg-amber-400/10 border border-amber-400/30 flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.4)]">
+                    <KeyRound size={32} className="text-amber-400" />
+                  </div>
+                  <div className="text-xs text-amber-400/90 bg-amber-400/5 border border-amber-400/20 rounded-lg px-3 py-2 flex items-start gap-2 max-w-md">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    <span>
+                      百度授权完成后页面会显示一串「授权码」。请把它复制粘贴到下方输入框，然后点击「提交授权码」完成挂载。
+                    </span>
+                  </div>
+                  {oauthAuthUrl && (
+                    <button
+                      onClick={() => shellOpen(oauthAuthUrl).catch(() => toast.error('未能打开浏览器'))}
+                      className="text-[11px] text-primary/70 hover:text-primary underline font-['Rajdhani'] flex items-center gap-1.5 transition-colors"
+                    >
+                      <ExternalLink size={12} />
+                      手动重新打开授权页面
+                    </button>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-[10px] font-['Orbitron'] tracking-widest text-gray-500 mb-1.5 uppercase">
+                    授权码
+                  </label>
+                  <input
+                    type="text"
+                    value={oauthAuthCode}
+                    onChange={(e) => setOauthAuthCode(e.target.value)}
+                    placeholder="粘贴百度页面显示的授权码"
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all font-mono"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setOauthSourceId(null);
+                      setOauthAuthUrl('');
+                      setOauthPendingMsg('');
+                      setOauthAuthCode('');
+                    }}
+                    className="px-4 py-2.5 rounded-lg bg-[#0a0a12] border border-white/10 text-gray-400 hover:bg-white/5 hover:text-white transition-all text-xs font-['Orbitron']"
+                  >
+                    重新授权
+                  </button>
+                  <button
+                    onClick={handleSubmitBaiduOauthCode}
+                    disabled={oauthCompleting || !oauthAuthCode.trim()}
+                    className="flex-1 py-2.5 rounded-lg bg-primary/20 border border-primary text-primary hover:bg-primary hover:text-black hover:shadow-[0_0_20px_var(--color-primary)] text-sm font-['Orbitron'] font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {oauthCompleting ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Check size={16} />
+                    )}
+                    提交授权码
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-5">
@@ -933,7 +1205,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     ) : (
                       <Check size={14} className="shrink-0" />
                     )}
-                    {oauthPendingMsg || `请在浏览器中完成 ${selectedProtocol.display_name || selectedProtocol.type} 授权`}
+                    {oauthPendingMsg || `请在浏览器中完成 ${localizeProviderName(selectedProtocol)} 授权`}
                   </div>
                   {oauthAuthUrl && (
                     <button
@@ -974,6 +1246,90 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
               </div>
             )}
           </div>
+        ) : isManagedPasswordProvider ? (
+          // ─── 托管账号密码登录（123 盘） ───
+          // 单步登录：用户填账号密码 → 直接挂载。前端不持久化密码，登录成功
+          // 立刻清空密码字段。
+          <div className="flex flex-col flex-1 overflow-y-auto custom-scrollbar pr-2 pb-2 max-w-2xl mx-auto w-full animate-in fade-in slide-in-from-right-4 duration-300">
+            <div className="flex items-center gap-3 font-['Orbitron'] border-b border-white/10 pb-4 mb-6">
+              <button
+                onClick={() => setSelectedProtocol(null)}
+                className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/5 rounded-lg"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-primary font-bold flex items-center gap-2 drop-shadow-[0_0_8px_var(--color-primary)] text-lg">
+                <Lock size={20} />
+                {localizeProviderName(selectedProtocol)}
+              </span>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-[10px] font-['Orbitron'] tracking-widest text-gray-500 mb-1.5 uppercase">
+                  名称
+                </label>
+                <input
+                  type="text"
+                  value={pwName}
+                  onChange={(e) => setPwName(e.target.value)}
+                  placeholder={localizeProviderName(selectedProtocol)}
+                  className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-['Orbitron'] tracking-widest text-gray-500 mb-1.5 uppercase">
+                  账号 / 手机号 / 邮箱
+                </label>
+                <input
+                  type="text"
+                  value={pwUsername}
+                  onChange={(e) => setPwUsername(e.target.value)}
+                  placeholder="123 盘账号、手机号或邮箱"
+                  autoComplete="username"
+                  className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-['Orbitron'] tracking-widest text-gray-500 mb-1.5 uppercase">
+                  密码
+                </label>
+                <div className="relative">
+                  <input
+                    type={pwShowPassword ? 'text' : 'password'}
+                    value={pwPassword}
+                    onChange={(e) => setPwPassword(e.target.value)}
+                    placeholder="账号密码"
+                    autoComplete="current-password"
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 pr-10 text-sm text-white focus:outline-none transition-all font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPwShowPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white transition-colors"
+                    title={pwShowPassword ? '隐藏密码' : '显示密码'}
+                  >
+                    {pwShowPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+              <div className="text-[11px] text-gray-500 font-['Rajdhani'] bg-white/[0.02] border border-white/5 rounded-lg p-3 leading-relaxed">
+                CyberStream 自动管理 OpenList，无需手动填写地址或挂载路径。账号密码仅用于一次性登录换取 token，前端不会保存。
+              </div>
+              <button
+                onClick={handleLogin123Pan}
+                disabled={pwBusy || !pwUsername.trim() || !pwPassword}
+                className="w-full py-2.5 rounded-lg bg-primary/20 border border-primary text-primary hover:bg-primary hover:text-black hover:shadow-[0_0_20px_var(--color-primary)] text-sm font-['Orbitron'] font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {pwBusy ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <LogIn size={16} />
+                )}
+                登录并挂载
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-right-4 duration-300 flex-1 overflow-hidden min-h-0">
             <div className="flex flex-col h-full overflow-hidden">
@@ -993,7 +1349,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                         <Cloud size={20} />
                       )}
                     </span>
-                    {selectedProtocol.display_name}
+                    {localizeProviderName(selectedProtocol)}
                   </span>
                 </div>
               </div>
@@ -1008,7 +1364,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                     value={newSourceName}
                     onChange={(e) => setNewSourceName(e.target.value)}
                     placeholder="例如：电影节点 Alpha"
-                    className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)] transition-all font-sans"
+                    className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none focus:shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)] transition-all font-sans"
                   />
                 </div>
 
@@ -1080,7 +1436,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                                 [field.name]: e.target.value,
                               })
                             }
-                            className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 pr-10 text-sm text-white focus:outline-none focus:shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)] transition-all font-mono [&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden"
+                            className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 pr-10 text-sm text-white focus:outline-none focus:shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)] transition-all font-mono [&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden"
                           />
                           <button
                             type="button"
@@ -1116,7 +1472,7 @@ export const AddStorageSourceModal: React.FC<AddStorageSourceModalProps> = ({ pr
                                   : e.target.value,
                             })
                           }
-                          className="w-full bg-black/40 border border-white/5 hover:border-white/20 focus:border-primary/50 focus:bg-black/60 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)] transition-all font-mono"
+                          className="w-full bg-black/40 border border-primary/30 hover:border-primary/60 focus:border-primary focus:bg-black/60 focus:shadow-[0_0_15px_rgba(0,243,255,0.25)] rounded-lg p-2.5 text-sm text-white focus:outline-none focus:shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.1)] transition-all font-mono"
                         />
                       )}
                     </div>

@@ -209,6 +209,8 @@ Success response:
 
 After restart, poll the normal QuarkTV poll endpoint with the same `source_id` until `authenticated=true`.
 
+Backend note: `qr/restart` reuses the source's hidden OpenList TV `device_id` when replacing the localhost OpenList storage. Frontend code must not pass or display this field; keep using only `source_id` and optional `root_folder_id`.
+
 ## UCTV QR Login
 
 UCTV uses the same contract with these paths:

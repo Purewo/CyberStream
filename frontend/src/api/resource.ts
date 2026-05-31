@@ -1,6 +1,6 @@
 import { getApiBase } from '../platform';
 import { fetchApi, mapApiMovieToUi, mapSeasonCardToUi, getDeviceId, ApiPagination, ApiMovieSimple, ApiMovieDetailed, ApiResponse } from './core';
-import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries } from '../types/index';
+import { Movie, Episode, HistoryItem, Notification, Resource, Genre, TechSpecs, FilterDictionaries, StreamingQualitiesResponse } from '../types/index';
 import type { components } from './schema';
 
 export const resourceService = {
@@ -52,6 +52,31 @@ export const resourceService = {
     } catch {
       return false;
     }
+  },
+
+  // ─── 云转码画质（QuarkTV / UCTV / Aliyundrive 等） ───
+  //
+  // 凡 playback.cloud_transcode.supported=true 的资源命中（后端按来源分发，
+  // 不要按网盘名硬编码）。档位名因来源而异（夸克 low/normal/high/super/2k/4k，
+  // 阿里 ld/sd/hd/fhd/qhd/4k），前端只遍历 items、不枚举档位名。
+  // 详见 GET /v1/docs/frontend-managed-quark-uc / -aliyundrive。
+  //
+  // 返回值里 items[].available=true 才能展示给用户。前端选中某档后用
+  // getTranscodedStreamUrl(id, resolution) 拼出最终播放 URL。
+  getStreamingQualities: async (
+    id: string,
+    resolution?: string,
+  ): Promise<StreamingQualitiesResponse | null> => {
+    let url = `/v1/resources/${id}/streaming-qualities`;
+    if (resolution) url += `?resolution=${encodeURIComponent(resolution)}`;
+    return await fetchApi<StreamingQualitiesResponse>(url);
+  },
+
+  // 拼出 302 转码播放 URL。同步函数：videoUrl useMemo 直接调，不用 await。
+  // resolution 不传时后端用 default_resolution。
+  getTranscodedStreamUrl: (id: string, resolution?: string): string => {
+    const base = `${getApiBase()}/v1/resources/${id}/stream-transcoded`;
+    return resolution ? `${base}?resolution=${encodeURIComponent(resolution)}` : base;
   },
 
   getAudioTranscodeDiagnostics: async (id: string): Promise<any | null> => {

@@ -89,6 +89,10 @@ export interface ResourcePlayback {
   default_mode?: string;
   web_player?: {
     needs_server_audio_transcode: boolean;
+    // 原始文件能否在网页 <video> 直接播。阿里=true（原文件可播），
+    // 夸克/UC=false（原始下载链被反爬挡，必须走 cloud_transcode）。
+    supported?: boolean;
+    reason?: string | null;
   };
   external_player?: any;
   subtitles?: ResourceSubtitlePlayback;
@@ -105,6 +109,21 @@ export interface ResourcePlayback {
       mime_type: string;
       sync_strategy: string;
     };
+  };
+  // 云转码契约。后端按来源分发，凡 cloud_transcode.supported=true 即提供多档
+  // 转码清晰度入口（quarktv/uctv 走 TV provider API，aliyundrive 走 OpenList
+  // video_preview）。档位名因来源而异（夸克 low/normal/high/super/2k/4k，阿里
+  // ld/sd/hd/fhd/qhd/4k）——前端只看 supported + 遍历 items，禁止硬编码网盘类型
+  // 或清晰度枚举。详见 GET /v1/docs/frontend-managed-quark-uc / -aliyundrive。
+  cloud_transcode?: {
+    supported: boolean;
+    provider?: string;
+    provider_name?: string;
+    mode?: string;
+    qualities_endpoint?: string;
+    stream_endpoint?: string;
+    resolution_param?: string;
+    available_resolutions?: string[];
   };
 }
 
@@ -191,6 +210,31 @@ export interface MetadataState {
   primary_issue_code?: string | null;
 }
 
+// 目录可见性。后端 1.21 加入 pending_review 状态：批量刮削/低置信结果默认
+// 进待审批池，不出现在 /api/v1/movies 普通影视库列表里，等用户在「待审批」
+// tab 多选确认后批量发布到普通库。
+// - status='auto': 后端按规则自动判断 effective_status (auto_public / pending_review)
+// - status='published': 管理员显式发布；有 blockers 时需要 force=true
+// - status='pending_review': 待审批池
+// - status='hidden': 显式隐藏，不进普通库
+export type CatalogStatus = 'auto' | 'published' | 'pending_review' | 'hidden';
+export interface CatalogVisibility {
+  status: CatalogStatus;
+  effective_status: CatalogStatus | 'auto_public';
+  is_visible: boolean;
+  is_manual: boolean;
+  auto_visible?: boolean;
+  can_publish?: boolean;
+  requires_force?: boolean;
+  reason?: string | null;
+  note?: string | null;
+  // 后端实际返字符串数组（issue code），非 {code,label} 对象。
+  // 例：["metadata_needs_attention", "poster_missing"]
+  blockers?: string[];
+  warnings?: string[];
+  updated_at?: string | null;
+}
+
 export interface Movie {
   id: string | number;
   title: string;
@@ -231,7 +275,7 @@ export interface Movie {
   season_cards?: SeasonCard[];
   user_data?: PlaybackUserData;
   metadata_state?: MetadataState;
-  catalog_visibility?: any;
+  catalog_visibility?: CatalogVisibility;
   manual_content?: boolean;
 }
 
@@ -309,6 +353,32 @@ export interface Episode {
   title: string;
   label: string;
   size?: string;
+}
+
+// 云转码可选画质列表（GET /v1/resources/{id}/streaming-qualities）。
+// 凡 cloud_transcode.supported=true 的来源都返回（夸克/UC/阿里等）；档位名因
+// 来源而异，前端遍历 items 即可，不要枚举 resolution 取值。
+export interface StreamingQualityItem {
+  resolution: string; // 夸克: low/normal/high/super/2k/4k；阿里: ld/sd/hd/fhd/qhd/4k
+  label?: string;
+  available: boolean;
+  width?: number;
+  height?: number;
+  size?: number;
+  bitrate?: number;
+  format?: string;
+  trans_status?: string;
+  stream_url?: string; // CyberStream 302 endpoint：/v1/resources/{id}/stream-transcoded?resolution=...
+  url?: string;        // 上游直链（可能过期），优先用 stream_url
+}
+export interface StreamingQualitiesResponse {
+  resource_id: string;
+  storage_type?: string;
+  provider?: string;
+  mode?: string;
+  default_resolution?: string;
+  selected_resolution?: string;
+  items: StreamingQualityItem[];
 }
 
 export interface HistoryItem extends Movie {

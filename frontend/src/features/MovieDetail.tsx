@@ -3,7 +3,7 @@ import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw,
 import { Movie, PlayOptions, HistoryItem } from '../types';
 import { movieService, resolveAssetUrl } from '../api';
 import { shellOpen, platform } from '../platform';
-import { launchExternalPlayerNative } from '../platform/nativePlayer';
+import { launchExternalPlayerNative, needsUserAgentRewrite, pickUserAgentForRewrite, getMediaProxyBase, wrapWithMediaProxy, PlaybackHandoffHint } from '../platform/nativePlayer';
 import { formatBytes, formatDuration } from '../utils';
 import { MovieCard } from '../components/movies/Cards';
 import { TechBadge } from '../components/ui/CyberComponents';
@@ -27,6 +27,10 @@ const ExternalPlayerButton: React.FC<{
     player: 'potplayer' | 'vlc';
     streamUrl: string;
     subtitleUrl?: string;
+    /** 后端给的 playback.external_player handoff hint。需要 UA 改写的存储源
+     *  （比如百度网盘）会通过这里告诉调用层 stream URL 要先包一层 PC 本地
+     *  代理；hint 没标 requires_user_agent_rewrite 时按原 URL 直送 .exe。 */
+    handoffHint?: PlaybackHandoffHint | null;
   };
   /** 启动成功后强制再 toast 一条警告（如「VLC 不支持 PGS 字幕，已丢弃」），便于让
    *  用户知道为何加载不到字幕。 */
@@ -38,7 +42,22 @@ const ExternalPlayerButton: React.FC<{
     // PC + Rust 支持的播放器 → 走 launch_external_player，能带字幕。
     if (isPc && pcLaunch) {
       try {
-        const res = await launchExternalPlayerNative(pcLaunch);
+        // 百度网盘需要 UA 改写——PotPlayer/VLC CLI 没法传 header，必须把
+        // stream URL 包成 http://127.0.0.1:<port>/stream?u=...&ua=... 喂给
+        // .exe，由 PC 本地代理把改写后的 UA 加到上游请求里。代理拿不到时
+        // 降级到原 URL（百度时大概率 403，但其他云盘正常）。
+        let effectiveStreamUrl = pcLaunch.streamUrl;
+        if (needsUserAgentRewrite(pcLaunch.handoffHint)) {
+          const ua = pickUserAgentForRewrite(pcLaunch.handoffHint);
+          if (ua) {
+            const base = await getMediaProxyBase();
+            effectiveStreamUrl = wrapWithMediaProxy(pcLaunch.streamUrl, ua, base);
+          }
+        }
+        const res = await launchExternalPlayerNative({
+          ...pcLaunch,
+          streamUrl: effectiveStreamUrl,
+        });
         if (res.launched) {
           if (pcLaunch.subtitleUrl) {
             toast.success(`${title} 已启动（已加载默认字幕）`);
@@ -442,6 +461,14 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     || resolveAssetUrl((targetPlayResource as any)?.playback?.stream_url)
     || (targetPlayResource ? movieService.getStreamUrl(targetPlayResource.id) : "");
 
+  // Web 端 + 原文件网页/外播不可播（web_player.supported===false，如夸克/UC 的
+  // 反爬下载链）：URL scheme 唤起的桌面/手机播放器拿到的也是这条不可播链，点了
+  // 只会失败。这种情况下隐藏外部播放器排，改提示用 PC 客户端。PC 端走 pcLaunch
+  // 原生 spawn + 能播原文件，不受影响；原文件可播的资源（阿里/本地等）也照常显示。
+  const isPcRuntime = platform().kind === 'pc';
+  const webRawUnplayable = !isPcRuntime
+    && (targetPlayResource as any)?.playback?.web_player?.supported === false;
+
   // PC 端外部播放器要预加载的默认字幕 URL。优先级：
   //   1. playback.subtitles.items 里 id == default_subtitle_id 的那条（最权威）
   //   2. playback.external_player.subtitle_urls[0]（后端拍平后的兜底）
@@ -792,7 +819,20 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                     )}
                 </div> 
                 
-                {hasResources && externalVideoUrl && (
+                {hasResources && externalVideoUrl && webRawUnplayable && (
+                    <div className="mb-10 w-full">
+                        <div className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <span className="w-8 h-[1px] bg-gray-600 block"></span>
+                            外部播放器
+                            <span className="w-8 h-[1px] bg-gray-600 block"></span>
+                        </div>
+                        <div className="text-[13px] text-gray-400 font-['Rajdhani'] leading-relaxed bg-black/30 border border-white/10 rounded-lg p-3">
+                            该网盘资源的原始链路无法在浏览器或外部播放器中直接播放。请在网页播放器内使用「画质」切换在线观看，或下载 PC 桌面客户端以原画质 + 外部播放器播放。
+                        </div>
+                    </div>
+                )}
+
+                {hasResources && externalVideoUrl && !webRawUnplayable && (
                     <div className="mb-10 w-full">
                         <div className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
                             <span className="w-8 h-[1px] bg-gray-600 block"></span>
@@ -804,14 +844,24 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                               title="PotPlayer"
                               icon={potplayerIcon}
                               url={`potplayer://${externalVideoUrl}`}
-                              pcLaunch={{ player: 'potplayer', streamUrl: externalVideoUrl, subtitleUrl: externalSubtitleUrl }}
+                              pcLaunch={{
+                                player: 'potplayer',
+                                streamUrl: externalVideoUrl,
+                                subtitleUrl: externalSubtitleUrl,
+                                handoffHint: (targetPlayResource as any)?.playback?.external_player ?? null,
+                              }}
                             />
                             <ExternalPlayerButton title="IINA" icon={iinaIcon} url={`iina://weblink?url=${externalVideoUrl}`} />
                             <ExternalPlayerButton
                               title="VLC"
                               icon={vlcIcon}
                               url={`vlc://${externalVideoUrl}`}
-                              pcLaunch={{ player: 'vlc', streamUrl: externalVideoUrl, subtitleUrl: subtitleUrlForVlc }}
+                              pcLaunch={{
+                                player: 'vlc',
+                                streamUrl: externalVideoUrl,
+                                subtitleUrl: subtitleUrlForVlc,
+                                handoffHint: (targetPlayResource as any)?.playback?.external_player ?? null,
+                              }}
                               subtitleNotice={subtitleSkippedForVlc ? 'VLC 不支持 PGS（.sup）位图字幕，已自动跳过；如需字幕请使用 PotPlayer 或内置播放器。' : undefined}
                             />
                             <ExternalPlayerButton title="nPlayer" icon={nplayerIcon} url={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} />

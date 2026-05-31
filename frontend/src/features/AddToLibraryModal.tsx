@@ -18,7 +18,7 @@ export const AddToLibraryModal: React.FC<AddToLibraryModalProps> = ({ movie, lib
       setAddingTo(prev => [...prev, libraryId]);
       const success = await libraryService.createMovieMembership(libraryId, 'include', [String(movie.id)]);
       if (success) {
-        alert(`已成功将《${movie.title}》添加到片库`);
+        alert(`已成功将《${movie.title}》添加到专辑`);
         onAdded();
         onClose();
       } else {
@@ -44,14 +44,14 @@ export const AddToLibraryModal: React.FC<AddToLibraryModalProps> = ({ movie, lib
             <FolderPlus size={20} />
           </div>
           <div>
-            <h3 className="text-xl font-['Orbitron'] font-bold text-white">添加到片库</h3>
-            <p className="text-xs text-gray-400 font-sans mt-1">选择要把《{movie.title}》加入到的片库</p>
+            <h3 className="text-xl font-['Orbitron'] font-bold text-white">添加到专辑</h3>
+            <p className="text-xs text-gray-400 font-sans mt-1">选择要把《{movie.title}》加入到的专辑</p>
           </div>
         </div>
         
         <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
           {libraries.length === 0 ? (
-            <p className="text-gray-500 text-sm py-4 text-center">暂无可用片库</p>
+            <p className="text-gray-500 text-sm py-4 text-center">暂无可用专辑</p>
           ) : (
             libraries.map(lib => (
               <button

@@ -3,6 +3,7 @@ import {
   Cpu, Zap, Heart, Drama, Monitor, ChevronRight, Play, Film,
   Swords, Compass, Search, Skull, Wand2, Crosshair, Music,
   Smile, Ghost, Rocket, Trophy, Baby, History, FileText, Camera, Tv,
+  HardDrive, Sparkles,
 } from 'lucide-react';
 import { MovieCard } from '../components/movies/Cards';
 import { Movie, Category } from '../types';
@@ -142,7 +143,7 @@ const CategoryRow: React.FC<{ section: any; onMovieSelect: (m: Movie) => void; o
   ); 
 };
 
-export const Home = ({ onMovieSelect, onViewMore }: { onMovieSelect: (m: Movie) => void; onViewMore: (id: string) => void }) => { 
+export const Home = ({ onMovieSelect, onViewMore, onRequestBindStorage }: { onMovieSelect: (m: Movie) => void; onViewMore: (id: string) => void; onRequestBindStorage?: () => void }) => {
   const [heroMovie, setHeroMovie] = useState<Movie>(() => {
      if (cachedHomepageData && cachedHomepageData.hero) return cachedHomepageData.hero;
      return FEATURED_MOVIE;
@@ -199,9 +200,65 @@ export const Home = ({ onMovieSelect, onViewMore }: { onMovieSelect: (m: Movie) 
     };
   }, []);
 
+  // 真正的空：后端没返任何分组（无任何已挂载存储 / 已扫描资源）。
+  // 用 sections.length 判定而不是 heroMovie——后端在没数据时仍然会返默认
+  // FEATURED_MOVIE 当 hero 占位，那不算"有数据"。
+  // 用户主动隐藏所有分组（HomepageEditor 全关）也会触发空状态——这种情况
+  // 下用户能从「主页设置」打开分组，所以也指引到 RESOURCES tab + 不强制
+  // 弹绑定 modal 是 OK 的。
+  const isEmpty = sections.length === 0;
+
+  if (isEmpty) {
+    return (
+      <div className="relative w-full min-h-[85vh] overflow-hidden flex items-center justify-center z-10 pt-20">
+        {/* 背景装饰：跟 hero 同款渐变和 grid，保持赛博风一致 */}
+        <div className="absolute inset-0 bg-[#0a0a12]">
+          <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(circle at 30% 20%, rgba(0,243,255,0.18), transparent 40%), radial-gradient(circle at 70% 80%, rgba(188,19,254,0.12), transparent 45%)' }}></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent"></div>
+        </div>
+
+        <div className="relative z-20 max-w-2xl px-8 text-center">
+          {/* 图标：硬盘 + 火花，象征"还没有数据" */}
+          <div className="relative inline-flex items-center justify-center mb-8">
+            <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full"></div>
+            <div className="relative p-6 border-2 border-primary rounded-2xl bg-black/60 shadow-[0_0_40px_rgba(0,243,255,0.4)] backdrop-blur-sm">
+              <HardDrive className="w-16 h-16 text-primary" strokeWidth={1.2} />
+              <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-accent animate-pulse" />
+            </div>
+          </div>
+
+          <h1 className="text-4xl md:text-5xl font-['Orbitron'] font-bold text-white mb-4 tracking-widest">
+            链路<span className="text-primary">未连接</span>
+          </h1>
+          <p className="text-lg text-gray-300 leading-relaxed font-sans mb-2">
+            还没接入任何挂载点
+          </p>
+          <p className="text-sm text-gray-500 leading-relaxed font-sans mb-10">
+            挂载一个网盘或本地目录，CyberStream 会自动刮削元数据，
+            <br />
+            你的影视库立刻在这里成型。
+          </p>
+
+          <button
+            onClick={() => onRequestBindStorage?.()}
+            className="inline-flex items-center gap-3 px-8 py-4 border-2 border-primary bg-primary/10 hover:bg-primary text-primary hover:text-black rounded-sm font-['Orbitron'] font-bold text-base transition-all hover:scale-105 shadow-[0_0_15px_var(--color-primary)] hover:shadow-[0_0_30px_var(--color-primary)] backdrop-blur-sm"
+          >
+            <HardDrive className="w-5 h-5" />
+            <span className="tracking-wider">立即绑定挂载点</span>
+            <ChevronRight className="w-5 h-5" />
+          </button>
+
+          <p className="text-[11px] text-gray-600 mt-8 font-['Rajdhani'] tracking-widest uppercase">
+            支持 阿里云盘 · 百度网盘 · 夸克 · 天翼 · 115 · WebDAV · 本地目录
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <> 
-      <div className="relative w-full h-[85vh] overflow-hidden flex items-center z-10 transition-all duration-700 group"> 
+    <>
+      <div className="relative w-full h-[85vh] overflow-hidden flex items-center z-10 transition-all duration-700 group">
         <div className="absolute inset-0 bg-[#0a0a12]">
              {/* Dynamic Background Image */}
              <div 

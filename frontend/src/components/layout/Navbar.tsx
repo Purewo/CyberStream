@@ -108,14 +108,14 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, onSearch, onPr
                   onClick={() => onNavigate('library')}
                   className={`px-6 py-1.5 rounded-full text-sm font-['Rajdhani'] font-bold transition-all duration-300 ${currentView === 'library' && activeLibraryId === null ? 'bg-primary/20 text-primary shadow-[inset_0_0_10px_rgba(var(--color-primary-rgb),0.3)]' : 'text-gray-400 hover:text-white'}`}
                 >
-                  全部
+                  片库
                 </button>
                 <div className="w-[1px] h-4 bg-white/10"></div>
                 <button 
                   onClick={() => onNavigate('libraries')}
                   className={`px-6 py-1.5 rounded-full text-sm font-['Rajdhani'] font-bold transition-all duration-300 ${currentView === 'libraries' || (currentView === 'library' && activeLibraryId !== null) ? 'bg-primary/20 text-primary shadow-[inset_0_0_10px_rgba(var(--color-primary-rgb),0.3)]' : 'text-gray-400 hover:text-white'}`}
                 >
-                  片库
+                  专辑
                 </button>
             </div>
         </div>

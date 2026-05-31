@@ -4,7 +4,7 @@ import { ChevronLeft, Play, Pause, Volume2, VolumeX, Lock, Maximize, Minimize, B
 import { Movie, PlayOptions, Episode } from '../types';
 import { movieService, userService, resourceService } from '../api';
 import { getApiBase } from '../platform';
-import { formatDuration } from '../utils';
+import { formatDuration, toast } from '../utils';
 import { SciFiProgressRing, EcgLoading } from './ui/CyberComponents';
 
 interface PlayerProps {
@@ -12,6 +12,42 @@ interface PlayerProps {
   onBack: () => void;
   initialOptions: PlayOptions;
 }
+
+// CDN 模式下的 Tailwind 偶尔不生成 hover:text-primary 这类 var(--color-*)
+// 颜色类（多见于 hover + transform 同时存在时）。这个包装用 React state +
+// 内联 style 显式驱动颜色，避开 hover 伪类，确保鼠标移上去一定变色。
+type ControlIconProps = {
+  active?: boolean;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  title?: string;
+  className?: string;
+  // 鼠标移入时附加的 transform（视觉小动效，跟原版保持一致）。
+  hoverTransform?: 'scale' | 'rotate12' | 'rotate90';
+  children: React.ReactNode;
+};
+const ControlIcon: React.FC<ControlIconProps> = ({ active, onClick, title, className, hoverTransform = 'scale', children }) => {
+  const [hover, setHover] = useState(false);
+  const tone = active || hover ? 'var(--color-primary)' : '#9ca3af'; // gray-400
+  let transform = 'none';
+  if (active && hoverTransform === 'rotate90') transform = 'rotate(90deg)';
+  if (hover) {
+    if (hoverTransform === 'scale') transform = 'scale(1.1)';
+    else if (hoverTransform === 'rotate12') transform = 'rotate(12deg)';
+    else if (hoverTransform === 'rotate90') transform = 'rotate(90deg)';
+  }
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={title}
+      style={{ color: tone, transform, transition: 'color 200ms, transform 300ms' }}
+      className={`flex items-center justify-center ${className || ''}`}
+    >
+      {children}
+    </button>
+  );
+};
 
 export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions }) => { 
   const videoRef = useRef<HTMLVideoElement>(null); 
@@ -36,8 +72,23 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   const [loading, setLoading] = useState(true); 
   const [isBuffering, setIsBuffering] = useState(false);
   const [progress, setProgress] = useState(0); 
-  const [seekOnLoad, setSeekOnLoad] = useState<number | null>(null); 
+  const [seekOnLoad, setSeekOnLoad] = useState<number | null>(null);
   const [playbackMode, setPlaybackMode] = useState<'direct' | 'proxy' | 'audio_transcode'>('direct');
+
+  // ─── 云转码画质（凡 cloud_transcode.supported 命中，按字段不按网盘名） ───
+  //
+  // 后端按来源分发转码档：夸克/UC 原始下载链 web 端播不了（必须转码），
+  // 阿里原文件 web 可播（web_player.supported=true）但额外提供转码档。前端只看
+  // cloud_transcode.supported 决定是否展示画质切换，用 web_player.supported 决定
+  // 转码不可用时能否回落原文件。第一次进 episode fetch /streaming-qualities 拿
+  // 可用画质 + 默认值；用户切档走 setSelectedResolution，videoUrl 跟着重算。
+  const [streamingQualities, setStreamingQualities] = useState<import('../types').StreamingQualitiesResponse | null>(null);
+  const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
+  // 画质列表加载态，给云转码资源的画质面板用：
+  //   'loading' 拉取中 | 'ready' 有可用档 | 'network' 网络/后端错 | 'empty' 后端正常返回但无可用档
+  // 非云转码资源保持 'ready'（面板本身不显示）。
+  const [qualityStatus, setQualityStatus] = useState<'loading' | 'ready' | 'network' | 'empty'>('ready');
+  const [qualityReloadTick, setQualityReloadTick] = useState(0);
 
   // v3 起 PC 模式直接走原生窗口（src-tauri/native_player），React Player
   // 只在 web 模式被渲染，所以 isPcRuntime 永远为 false。保留这个常量是
@@ -190,6 +241,11 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   const subtitleSelectorRef = useRef<HTMLDivElement>(null);
   const externalSelectorRef = useRef<HTMLDivElement>(null);
   const [showExternalSelector, setShowExternalSelector] = useState(false);
+  // 设置面板（齿轮）开关。把画质 / 播放模式 / 倍速 这些低频但需要明确反馈的
+  // 控件统一收纳进一个赛博风弹窗，避免主控制条里塞 6 个不同尺寸的 select
+  // 看起来杂乱。
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
   const [visibleSeasonCount, setVisibleSeasonCount] = useState(0);
 
   useEffect(() => {
@@ -203,16 +259,19 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
         if (externalSelectorRef.current && !externalSelectorRef.current.contains(event.target as Node)) {
             setShowExternalSelector(false);
         }
+        if (settingsPanelRef.current && !settingsPanelRef.current.contains(event.target as Node)) {
+            setShowSettingsPanel(false);
+        }
     };
-    
-    if (showSourceSelector || showSubtitleSelector || showExternalSelector) {
+
+    if (showSourceSelector || showSubtitleSelector || showExternalSelector || showSettingsPanel) {
         document.addEventListener('mousedown', handleClickOutside);
     }
-    
+
     return () => {
         document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showSourceSelector, showSubtitleSelector, showExternalSelector]);
+  }, [showSourceSelector, showSubtitleSelector, showExternalSelector, showSettingsPanel]);
 
 
   useEffect(() => { 
@@ -268,9 +327,11 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
      if (targetEpNum === undefined || targetEpNum === null) {
          const match2 = targetFilename.match(/第\s*(\d+)\s*[集话]/);
          const match1 = targetFilename.match(/(?:[EePp]|Ep)\s*(\d+)/i);
+         const matchParen = targetFilename.match(/[(（]\s*(\d{1,3})\s*[)）]/);
          const match3 = targetFilename.match(/^(\d+)/);
          if (match2 && match2[1]) targetEpNum = parseInt(match2[1], 10);
          else if (match1 && match1[1]) targetEpNum = parseInt(match1[1], 10);
+         else if (matchParen && matchParen[1]) targetEpNum = parseInt(matchParen[1], 10);
          else if (match3 && match3[1]) targetEpNum = parseInt(match3[1], 10);
      }
      
@@ -298,11 +359,13 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                  const matchSeasonEp = filename.match(/Season\s*\d+\s*Episode\s*(\d+)/i);
                  const match2 = filename.match(/第\s*(\d+)\s*[集话]/);
                  const match1 = filename.match(/(?:[EePp]|Ep)\s*(\d+)/i);
+                 const matchParen = filename.match(/[(（]\s*(\d{1,3})\s*[)）]/);
                  const match3 = filename.match(/(?:^|\s|-)\s*(\d{2,3})(?:\s|-|\.|$)/);
                  if (matchSxE && matchSxE[1]) resEpNum = parseInt(matchSxE[1], 10);
                  else if (matchSeasonEp && matchSeasonEp[1]) resEpNum = parseInt(matchSeasonEp[1], 10);
                  else if (match2 && match2[1]) resEpNum = parseInt(match2[1], 10);
                  else if (match1 && match1[1]) resEpNum = parseInt(match1[1], 10);
+                 else if (matchParen && matchParen[1]) resEpNum = parseInt(matchParen[1], 10);
                  else if (match3 && match3[1]) resEpNum = parseInt(match3[1], 10);
              }
              return resEpNum === targetEpNum;
@@ -421,13 +484,17 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
              const match2 = filename.match(/第\s*(\d+)\s*[集话]/);
              // Ep 2 / EP02 / E02 / .E02 / - E02
              const match1 = filename.match(/(?:^|[^\w])(?:EP|Ep|ep|E|e)(?:\s*[-.]*\s*)(\d+)/i) || filename.match(/(?:^|[^\w])(?:EP|Ep|ep|E|e)(\d+)/i);
-             // 01.mp4 or - 01 
+             // 括号集号 (1) / （1）—— 国内站点常见命名 tang...S03 (1).mkv。
+             // 必须在裸数字 match3 之前，避免被宽松规则抢匹配；半角全角都收。
+             const matchParen = filename.match(/[(（]\s*(\d{1,3})\s*[)）]/);
+             // 01.mp4 or - 01
              const match3 = filename.match(/(?:^|\s|-|\[)\s*(\d{1,3})(?:\s|-|\.|\]|$)/);
-             
+
              if (matchSxE && matchSxE[1]) epNum = parseInt(matchSxE[1], 10);
              else if (matchSeasonEp && matchSeasonEp[1]) epNum = parseInt(matchSeasonEp[1], 10);
              else if (match2 && match2[1]) epNum = parseInt(match2[1], 10);
              else if (match1 && match1[1]) epNum = parseInt(match1[1], 10);
+             else if (matchParen && matchParen[1]) epNum = parseInt(matchParen[1], 10);
              // Use generic number matcher only if we strongly believe it's a series
              else if (isEffectivelySeries && match3 && match3[1]) epNum = parseInt(match3[1], 10);
          }
@@ -551,12 +618,95 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   // URL construction
   const videoUrl = useMemo(() => {
     if (!currentEpisode?.id) return "";
-    let url = movieService.getStreamUrl(currentEpisode.id);
+    // 云转码分发（按字段，不按网盘名）：
+    //   - cloud_transcode.supported 且转码档可用（qualityStatus==='ready'）→ 走
+    //     stream-transcoded，按 selectedResolution 取档。
+    //   - 转码不可用（empty/network/loading）时：若 web_player.supported（阿里原
+    //     文件可网页播）回落原始 stream；否则（夸克 raw 播不了）仍只能尝试转码 URL，
+    //     由 handleVideoError 兜底降级 + 提示。
+    const pb = currentEpisode.playback;
+    const ct = pb?.cloud_transcode;
+    const webRawPlayable = pb?.web_player?.supported !== false; // 缺省视为可播（兼容旧后端）
+    if (!isPcRuntime && ct?.supported) {
+      if (qualityStatus === 'ready') {
+        const res = selectedResolution || streamingQualities?.default_resolution || undefined;
+        return resourceService.getTranscodedStreamUrl(String(currentEpisode.id), res);
+      }
+      if (qualityStatus === 'loading') {
+        return ""; // 画质表加载中先不喂 src，避免拿 default 拼出不可用 URL 触发误降级
+      }
+      // empty / network：转码档不可用。阿里等原文件可播的回落 raw stream。
+      if (webRawPlayable) {
+        return movieService.getStreamUrl(String(currentEpisode.id));
+      }
+      // 夸克等 raw 不可播：退而求其次喂 default 转码 URL，错了走 handleVideoError。
+      return resourceService.getTranscodedStreamUrl(String(currentEpisode.id), undefined);
+    }
+    let url = movieService.getStreamUrl(String(currentEpisode.id));
     if (playbackMode === 'proxy') {
         // Not supported yet, placeholder
     }
     return url;
-  }, [currentEpisode, playbackMode]);
+  }, [currentEpisode, playbackMode, selectedResolution, streamingQualities, isPcRuntime, qualityStatus]);
+
+  // 切 episode 时拉云转码画质表（仅 cloud_transcode.supported=true 才命中）。
+  // 失败 / 不支持时清空 state 走原始 stream_url。qualityReloadTick 变化时重拉
+  //（画质面板「重试」按钮用）。
+  useEffect(() => {
+    const ct = currentEpisode?.playback?.cloud_transcode;
+    if (!currentEpisode?.id || isPcRuntime || !ct?.supported) {
+      setStreamingQualities(null);
+      setSelectedResolution(null);
+      setQualityStatus('ready');
+      if (currentEpisode?.id) {
+        console.info('[player.cloud_transcode] not supported, will use direct stream', {
+          id: currentEpisode.id,
+          storageType: currentEpisode.playback?.storage_type,
+          ct,
+        });
+      }
+      return;
+    }
+    let cancelled = false;
+    setQualityStatus('loading');
+    console.info('[player.cloud_transcode] fetching qualities', currentEpisode.id);
+    (async () => {
+      const data = await resourceService.getStreamingQualities(String(currentEpisode.id));
+      if (cancelled) return;
+      if (data) {
+        const availableItems = data.items?.filter((it) => it.available) || [];
+        console.info('[player.cloud_transcode] qualities loaded', {
+          default: data.default_resolution,
+          selected: data.selected_resolution,
+          items: data.items?.map((it) => `${it.resolution}/${it.available}`),
+        });
+        setStreamingQualities(data);
+        if (availableItems.length === 0) {
+          // 后端正常返回但一档都不可用：转码可能还在排队 / 资源异常。
+          setSelectedResolution(null);
+          setQualityStatus('empty');
+          return;
+        }
+        // 选默认画质：后端 selected_resolution（已确保 available）优先，
+        // 再 default_resolution，最后第一个可用档。
+        const def = data.selected_resolution
+          || (availableItems.some((it) => it.resolution === data.default_resolution)
+            ? data.default_resolution
+            : undefined)
+          || availableItems[0]?.resolution
+          || null;
+        setSelectedResolution(def);
+        setQualityStatus('ready');
+      } else {
+        // 网络层失败 / 后端 5xx（fetchApi 已 toast 过一次网络错）。
+        console.warn('[player.cloud_transcode] qualities endpoint returned null');
+        setStreamingQualities(null);
+        setSelectedResolution(null);
+        setQualityStatus('network');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentEpisode?.id, isPcRuntime, qualityReloadTick]);
 
   useEffect(() => {
     setRetryCount(0);
@@ -877,13 +1027,12 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
     }
   };
 
-  const changePlaybackRate = () => { 
-      const rates = [1, 1.5, 2]; 
-      const next = rates[(rates.indexOf(playbackRate) + 1) % rates.length]; 
-      setPlaybackRate(next); 
-      if (videoRef.current) videoRef.current.playbackRate = next; 
-      if (audioRef.current) audioRef.current.playbackRate = next;
-  }; 
+  // 显式设倍速：被设置面板里的按钮组调用。保留 audio/video 同步逻辑。
+  const setPlaybackRateExplicit = (rate: number) => {
+    setPlaybackRate(rate);
+    if (videoRef.current) videoRef.current.playbackRate = rate;
+    if (audioRef.current) audioRef.current.playbackRate = rate;
+  };
 
   const toggleAspectRatio = () => setAspectRatio(p => p === 'contain' ? 'cover' : 'contain');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -914,6 +1063,27 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
   const handleVideoError = () => {
       setIsBuffering(false);
       bufferingRef.current = false;
+      // 云转码场景下：当前档加载失败（多见于 4K 上游 CDN 反爬挡掉 / 该档 409），
+      // 自动降到次一档继续尝试。降档顺序直接按后端 items 顺序（语义正序，从高到
+      // 低），避免硬编码漏掉后端将来新增的档位。仅在云转码资源触发。
+      const ct = currentEpisode?.playback?.cloud_transcode;
+      if (!isPcRuntime && ct?.supported && streamingQualities) {
+          const items = streamingQualities.items || [];
+          const cur = selectedResolution || streamingQualities.default_resolution;
+          const curIdx = items.findIndex((it) => it.resolution === cur);
+          // 当前档之后的第一个 available 档（items 已是后端给的高→低顺序）。
+          const fallbackItem = items
+              .slice(curIdx + 1)
+              .find((it) => it.available);
+          if (fallbackItem) {
+              const toLabel = (fallbackItem.label || fallbackItem.resolution).toUpperCase();
+              console.warn(`[player.cloud_transcode] ${cur} failed, falling back to ${fallbackItem.resolution}`);
+              toast.info(`当前画质不可用，已自动切到 ${toLabel}`);
+              setSelectedResolution(fallbackItem.resolution);
+              setRetryCount(0);
+              return;
+          }
+      }
       if (retryCount < 1) {
           console.warn(`Video load failed. Retrying (Attempt ${retryCount + 1}). url: ${videoUrl}`);
           setRetryCount(prev => prev + 1);
@@ -926,6 +1096,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
           }
       } else {
           console.error(`Video load failed completely after retries. url: ${videoUrl}`);
+          toast.error(ct?.supported ? '该资源各画质均无法播放，请稍后重试' : '视频加载失败，请稍后重试');
       }
   };
 
@@ -1232,8 +1403,7 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
       draggedPlayStateRef.current = null;
   };
 
-  const handlePlaybackModeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const mode = e.target.value as any;
+  const switchPlaybackMode = (mode: 'direct' | 'proxy' | 'audio_transcode') => {
       setPlaybackMode(mode);
       if (mode === 'audio_transcode') {
           draggedPlayStateRef.current = isPlaying;
@@ -1487,34 +1657,23 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                                     </div> 
                                 </div> 
                             </div> 
-                            <div className="flex items-center gap-4"> 
+                            <div className="flex items-center gap-4">
                                 <div className={`flex items-center gap-4 transition-opacity duration-300 ${showSubtitleSettings ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
                                     {isAudioTranscodeActive && (
                                         <div className="flex flex-col items-center justify-center opacity-70" title={`Server Audio Transcode Active\nFormat: ${currentEpisode?.playback?.audio?.server_transcode?.mime_type || 'AUDIO'}`}>
                                             <div className="w-2 h-2 rounded-full animate-pulse bg-green-500 shadow-[0_0_8px_var(--color-primary)] cursor-pointer" onClick={handleShowDiagnostics}></div>
                                         </div>
                                     )}
-                                    <select 
-                                        value={playbackMode} 
-                                        onChange={handlePlaybackModeChange}
-                                        className="bg-black/50 text-[10px] font-['Orbitron'] border border-white/20 text-white outline-none focus:border-primary px-2 py-1 rounded"
-                                    >
-                                        <option value="direct">DIRECT</option>
-                                        <option value="proxy" disabled>PROXY</option>
-                                        <option value="audio_transcode" disabled={!currentEpisode?.playback?.audio?.server_transcode?.available}>
-                                            {currentEpisode?.playback?.audio?.server_transcode?.recommended ? 'AUDIO_TRANSCODE (推荐)' : 'AUDIO_TRANSCODE'}
-                                        </option>
-                                    </select>
-                                    
                                     {playingEpisodeSources.length > 1 && (
                                         <div className="relative group/sources" ref={sourceSelectorRef}>
-                                            <button 
+                                            <ControlIcon
+                                                active={showSourceSelector}
                                                 onClick={() => { setShowSourceSelector(!showSourceSelector); setShowSubtitleSelector(false); setShowSubtitleSettings(false); setShowExternalSelector(false); }}
-                                                className={`text-gray-400 hover:text-white hover:scale-110 transition-transform ${showSourceSelector ? 'text-primary' : ''}`}
-                                                title="Select Source"
+                                                title="切换来源"
+                                                hoverTransform="scale"
                                             >
                                                 <Server size={20} />
-                                            </button>
+                                            </ControlIcon>
                                             
                                             {showSourceSelector && (
                                                 <div 
@@ -1566,13 +1725,14 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
 
                                 {currentEpisode && (
                                     <div className="relative group/subtitles" ref={subtitleSelectorRef}>
-                                        <button 
+                                        <ControlIcon
+                                            active={showSubtitleSelector || !!activeSubtitleId}
                                             onClick={() => { setShowSubtitleSelector(!showSubtitleSelector); setShowSubtitleSettings(false); setShowSourceSelector(false); }}
-                                            className={`text-gray-400 hover:text-white hover:scale-110 transition-transform ${showSubtitleSelector || activeSubtitleId ? 'text-primary' : ''}`}
-                                            title="Subtitles"
+                                            title="字幕"
+                                            hoverTransform="scale"
                                         >
                                             <Captions size={20} />
-                                        </button>
+                                        </ControlIcon>
                                         
                                         {showSubtitleSelector && (
                                             <div className="absolute bottom-full right-0 mb-4 bg-[#1f1f23] border border-white/10 rounded-lg shadow-2xl p-2 min-w-[200px] max-w-[320px] flex flex-col gap-1 z-50 transition-all">
@@ -1755,12 +1915,125 @@ export const Player: React.FC<PlayerProps> = ({ movie, onBack, initialOptions })
                                 )}
 
                                 <div className={`flex items-center gap-4 transition-opacity duration-300 ${showSubtitleSettings ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                                    <button onClick={() => { setIsLocked(true); setIsIdle(true); if (idleTimerRef.current) clearTimeout(idleTimerRef.current); }} className="text-gray-400 hover:text-white hover:rotate-12 transition-transform" title="Lock Controls"><Lock size={20} /></button>
-                                    <button onClick={toggleAspectRatio} className="text-gray-400 hover:text-white hover:scale-110 transition-transform" title="Aspect Ratio">{aspectRatio === 'contain' ? <BoxSelect size={20} /> : <Scan size={20} />}</button> 
-                                    <button onClick={changePlaybackRate} className="text-xs font-['Orbitron'] font-bold text-white hover:text-primary border border-white/20 px-2 py-1 rounded hover:border-primary transition-all hover:shadow-[0_0_10px_var(--color-primary)]">{playbackRate}x</button> 
-                                    {isFullscreen
-                                        ? <Minimize size={24} className="text-white hover:text-primary cursor-pointer hover:scale-110 transition-transform" onClick={handleFullscreen} />
-                                        : <Maximize size={24} className="text-white hover:text-primary cursor-pointer hover:scale-110 transition-transform" onClick={handleFullscreen} />}
+                                    <ControlIcon onClick={() => { setIsLocked(true); setIsIdle(true); if (idleTimerRef.current) clearTimeout(idleTimerRef.current); }} title="锁定控制条" hoverTransform="rotate12"><Lock size={20} /></ControlIcon>
+                                    <ControlIcon onClick={toggleAspectRatio} title="画面比例" hoverTransform="scale">{aspectRatio === 'contain' ? <BoxSelect size={20} /> : <Scan size={20} />}</ControlIcon>
+
+                                    {/* 设置齿轮：低频但要明确反馈的控件（画质 / 播放模式 / 倍速）统一收纳。
+                                        弹出方向：absolute bottom-full right-0 mb-3 → 弹在齿轮上方，
+                                        跟字幕/源选择菜单的弹出方向一致。 */}
+                                    <div className="relative flex items-center" ref={settingsPanelRef}>
+                                        <ControlIcon
+                                            active={showSettingsPanel}
+                                            onClick={() => { setShowSettingsPanel((v) => !v); setShowSubtitleSelector(false); setShowSourceSelector(false); setShowSubtitleSettings(false); }}
+                                            title="播放设置"
+                                            hoverTransform="rotate90"
+                                        >
+                                            <Settings size={20} />
+                                        </ControlIcon>
+                                        {showSettingsPanel && (
+                                            <div
+                                                className="absolute bottom-full right-0 mb-4 z-[60] min-w-[260px] rounded-lg overflow-hidden animate-in fade-in slide-in-from-bottom-1 duration-150"
+                                                style={{
+                                                    backgroundColor: '#0a0a12',
+                                                    border: '1px solid var(--color-primary)',
+                                                    boxShadow: '0 0 30px rgba(0, 243, 255, 0.25)',
+                                                }}
+                                            >
+                                                {/* 画质（仅云转码资源出现） */}
+                                                {currentEpisode?.playback?.cloud_transcode?.supported && (
+                                                    <div className="p-3 border-b border-primary/20">
+                                                        <div className="text-[10px] font-['Orbitron'] tracking-widest text-primary/70 mb-2">画质 · QUALITY</div>
+                                                        {qualityStatus === 'ready' && streamingQualities && streamingQualities.items?.some(it => it.available) ? (
+                                                            <div className="grid grid-cols-3 gap-1.5">
+                                                                {streamingQualities.items
+                                                                    .filter(it => it.available)
+                                                                    .map(it => {
+                                                                        const sel = (selectedResolution || streamingQualities.default_resolution) === it.resolution;
+                                                                        return (
+                                                                            <button
+                                                                                key={it.resolution}
+                                                                                onClick={() => setSelectedResolution(it.resolution)}
+                                                                                className={`px-2 py-1.5 text-[11px] font-['Rajdhani'] font-bold rounded border transition-all ${sel ? 'bg-primary/20 text-primary border-primary shadow-[0_0_10px_rgba(0,243,255,0.3)]' : 'bg-black/40 text-gray-300 border-white/10 hover:border-primary/60 hover:text-primary'}`}
+                                                                                title={it.height ? `${it.width || ''}×${it.height}` : it.resolution}
+                                                                            >
+                                                                                {(it.label || it.resolution).toUpperCase()}
+                                                                                {it.height ? <span className="block text-[9px] opacity-70 font-mono mt-0.5">{it.height}P</span> : null}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                            </div>
+                                                        ) : qualityStatus === 'loading' ? (
+                                                            <div className="text-[11px] text-gray-500 font-['Rajdhani']">画质加载中…</div>
+                                                        ) : (
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="text-[11px] text-gray-400 font-['Rajdhani'] leading-snug">
+                                                                    {qualityStatus === 'empty'
+                                                                        ? (currentEpisode?.playback?.web_player?.supported !== false
+                                                                            ? '转码画质暂不可用，已用原画播放，可重试加载'
+                                                                            : '该资源暂无可用画质，可能仍在转码，请稍后重试')
+                                                                        : '画质列表获取失败，请检查网络后重试'}
+                                                                </span>
+                                                                <button
+                                                                    onClick={() => setQualityReloadTick(t => t + 1)}
+                                                                    className="shrink-0 px-2 py-1 text-[11px] font-['Rajdhani'] font-bold rounded border border-primary/50 text-primary hover:bg-primary/15 transition-all"
+                                                                >
+                                                                    重试
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* 播放模式 */}
+                                                <div className="p-3 border-b border-primary/20">
+                                                    <div className="text-[10px] font-['Orbitron'] tracking-widest text-primary/70 mb-2">播放模式 · MODE</div>
+                                                    <div className="flex flex-col gap-1">
+                                                        {(['direct', 'audio_transcode'] as const).map((mode) => {
+                                                            const sel = playbackMode === mode;
+                                                            const audioAvail = currentEpisode?.playback?.audio?.server_transcode?.available === true;
+                                                            const recommended = currentEpisode?.playback?.audio?.server_transcode?.recommended === true;
+                                                            const disabled = mode === 'audio_transcode' && !audioAvail;
+                                                            const label = mode === 'direct' ? '直接播放' : `音频转码${recommended ? ' · 推荐' : ''}`;
+                                                            return (
+                                                                <button
+                                                                    key={mode}
+                                                                    disabled={disabled}
+                                                                    onClick={() => { if (!disabled) { switchPlaybackMode(mode); } }}
+                                                                    className={`flex items-center justify-between text-left px-2.5 py-1.5 rounded font-['Rajdhani'] text-xs transition-all border ${sel ? 'bg-primary/15 text-primary border-primary' : 'bg-black/40 text-gray-300 border-transparent hover:border-primary/40 hover:text-primary'} disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:text-gray-300`}
+                                                                >
+                                                                    <span>{label}</span>
+                                                                    {sel && <span className="text-primary text-[10px] font-mono">●</span>}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                {/* 倍速 */}
+                                                <div className="p-3">
+                                                    <div className="text-[10px] font-['Orbitron'] tracking-widest text-primary/70 mb-2">倍速 · SPEED</div>
+                                                    <div className="grid grid-cols-5 gap-1.5">
+                                                        {[0.5, 1, 1.25, 1.5, 2].map((rate) => {
+                                                            const sel = playbackRate === rate;
+                                                            return (
+                                                                <button
+                                                                    key={rate}
+                                                                    onClick={() => setPlaybackRateExplicit(rate)}
+                                                                    className={`px-1 py-1.5 text-[11px] font-['Rajdhani'] font-bold rounded border transition-all ${sel ? 'bg-primary/20 text-primary border-primary shadow-[0_0_8px_rgba(0,243,255,0.3)]' : 'bg-black/40 text-gray-300 border-white/10 hover:border-primary/60 hover:text-primary'}`}
+                                                                >
+                                                                    {rate}x
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <ControlIcon onClick={handleFullscreen} title={isFullscreen ? '退出全屏' : '全屏'} hoverTransform="scale">
+                                        {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
+                                    </ControlIcon>
                                 </div>
                             </div> 
                         </div> 

@@ -175,7 +175,7 @@ export const MetadataEditor: React.FC<MetadataEditorProps> = ({ movie, onClose, 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshLog, setRefreshLog] = useState<string[]>([]);
 
-  const handleUpdateVisibility = async (newStatus: 'auto' | 'published' | 'hidden', force: boolean = false) => {
+  const handleUpdateVisibility = async (newStatus: 'auto' | 'hidden' | 'pending_review', force: boolean = false) => {
     setIsUpdatingVisibility(true);
     try {
       const updatedMovie = await movieService.updateCatalogVisibility(String(movie.id), newStatus, force);
@@ -370,14 +370,20 @@ export const MetadataEditor: React.FC<MetadataEditorProps> = ({ movie, onClose, 
                   disabled={isUpdatingVisibility}
                   className="w-full bg-primary-10 border border-primary-50 focus:border-primary focus:outline-none py-2 px-3 text-white font-sans transition-colors disabled:opacity-50"
                 >
-                  <option value="auto">自动判定 (Auto)</option>
-                  <option value="published">强制发布 (Published)</option>
-                  <option value="hidden">强制隐藏 (Hidden)</option>
+                  <option style={{ background: '#0a0a12', color: '#fff' }} value="auto">自动判定 (Auto)</option>
+                  <option style={{ background: '#0a0a12', color: '#fff' }} value="pending_review">退回待审批 (Pending Review)</option>
+                  <option style={{ background: '#0a0a12', color: '#fff' }} value="hidden">强制隐藏 (Hidden)</option>
                 </select>
                 {isUpdatingVisibility && <RefreshCw size={24} className="animate-spin text-primary mt-1" />}
               </div>
               <p className="text-xs text-primary-50 mt-1">
-                当前生效规则：{editedMovie.catalog_visibility?.effective_status === 'published' ? '已收录入总库' : '未入库，仅源内可见'}
+                当前生效规则：{(() => {
+                  const eff = editedMovie.catalog_visibility?.effective_status;
+                  if (eff === 'published' || eff === 'auto_public') return '已收录入总库';
+                  if (eff === 'pending_review') return '待审批，未入库';
+                  if (eff === 'hidden') return '已隐藏，不进总库';
+                  return '未入库，仅源内可见';
+                })()}
                  (原因: {editedMovie.catalog_visibility?.reason || '-'})
               </p>
             </div>

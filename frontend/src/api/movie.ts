@@ -247,7 +247,12 @@ export const movieService = {
     });
   },
 
-  updateCatalogVisibility: async (id: string, status: 'auto' | 'published' | 'hidden', force?: boolean, note?: string): Promise<Movie | null> => {
+  // 单条目录可见性更新。
+  // 后端 1.21 起已经移除 PATCH ?status=published 路径——批量发布走待审批池
+  // POST /v1/metadata/pending-review/publish 接口，这里只保留状态机里仍允许
+  // 的：auto（让后端按规则判定）/ hidden（人工拍掉）/ pending_review（人工
+  // 退回审批池）。如果不小心传 published，后端会回 410。
+  updateCatalogVisibility: async (id: string, status: 'auto' | 'hidden' | 'pending_review', force?: boolean, note?: string): Promise<Movie | null> => {
     const queryId = movieService.getRealId(id);
     const body: any = { status };
     if (force) body.force = force;
@@ -420,7 +425,8 @@ export const movieService = {
     if (filters?.metadata_source_group) url += `&metadata_source_group=${filters.metadata_source_group}`;
     if (filters?.metadata_review_priority) url += `&metadata_review_priority=${filters.metadata_review_priority}`;
     if (filters?.metadata_issue_code) url += `&metadata_issue_code=${filters.metadata_issue_code}`;
-    
+    if (filters?.effective_status) url += `&effective_status=${encodeURIComponent(filters.effective_status)}`;
+
     const data = await fetchApi<any>(url);
     if (!data) return { items: [], meta: null };
     return {
@@ -428,8 +434,40 @@ export const movieService = {
         ...item,
         movie: item.movie ? mapApiMovieToUi(item.movie) : null
       })),
-      meta: data.meta
+      // 后端实际返 pagination；早期版本 data.meta 兼容兜底
+      meta: data.pagination || data.meta || null
     };
+  },
+
+  // ─── 待审批池 (1.21+) ───
+  //
+  // 后端把可疑刮削结果（placeholder / local_only / low_confidence /
+  // fallback_pipeline_match / poster_missing 等）默认设为 catalog_visibility
+  // .effective_status='pending_review'，不进 /v1/movies 普通影视库。
+  //
+  // 列表：复用 work-items 的过滤参数 effective_status=pending_review。
+  // 批量入库：POST /v1/metadata/pending-review/publish，body { movie_ids, force? }
+  //   - force=false (默认): 有 blockers 的条目会进 failed[]
+  //   - force=true: 强制发布，仍可能因后端硬性拒绝（如缺标题）失败
+  //   返回 { published: [...], failed: [{movie_id, reason, blockers?}] }
+  getPendingReviewItems: async (page = 1, pageSize = 20, filters?: any): Promise<{items: any[], meta: any}> => {
+    return await movieService.getMetadataWorkItems(page, pageSize, {
+      ...filters,
+      effective_status: 'pending_review',
+    });
+  },
+
+  publishPendingReview: async (
+    movieIds: string[],
+    force: boolean = false,
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/metadata/pending-review/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ movie_ids: movieIds, force }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
   },
 
   // 批量定点重刮影片元数据

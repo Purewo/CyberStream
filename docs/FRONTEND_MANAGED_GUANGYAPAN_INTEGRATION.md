@@ -236,7 +236,7 @@ GET /api/v1/resources/{id}/stream
 DELETE /api/v1/storage/sources/{id}
 ```
 
-如果该来源还有资源，后端仍会要求 `keep_metadata=true` 或先解绑/迁移。删除托管光鸭来源时，后端会尽量同步删除 localhost AList 内部挂载；AList 清理失败只记录日志，不阻断 CyberStream 来源删除。
+删除托管光鸭来源时，后端会先删除 localhost AList 内部挂载，再删除 CyberStream 本地数据。如果 AList 挂载已经不存在，后端继续清理本地数据；如果 AList 删除失败，接口返回 `50262`，本地来源和资源数据保留，前端应提示用户检查本机 AList 后重试。
 
 ## 错误处理
 

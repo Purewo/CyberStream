@@ -107,9 +107,9 @@ const CreateManualModal: React.FC<CreateManualModalProps> = ({ resourceId, defau
           </div>
 
           <div>
-            <label className="text-xs text-primary-50 uppercase tracking-widest block mb-2">挂入片库（可选，可多选）</label>
+            <label className="text-xs text-primary-50 uppercase tracking-widest block mb-2">挂入专辑（可选，可多选）</label>
             {libraries.length === 0 ? (
-              <p className="text-xs text-primary-50">暂无片库</p>
+              <p className="text-xs text-primary-50">暂无专辑</p>
             ) : (
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {libraries.map(lib => (

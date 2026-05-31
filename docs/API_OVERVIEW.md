@@ -35,6 +35,8 @@ X-Cyber-API-Token: <token>
 
 审查工作台边界和非标准资源对接方案见：`docs/FRONTEND_REVIEW_WORKBENCH_INTEGRATION.md`。
 
+中文产品术语统一见：`docs/TERMINOLOGY.md`。新文案优先使用“挂载点”（`StorageSource`）和“专辑”（`Library`），历史 API 字段名与路由保持不变。
+
 ### 0.2 用户管理接口
 
 - `POST /api/v1/auth/login`
@@ -120,6 +122,7 @@ X-Cyber-API-Token: <token>
 
 - `release-notes`
 - `api-overview`
+- `terminology`
 - `frontend-review-workbench`
 - `frontend-user-management`
 - `frontend-audio-transcode`
@@ -145,11 +148,11 @@ X-Cyber-API-Token: <token>
 - `backend/app/api/library_routes.py`
   - 影视库、筛选、推荐、详情、影片元数据修改等接口
 - `backend/app/api/libraries_routes.py`
-  - 逻辑资源库（Library）管理、来源绑定、按库浏览、按库扫描接口
+  - 专辑（Library）管理、绑定目录、按专辑浏览、按专辑扫描接口
 - `backend/app/api/history_routes.py`
   - 用户观看历史相关接口
 - `backend/app/api/storage_routes.py`
-  - 存储源管理、预览、指定源扫描
+  - 挂载点管理、预览、指定挂载点扫描
 - `backend/app/api/player_routes.py`
   - 播放流相关接口
 - `backend/app/api/routes.py`
@@ -161,18 +164,18 @@ X-Cyber-API-Token: <token>
 
 ---
 
-## 3. 逻辑资源库（Library）
+## 3. 专辑（Library，历史名：逻辑资源库）
 
 ### `GET /api/v1/libraries`
-列出所有逻辑资源库。
+列出所有专辑。
 
 说明：
-- 普通资源库来自数据库 `libraries`
+- 普通专辑来自数据库 `libraries`
 - 保险库/收藏虚拟库不再出现在该列表中，避免片库导航泄露保险库存在性
 - 前端需要保险库入口时应使用固定入口，并通过 `/api/v1/user/vault/status` 判断配置、解锁和锁定状态
 
 ### `POST /api/v1/libraries`
-创建逻辑资源库。
+创建专辑。
 
 核心字段：
 - `name`
@@ -185,20 +188,20 @@ X-Cyber-API-Token: <token>
 - `settings`
 
 ### `GET /api/v1/libraries/<id>`
-获取单个资源库详情（含已绑定来源）。
+获取单个专辑详情（含已绑定目录）。
 
 ### `GET /api/v1/libraries/favorites`
-获取当前用户收藏虚拟资源库详情。
+获取当前用户收藏虚拟专辑详情。
 
 说明：
 - 当前单用户/默认模式临时按默认管理员处理；开启用户系统后仅已登录管理员可访问，普通用户不能访问保险库
 - 访问前必须先设置并解锁 6 位数字保险库 PIN
 - 未收藏任何影视时返回 `404`
-- 返回结构与普通资源库详情一致，但 `sources=[]`、`is_virtual=true`、`kind="favorites"`
-- 该资源库不能绑定来源、不能创建/删除、不能触发整库扫描
+- 返回结构与普通专辑详情一致，但 `sources=[]`、`is_virtual=true`、`kind="favorites"`
+- 该虚拟专辑不能绑定目录、不能创建/删除、不能触发整库扫描
 
 ### `PATCH /api/v1/libraries/<id>`
-更新资源库信息。
+更新专辑信息。
 
 支持字段：
 - `name`
@@ -209,13 +212,13 @@ X-Cyber-API-Token: <token>
 - `settings`
 
 ### `DELETE /api/v1/libraries/<id>`
-删除资源库。
+删除专辑。
 
 ### `GET /api/v1/libraries/<id>/sources`
-查看资源库绑定的存储源。
+查看专辑已绑定的挂载点目录。
 
 ### `POST /api/v1/libraries/<id>/sources`
-为资源库绑定存储源。
+为专辑绑定挂载点目录。
 
 核心字段：
 - `source_id`
@@ -232,7 +235,7 @@ X-Cyber-API-Token: <token>
 说明：
 - `provider_order` 当前支持 `nfo`、`tmdb`、`anilist`、`bangumi`、`local`
 - 默认顺序仍为 `nfo -> tmdb -> local`；动漫库可显式传 `nfo -> bangumi -> tmdb -> local`
-- 资源库扫描会按绑定上的 `content_type`、`scrape_enabled` 和 `scraper_policy` 执行
+- 专辑扫描会按绑定上的 `content_type`、`scrape_enabled` 和 `scraper_policy` 执行
 
 动漫库绑定示例：
 
@@ -246,23 +249,23 @@ X-Cyber-API-Token: <token>
 ```
 
 ### `PATCH /api/v1/libraries/<id>/sources/<binding_id>`
-更新资源库与存储源的绑定关系。
+更新专辑与挂载点目录的绑定关系。
 
 ### `DELETE /api/v1/libraries/<id>/sources/<binding_id>`
-解除资源库与存储源的绑定关系。
+解除专辑与挂载点目录的绑定关系。
 
 ### `GET /api/v1/libraries/<id>/movie-memberships`
-查看资源库的手动影视规则。
+查看专辑的手动影视规则。
 
 支持查询参数：
 - `mode=include|exclude`
 
 说明：
-- `include` 表示把某个已入库影视手动加入该资源库
-- `exclude` 表示把自动命中该库的影视从该资源库中排除
+- `include` 表示把某个已入库影视手动加入该专辑
+- `exclude` 表示把自动命中该专辑的影视排除
 
 ### `POST /api/v1/libraries/<id>/movie-memberships`
-批量新增或更新资源库手动影视规则。
+批量新增或更新专辑手动影视规则。
 
 请求体：
 - `mode=include|exclude`
@@ -271,16 +274,16 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 只允许引用已经存在的影视条目
-- 同一资源库与同一影视只保留一条规则，重复提交会更新 `mode`
+- 同一专辑与同一影视只保留一条规则，重复提交会更新 `mode`
 
 ### `POST /api/v1/libraries/<id>/movie-memberships/delete`
-批量删除资源库手动影视规则。
+批量删除专辑手动影视规则。
 
 请求体：
 - `movie_ids`
 
 ### `GET /api/v1/libraries/<id>/movies`
-按资源库分页查看影片列表（当前支持按 `source_id + root_path` 过滤）。
+按专辑分页查看影片列表（当前支持按 `source_id + root_path` 过滤）。
 
 支持查询参数：
 - `page`
@@ -299,14 +302,14 @@ X-Cyber-API-Token: <token>
 返回项补充：
 - `library_membership=auto|manual|both`
 
-资源库内容规则：
+专辑内容规则：
 - 自动内容来自已绑定挂载点与 `root_path`，但只纳入无需人工处理且有海报的公开影视
 - 手动 `include` 会补充不在绑定路径内的影视
-- 需要人工处理的 raw/占位/缺海报影片不会因挂载点自动进入资源库，必须通过手动 `include` 拉入
-- 手动 `exclude` 会从该资源库隐藏自动命中的影视
+- 需要人工处理的 raw/占位/缺海报影片不会因挂载点自动进入专辑，必须通过手动 `include` 拉入
+- 手动 `exclude` 会从该专辑隐藏自动命中的影视
 
 ### `GET /api/v1/libraries/favorites/movies`
-按资源库形式分页查看当前用户收藏的影视。
+按专辑形式分页查看当前用户收藏的影视。
 
 支持查询参数：
 - `page`
@@ -320,13 +323,13 @@ X-Cyber-API-Token: <token>
 - 未收藏任何影视时返回 `404`
 
 ### `GET /api/v1/libraries/<id>/featured`
-按资源库获取置顶/轮播内容（当前支持按 `source_id + root_path` 过滤）。
+按专辑获取置顶/轮播内容（当前支持按 `source_id + root_path` 过滤）。
 
 ### `GET /api/v1/libraries/favorites/featured`
 从当前用户收藏影视中获取置顶/轮播内容。
 
 ### `GET /api/v1/libraries/<id>/recommendations`
-按资源库获取推荐内容。
+按专辑获取推荐内容。
 
 支持参数：
 - `limit`
@@ -342,7 +345,7 @@ X-Cyber-API-Token: <token>
 从当前用户收藏影视集合中获取推荐内容。
 
 ### `GET /api/v1/libraries/<id>/filters`
-按资源库获取筛选项。
+按专辑获取筛选项。
 
 支持：
 - `genres`
@@ -353,48 +356,48 @@ X-Cyber-API-Token: <token>
 从当前用户收藏影视集合中获取筛选项。
 
 ### `POST /api/v1/libraries/<id>/scan`
-按资源库触发扫描任务。
+按专辑触发扫描任务。
 
 当前行为：
-- 按绑定顺序扫描该库所有启用的 source
+- 按绑定顺序扫描该专辑所有启用的挂载点
 - 扫描时支持 `root_path` 限定起始路径
 - 请求体可选 `refresh`，默认 `true`；对支持目录刷新的 `alist/openlist` 绑定，会先刷新该绑定的 `root_path` 再扫描
 - 刷新失败只记录到扫描错误/日志，不会阻断后续扫描与刮削；需要跳过上游刷新时传 `{"refresh": false}`
 - 入库时仍保持 `MediaResource.path` 为相对 source 根路径，避免破坏现有播放与资源定位逻辑
-- 与全量扫描、指定存储源扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
-- 收藏虚拟资源库没有 `/api/v1/libraries/favorites/scan`，前端不应展示或调用扫描入口
+- 与全量扫描、指定挂载点扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
+- 收藏虚拟专辑没有 `/api/v1/libraries/favorites/scan`，前端不应展示或调用扫描入口
 
 ---
 
-## 4. 存储源管理
+## 4. 挂载点管理（StorageSource，历史名：存储源）
 
 ### `GET /api/v1/storage/sources`
-列出所有存储源。
+列出所有挂载点。
 
 返回字段补充：
 - `display_name`
 - `is_supported`
 - `config_valid`
 - `config_error`
-- `capabilities`：当前来源是否支持 `preview`、`scan`、`refresh`、`stream`、`ffmpeg_input`
+- `capabilities`：当前挂载点是否支持 `preview`、`scan`、`refresh`、`stream`、`ffmpeg_input`
 - `config`：脱敏后的当前配置摘要
 - `actions`：前端可直接判断是否展示 `preview/scan/refresh/stream` 入口
-- `usage`：当前来源被多少资源库绑定、已有多少资源引用
-- `guards`：当前来源是否允许改类型、是否允许直接删除
+- `usage`：当前挂载点被多少专辑绑定、已有多少媒体文件引用
+- `guards`：当前挂载点是否允许改类型、是否允许直接删除
 
 说明：
-- 列表接口默认不做实时网络探测，避免来源多了以后把列表拉慢
+- 列表接口默认不做实时网络探测，避免挂载点多了以后把列表拉慢
 - 此时 `status` 只表达静态支持状态：当前通常是 `unknown` 或 `unsupported`
 
 ### `GET /api/v1/storage/sources/<id>`
-获取单个存储源详情。
+获取单个挂载点详情。
 
 说明：
 - 返回结构与列表项一致，但适合编辑页单条拉取
 - 敏感字段会做脱敏展示，例如 `password` 仅返回 `***`
 
 ### `GET /api/v1/storage/sources/<id>/health`
-显式获取单个存储源的实时健康状态。
+显式获取单个挂载点的实时健康状态。
 
 说明：
 - 该接口会实际触发 provider 健康检查
@@ -414,7 +417,7 @@ X-Cyber-API-Token: <token>
 - 每个协议会返回 `capabilities`，用于前端决定是否展示扫描、刷新、播放、预览等入口
 
 ### `GET /api/v1/storage/capabilities`
-返回目录选择器、资源库绑定和播放链路所需的协议能力矩阵。
+返回目录选择器、专辑绑定目录和播放链路所需的协议能力矩阵。
 
 说明：
 - `supported_types` 给出当前后端可用协议
@@ -428,40 +431,40 @@ X-Cyber-API-Token: <token>
 
 请求体：
 - `phone_number`：必填，接收短信验证码的手机号
-- `name` / `source_name`：可选，存储源显示名，默认 `GuangYaPan`
+- `name` / `source_name`：可选，挂载点显示名，默认 `GuangYaPan`
 - `root_path` / `cloud_root_path`：可选，光鸭云盘侧根路径
 - `captcha_token`：可选，光鸭账号接口要求验证码时传
 
 说明：
 - 后端会调用仅本机可访问的 AList 管理接口创建 `GuangYaPan` 挂载，并触发短信验证码
-- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=sms_pending`
+- 返回的 `source` 为 CyberStream 挂载点，初始 `config.auth_state=sms_pending`
 - 响应只返回脱敏手机号和 CyberStream source，不返回 AList 地址、AList token、光鸭 token 或 verification id
 - `sms_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`，前端不要展示浏览、扫描、绑定或播放入口
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-guangyapan`
 
 ### `POST /api/v1/storage/managed/guangyapan/sms/restart`
-对已有光鸭云盘存储源重新发起短信登录。
+对已有光鸭云盘挂载点重新发起短信登录。
 
 请求体：
-- `source_id` / `id`：必填，已有光鸭存储源 ID
+- `source_id` / `id`：必填，已有光鸭挂载点 ID
 - `phone_number`：必填，后端不保存明文手机号，重新登录必须重新提交
 - `root_path` / `cloud_root_path`：可选，不传则沿用当前 `source.config.cloud_root_path`
 - `captcha_token`：可选
 
 说明：
-- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 不会新建 CyberStream 挂载点；保留同一个 `source_id`，资源索引和专辑绑定目录不变
 - 成功后该来源回到 `config.auth_state=sms_pending`，前端继续调用 `sms/verify`
 
 ### `POST /api/v1/storage/managed/guangyapan/sms/verify`
 提交短信验证码，完成托管光鸭云盘登录。
 
 请求体：
-- `source_id` / `id`：`sms/start` 返回的存储源 ID
+- `source_id` / `id`：`sms/start` 返回的挂载点 ID
 - `verify_code` / `code`：短信验证码
 
 说明：
 - 成功后 `config.auth_state=ready`，该来源才可浏览、扫描和播放
-- 成功响应中的 `source.actions` 会恢复为可用能力，前端应重新拉取存储源列表或使用响应中的 `source` 更新本地状态
+- 成功响应中的 `source.actions` 会恢复为可用能力，前端应重新拉取挂载点列表或使用响应中的 `source` 更新本地状态
 - 播放时后端会请求 localhost AList 的 `/d/...`，拿到光鸭最终 302 直链后再返回给前端；不会把本机 AList 地址暴露给安卓端
 - 测试期仍是 302 模式，前端收到的是最终云盘直链跳转
 
@@ -469,34 +472,34 @@ X-Cyber-API-Token: <token>
 启动托管天翼云盘扫码登录。
 
 请求体：
-- `name` / `source_name`：可选，存储源显示名，默认 `TianYiCloud`
+- `name` / `source_name`：可选，挂载点显示名，默认 `TianYiCloud`
 - `cloud_type`：可选，默认 `personal`；当前前端先不要暴露给普通用户
 - `root_folder_id`：可选，OpenList `189CloudTV` 技术根目录 ID；当前前端先不要让普通用户填写
 
 说明：
 - 后端会调用仅本机可访问的 OpenList 管理接口创建 `189CloudTV` 挂载，并返回二维码 data URL
-- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 返回的 `source` 为 CyberStream 挂载点，初始 `config.auth_state=qr_pending`
 - 响应不返回 OpenList 地址、OpenList token、天翼 token、内部 storage id 或内部挂载路径
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-tianyicloud`
 
 ### `POST /api/v1/storage/managed/tianyicloud/qr/restart`
-对已有天翼云盘存储源重新发起扫码登录。
+对已有天翼云盘挂载点重新发起扫码登录。
 
 请求体：
-- `source_id` / `id`：必填，已有天翼云盘存储源 ID
+- `source_id` / `id`：必填，已有天翼云盘挂载点 ID
 - `cloud_type`：可选，不传则沿用当前 `source.config.cloud_type`
 - `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
 
 说明：
-- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 不会新建 CyberStream 挂载点；保留同一个 `source_id`，资源索引和专辑绑定目录不变
 - 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `qr/poll`
 
 ### `POST /api/v1/storage/managed/tianyicloud/qr/poll`
 轮询托管天翼云盘扫码结果。
 
 请求体：
-- `source_id` / `id`：`qr/start` 返回的存储源 ID
+- `source_id` / `id`：`qr/start` 返回的挂载点 ID
 
 说明：
 - 未扫码时返回 `authenticated=false` 和 `auth_state=qr_pending`，前端继续展示二维码并轮询
@@ -508,35 +511,35 @@ X-Cyber-API-Token: <token>
 启动托管 115 云盘扫码登录。
 
 请求体：
-- `name` / `source_name`：可选，存储源显示名，默认 `115 Cloud`
+- `name` / `source_name`：可选，挂载点显示名，默认 `115 Cloud`
 - `qrcode_source`：可选，默认 `wechatmini`；允许 `web`、`android`、`ios`、`tv`、`alipaymini`、`wechatmini`、`qandroid`
 - `root_folder_id`：可选，OpenList `115 Cloud` 技术根目录 ID，普通用户先不要填写
 
 说明：
 - 后端会先请求 115 二维码接口，再调用仅本机可访问的 OpenList 管理接口创建 `115 Cloud` 挂载
 - 默认使用 `wechatmini`，避免占用用户常用的 Web、Android 或 iOS 登录态；前端首轮联调不需要显式传 `qrcode_source`
-- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 返回的 `source` 为 CyberStream 挂载点，初始 `config.auth_state=qr_pending`
 - 响应不返回 OpenList 地址、OpenList token、115 cookie、内部 storage id、内部挂载路径或二维码 uid/sign/time
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-115cloud`
 
 ### `POST /api/v1/storage/managed/115cloud/qr/restart`
-对已有 115 云盘存储源重新发起扫码登录。
+对已有 115 云盘挂载点重新发起扫码登录。
 
 请求体：
-- `source_id` / `id`：必填，已有 115 云盘存储源 ID
+- `source_id` / `id`：必填，已有 115 云盘挂载点 ID
 - `qrcode_source`：可选，不传则沿用当前 `source.config.qrcode_source`
 - `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
 
 说明：
-- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 不会新建 CyberStream 挂载点；保留同一个 `source_id`，资源索引和专辑绑定目录不变
 - 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `qr/poll`
 
 ### `POST /api/v1/storage/managed/115cloud/qr/poll`
 轮询托管 115 云盘扫码结果。
 
 请求体：
-- `source_id` / `id`：`qr/start` 返回的存储源 ID
+- `source_id` / `id`：`qr/start` 返回的挂载点 ID
 
 说明：
 - 未扫码时返回 `authenticated=false`、`auth_state=qr_pending`、`pending_reason=waiting_for_scan`、`qr_status=0`
@@ -549,29 +552,29 @@ X-Cyber-API-Token: <token>
 启动托管阿里云盘扫码登录。
 
 请求体：
-- `name` / `source_name`：可选，存储源显示名，默认 `Aliyundrive`
+- `name` / `source_name`：可选，挂载点显示名，默认 `Aliyundrive`
 - `root_folder_id`：可选，OpenList `AliyundriveOpen` 技术根目录 ID，默认 `root`
 - `drive_type`：可选，`default`、`resource` 或 `backup`，默认 `resource`
 - `alipan_type`：可选，`default` 或 `alipanTV`，默认 `default`
 
 说明：
 - 后端先启动阿里云盘 OpenAPI 二维码会话；用户确认后才创建 localhost OpenList `AliyundriveOpen` 挂载
-- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 返回的 `source` 为 CyberStream 挂载点，初始 `config.auth_state=qr_pending`
 - 响应不返回 OpenList 地址、OpenList token、阿里 token、二维码 sid、内部 storage id 或内部挂载路径
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-aliyundrive`
 
 ### `POST /api/v1/storage/managed/aliyundrive/qr/restart`
-对已有阿里云盘存储源重新发起扫码登录。
+对已有阿里云盘挂载点重新发起扫码登录。
 
 请求体：
-- `source_id` / `id`：必填，已有阿里云盘存储源 ID
+- `source_id` / `id`：必填，已有阿里云盘挂载点 ID
 - `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
 - `drive_type`：可选，不传则沿用当前 `source.config.drive_type`
 - `alipan_type`：可选，不传则沿用当前 `source.config.alipan_type`
 
 说明：
-- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 不会新建 CyberStream 挂载点；保留同一个 `source_id`，资源索引和专辑绑定目录不变
 - 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `qr/poll`
 - 阿里云盘扫码成功后才创建新的 localhost OpenList 挂载；旧挂载会保留到新挂载创建成功后再清理
 
@@ -579,7 +582,7 @@ X-Cyber-API-Token: <token>
 轮询托管阿里云盘扫码结果。
 
 请求体：
-- `source_id` / `id`：`qr/start` 返回的存储源 ID
+- `source_id` / `id`：`qr/start` 返回的挂载点 ID
 
 说明：
 - 未扫码时返回 `authenticated=false`、`auth_state=qr_pending`、`pending_reason=waiting_for_scan`
@@ -592,7 +595,7 @@ X-Cyber-API-Token: <token>
 启动托管百度网盘 OAuth 授权登录。
 
 请求体：
-- `name` / `source_name`：可选，存储源显示名，默认 `Baidu Netdisk`
+- `name` / `source_name`：可选，挂载点显示名，默认 `Baidu Netdisk`
 - `root_path` / `cloud_root_path` / `root_folder_path`：可选，百度网盘侧根路径，默认 `/`
 - `download_api`：可选，默认 `official`；普通用户先不要暴露
 
@@ -605,15 +608,15 @@ X-Cyber-API-Token: <token>
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-baidunetdisk`
 
 ### `POST /api/v1/storage/managed/baidunetdisk/oauth/restart`
-对已有百度网盘存储源重新发起 OAuth 授权。
+对已有百度网盘挂载点重新发起 OAuth 授权。
 
 请求体：
-- `source_id` / `id`：必填，已有百度网盘存储源 ID
+- `source_id` / `id`：必填，已有百度网盘挂载点 ID
 - `root_path` / `cloud_root_path` / `root_folder_path`：可选，不传则沿用当前 source 配置
 - `download_api`：可选，不传则沿用当前 `source.config.download_api`
 
 说明：
-- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 不会新建 CyberStream 挂载点；保留同一个 `source_id`，资源索引和专辑绑定目录不变
 - 成功后该来源回到 `config.auth_state=oauth_pending`，前端打开新的 `authorization_url`
 - 百度授权完成后才创建新的 localhost OpenList 挂载；旧挂载会保留到新挂载创建成功后再清理
 
@@ -621,7 +624,7 @@ X-Cyber-API-Token: <token>
 提交百度 OOB 授权码并完成托管挂载。仅在 `oauth/start` 返回 `callback_mode=oob` 时使用。
 
 请求体：
-- `source_id` / `id`：`oauth/start` 返回的存储源 ID
+- `source_id` / `id`：`oauth/start` 返回的挂载点 ID
 - `authorization_code` / `code`：百度授权页显示的授权码
 
 说明：
@@ -632,7 +635,7 @@ X-Cyber-API-Token: <token>
 轮询托管百度网盘 OAuth 授权状态。
 
 请求体：
-- `source_id` / `id`：`oauth/start` 返回的存储源 ID
+- `source_id` / `id`：`oauth/start` 返回的挂载点 ID
 
 说明：
 - 授权未完成时返回 `authenticated=false`、`auth_state=oauth_pending`、`pending_reason=waiting_for_authorization`
@@ -647,7 +650,7 @@ X-Cyber-API-Token: <token>
 启动托管 123 云盘账号密码登录。
 
 请求体：
-- `name` / `source_name`：可选，存储源显示名，默认 `123Pan`
+- `name` / `source_name`：可选，挂载点显示名，默认 `123Pan`
 - `username` / `account`：必填，123 云盘账号、手机号或邮箱
 - `password`：必填，123 云盘账号密码
 - `root_folder_id`：可选，OpenList `123Pan` 技术根目录 ID，默认 `0`
@@ -655,59 +658,60 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 123Pan 当前不是扫码或短信流程，前端不要展示扫码 UI
-- 后端会调用仅本机可访问的 OpenList 管理接口创建 `123Pan` 挂载，成功后直接返回 ready 状态的 CyberStream 存储源
+- 后端会调用仅本机可访问的 OpenList 管理接口创建 `123Pan` 挂载，成功后直接返回 ready 状态的 CyberStream 挂载点
 - 响应不返回 OpenList 地址、OpenList token、123Pan 密码、内部 storage id 或内部挂载路径
 - 成功后 `authenticated=true` 且 `config.auth_state=ready`，该来源可立即浏览、扫描和播放
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-123pan`
 
 ### `POST /api/v1/storage/managed/123pan/login/restart`
-对已有 123Pan 存储源重新执行账号密码登录。
+对已有 123Pan 挂载点重新执行账号密码登录。
 
 请求体：
-- `source_id` / `id`：必填，已有 123Pan 存储源 ID
+- `source_id` / `id`：必填，已有 123Pan 挂载点 ID
 - `username` / `account`：必填，后端不保存明文账号，重新登录必须重新提交
 - `password`：必填，123Pan 账号密码
 - `root_folder_id`：可选，不传则沿用当前 `source.config.root_folder_id`
 - `platform`：可选，不传则沿用当前 `source.config.platform`
 
 说明：
-- 不会新建 CyberStream 存储源；保留同一个 `source_id`，资源索引和媒体库绑定不变
+- 不会新建 CyberStream 挂载点；保留同一个 `source_id`，资源索引和专辑绑定目录不变
 - 成功后 `authenticated=true` 且 `config.auth_state=ready`
 
 ### `POST /api/v1/storage/managed/quarktv/qr/start`
 启动托管 QuarkTV 扫码登录。
 
 请求体：
-- `name` / `source_name`：可选，存储源显示名，默认 `QuarkTV`
+- `name` / `source_name`：可选，挂载点显示名，默认 `QuarkTV`
 - `root_folder_id`：可选，OpenList `QuarkTV` 技术根目录 ID，默认 `0`
 
 说明：
 - 前端不要提供 `download` / `streaming` 挂载模式选择；后端固定使用 OpenList `download` 原文件链路
 - Web 播放通过资源 `playback.cloud_transcode` 获取云端转码入口；PC/外部播放器通过 `playback.external_player` 或 `/api/v1/resources/<id>/stream` 获取原文件入口
 - 后端会调用仅本机可访问的 OpenList 管理接口创建 `QuarkTV` 挂载，并返回二维码 data URL
-- 返回的 `source` 为 CyberStream 存储源，初始 `config.auth_state=qr_pending`
+- 返回的 `source` 为 CyberStream 挂载点，初始 `config.auth_state=qr_pending`
 - 响应不返回 OpenList 地址、OpenList token、夸克 token、内部 storage id 或内部挂载路径
 - `qr_pending` 时 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-quark-uc`
 
 ### `POST /api/v1/storage/managed/quarktv/qr/restart`
-对已有 QuarkTV 存储源重新发起扫码登录。
+对已有 QuarkTV 挂载点重新发起扫码登录。
 
 请求体：
-- `source_id` / `id`：必填，已有 QuarkTV 存储源 ID
+- `source_id` / `id`：必填，已有 QuarkTV 挂载点 ID
 - `root_folder_id`：可选；不传则沿用当前 `source.config.root_folder_id`
 
 说明：
 - 用于 QuarkTV 登录态被其他设备踢下线后的重新登录
-- 不会新建 CyberStream 存储源；后端会保留同一个 `source_id`，从而保留资源索引、媒体库绑定和前端本地引用
+- 不会新建 CyberStream 挂载点；后端会保留同一个 `source_id`，从而保留资源索引、专辑绑定目录和前端本地引用
 - 后端会尽量删除旧的 localhost OpenList 挂载，再创建新的 OpenList 挂载并返回新二维码
+- 后端会复用该来源已有的 OpenList TV `device_id`，避免每次重新扫码都在夸克侧注册成新 TV 设备；该字段不会返回给前端，前端也不要传
 - 成功后该来源回到 `config.auth_state=qr_pending`，前端继续调用 `/api/v1/storage/managed/quarktv/qr/poll` 轮询
 
 ### `POST /api/v1/storage/managed/quarktv/qr/poll`
 轮询托管 QuarkTV 扫码结果。
 
 请求体：
-- `source_id` / `id`：`qr/start` 返回的存储源 ID
+- `source_id` / `id`：`qr/start` 返回的挂载点 ID
 
 说明：
 - 未扫码时返回 `authenticated=false` 和 `auth_state=qr_pending`，前端继续展示二维码并轮询
@@ -720,15 +724,15 @@ X-Cyber-API-Token: <token>
 启动托管 UCTV 扫码登录。
 
 请求体：
-- `name` / `source_name`：可选，存储源显示名，默认 `UCTV`
+- `name` / `source_name`：可选，挂载点显示名，默认 `UCTV`
 - `root_folder_id`：可选，OpenList `UCTV` 技术根目录 ID，默认 `0`
 
 说明：
-- 合约与 QuarkTV 一致，返回 `type=uctv` 的 CyberStream 存储源
+- 合约与 QuarkTV 一致，返回 `type=uctv` 的 CyberStream 挂载点
 - 详细前端接入步骤见 `GET /api/v1/docs/frontend-managed-quark-uc`
 
 ### `POST /api/v1/storage/managed/uctv/qr/restart`
-对已有 UCTV 存储源重新发起扫码登录。请求体和响应字段与 QuarkTV restart 一致。
+对已有 UCTV 挂载点重新发起扫码登录。请求体和响应字段与 QuarkTV restart 一致。
 
 ### `POST /api/v1/storage/managed/uctv/qr/poll`
 轮询托管 UCTV 扫码结果。请求体和响应字段与 QuarkTV poll 一致。
@@ -765,7 +769,7 @@ X-Cyber-API-Token: <token>
 - `50290`-`50294`：访问 OpenList、Aliyundrive video_preview 或 QuarkTV/UCTV TV API 失败
 
 ### `POST /api/v1/storage/sources`
-新增存储源。
+新增挂载点。
 
 请求体核心字段：
 - `name`
@@ -780,37 +784,44 @@ X-Cyber-API-Token: <token>
 - `ftp` 当前要求 `config.host`，未提供账号密码时使用 anonymous 默认值
 - `alist/openlist` 当前要求 `config.base_url` 或 `config.host` 至少一个
 - `alist/openlist` 的 `config.root` 是技术挂载根目录；目录选择器选定挂载目录时应写入该字段
-- `guangyapan` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/guangyapan/sms/*`
-- `tianyicloud` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/tianyicloud/qr/*`
-- `115cloud` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/115cloud/qr/*`
-- `aliyundrive` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/aliyundrive/qr/*`
-- `baidunetdisk` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/baidunetdisk/oauth/*`
-- `123pan` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/123pan/login`
-- `quarktv` 和 `uctv` 是托管来源，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/quarktv/qr/*` 或 `storage/managed/uctv/qr/*`
+- `guangyapan` 是托管挂载点，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/guangyapan/sms/*`
+- `tianyicloud` 是托管挂载点，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/tianyicloud/qr/*`
+- `115cloud` 是托管挂载点，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/115cloud/qr/*`
+- `aliyundrive` 是托管挂载点，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/aliyundrive/qr/*`
+- `baidunetdisk` 是托管挂载点，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/baidunetdisk/oauth/*`
+- `123pan` 是托管挂载点，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/123pan/login`
+- `quarktv` 和 `uctv` 是托管挂载点，前端不要直接调用通用新增接口手工创建；应走 `storage/managed/quarktv/qr/*` 或 `storage/managed/uctv/qr/*`
 - 不支持的配置字段会直接报错，避免脏配置落库
 
 ### `PATCH /api/v1/storage/sources/<id>`
-更新存储源名称或配置。
+更新挂载点名称或配置。
 
 说明：
 - 现支持更新 `name`、`type`、`config`
 - `config` 仍为整对象替换，不做字段级 merge
 - 若切换 `type`，新的 `config` 也会按目标协议重新校验
-- 若该来源已被资源或资源库绑定引用，当前不允许直接改 `type`
+- 若该挂载点已被媒体文件或专辑绑定目录引用，当前不允许直接改 `type`
 
 ### `DELETE /api/v1/storage/sources/<id>`
-删除存储源。
+删除挂载点。
 
 支持查询参数：
 - `keep_metadata=true|false`
+- `delete_cdn_assets=true|false`：可选，默认 `false`
 
 说明：
-- 若该来源下仍有资源，当前默认不允许直接删除
-- 需要显式传 `keep_metadata=true`，或先做资源迁移/解绑
-- 删除托管 `guangyapan` / `tianyicloud` / `115cloud` / `aliyundrive` / `baidunetdisk` / `123pan` / `quarktv` / `uctv` 来源时，后端会尽量同步删除 localhost AList/OpenList 中对应的内部挂载；失败只记日志，不影响 CyberStream 来源删除
+- `keep_metadata=true` 是软断连：删除 CyberStream 挂载点配置和专辑绑定目录，媒体文件记录保留并置为离线挂载点
+- `keep_metadata=false` 是硬删除：删除 CyberStream 挂载点配置、专辑绑定目录、该挂载点媒体文件、媒体文件依赖，并清理无资源影片
+- 若该挂载点下仍有媒体文件，`keep_metadata=false` 需要在请求体传保险柜 `pin`
+- 删除托管 `guangyapan` / `tianyicloud` / `115cloud` / `aliyundrive` / `baidunetdisk` / `123pan` / `quarktv` / `uctv` 挂载点时，后端会先删除 localhost AList/OpenList 中对应的内部挂载，再删除 CyberStream 本地数据
+- 若内部挂载已经不存在，后端继续删除本地数据；若 AList/OpenList 删除失败，接口返回 `50262`，本地数据保留，前端应提示用户检查本机 AList/OpenList 后重试
+- CDN 静态资产默认保留。需要一并清理时，前端可在请求体传 `deleteCdnAssets=true`，或使用查询参数 `delete_cdn_assets=true`
+- `deleteCdnAssets=true` 只会把不再被保留元数据引用的 Super CDN 图片和绑定字幕对象加入后台清理任务；不会删除共享 bucket，也不会影响网盘中的视频原文件
+- `keep_metadata=true` 时会忽略 CDN 清理请求，因为影片和资源元数据仍然保留
+- CDN sidecar 暂时离线不会阻断挂载点删除；接口在 `data.cdn_cleanup` 返回 `job_id/status/queued`，清理结果可通过后台任务接口查询
 
 ### `POST /api/v1/storage/sources/<id>/scan`
-扫描指定存储源。
+扫描指定挂载点。
 
 支持请求体：
 - `root_path` / `target_path`
@@ -820,21 +831,21 @@ X-Cyber-API-Token: <token>
 - `provider_order`，为 `scraper_policy.provider_order` 的扁平别名
 
 说明：
-- 与全量扫描、资源库扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
+- 与全量扫描、专辑扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
 - `provider_order` 当前支持 `nfo`、`tmdb`、`anilist`、`bangumi`、`local`；未传时使用默认顺序
-- 动漫源建议显式传 `["nfo", "anilist", "bangumi", "tmdb", "local"]`；后端不会自动替用户把普通影视库切到 AniList/Bangumi 优先
+- 动漫挂载点建议显式传 `["nfo", "anilist", "bangumi", "tmdb", "local"]`；后端不会自动替用户把影视库切到 AniList/Bangumi 优先
 
 ### `GET /api/v1/storage/sources/<id>/browse`
-浏览已保存存储源的目录。
+浏览已保存挂载点的目录。
 
 说明：
-- 用于资源库绑定时选择 `root_path`
+- 用于专辑绑定目录时选择 `root_path`
 - 支持查询参数 `path` 和 `dirs_only`
 - 返回结构与 `POST /api/v1/storage/preview` 的目录列表一致，并额外带回 `source`
-- `path` 是相对于已保存 `config.root` 的浏览路径，不会修改来源配置
+- `path` 是相对于已保存 `config.root` 的浏览路径，不会修改挂载点配置
 
 ### `POST /api/v1/storage/sources/<id>/refresh`
-刷新已保存存储源的指定目录缓存。
+刷新已保存挂载点的指定目录缓存。
 
 请求体：
 - `path` / `target_path` / `root_path`：相对于已保存 `config.root` 的目录路径
@@ -842,18 +853,18 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 当前用于 `alist/openlist/guangyapan/tianyicloud/115cloud/aliyundrive/baidunetdisk/123pan/quarktv/uctv`，底层调用上游 `/api/fs/list` 并传 `refresh=true`
-- 只刷新上游目录缓存并返回刷新后的目录列表，不触发扫描、不触发刮削、不写入媒体库
+- 只刷新上游目录缓存并返回刷新后的目录列表，不触发扫描、不触发刮削、不写入影视库
 - 返回结构与 `browse` 基本一致，额外带 `refreshed` 和 `refresh_path`
-- 不支持目录刷新的存储源返回 `40042`
+- 不支持目录刷新的挂载点返回 `40042`
 
 ### `POST /api/v1/storage/preview`
 测试某类存储配置并预览目录。
 
 说明：
-- 走与正式存储源相同的 `type/config` 校验链路
+- 走与正式挂载点相同的 `type/config` 校验链路
 - 可作为前端“测试连接 + 目录预览”的统一入口
 - 当前支持 `local/webdav/smb/ftp/alist/openlist`
-- `target_path` 只表示本次预览路径；保存来源时仍需把最终挂载根写入 `config.root`
+- `target_path` 只表示本次预览路径；保存挂载点时仍需把最终挂载根写入 `config.root`
 
 ---
 
@@ -875,7 +886,7 @@ X-Cyber-API-Token: <token>
 触发全量扫描。
 
 说明：
-- 与资源库扫描、指定存储源扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
+- 与专辑扫描、指定挂载点扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
 
 ---
 
@@ -916,12 +927,12 @@ X-Cyber-API-Token: <token>
 
 支持参数：
 - `limit`
-- `library_id`：可选。资源库内详情页传当前资源库 ID，推荐会先从该库最终影片集合里选，不足再从全局补齐。
+- `library_id`：可选。专辑内详情页传当前专辑 ID，推荐会先从该专辑最终影片集合里选，不足再从全局补齐。
 
 说明：
 - 返回结构仍是影片数组，每个条目带 `recommendation`
 - 未传 `library_id` 时按全局单片上下文推荐
-- 传 `library_id` 时先按当前资源库候选排序，库内候选不足 `limit` 才使用库外候选补齐
+- 传 `library_id` 时先按当前专辑候选排序，专辑内候选不足 `limit` 才使用专辑外候选补齐
 - 同系列 / 同标题族优先，例如同一电影系列或误拆成多个条目的不同季
 - 同系列数量不足时，用同类型内容补齐
 - 同类型仍不足时，只在同分区内兜底
@@ -988,9 +999,9 @@ X-Cyber-API-Token: <token>
 说明：
 - 只读 dry-run，不删除资源、不修改影片、不触发扫描
 - 默认只做数据库层治理分析：孤儿资源、空壳影片、重复播放资源
-- `live_check=true` 时才访问存储源；后端会按资源父目录 `list_items()`，再匹配文件名和大小，不直接用 `path_exists()` 判断视频文件
+- `live_check=true` 时才访问挂载点；后端会按媒体文件父目录 `list_items()`，再匹配文件名和大小，不直接用 `path_exists()` 判断视频文件
 - 返回 `issues[].samples` 和 `actions`，前端可作为扫描治理工作台入口
-- 失效路径、大小变化或存储源不可用只作为建议，不自动清理
+- 失效路径、大小变化或挂载点不可用只作为建议，不自动清理
 
 ### `GET /api/v1/resources/governance-items`
 分页获取资源治理问题条目。
@@ -1071,7 +1082,7 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 只生成计划，不修改数据库
-- 恢复前检查影片是否存在、存储源是否存在、resource id 是否已存在、`source_id + path` 是否冲突
+- 恢复前检查影片是否存在、挂载点是否存在、resource id 是否已存在、`source_id + path` 是否冲突
 - 只恢复 `MediaResource` 索引，不恢复观看历史、不恢复字幕绑定、不移动或写入实体文件
 - `apply_payload` 可直接提交给 `/api/v1/resources/governance/restore/jobs`
 
@@ -1135,7 +1146,7 @@ X-Cyber-API-Token: <token>
 - 不传 `needs_attention` 且不传元数据工作台筛选时，只返回总影视库可见影片：默认规则为无需人工处理且有海报，也包含用户显式 `published` 的影片，并排除用户显式 `hidden` 的影片
 - `needs_attention=true` 返回待人工处理的影片，包含 raw/占位/缺海报条目，适合做处理队列入口
 - 显式传 `metadata_source_group`、`metadata_review_priority`、`metadata_issue_code` 时按工作台筛选语义返回，不额外强制公开库过滤
-- 手工归档影片默认不会混入普通列表，需通过 `/api/v1/other-videos`、资源库显式 `include` 或手动发布进入可见范围
+- 手工归档影片默认不会混入普通列表，需通过 `/api/v1/other-videos`、专辑显式 `include` 或手动发布进入可见范围
 
 ### `GET /api/v1/movies/<id>`
 获取影视详情。
@@ -1211,8 +1222,8 @@ X-Cyber-API-Token: <token>
 说明：
 - `auto`：使用默认规则，当前为“可信外部/本地 NFO 元数据 + 有海报”进入总影视库
 - `published`：用户手动纳入总影视库；如果当前存在 `metadata_needs_attention`、`poster_missing` 等阻塞原因，后端会先返回 `409`，需要前端让用户确认后再带 `force=true` 提交
-- `hidden`：用户手动从总影视库隐藏；不影响通过影片详情 ID 访问，也不影响资源库手动 `include`
-- 该接口只控制总影视库、全局推荐、全局筛选和 featured 自动候选，不替代资源库 `movie-memberships include/exclude`
+- `hidden`：用户手动从影视库隐藏；不影响通过影片详情 ID 访问，也不影响专辑手动 `include`
+- 该接口只控制影视库、全局推荐、全局筛选和 featured 自动候选，不替代专辑 `movie-memberships include/exclude`
 
 推荐请求体：
 
@@ -1240,7 +1251,7 @@ X-Cyber-API-Token: <token>
 - 主播放源选择优先级：最近观看记录 > 质量层级 > 分辨率 > 文件大小 > 创建时间；这样用户从备用源看过后，默认续播会优先落到该资源
 - 每个资源只包含：
   - `id`
-  - `resource_info.file`：文件名、路径、大小、容器、存储源
+  - `resource_info.file`：文件名、路径、大小、容器、挂载点
   - `resource_info.display`：展示标题、展示标签、季集、排序信息
   - `resource_info.technical`：分辨率、编码、HDR、音频、片源和质量层级
   - `playback`：播放能力矩阵、外部播放器链接、同目录外挂字幕、网页音频兼容和转码状态
@@ -1312,23 +1323,23 @@ X-Cyber-API-Token: <token>
 说明：
 - 后端会读取该影视当前已有 `MediaResource`，按 `source_id` 分组，并从资源路径推导最小扫描目录
 - 典型剧集路径如 `shows/Foo/S01/E01.mkv`、`shows/Foo/S02/E01.mkv` 会推导为 `shows/Foo`，用于补齐后续新增集数
-- 如果同一影视散落在多个无公共父目录的路径下，默认扫描各自父目录，不自动扩大到存储源根目录；资源本身位于存储源根目录或确需扫根目录时，传 `allow_source_root=true` 或显式传 `root_path=/`
-- 默认 `refresh=true`，仅对支持目录刷新的 `alist/openlist` 先刷新对应目录缓存；其他存储源跳过刷新但仍可扫描
+- 如果同一影视散落在多个无公共父目录的路径下，默认扫描各自父目录，不自动扩大到挂载点根目录；媒体文件本身位于挂载点根目录或确需扫根目录时，传 `allow_source_root=true` 或显式传 `root_path=/`
+- 默认 `refresh=true`，仅对支持目录刷新的 `alist/openlist` 先刷新对应目录缓存；其他挂载点跳过刷新但仍可扫描
 - 扫描仍走现有刮削链路，不强制把任意新文件挂到当前影视；新文件是否并入当前条目取决于现有路径解析和元数据匹配规则
-- 与全量扫描、资源库扫描、指定存储源扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
+- 与全量扫描、专辑扫描、指定挂载点扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
 - 返回 `202` 后前端轮询 `GET /api/v1/scan` 查看进度，扫描结束后重新请求 `GET /api/v1/movies/<id>/resources`
 
 请求体可选字段：
 - `refresh`：布尔值，默认 `true`
 - `scrape_enabled`：布尔值，默认 `true`
 - `content_type` 或 `media_type_hint`：`movie` / `tv`，不传时后端按影片和资源推断
-- `root_path` / `target_path` / `root_paths`：显式扫描目录，覆盖自动推导；相对存储源根路径，`/` 表示根目录
-- `source_ids`：只同步指定存储源，支持数组、整数或逗号分隔字符串
-- `allow_source_root`：是否允许自动推导到存储源根目录，默认 `false`
+- `root_path` / `target_path` / `root_paths`：显式扫描目录，覆盖自动推导；相对挂载点根路径，`/` 表示根目录
+- `source_ids`：只同步指定挂载点，支持数组、整数或逗号分隔字符串
+- `allow_source_root`：是否允许自动推导到挂载点根目录，默认 `false`
 - `scraper_policy` / `provider_order` / `providers`：复用现有刮削来源策略
 
 响应核心字段：
-- `targets[]`：本次接受的存储源、推导目录、是否支持刷新、参与推导的资源数量
+- `targets[]`：本次接受的挂载点、推导目录、是否支持刷新、参与推导的媒体文件数量
 - `poll.endpoint`：固定为 `/api/v1/scan`
 
 ### `GET /api/v1/movies/<id>/seasons`
@@ -1485,11 +1496,16 @@ X-Cyber-API-Token: <token>
 支持请求体：
 - `metadata_unlocked_fields`
 - `media_type_hint`
+- `search_title`：可选。用户修正后的搜索标题；传入后不再使用路径解析出的标题搜索
+- `search_year`：可选。用户修正后的搜索年份；显式传 `null` 可清除路径误判年份
+- `query_override`：`search_title` 的兼容别名
+- `allow_nfo`：可选，默认 `false`。显式为 `true` 时才访问挂载点读取同目录 sidecar NFO
+- `include_sidecar_nfo`：`allow_nfo` 的兼容别名
 
 说明：
 - 只使用当前影片已有资源，不会扫描其他影片
-- 会尝试读取当前影片同目录 sidecar NFO
-- 会返回本次 `parse/scrape` 决策信息，适合前端做“重新识别”后的结果展示
+- 默认不会访问挂载点读取 sidecar NFO，避免失联或高延迟挂载点阻塞审查工作台；需要 NFO 时显式传 `allow_nfo=true`
+- 会返回路径解析 `entity_context`、实际搜索参数 `search_query` 和本次 `parse/scrape` 决策信息，适合前端做“重新识别”后的结果展示
 
 ### `POST /api/v1/metadata/re-scrape`
 按多条影片批量定点重跑元数据管线，不触发全库扫描。
@@ -1499,10 +1515,16 @@ X-Cyber-API-Token: <token>
   - `id` 或 `movie_id`
   - `media_type_hint`
   - `metadata_unlocked_fields`
+  - `search_title`：用户修正后的搜索标题
+  - `search_year`：用户修正后的搜索年份；显式传 `null` 可清除路径误判年份
+  - `query_override`：`search_title` 的兼容别名
+  - `allow_nfo`：默认 `false`；显式开启后才读取同目录 sidecar NFO
+  - `include_sidecar_nfo`：`allow_nfo` 的兼容别名
 
 说明：
 - 每条影片独立执行，返回逐条结果和 summary
-- 每条结果会返回 `status`、`changed`、`updated_fields`、`season_metadata_result`
+- 默认不访问挂载点读取 sidecar NFO，避免离线来源让批量重新识别每条等待数十秒
+- 每条结果会返回 `status`、`changed`、`updated_fields`、`season_metadata_result` 和实际使用的 `search_query`
 - 成功结果会带 `explanation`，说明本次候选来源、匹配置信度、解析信号和是否仍需人工复核
 - 失败结果会带分类后的 `error.category`、`retryable`、`recommended_action`
 - `summary` 当前包含 `total`、`succeeded`、`updated`、`unchanged`、`failed`、`status_counts`、`updated_movie_ids`、`failed_movie_ids`
@@ -1513,13 +1535,13 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 请求体与 `POST /api/v1/metadata/re-scrape` 相同
-- 返回 HTTP `202` 和 `job`
+- 返回 HTTP `202`、`job`、`job_id`、`progress_endpoint`、`status_endpoint` 和建议轮询间隔 `poll_interval_ms`
 - `job.type=metadata_re_scrape`
 - 任务结果可通过 `GET /api/v1/jobs/<job_id>` 查询
-- 当前任务记录保存在后端进程内，服务重启后历史会清空；后续如需审计再升级为持久化任务表
+- 任务记录会写入 `maintenance_jobs`，后端重启后仍可通过 `/jobs` 或 `/jobs/<job_id>` 查询
 
 ### `POST /api/v1/metadata/re-scrape/plan`
-按多条影片预览批量定点重跑元数据管线，不落库。
+按多条影片快速生成“搜索关键词预览”，不落库、不访问 TMDB、不读取 sidecar NFO、不访问存储 provider。
 
 支持请求体：
 - `issue_codes`，默认 `fallback_pipeline_match/poster_missing/low_confidence_resources`
@@ -1529,10 +1551,13 @@ X-Cyber-API-Token: <token>
 - `metadata_unlocked_fields`
 
 说明：
-- 返回 `dry_run=true`，不会修改影片、资源或季元数据
-- 每条成功计划返回 `preview`、`diff`、`resolution`、`explanation` 和 `entity_context`
+- 返回 `dry_run=true`、`plan_mode=keyword_preview`、`provider_search=false`，不会修改影片、资源或季元数据
+- 每条成功计划返回路径解析结果 `entity_context` 和本次建议使用的 `search_query/search_title/search_year`
+- 关键词预览阶段不会真实刮削，因此 `preview`、`diff`、`resolution`、`explanation` 固定为 `null`；真实结果在提交后台任务后通过 `GET /api/v1/jobs/<job_id>` 查询
 - 失败计划返回分类后的 `error.category/recommended_action`
-- `apply_payload` 可在用户确认后原样提交给 `POST /api/v1/metadata/re-scrape`
+- `apply_payload.items[]` 会明确带出 `search_title/search_year/media_type_hint`；前端可渲染可编辑输入框和电影/剧集选择，用户修正后再提交给 `POST /api/v1/metadata/re-scrape/jobs`
+- `apply_endpoint` 默认指向 `/api/v1/metadata/re-scrape/jobs`，`progress_endpoint_template=/api/v1/jobs/{job_id}`；同步兼容接口为 `sync_apply_endpoint=/api/v1/metadata/re-scrape`
+- `apply_payload` 不修改时也可原样提交给 `sync_apply_endpoint`
 - 当前用于批量处理 `fallback_pipeline_match`、`poster_missing`、`low_confidence_resources`
 
 ### `GET /api/v1/jobs`
@@ -1760,7 +1785,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - 返回 `issue_codes`：每个问题码所属分区、列表入口、详情入口、推荐动作和批量动作
 - 返回 `metadata_sources`：`ANILIST/BANGUMI/TMDB/NFO/LOCAL_*` 等来源的标准含义和默认目录可见规则
 - 返回 `catalog_visibility`：`auto/published/hidden`、blocker 和 warning 的解释
-- 普通影视库、首页、推荐和资源库默认不要使用工作台筛选；元数据审查、剧集审查、资源治理应分 tab 或分页面处理
+- 影视库、首页、推荐和专辑默认不要使用工作台筛选；元数据审查、剧集审查、资源治理应分 tab 或分页面处理
 
 ### `GET /api/v1/metadata/overview`
 返回元数据工作台总览，不触发扫描。
@@ -1894,7 +1919,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 ## 7. 用户历史
 
-观看历史和续播接口保留。影片列表、首页、资源库、详情和资源分组中的 `user_data` 仅表示播放进度上下文，不再返回 `is_played`，前端不应展示“已观看”标签。
+观看历史和续播接口保留。影片列表、首页、专辑、详情和资源分组中的 `user_data` 仅表示播放进度上下文，不再返回 `is_played`，前端不应展示“已观看”标签。
 
 ### `GET /api/v1/user/history`
 分页获取观看历史。
@@ -1925,7 +1950,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - 该组接口只面向默认管理员或已登录管理员自己的保险库；访问前必须先完成 PIN 解锁
 - 返回 `items`、`movie_ids`、`total`
 - 未收藏任何影视时 `items=[]`，`library=null`
-- 有收藏时 `library` 为 `favorites` 虚拟资源库摘要
+- 有收藏时 `library` 为 `favorites` 虚拟专辑摘要
 
 ### `GET /api/v1/user/vault/status`
 获取当前管理员保险库状态。

@@ -85,6 +85,7 @@ export const storageService = {
   // - keepMetadata=true 是旧的「软断连」语义，资源记录留下变离线
   // - keepMetadata=false 是「连根清空」，会级联删 media_resources / 库绑定 / 历史 / 字幕等
   //   后端要求带保险柜 PIN（body.pin），前端拿到 40341/40344 自行决定怎么引导
+  // - 托管网盘会先删 AList/OpenList 内部挂载；若运行时删除失败，后端返回 50262 且保留本地数据
   // 返回 { ok, code, msg }，调用方按业务码做分支。
   deleteSource: async (
     id: number,
@@ -206,14 +207,11 @@ export const storageService = {
   // 这三家走同一份合同：
   //   POST /v1/storage/managed/{slug}/qr/start  body { name?, ...protocol_extras }
   //   POST /v1/storage/managed/{slug}/qr/poll   body { source_id }
-  // QuarkTV / UCTV 多一个可选的 link_method（download | streaming，默认 download），
-  // 天翼没这个字段——extras 里有就带上，没有就不带，后端兼容。
   // 完整契约：GET /v1/docs/frontend-managed-tianyicloud / frontend-managed-quark-uc
   startManagedQrLogin: async (
     slug: string,
     params: {
       name?: string;
-      link_method?: 'download' | 'streaming';
       root_folder_id?: string;
       // 115cloud 专属：扫码端类型。后端默认 wechatmini，前端只在用户明确选择
       // 「高级设置 / 切换扫码端」时才需要传值。其他 provider 不识别此字段。
@@ -234,6 +232,74 @@ export const storageService = {
     sourceId: number,
   ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
     const res = await fetchApiRaw<any>(`/v1/storage/managed/${slug}/qr/poll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // ─── 重新扫码登录（QuarkTV / UCTV） ───
+  //
+  // 夸克 TV 同账号在其他设备登录会顶号，老 token 失效。这条接口在原 source_id
+  // 上发起新一轮二维码登录，不新建 source、不破坏资源索引与媒体库绑定。完成
+  // 后照旧 poll 同一个 source_id 直到 authenticated=true。
+  // rootFolderId 可选：不传则沿用 source 当前配置。
+  restartManagedQrLogin: async (
+    slug: string,
+    sourceId: number,
+    rootFolderId?: string,
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const body: Record<string, unknown> = { source_id: sourceId };
+    if (rootFolderId) body.root_folder_id = rootFolderId;
+    const res = await fetchApiRaw<any>(`/v1/storage/managed/${slug}/qr/restart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // ─── 天翼云盘 PC 扫码登录（实验性） ───
+  //
+  // 正式天翼托管登录用 OpenList 189CloudTV，但部分老账号在 TV 扫码链路里反复
+  // 返回二维码无法挂载；改走 189CloudPC 的 login_type=qrcode 可能正常。
+  // ⚠️ 实验接口：不在 storage/capabilities 暴露、不是稳定合同，仅供老账号 TV
+  // 扫码失败时的兜底尝试。流程同 qr：pcQrStart → 轮询 pcQrPoll 直到 ready。
+  // 完整契约：GET /v1/docs/experimental-tianyicloud-pc-qr
+  pcQrStartTianyicloud: async (
+    params: { name?: string; cloud_type?: 'personal' | 'family'; root_folder_id?: string },
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/tianyicloud/pc-qr/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  pcQrPollTianyicloud: async (
+    sourceId: number,
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/tianyicloud/pc-qr/poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // 为已有天翼来源重新生成 PC 扫码二维码（二维码过期，或把 TV 扫码来源临时
+  // 切到 PC 扫码实验链路）。成功会额外返回 replaced_openlist_storage_id /
+  // old_openlist_storage_deleted。
+  pcQrRestartTianyicloud: async (
+    sourceId: number,
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/tianyicloud/pc-qr/restart', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source_id: sourceId }),
@@ -277,6 +343,47 @@ export const storageService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source_id: sourceId }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // ─── 托管 OAuth：oob 模式提交授权码 ───
+  //
+  // 当 oauth/start 返回 callback_mode=oob 时，百度不会回调到我们域名（公共
+  // OAuth 应用 redirect_uri 不匹配），而是把授权码展示给用户。前端让用户
+  // 把这串码粘贴回来，调这个接口换 token。成功后 source 直接 ready，
+  // 不需要再 poll。
+  completeManagedOauthLogin: async (
+    slug: string,
+    sourceId: number,
+    authorizationCode: string,
+  ): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>(`/v1/storage/managed/${slug}/oauth/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_id: sourceId, authorization_code: authorizationCode }),
+    });
+    if (res.ok) return { ok: true, data: res.data };
+    return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  // ─── 托管账号密码登录 (123Pan) ───
+  //
+  // 跟 QR / OAuth 兄弟，但 123 盘只有一步——直接 POST username + password，
+  // 后端登录成功就把 source 拉到 ready，没有 pending / poll / qr_code 之类。
+  // 完整契约：GET /v1/docs/frontend-managed-123pan
+  loginManaged123Pan: async (params: {
+    name?: string;
+    username: string;
+    password: string;
+    root_folder_id?: string;
+    platform?: string;
+  }): Promise<{ ok: boolean; msg?: string; data?: any }> => {
+    const res = await fetchApiRaw<any>('/v1/storage/managed/123pan/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
     });
     if (res.ok) return { ok: true, data: res.data };
     return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };

@@ -96,7 +96,7 @@ export const LibrariesList: React.FC<LibrariesListProps> = ({ libraries, onSelec
             <FolderOpen className="w-6 h-6" /> 
         </div> 
         <h1 className="text-3xl font-['Noto_Sans_SC'] font-bold text-white tracking-widest flex items-center gap-4"> 
-           <span>我的 <span className="text-primary">资源库</span></span>
+           <span>我的 <span className="text-primary">专辑</span></span>
         </h1> 
         <div className="flex-grow h-[1px] bg-gradient-to-r from-primary/50 to-transparent"></div> 
       </div> 
@@ -106,8 +106,8 @@ export const LibrariesList: React.FC<LibrariesListProps> = ({ libraries, onSelec
            <div className="h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-600 border border-white/5 bg-black/40 rounded-xl relative overflow-hidden group"> 
              <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
              <FolderOpen size={48} className="opacity-20 group-hover:text-primary group-hover:opacity-50 transition-all transform group-hover:scale-110" /> 
-             <div className="font-['Noto_Sans_SC'] tracking-widest text-xl group-hover:text-white transition-colors">暂无资源库</div> 
-             <div className="text-sm font-sans text-gray-500">当前尚未配置媒体库，请与服务器同步或进行配置。</div> 
+             <div className="font-['Noto_Sans_SC'] tracking-widest text-xl group-hover:text-white transition-colors">暂无专辑</div>
+             <div className="text-sm font-sans text-gray-500">当前尚未配置专辑，请与服务器同步或进行配置。</div>
            </div>
         </div>
       ) : (
