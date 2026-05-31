@@ -9,6 +9,9 @@ from backend.app.services.media_path_cleaner import MediaPathCleaner
 logger = logging.getLogger(__name__)
 
 
+_SEARCH_YEAR_UNSET = object()
+
+
 class MovieMetadataRescrapeService:
     """针对单条影片的定点重刮服务。
 
@@ -22,29 +25,32 @@ class MovieMetadataRescrapeService:
     def __init__(self):
         self.cleaner = MediaPathCleaner()
 
-    def resolve_movie(self, movie, media_type_hint=None):
+    def resolve_movie(
+        self,
+        movie,
+        media_type_hint=None,
+        search_title=None,
+        search_year=_SEARCH_YEAR_UNSET,
+        include_sidecar_nfo=False,
+    ):
         resources = movie.resources.all()
         if not resources:
             raise ValueError("Movie has no resources")
 
         source, scoped_resources = self._select_primary_source_resources(resources)
-        provider = provider_factory.get_provider(source) if source else None
-        files = self._build_file_items(scoped_resources, provider)
-        if not files:
-            raise ValueError("No readable resources available for re-scrape")
-
-        raw_entities = defaultdict(list)
-        for item in files:
-            meta = item['_meta']
-            raw_entities[(meta['title'], meta['year'])].append(item)
-
-        optimized_entities = metadata_pipeline.optimize_entities(raw_entities)
-        key, resolved_files = self._pick_best_entity(optimized_entities, movie)
-        entity_context = metadata_pipeline.build_entity_context(key, resolved_files)
+        provider = provider_factory.get_provider(source) if source and include_sidecar_nfo else None
+        entity_context = self._build_entity_context(scoped_resources, movie, provider=provider)
         parsed_info = entity_context.to_parsed_media_info()
 
         if media_type_hint in ('movie', 'tv'):
             parsed_info.media_type_hint = media_type_hint
+
+        search_query = self._apply_search_overrides(
+            entity_context,
+            parsed_info,
+            search_title=search_title,
+            search_year=search_year,
+        )
 
         if provider:
             parsed_info.extras['nfo_payloads'] = self._load_nfo_payloads(provider, entity_context)
@@ -55,9 +61,77 @@ class MovieMetadataRescrapeService:
             "provider": provider,
             "resources": scoped_resources,
             "entity_context": entity_context,
+            "search_query": search_query,
             "resolution": resolution,
             "resource_count": len(scoped_resources),
+            "sidecar_nfo_enabled": bool(include_sidecar_nfo),
         }
+
+    def build_search_plan(self, movie, media_type_hint=None):
+        """Build a local-only keyword plan without provider or metadata lookups."""
+        resources = movie.resources.all()
+        if not resources:
+            raise ValueError("Movie has no resources")
+
+        source, scoped_resources = self._select_primary_source_resources(resources)
+        entity_context = self._build_entity_context(scoped_resources, movie, provider=None)
+        parsed_info = entity_context.to_parsed_media_info()
+        if media_type_hint in ('movie', 'tv'):
+            parsed_info.media_type_hint = media_type_hint
+
+        search_query = self._apply_search_overrides(entity_context, parsed_info)
+        return {
+            "source": source,
+            "provider": None,
+            "resources": scoped_resources,
+            "entity_context": entity_context,
+            "search_query": search_query,
+            "resource_count": len(scoped_resources),
+        }
+
+    def _build_entity_context(self, resources, movie, provider=None):
+        files = self._build_file_items(resources, provider)
+        if not files:
+            raise ValueError("No readable resources available for re-scrape")
+
+        raw_entities = defaultdict(list)
+        for item in files:
+            meta = item['_meta']
+            raw_entities[(meta['title'], meta['year'])].append(item)
+
+        optimized_entities = metadata_pipeline.optimize_entities(raw_entities)
+        key, resolved_files = self._pick_best_entity(optimized_entities, movie)
+        return metadata_pipeline.build_entity_context(key, resolved_files)
+
+    def _apply_search_overrides(self, entity_context, parsed_info, search_title=None, search_year=_SEARCH_YEAR_UNSET):
+        path_title = entity_context.title
+        path_year = entity_context.year
+        effective_title = path_title
+        effective_year = path_year
+
+        normalized_title = str(search_title).strip() if search_title is not None else None
+        title_overridden = bool(normalized_title and normalized_title != path_title)
+        if normalized_title:
+            effective_title = normalized_title
+            parsed_info.title = normalized_title
+
+        year_overridden = search_year is not _SEARCH_YEAR_UNSET and search_year != path_year
+        if search_year is not _SEARCH_YEAR_UNSET:
+            effective_year = search_year
+            parsed_info.year = search_year
+
+        search_query = {
+            "search_title": effective_title,
+            "search_year": effective_year,
+            "path_title": path_title,
+            "path_year": path_year,
+            "title_overridden": title_overridden,
+            "year_overridden": year_overridden,
+            "media_type_hint": parsed_info.media_type_hint,
+            "source": "user_override" if title_overridden or year_overridden else "path_parser",
+        }
+        parsed_info.extras["search_query"] = dict(search_query)
+        return search_query
 
     def apply_resource_traces(self, resources, entity_context, resolution):
         parsed_info = entity_context.to_parsed_media_info()

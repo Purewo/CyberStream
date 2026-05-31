@@ -467,6 +467,16 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("BackgroundJobListResponse", schemas)
         self.assertIn("BackgroundJobPruneResponse", schemas)
         self.assertIn("bangumi", schemas["MetadataState"]["properties"]["source_group"]["enum"])
+        self.assertIn("MovieMetadataSearchQuery", schemas)
+        self.assertIn("search_title", schemas["MovieMetadataReScrapeRequest"]["properties"])
+        self.assertIn("search_year", schemas["MovieMetadataBatchReScrapeItemRequest"]["properties"])
+        self.assertIn("allow_nfo", schemas["MovieMetadataReScrapeRequest"]["properties"])
+        self.assertIn("allow_nfo", schemas["MovieMetadataBatchReScrapeItemRequest"]["properties"])
+        self.assertIn("search_query", schemas["MetadataReScrapePlanItem"]["properties"])
+        self.assertIn("plan_mode", schemas["MetadataReScrapePlanItem"]["properties"])
+        self.assertIn("progress_endpoint_template", schemas["MetadataReScrapePlanData"]["properties"])
+        self.assertIn("progress_endpoint", schemas["BackgroundJobAcceptedData"]["properties"])
+        self.assertIn("search_title", schemas["MovieMetadataResolutionSignals"]["properties"])
 
     def test_resource_governance_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()

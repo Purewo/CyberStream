@@ -46,6 +46,19 @@
 - 接口只修改数据库索引和资源元数据，不移动、不删除实体视频文件。
 - `catalog_visibility.status=pending_review` 的条目不再出现在 `/other-videos`；历史遗留的可疑 `auto` 条目可用 backfill 先 dry-run 再回填到待审批池。
 
+## 批量重识别搜索关键词覆盖
+
+- `POST /api/v1/metadata/re-scrape/plan` 调整为本地快速关键词预览：不访问 TMDB、sidecar NFO 或存储 provider，不再因为 dry-run 真搜 TMDB 阻塞批量操作。
+- 每条成功计划新增 `search_query`、`search_title` 和 `search_year`，明确提交后实际会用什么关键词搜索；旧 `preview/diff/resolution/explanation` 在该阶段固定为 `null`。
+- `apply_payload.items[]` 会带出 `search_title/search_year`，前端可先展示可编辑关键词，再把用户修正后的值提交给 `/metadata/re-scrape` 或 `/metadata/re-scrape/jobs`。
+- `apply_payload.items[]` 同步带出 `media_type_hint`，避免前端确认关键词后丢失电影/剧集类型，导致提交阶段重新误判。
+- 单条和批量 re-scrape 请求新增可选 `search_title`、`search_year`；`query_override` 是 `search_title` 的兼容别名。显式传 `search_year: null` 可清除路径解析误判年份。
+- 单条和批量 re-scrape 默认不读取同目录 sidecar NFO，避免离线/高延迟挂载点把一次重新识别拖到几十秒；确实需要 NFO 时传 `allow_nfo=true` 或 `include_sidecar_nfo=true`。
+- 响应中的 `entity_context` 继续表示路径解析结果；`search_query` 表示实际进入 metadata pipeline 的搜索参数，避免二者混淆。
+- `plan.apply_endpoint` 默认指向 `/metadata/re-scrape/jobs`；创建任务后响应会返回 `progress_endpoint` 和建议轮询间隔 `poll_interval_ms`。
+- 修复 `DTS5.1` 这类音轨标记被路径解析器误识别为 `S5` 季号的问题，避免电影被当作剧集搜索。
+
+
 ## 电视剧资源按季 hydrate
 
 - `GET /api/v1/movies/{id}/resources` 新增可选 `season` query。

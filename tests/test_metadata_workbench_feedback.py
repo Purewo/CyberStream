@@ -391,6 +391,171 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertEqual(2019, captured["year"])
         self.assertEqual("Alita Battle Angel", result["entity_context"].title)
 
+    def test_re_scrape_search_override_replaces_path_keyword_for_pipeline(self):
+        movie = self._add_movie(title="错误标题")
+        resource = MediaResource(
+            movie_id=movie.id,
+            path="downloads/Wrong.Keyword.2017.1080p.mkv",
+            filename="Wrong.Keyword.2017.1080p.mkv",
+        )
+        db.session.add(resource)
+        db.session.commit()
+
+        captured = {}
+
+        def fake_resolve(parsed_info):
+            captured["title"] = parsed_info.title
+            captured["year"] = parsed_info.year
+            captured["search_query"] = parsed_info.extras["search_query"]
+            return MetadataResolution(
+                meta_data={
+                    "tmdb_id": "movie/999",
+                    "title": "Correct Movie",
+                    "original_title": "Correct Movie",
+                    "year": 2024,
+                    "scraper_source": "TMDB_FALLBACK",
+                },
+                resolved_tmdb_id="movie/999",
+                scrape_layer="fallback",
+                scrape_strategy="manual_search_override",
+                reason="tmdb_match",
+            )
+
+        with patch("backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata", side_effect=fake_resolve):
+            result = MovieMetadataRescrapeService().resolve_movie(
+                movie,
+                media_type_hint="movie",
+                search_title="Correct Movie",
+                search_year=2024,
+            )
+
+        self.assertEqual("Correct Movie", captured["title"])
+        self.assertEqual(2024, captured["year"])
+        self.assertEqual("Wrong Keyword", result["entity_context"].title)
+        self.assertEqual(2017, result["entity_context"].year)
+        self.assertEqual("Correct Movie", result["search_query"]["search_title"])
+        self.assertEqual(2024, result["search_query"]["search_year"])
+        self.assertTrue(result["search_query"]["title_overridden"])
+        self.assertTrue(result["search_query"]["year_overridden"])
+        self.assertEqual("user_override", captured["search_query"]["source"])
+
+    def test_re_scrape_search_year_null_clears_path_year_hint(self):
+        movie = self._add_movie(title="年份误判")
+        resource = MediaResource(
+            movie_id=movie.id,
+            path="downloads/Correct.Title.2077.1080p.mkv",
+            filename="Correct.Title.2077.1080p.mkv",
+        )
+        db.session.add(resource)
+        db.session.commit()
+
+        captured = {}
+
+        def fake_resolve(parsed_info):
+            captured["title"] = parsed_info.title
+            captured["year"] = parsed_info.year
+            return MetadataResolution(
+                meta_data={"tmdb_id": "movie/888", "title": "Correct Title", "scraper_source": "TMDB_FALLBACK"},
+                resolved_tmdb_id="movie/888",
+                scrape_layer="fallback",
+                scrape_strategy="manual_search_override",
+                reason="tmdb_match",
+            )
+
+        with patch("backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata", side_effect=fake_resolve):
+            result = MovieMetadataRescrapeService().resolve_movie(
+                movie,
+                media_type_hint="movie",
+                search_title="Correct Title",
+                search_year=None,
+            )
+
+        self.assertEqual("Correct Title", captured["title"])
+        self.assertIsNone(captured["year"])
+        self.assertEqual(2077, result["search_query"]["path_year"])
+        self.assertIsNone(result["search_query"]["search_year"])
+        self.assertTrue(result["search_query"]["year_overridden"])
+
+    def test_re_scrape_search_plan_is_local_only(self):
+        movie = self._add_movie(title="待识别")
+        source = self._add_source()
+        resource = self._add_resource(movie, path="movies/Fast.Plan.2024.1080p.mkv", source=source)
+
+        with patch(
+            "backend.app.metadata.rescrape.provider_factory.get_provider",
+            side_effect=AssertionError("plan must not initialize storage provider"),
+        ), patch(
+            "backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata",
+            side_effect=AssertionError("plan must not call metadata providers"),
+        ):
+            result = MovieMetadataRescrapeService().build_search_plan(movie, media_type_hint="movie")
+
+        self.assertEqual(source.id, result["source"].id)
+        self.assertIsNone(result["provider"])
+        self.assertEqual(resource.path, result["entity_context"].sample_path)
+        self.assertEqual("Fast Plan", result["search_query"]["search_title"])
+        self.assertEqual(2024, result["search_query"]["search_year"])
+        self.assertEqual("movie", result["search_query"]["media_type_hint"])
+
+    def test_re_scrape_skips_sidecar_nfo_provider_by_default(self):
+        movie = self._add_movie(title="慢挂载")
+        source = self._add_source()
+        self._add_resource(movie, path="movies/Slow.Mount.2024.1080p.mkv", source=source)
+
+        def fake_resolve(parsed_info):
+            return MetadataResolution(
+                meta_data={"tmdb_id": "movie/100", "title": parsed_info.title, "scraper_source": "TMDB_STRICT"},
+                resolved_tmdb_id="movie/100",
+                scrape_layer="structured",
+                scrape_strategy=parsed_info.parse_strategy,
+                reason="tmdb_match",
+            )
+
+        with patch(
+            "backend.app.metadata.rescrape.provider_factory.get_provider",
+            side_effect=AssertionError("default re-scrape must not initialize storage provider for sidecar NFO"),
+        ), patch(
+            "backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata",
+            side_effect=fake_resolve,
+        ):
+            result = MovieMetadataRescrapeService().resolve_movie(movie, media_type_hint="movie")
+
+        self.assertFalse(result["sidecar_nfo_enabled"])
+        self.assertEqual("movie", result["search_query"]["media_type_hint"])
+
+    def test_re_scrape_allow_nfo_opts_into_sidecar_provider_lookup(self):
+        movie = self._add_movie(title="允许 NFO")
+        source = self._add_source()
+        self._add_resource(movie, path="movies/Nfo.Movie.2024.1080p.mkv", source=source)
+        provider_calls = {"list_items": 0}
+
+        class FakeProvider:
+            def list_items(self, directory):
+                provider_calls["list_items"] += 1
+                return []
+
+        def fake_resolve(parsed_info):
+            return MetadataResolution(
+                meta_data={"tmdb_id": "movie/101", "title": parsed_info.title, "scraper_source": "TMDB_STRICT"},
+                resolved_tmdb_id="movie/101",
+                scrape_layer="structured",
+                scrape_strategy=parsed_info.parse_strategy,
+                reason="tmdb_match",
+            )
+
+        with patch("backend.app.metadata.rescrape.provider_factory.get_provider", return_value=FakeProvider()), patch(
+            "backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata",
+            side_effect=fake_resolve,
+        ):
+            result = MovieMetadataRescrapeService().resolve_movie(
+                movie,
+                media_type_hint="movie",
+                include_sidecar_nfo=True,
+            )
+
+        self.assertTrue(result["sidecar_nfo_enabled"])
+        self.assertEqual(1, provider_calls["list_items"])
+
     def test_legacy_pipeline_ignores_current_local_placeholder_title_match(self):
         movie = Movie(
             tmdb_id="loc-911c3d266e2b",
@@ -445,28 +610,54 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         resource = self._add_resource(movie)
         entity_context = self._entity_context(resource)
         resolution = self._tmdb_resolution()
+        captured = {}
+
+        def resolve_movie(target_movie, media_type_hint=None, search_title=None, search_year=None):
+            captured["media_type_hint"] = media_type_hint
+            captured["search_title"] = search_title
+            captured["search_year"] = search_year
+            return {
+                "resources": [resource],
+                "entity_context": entity_context,
+                "search_query": {
+                    "search_title": search_title,
+                    "search_year": search_year,
+                    "path_title": entity_context.title,
+                    "path_year": entity_context.year,
+                    "title_overridden": True,
+                    "year_overridden": True,
+                    "media_type_hint": media_type_hint,
+                    "source": "user_override",
+                },
+                "resolution": resolution,
+                "resource_count": 1,
+            }
 
         with patch(
             "backend.app.api.library_routes.movie_metadata_rescrape_service.resolve_movie",
-            return_value={
-                "resources": [resource],
-                "entity_context": entity_context,
-                "resolution": resolution,
-                "resource_count": 1,
-            },
+            side_effect=resolve_movie,
         ), patch(
             "backend.app.api.library_routes.movie_metadata_rescrape_service.apply_resource_traces",
         ):
             response = self.client.post(
                 "/api/v1/metadata/re-scrape/jobs",
-                json={"items": [{"id": movie.id, "media_type_hint": "tv"}]},
+                json={"items": [{"id": movie.id, "media_type_hint": "tv", "search_title": "Correct Title", "search_year": 2025}]},
             )
 
         self.assertEqual(202, response.status_code)
-        job = response.get_json()["data"]["job"]
+        response_data = response.get_json()["data"]
+        job = response_data["job"]
+        self.assertEqual(job["id"], response_data["job_id"])
+        self.assertEqual(f"/api/v1/jobs/{job['id']}", response_data["progress_endpoint"])
+        self.assertEqual(f"/api/v1/jobs/{job['id']}", response_data["status_endpoint"])
+        self.assertEqual(1000, response_data["poll_interval_ms"])
         self.assertEqual("metadata_re_scrape", job["type"])
         self.assertEqual("succeeded", job["status"])
         self.assertEqual(1, job["result"]["summary"]["updated"])
+        self.assertEqual("Correct Title", captured["search_title"])
+        self.assertEqual(2025, captured["search_year"])
+        self.assertEqual("Correct Title", job["result"]["items"][0]["search_title"])
+        self.assertEqual(2025, job["result"]["items"][0]["search_year"])
         self.assertEqual(1, job["progress"]["current"])
         db.session.expire_all()
         self.assertEqual("New Title", db.session.get(Movie, movie.id).title)
@@ -478,6 +669,34 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         listing = self.client.get("/api/v1/jobs", query_string={"type": "metadata_re_scrape"})
         self.assertEqual(200, listing.status_code)
         self.assertEqual([job["id"]], [item["id"] for item in listing.get_json()["data"]["items"]])
+
+    def test_batch_re_scrape_allow_nfo_is_explicit_opt_in(self):
+        movie = self._add_movie()
+        resource = self._add_resource(movie)
+        captured = {}
+
+        def resolve_movie(target_movie, media_type_hint=None, include_sidecar_nfo=False):
+            captured["include_sidecar_nfo"] = include_sidecar_nfo
+            return {
+                "resources": [resource],
+                "entity_context": self._entity_context(resource),
+                "resolution": self._tmdb_resolution(),
+                "resource_count": 1,
+            }
+
+        with patch(
+            "backend.app.api.library_routes.movie_metadata_rescrape_service.resolve_movie",
+            side_effect=resolve_movie,
+        ), patch(
+            "backend.app.api.library_routes.movie_metadata_rescrape_service.apply_resource_traces",
+        ):
+            response = self.client.post(
+                "/api/v1/metadata/re-scrape",
+                json={"items": [{"id": movie.id, "media_type_hint": "movie", "allow_nfo": True}]},
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(captured["include_sidecar_nfo"])
 
     def test_quality_summary_returns_issue_samples_and_actions(self):
         movie = self._add_movie(title="质量汇总", scraper_source="TMDB", cover="")
@@ -536,22 +755,10 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         movie = self._add_movie(title="旧标题", scraper_source="LOCAL_FALLBACK", cover="")
         failed_movie = self._add_movie(title="空资源", scraper_source="LOCAL_FALLBACK", cover="")
         resource = self._add_resource(movie)
-        entity_context = self._entity_context(resource)
-        resolution = self._tmdb_resolution()
-
-        def resolve_movie(target_movie, media_type_hint=None):
-            if target_movie.id == movie.id:
-                return {
-                    "resources": [resource],
-                    "entity_context": entity_context,
-                    "resolution": resolution,
-                    "resource_count": 1,
-                }
-            raise ValueError("Movie has no resources")
 
         with patch(
-            "backend.app.api.library_routes.movie_metadata_rescrape_service.resolve_movie",
-            side_effect=resolve_movie,
+            "backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata",
+            side_effect=AssertionError("plan must not call metadata providers"),
         ), patch(
             "backend.app.api.library_routes.movie_metadata_rescrape_service.apply_resource_traces",
         ) as apply_resource_traces:
@@ -563,11 +770,22 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         data = response.get_json()["data"]
         self.assertTrue(data["dry_run"])
-        self.assertEqual("/api/v1/metadata/re-scrape", data["apply_endpoint"])
-        self.assertEqual([{"id": movie.id, "media_type_hint": "tv"}], data["apply_payload"]["items"])
+        self.assertEqual("keyword_preview", data["plan_mode"])
+        self.assertFalse(data["provider_search"])
+        self.assertEqual("/api/v1/metadata/re-scrape/jobs", data["apply_endpoint"])
+        self.assertEqual("/api/v1/metadata/re-scrape", data["sync_apply_endpoint"])
+        self.assertEqual("/api/v1/jobs/{job_id}", data["progress_endpoint_template"])
         planned = {item["movie_id"]: item for item in data["items"]}
         self.assertEqual("planned", planned[movie.id]["status"])
-        self.assertIn("title", planned[movie.id]["diff"]["summary"]["will_apply_fields"])
+        self.assertEqual("keyword_preview", planned[movie.id]["plan_mode"])
+        self.assertEqual(resource.path, planned[movie.id]["entity_context"]["sample_path"])
+        self.assertEqual(planned[movie.id]["search_title"], data["apply_payload"]["items"][0]["search_title"])
+        self.assertEqual(planned[movie.id]["search_year"], data["apply_payload"]["items"][0]["search_year"])
+        self.assertEqual("path_parser", planned[movie.id]["search_query"]["source"])
+        self.assertIsNone(planned[movie.id]["preview"])
+        self.assertIsNone(planned[movie.id]["diff"])
+        self.assertIsNone(planned[movie.id]["resolution"])
+        self.assertIsNone(planned[movie.id]["explanation"])
         self.assertEqual("failed", planned[failed_movie.id]["status"])
         self.assertEqual("no_resources", planned[failed_movie.id]["error"]["category"])
         self.assertEqual("旧标题", db.session.get(Movie, movie.id).title)
@@ -576,21 +794,12 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
     def test_batch_re_scrape_plan_defaults_include_local_metadata_failures(self):
         placeholder = self._add_movie(title="本地占位", scraper_source="LOCAL_FALLBACK", cover="")
         local_only = self._add_movie(title="本地 NFO", scraper_source="NFO_LOCAL", cover="")
-        placeholder_resource = self._add_resource(placeholder, path="shows/Placeholder.S01E01.mkv")
-        local_resource = self._add_resource(local_only, path="shows/Nfo.Local.S01E01.mkv")
-
-        def resolve_movie(movie, media_type_hint=None):
-            resource = placeholder_resource if movie.id == placeholder.id else local_resource
-            return {
-                "resources": [resource],
-                "entity_context": self._entity_context(resource),
-                "resolution": self._tmdb_resolution(),
-                "resource_count": 1,
-            }
+        self._add_resource(placeholder, path="shows/Placeholder.S01E01.mkv")
+        self._add_resource(local_only, path="shows/Nfo.Local.S01E01.mkv")
 
         with patch(
-            "backend.app.api.library_routes.movie_metadata_rescrape_service.resolve_movie",
-            side_effect=resolve_movie,
+            "backend.app.metadata.rescrape.metadata_pipeline.resolve_metadata",
+            side_effect=AssertionError("plan must not call metadata providers"),
         ):
             response = self.client.post("/api/v1/metadata/re-scrape/plan", json={"limit": 10})
 

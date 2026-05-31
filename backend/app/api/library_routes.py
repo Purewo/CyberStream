@@ -1441,7 +1441,34 @@ def _build_metadata_entity_context_info(entity_context, resource_count=None):
     }
 
 
-def _build_metadata_resolution_feedback(resolution, entity_context=None):
+def _build_metadata_search_query_info(search_query=None, entity_context=None):
+    search_query = search_query if isinstance(search_query, dict) else {}
+    path_title = search_query.get("path_title")
+    path_year = search_query.get("path_year")
+    if entity_context:
+        path_title = path_title if path_title is not None else entity_context.title
+        path_year = path_year if path_year is not None else entity_context.year
+    search_title = search_query.get("search_title")
+    if search_title is None:
+        search_title = path_title
+    search_year = search_query.get("search_year")
+    if "search_year" not in search_query:
+        search_year = path_year
+    title_overridden = bool(search_query.get("title_overridden"))
+    year_overridden = bool(search_query.get("year_overridden"))
+    return {
+        "search_title": search_title,
+        "search_year": search_year,
+        "path_title": path_title,
+        "path_year": path_year,
+        "title_overridden": title_overridden,
+        "year_overridden": year_overridden,
+        "media_type_hint": search_query.get("media_type_hint") or (entity_context.media_type_hint if entity_context else None),
+        "source": search_query.get("source") or ("user_override" if title_overridden or year_overridden else "path_parser"),
+    }
+
+
+def _build_metadata_resolution_feedback(resolution, entity_context=None, search_query=None):
     meta_data = resolution.meta_data if isinstance(resolution.meta_data, dict) else {}
     source_code = (meta_data.get('scraper_source') or '').strip().upper()
     state = Movie.build_metadata_ui_state(source_code)
@@ -1512,10 +1539,16 @@ def _build_metadata_resolution_feedback(resolution, entity_context=None):
 
     signals = {}
     if entity_context:
+        search_info = _build_metadata_search_query_info(search_query, entity_context)
         signals = {
             "title_hint": entity_context.title,
             "year_hint": entity_context.year,
-            "media_type_hint": entity_context.media_type_hint,
+            "search_title": search_info["search_title"],
+            "search_year": search_info["search_year"],
+            "search_source": search_info["source"],
+            "search_title_overridden": search_info["title_overridden"],
+            "search_year_overridden": search_info["year_overridden"],
+            "media_type_hint": search_info["media_type_hint"],
             "parse_layer": entity_context.parse_layer,
             "parse_strategy": entity_context.parse_strategy,
             "parse_confidence": entity_context.confidence,
@@ -3245,6 +3278,7 @@ def _build_metadata_batch_result(
     movie,
     resolution=None,
     entity_context=None,
+    search_query=None,
     updated_fields=None,
     season_result=None,
     merge_result=None,
@@ -3274,7 +3308,10 @@ def _build_metadata_batch_result(
     }
     if resolution:
         result["resolution"] = _build_metadata_resolution_info(resolution)
-        result["explanation"] = _build_metadata_resolution_feedback(resolution, entity_context)
+        result["search_query"] = _build_metadata_search_query_info(search_query, entity_context)
+        result["search_title"] = result["search_query"]["search_title"]
+        result["search_year"] = result["search_query"]["search_year"]
+        result["explanation"] = _build_metadata_resolution_feedback(resolution, entity_context, search_query)
     if error:
         result["error"] = _classify_metadata_error(error["code"], error["msg"])
     if merged:
@@ -3303,6 +3340,48 @@ def _normalize_metadata_batch_rescrape_payload(payload):
     if not isinstance(items, list) or not items:
         raise MetadataValidationError(code=40022, msg="Invalid field value: items should be a non-empty array")
     return items
+
+
+def _normalize_metadata_rescrape_search_overrides(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    raw_search_title = payload.get("search_title")
+    raw_query_override = payload.get("query_override")
+    if raw_search_title is not None and raw_query_override is not None:
+        normalized_title = _normalize_tmdb_search_query(raw_search_title)
+        normalized_alias = _normalize_tmdb_search_query(raw_query_override)
+        if normalized_title != normalized_alias:
+            raise MetadataValidationError(code=40018, msg="Invalid field value: search_title and query_override should match")
+        search_title = normalized_title
+    else:
+        search_title = _normalize_tmdb_search_query(
+            raw_search_title if raw_search_title is not None else raw_query_override
+        )
+
+    search_year_present = "search_year" in payload
+    search_year = _normalize_year(payload.get("search_year")) if search_year_present else None
+    return {
+        "search_title": search_title,
+        "search_year": search_year,
+        "search_year_present": search_year_present,
+    }
+
+
+def _normalize_metadata_rescrape_sidecar_nfo(payload):
+    allow_nfo = _normalize_boolean_payload_field(payload, 'allow_nfo', default=False)
+    include_sidecar_nfo = _normalize_boolean_payload_field(payload, 'include_sidecar_nfo', default=False)
+    return allow_nfo or include_sidecar_nfo
+
+
+def _metadata_rescrape_resolve_movie(movie, *, media_type_hint=None, search_overrides=None, include_sidecar_nfo=False):
+    search_overrides = search_overrides or {}
+    kwargs = {"media_type_hint": media_type_hint}
+    if search_overrides.get("search_title") is not None:
+        kwargs["search_title"] = search_overrides["search_title"]
+    if search_overrides.get("search_year_present"):
+        kwargs["search_year"] = search_overrides.get("search_year")
+    if include_sidecar_nfo:
+        kwargs["include_sidecar_nfo"] = True
+    return movie_metadata_rescrape_service.resolve_movie(movie, **kwargs)
 
 
 def _apply_metadata_rescrape_result(movie, result, unlock_fields=None):
@@ -3377,8 +3456,15 @@ def _execute_metadata_batch_rescrape(items, progress_callback=None):
         try:
             unlock_fields = _normalize_lock_field_names(item.get('metadata_unlocked_fields')) if isinstance(item, dict) else None
             media_type_hint = _normalize_media_type_hint(item.get('media_type_hint')) if isinstance(item, dict) else None
+            search_overrides = _normalize_metadata_rescrape_search_overrides(item)
+            include_sidecar_nfo = _normalize_metadata_rescrape_sidecar_nfo(item)
             with db.session.begin_nested():
-                result = movie_metadata_rescrape_service.resolve_movie(movie, media_type_hint=media_type_hint)
+                result = _metadata_rescrape_resolve_movie(
+                    movie,
+                    media_type_hint=media_type_hint,
+                    search_overrides=search_overrides,
+                    include_sidecar_nfo=include_sidecar_nfo,
+                )
                 applied = _apply_metadata_rescrape_result(movie, result, unlock_fields=unlock_fields)
                 movie = applied["movie"]
                 resolution = applied["resolution"]
@@ -3397,6 +3483,7 @@ def _execute_metadata_batch_rescrape(items, progress_callback=None):
                 movie,
                 resolution=resolution,
                 entity_context=result["entity_context"],
+                search_query=result.get("search_query"),
                 updated_fields=updated_fields,
                 season_result=season_result,
                 merge_result=merge_result,
@@ -3495,12 +3582,16 @@ def _select_metadata_reidentify_movies(movie_ids=None, issue_codes=None, limit=2
     return movies, missing_movie_ids
 
 
-def _build_metadata_reidentify_apply_item(movie, media_type_hint=None, unlock_fields=None):
+def _build_metadata_reidentify_apply_item(movie, media_type_hint=None, unlock_fields=None, search_query=None):
     item = {"id": movie.id}
-    if media_type_hint:
-        item["media_type_hint"] = media_type_hint
+    effective_media_type_hint = media_type_hint or (search_query or {}).get("media_type_hint")
+    if effective_media_type_hint:
+        item["media_type_hint"] = effective_media_type_hint
     if unlock_fields:
         item["metadata_unlocked_fields"] = sorted(unlock_fields)
+    if search_query:
+        item["search_title"] = search_query["search_title"]
+        item["search_year"] = search_query["search_year"]
     return item
 
 
@@ -3528,28 +3619,17 @@ def _build_metadata_reidentify_plan(payload):
             for issue in snapshot["issues"]
             if issue.get("code") in set(normalized["issue_codes"])
         ]
-        apply_item = _build_metadata_reidentify_apply_item(
-            movie,
-            media_type_hint=normalized["media_type_hint"],
-            unlock_fields=normalized["metadata_unlocked_fields"],
-        )
         try:
-            result = movie_metadata_rescrape_service.resolve_movie(
+            result = movie_metadata_rescrape_service.build_search_plan(
                 movie,
                 media_type_hint=normalized["media_type_hint"],
             )
-            resolution = result["resolution"]
-            update_payload = _build_external_metadata_update_payload(resolution.meta_data or {})
-            diff = _build_movie_metadata_diff(
+            search_query = _build_metadata_search_query_info(result.get("search_query"), result["entity_context"])
+            apply_item = _build_metadata_reidentify_apply_item(
                 movie,
-                update_payload,
-                unlocked_fields=normalized["metadata_unlocked_fields"],
-            )
-            preview = _build_metadata_preview_from_resolution(
-                resolution,
-                result["entity_context"],
-                movie=movie,
-                update_payload=update_payload,
+                media_type_hint=normalized["media_type_hint"],
+                unlock_fields=normalized["metadata_unlocked_fields"],
+                search_query=search_query,
             )
             plan_item = {
                 "movie_id": movie.id,
@@ -3557,6 +3637,7 @@ def _build_metadata_reidentify_plan(payload):
                 "scraper_source": movie.scraper_source,
                 "status": "planned",
                 "dry_run": True,
+                "plan_mode": "keyword_preview",
                 "matched_issue_codes": [issue["code"] for issue in matching_issues],
                 "metadata_state": snapshot["state"],
                 "metadata_actions": snapshot["actions"],
@@ -3566,10 +3647,13 @@ def _build_metadata_reidentify_plan(payload):
                     result["entity_context"],
                     resource_count=result["resource_count"],
                 ),
-                "preview": preview,
-                "diff": diff,
-                "resolution": _build_metadata_resolution_info(resolution),
-                "explanation": _build_metadata_resolution_feedback(resolution, result["entity_context"]),
+                "search_query": search_query,
+                "search_title": search_query["search_title"],
+                "search_year": search_query["search_year"],
+                "preview": None,
+                "diff": None,
+                "resolution": None,
+                "explanation": None,
                 "apply_item": apply_item,
             }
             results.append(plan_item)
@@ -3587,8 +3671,8 @@ def _build_metadata_reidentify_plan(payload):
                 "apply_item": None,
             })
         except Exception as e:
-            logger.exception("Metadata reidentify dry-run failed movie_id=%s error=%s", movie.id, e)
-            results.append(_build_metadata_batch_result(movie, error={"code": 50014, "msg": "Re-scrape preview failed"}) | {
+            logger.exception("Metadata reidentify keyword plan failed movie_id=%s error=%s", movie.id, e)
+            results.append(_build_metadata_batch_result(movie, error={"code": 50014, "msg": "Re-scrape keyword plan failed"}) | {
                 "dry_run": True,
                 "matched_issue_codes": [issue["code"] for issue in matching_issues],
                 "apply_item": None,
@@ -3606,6 +3690,8 @@ def _build_metadata_reidentify_plan(payload):
 
     return {
         "dry_run": True,
+        "plan_mode": "keyword_preview",
+        "provider_search": False,
         "selection": {
             "issue_codes": normalized["issue_codes"],
             "movie_ids": normalized["movie_ids"],
@@ -3614,7 +3700,9 @@ def _build_metadata_reidentify_plan(payload):
             "metadata_unlocked_fields": sorted(normalized["metadata_unlocked_fields"] or []),
         },
         "apply_method": "POST",
-        "apply_endpoint": "/api/v1/metadata/re-scrape",
+        "apply_endpoint": "/api/v1/metadata/re-scrape/jobs",
+        "sync_apply_endpoint": "/api/v1/metadata/re-scrape",
+        "progress_endpoint_template": "/api/v1/jobs/{job_id}",
         "apply_payload": {"items": apply_items},
         "items": results,
         "summary": {
@@ -5126,11 +5214,18 @@ def re_scrape_movie_metadata(id):
     try:
         unlock_fields = _normalize_lock_field_names(payload.get('metadata_unlocked_fields')) if isinstance(payload, dict) else None
         media_type_hint = _normalize_media_type_hint(payload.get('media_type_hint')) if isinstance(payload, dict) else None
+        search_overrides = _normalize_metadata_rescrape_search_overrides(payload)
+        include_sidecar_nfo = _normalize_metadata_rescrape_sidecar_nfo(payload)
     except MetadataValidationError as e:
         return api_error(code=e.code, msg=e.msg)
 
     try:
-        result = movie_metadata_rescrape_service.resolve_movie(movie, media_type_hint=media_type_hint)
+        result = _metadata_rescrape_resolve_movie(
+            movie,
+            media_type_hint=media_type_hint,
+            search_overrides=search_overrides,
+            include_sidecar_nfo=include_sidecar_nfo,
+        )
         applied = _apply_metadata_rescrape_result(movie, result, unlock_fields=unlock_fields)
         movie = applied["movie"]
         resolution = applied["resolution"]
@@ -5149,6 +5244,7 @@ def re_scrape_movie_metadata(id):
         )
         merged = bool(merge_result and merge_result.get("merged"))
         status = _build_metadata_apply_status(updated_fields=updated_fields, season_result=season_result, merged=merged)
+        search_query = _build_metadata_search_query_info(result.get("search_query"), result["entity_context"])
         return api_response(data={
             "status": status,
             "changed": status == "updated",
@@ -5156,11 +5252,14 @@ def re_scrape_movie_metadata(id):
             "merged_from_movie_id": merge_result.get("source_movie_id") if merged else None,
             "movie": movie.to_detail_dict(),
             "resolution": _build_metadata_resolution_info(resolution),
+            "search_query": search_query,
+            "search_title": search_query["search_title"],
+            "search_year": search_query["search_year"],
             "entity_context": _build_metadata_entity_context_info(
                 result["entity_context"],
                 resource_count=result["resource_count"],
             ),
-            "explanation": _build_metadata_resolution_feedback(resolution, result["entity_context"]),
+            "explanation": _build_metadata_resolution_feedback(resolution, result["entity_context"], result.get("search_query")),
             "updated_fields": updated_fields,
             "season_metadata_result": season_result,
             "resource_trace_count": result["resource_count"],
@@ -5217,14 +5316,21 @@ def start_batch_re_scrape_movie_metadata_job():
         request=request_payload,
         inline=bool(current_app.config.get("BACKGROUND_JOBS_INLINE")),
     )
-    return api_response(data={"job": job}, msg="Metadata batch re-scrape job accepted", http_status=202)
+    progress_endpoint = f"/api/v1/jobs/{job['id']}"
+    return api_response(data={
+        "job": job,
+        "job_id": job["id"],
+        "progress_endpoint": progress_endpoint,
+        "status_endpoint": progress_endpoint,
+        "poll_interval_ms": 1000,
+    }, msg="Metadata batch re-scrape job accepted", http_status=202)
 
 
 @library_bp.route('/metadata/re-scrape/plan', methods=['POST'])
 def plan_batch_re_scrape_movie_metadata():
     try:
         data = _build_metadata_reidentify_plan(_get_json_payload())
-        return api_response(data=data, msg="Metadata batch re-scrape dry-run completed")
+        return api_response(data=data, msg="Metadata batch re-scrape keyword plan generated")
     except MetadataValidationError as e:
         return api_error(code=e.code, msg=e.msg)
 

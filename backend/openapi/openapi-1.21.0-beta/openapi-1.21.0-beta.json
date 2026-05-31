@@ -1780,8 +1780,8 @@
     },
     "/api/v1/metadata/re-scrape/plan": {
       "post": {
-        "summary": "🔵 [新增] 批量定点重刮 dry-run 计划",
-        "description": "按 issue_codes 或 movie_ids 预览批量重识别结果，不写入数据库；响应中的 apply_payload 可在用户确认后提交到 /metadata/re-scrape。",
+        "summary": "🔵 [新增] 批量定点重刮关键词计划",
+        "description": "按 issue_codes 或 movie_ids 快速生成本地路径解析关键词，不写入数据库，也不访问 TMDB、sidecar NFO 或存储 provider；响应中的 apply_payload 可在用户确认或修正关键词后提交到 /metadata/re-scrape/jobs。",
         "operationId": "planBatchReScrapeMovieMetadata",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -9000,6 +9000,22 @@
         "properties": {
           "job": {
             "$ref": "#/components/schemas/BackgroundJob"
+          },
+          "job_id": {
+            "type": "string",
+            "description": "已接受后台任务的 ID。"
+          },
+          "progress_endpoint": {
+            "type": "string",
+            "description": "前端轮询任务进度的接口地址。"
+          },
+          "status_endpoint": {
+            "type": "string",
+            "description": "progress_endpoint 的兼容别名。"
+          },
+          "poll_interval_ms": {
+            "type": "integer",
+            "description": "建议的前端轮询间隔，单位毫秒。"
           }
         }
       },
@@ -15907,6 +15923,31 @@
               "movie",
               "tv"
             ]
+          },
+          "search_title": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional user-corrected search title. When provided, re-scrape uses this title instead of the path-parsed title."
+          },
+          "search_year": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Optional user-corrected search year. Use null to clear a wrong path-parsed year."
+          },
+          "query_override": {
+            "type": "string",
+            "nullable": true,
+            "description": "Alias of search_title for compatibility."
+          },
+          "allow_nfo": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt in to provider sidecar NFO lookup. Defaults to false so review-workbench re-scrape is not blocked by slow or offline mounts."
+          },
+          "include_sidecar_nfo": {
+            "type": "boolean",
+            "default": false,
+            "description": "Alias of allow_nfo."
           }
         }
       },
@@ -16028,6 +16069,24 @@
           "year_hint": {
             "type": "integer",
             "nullable": true
+          },
+          "search_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "search_year": {
+            "type": "integer",
+            "nullable": true
+          },
+          "search_source": {
+            "type": "string",
+            "nullable": true
+          },
+          "search_title_overridden": {
+            "type": "boolean"
+          },
+          "search_year_overridden": {
+            "type": "boolean"
           },
           "media_type_hint": {
             "type": "string",
@@ -16164,6 +16223,17 @@
           "resolution": {
             "$ref": "#/components/schemas/MovieMetadataResolutionInfo"
           },
+          "search_query": {
+            "$ref": "#/components/schemas/MovieMetadataSearchQuery"
+          },
+          "search_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "search_year": {
+            "type": "integer",
+            "nullable": true
+          },
           "entity_context": {
             "$ref": "#/components/schemas/MovieMetadataEntityContext"
           },
@@ -16221,6 +16291,31 @@
               "movie",
               "tv"
             ]
+          },
+          "search_title": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional user-corrected search title. When provided, re-scrape uses this title instead of the path-parsed title."
+          },
+          "search_year": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Optional user-corrected search year. Use null to clear a wrong path-parsed year."
+          },
+          "query_override": {
+            "type": "string",
+            "nullable": true,
+            "description": "Alias of search_title for compatibility."
+          },
+          "allow_nfo": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt in to provider sidecar NFO lookup. Defaults to false so review-workbench re-scrape is not blocked by slow or offline mounts."
+          },
+          "include_sidecar_nfo": {
+            "type": "boolean",
+            "default": false,
+            "description": "Alias of allow_nfo."
           }
         }
       },
@@ -16290,6 +16385,17 @@
           },
           "resolution": {
             "$ref": "#/components/schemas/MovieMetadataResolutionInfo"
+          },
+          "search_query": {
+            "$ref": "#/components/schemas/MovieMetadataSearchQuery"
+          },
+          "search_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "search_year": {
+            "type": "integer",
+            "nullable": true
           },
           "explanation": {
             "$ref": "#/components/schemas/MovieMetadataResolutionFeedback"
@@ -17329,6 +17435,12 @@
           "dry_run": {
             "type": "boolean"
           },
+          "plan_mode": {
+            "type": "string",
+            "enum": [
+              "keyword_preview"
+            ]
+          },
           "matched_issue_codes": {
             "type": "array",
             "items": {
@@ -17353,17 +17465,33 @@
           "entity_context": {
             "$ref": "#/components/schemas/MovieMetadataEntityContext"
           },
+          "search_query": {
+            "$ref": "#/components/schemas/MovieMetadataSearchQuery"
+          },
+          "search_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "search_year": {
+            "type": "integer",
+            "nullable": true
+          },
           "preview": {
-            "type": "object"
+            "type": "object",
+            "nullable": true,
+            "description": "关键词预览阶段固定为 null；真实刮削结果请查询后台任务。"
           },
           "diff": {
-            "$ref": "#/components/schemas/MovieMetadataDiff"
+            "$ref": "#/components/schemas/MovieMetadataDiff",
+            "nullable": true
           },
           "resolution": {
-            "$ref": "#/components/schemas/MovieMetadataResolutionInfo"
+            "$ref": "#/components/schemas/MovieMetadataResolutionInfo",
+            "nullable": true
           },
           "explanation": {
-            "$ref": "#/components/schemas/MovieMetadataResolutionFeedback"
+            "$ref": "#/components/schemas/MovieMetadataResolutionFeedback",
+            "nullable": true
           },
           "apply_item": {
             "$ref": "#/components/schemas/MovieMetadataBatchReScrapeItemRequest"
@@ -17379,6 +17507,16 @@
           "dry_run": {
             "type": "boolean"
           },
+          "plan_mode": {
+            "type": "string",
+            "enum": [
+              "keyword_preview"
+            ]
+          },
+          "provider_search": {
+            "type": "boolean",
+            "description": "关键词计划固定为 false；该阶段不访问 TMDB、sidecar NFO 或存储 provider。"
+          },
           "selection": {
             "type": "object"
           },
@@ -17387,7 +17525,16 @@
             "example": "POST"
           },
           "apply_endpoint": {
-            "type": "string"
+            "type": "string",
+            "example": "/api/v1/metadata/re-scrape/jobs"
+          },
+          "sync_apply_endpoint": {
+            "type": "string",
+            "example": "/api/v1/metadata/re-scrape"
+          },
+          "progress_endpoint_template": {
+            "type": "string",
+            "example": "/api/v1/jobs/{job_id}"
           },
           "apply_payload": {
             "$ref": "#/components/schemas/MovieMetadataBatchReScrapeRequest"
@@ -23755,6 +23902,49 @@
             }
           }
         ]
+      },
+      "MovieMetadataSearchQuery": {
+        "type": "object",
+        "properties": {
+          "search_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "search_year": {
+            "type": "integer",
+            "nullable": true
+          },
+          "path_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "path_year": {
+            "type": "integer",
+            "nullable": true
+          },
+          "title_overridden": {
+            "type": "boolean"
+          },
+          "year_overridden": {
+            "type": "boolean"
+          },
+          "media_type_hint": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "tv",
+              null
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "path_parser",
+              "user_override"
+            ]
+          }
+        }
       }
     }
   },

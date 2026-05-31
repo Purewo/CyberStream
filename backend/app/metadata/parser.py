@@ -21,7 +21,7 @@ class PathMetadataParser:
             r'(?i)^(?:Season|S|第)\s*(\d+|[一二三四五六七八九十]+)(?:[\s\._\-]*(?:季|Part|Vol|Chapter|精编版|电影版|Total|End|Fin|版|篇))?.*$'
         )
         self.re_mixed_season_folder = re.compile(
-            r'(?i)^(.+?)(?:[\s._-]+|(?=S)|(?=第)|(?=\d))(?:S|Season|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Season)?(?:$|[\s._\-\[])'
+            r'(?i)^(.+?)(?:[\s._-]+|(?=(?<![A-Z0-9])S)|(?=第)|(?=\d))(?:S|Season|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Season)?(?:$|[\s._\-\[])'
         )
         self.re_episode = re.compile(r'(?i)(?:E|EP|第)\s*(\d+)(?:集)?(?=[\s._\-]|$)')
         self.re_s_e = re.compile(r'(?i)S(\d+)[.\s_-]*E(\d+)')

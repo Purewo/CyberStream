@@ -190,6 +190,27 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
         self.assertEqual("tv", parsed.media_type_hint)
         self.assertEqual("flat_sxxexx_filename", parsed.parse_strategy)
 
+    def test_metadata_pipeline_parser_does_not_treat_dts_channel_as_season(self):
+        parser = PathMetadataParser()
+        path = (
+            "天翼铂金18T/我的视频/"
+            "【高清影视之家发布 www.WHATMV.com】落凡尘[60帧率版本][高码版][国粤多音轨+中文字幕]."
+            "2024.2160p.HQ.WEB-DL.DTS5.1.H264.60fps.2Audio-ParkHD/"
+            "落凡尘.Into.The.Mortal.World.2024.2160p.HQ.WEB-DL.DTS5.1.H264.60fps.2Audio-ParkHD.mkv"
+        )
+
+        parsed = parser.parse(path)
+        cleaned = self.cleaner.parse_path_metadata(path)
+
+        self.assertEqual("movie", parsed.media_type_hint)
+        self.assertIsNone(parsed.season)
+        self.assertIsNone(parsed.episode)
+        self.assertIn(parsed.parse_strategy, {"movie_parent_folder", "movie_filename_with_year"})
+        self.assertEqual("落凡尘 Into The Mortal World", cleaned.title)
+        self.assertIsNone(cleaned.season)
+        self.assertIsNone(cleaned.episode)
+        self.assertEqual("movie_filename_year", cleaned.parse_strategy)
+
     def test_scanner_normalizes_absolute_episode_numbers_against_season_metadata(self):
         scanner = CyberScanner()
         season, episode, normalization = scanner._normalize_episode_for_season_metadata(
