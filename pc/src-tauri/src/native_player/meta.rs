@@ -79,6 +79,29 @@ pub struct ResourceMeta {
     /// tracks mpv discovers from the container.
     #[serde(default)]
     pub subtitles: Vec<SubtitleMeta>,
+    /// 云端转码画质档位（仅 quarktv / uctv 资源命中）。前端拉过
+    /// streaming-qualities 后把 available 档位拍扁送来，每档一个绝对
+    /// stream-transcoded URL。空 = 不是云转码资源，HUD 不画清晰度菜单。
+    #[serde(default)]
+    pub qualities: Vec<QualityMeta>,
+}
+
+/// 一档云端转码画质。对应前端 NativeQualityMeta / 后端
+/// streaming-qualities items[]。切档时 Rust 直接用 url loadfile，
+/// 保留当前播放进度（区别于换集的从头播放）。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityMeta {
+    /// low / normal / high / super / 2k / 4k
+    pub resolution: String,
+    /// 展示名（LD / HD / FHD / 4K 等）；缺省时 UI 退到 resolution。
+    #[serde(default)]
+    pub label: Option<String>,
+    /// 该档位的绝对播放 URL（前端已拼好 apiBase origin）。
+    pub url: String,
+    /// 是否后端默认档位，启动时优先选它起播。
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

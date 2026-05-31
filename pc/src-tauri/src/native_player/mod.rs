@@ -74,6 +74,18 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
         // mpv 默认 speed=1.0；不等 PROP_SPEED 触发了，先填上避免 HUD 倍速
         // 下拉第一帧显示「0.0x」。
         state.speed = 1.0;
+        // 夸克/UC 首帧播的是原始文件（最高画质，非任何转码档），所以清晰度
+        // 菜单初始不预选任何档——current_quality_url 留 None，菜单不高亮。用户
+        // 主动切某档后，主循环才把它设成对应档 URL。
+        state.current_quality_url = None;
+        // 选集分段：进播放器时把网格定位到当前集所在段（每段 30 集），
+        // 避免从第 19 集进来却停在 1-30 段还要手动翻页。集号缺失时留 0。
+        state.episode_page = state
+            .current_resource()
+            .and_then(|r| r.episode.as_deref())
+            .and_then(|s| s.parse::<i32>().ok())
+            .map(|n| ((n - 1).max(0) as usize) / 30)
+            .unwrap_or(0);
 
         // 启动心跳线程：webview 给了 device_id + api_base 才发，否则跳过
         // （比如 Rust 直接 cargo run 跑 PoC 时 PlayOptions 是空的）。
@@ -455,13 +467,52 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                         state.current_resource_id = Some(id.clone());
                         state.time_pos = 0.0;
                         state.duration = 0.0;
+                        // 换集回到「原画」默认：清掉上一集选的转码档，新集首帧播原文件。
+                        state.current_quality_url = None;
+                        // 跟随新集对齐选集分段页（每段 30 集），换到 31-60 段的
+                        // 集时网格自动翻过去。
+                        if let Some(n) = state
+                            .current_resource()
+                            .and_then(|r| r.episode.as_deref())
+                            .and_then(|s| s.parse::<i32>().ok())
+                        {
+                            state.episode_page = ((n - 1).max(0) as usize) / 30;
+                        }
                         // 新资源重新走「自动选字幕」流程；老资源决定不带过去。
                         state.auto_subtitle_done = false;
                         action.apply(player.handle());
                     }
+                    crate::native_player::controller::Action::SwitchQuality { url } => {
+                        // 切清晰度：同一资源换转码档位，**保留当前进度**。
+                        // 记下切档前的 time_pos 作为 start，loadfile 后 mpv 从该位置
+                        // 续播。current_resource_id 不变（还是同一资源），进度快照
+                        // 不清零——避免心跳把进度倒回 0。
+                        let pos = state.time_pos.max(0.0);
+                        // 切回原文件（url == 当前资源原始 url）时，current_quality_url
+                        // 归 None，让清晰度菜单正确高亮「原画」行；否则记成对应转码档。
+                        let is_original = state
+                            .current_resource()
+                            .map(|r| r.url == *url)
+                            .unwrap_or(false);
+                        state.current_quality_url = if is_original { None } else { Some(url.clone()) };
+                        if pos > 0.5 {
+                            let _ = player.set_option("start", &format!("{:.3}", pos));
+                        } else {
+                            let _ = player.set_option("start", "none");
+                        }
+                        unsafe {
+                            if let Err(e) = player.command(&["loadfile", url]) {
+                                log::warn!("[native_player] switch quality loadfile failed: {e}");
+                            }
+                        }
+                    }
                     crate::native_player::controller::Action::SetSeason(s) => {
                         // 切换季 tab：只改状态，不动 mpv（用户接下来点集才换源）。
                         state.active_season = Some(*s);
+                    }
+                    crate::native_player::controller::Action::SetEpisodePage(p) => {
+                        // 选集分段翻页：纯 UI 状态，不动 mpv。
+                        state.episode_page = *p;
                     }
                     crate::native_player::controller::Action::OpenSubtitleSearch => {
                         state.online_search_open = true;

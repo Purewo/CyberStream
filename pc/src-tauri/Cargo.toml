@@ -33,8 +33,17 @@ reqwest = { version = "0.12", default-features = false, features = [
     "blocking",
     "json",
     "rustls-tls",
+    "stream",
 ] }
 uuid = { version = "1", features = ["v4"] }
+# 本地媒体代理：给外部播放器（PotPlayer / VLC）改写 User-Agent。CLI 没法
+# 传 header，只能起一个 localhost HTTP server，把 stream URL 包一层。
+# 仅启用 server 必备 feature，避免引入 multipart/json 等不需要的依赖。
+axum = { version = "0.7", default-features = false, features = ["http1", "tokio", "query"] }
+# axum 0.7 跟 hyper 1.x 配套；下面这俩 axum 自身用，但显式列出来防止隐式
+# 升级被打断。
+tower = { version = "0.5", default-features = false }
+http = "1"
 
 [target.'cfg(windows)'.dependencies]
 # Pin windows + windows-core to match what tauri-plugin-shell pulls in;

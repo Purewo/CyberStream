@@ -9,6 +9,7 @@
 
 mod backend;
 mod external_player;
+mod media_proxy;
 mod native_player;
 pub mod proxy;
 mod splash;
@@ -57,6 +58,13 @@ pub fn run() {
                 return Err(format!("backend bootstrap failed: {e}").into());
             }
 
+            // 启动本地媒体代理（外部播放器 UA 改写用）。绑定 127.0.0.1
+            // 随机端口；失败不致命，前端拿不到 base 时降级到原 URL（百度
+            // 网盘外播会 403，其他云盘正常）。
+            tauri::async_runtime::spawn(async move {
+                let _ = media_proxy::start().await;
+            });
+
             // 没有 sidecar 的 lite 构建直接告诉 splash 后端已就绪（前端连远程
             // 后端，splash 关闭由前端主导）。
             // —— 注：spawn_and_wait_ready 内部的健康探针成功时也会推 phase，
@@ -70,6 +78,7 @@ pub fn run() {
             external_player::launch_external_player,
             proxy::get_proxy_config,
             proxy::set_proxy_config,
+            media_proxy::media_proxy_url,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

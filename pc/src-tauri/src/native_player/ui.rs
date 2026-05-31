@@ -500,6 +500,16 @@ fn draw_ui(
                     draw_audio_menu(ui, state, actions, cyan);
                     ui.add_space(6.0);
                     draw_subtitle_menu(ui, state, actions, cyan);
+                    // 清晰度菜单：仅云转码资源（夸克/UC，current_resource.qualities
+                    // 非空）才画。普通资源不显示，UI 与之前完全一致。
+                    if state
+                        .current_resource()
+                        .map(|r| !r.qualities.is_empty())
+                        .unwrap_or(false)
+                    {
+                        ui.add_space(6.0);
+                        draw_resolution_menu(ui, state, actions, cyan);
+                    }
                 });
             });
         });
@@ -1978,6 +1988,72 @@ fn draw_speed_menu(
     });
 }
 
+/// 清晰度菜单 —— 仅云转码资源（夸克/UC）画。仿 draw_speed_menu：触发按钮显示
+/// 当前档位 label，下拉列出当前 resource 的所有 qualities 档位，点中派发
+/// SwitchQuality(url)（主循环保留进度切档）。当前档靠 state.current_quality_url
+/// 反查匹配；缺失时退到 default 档 / 首档。
+fn draw_resolution_menu(
+    ui: &mut egui::Ui,
+    state: &PlayerState,
+    actions: &mut Vec<Action>,
+    cyan: Color32,
+) {
+    use egui::menu;
+    // 先把档位 + 原文件 URL 从 state 里 clone 出来，释放对 state 的借用，闭包里
+    // 才能 push action（与 draw_subtitle_menu 1585 行的 collect 模式一致）。
+    let (qualities, original_url): (Vec<crate::native_player::meta::QualityMeta>, String) =
+        match state.current_resource() {
+            Some(r) if !r.qualities.is_empty() => (r.qualities.clone(), r.url.clone()),
+            _ => return,
+        };
+    let cur_url = state.current_quality_url.clone();
+    let quality_label = |q: &crate::native_player::meta::QualityMeta| -> String {
+        q.label
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| q.resolution.to_uppercase())
+    };
+    // 当前在播：cur_url=None → 原文件（首帧默认，画质最高）；否则匹配某转码档。
+    // 找不到匹配（理论不会）也按原画处理，避免误高亮。
+    let on_original = cur_url.is_none();
+    let active_q_idx = cur_url
+        .as_deref()
+        .and_then(|u| qualities.iter().position(|q| q.url == u));
+    // 触发按钮标签：原画 / 当前转码档 label。
+    let button_label = if on_original {
+        "原画".to_string()
+    } else {
+        active_q_idx
+            .and_then(|i| qualities.get(i))
+            .map(quality_label)
+            .unwrap_or_else(|| "原画".to_string())
+    };
+    ui.scope(|ui| {
+        install_chip_style(ui, cyan);
+        let _ = menu::menu_button(ui, pill_text(&button_label, cyan, false), |ui| {
+            ui.set_min_width(160.0);
+            // 「原画」行置顶：原始文件直链，画质最高、不经转码。点它切回原文件。
+            if menu_row(ui, "原画（原始文件）", on_original, cyan).clicked() {
+                if !on_original {
+                    actions.push(Action::SwitchQuality { url: original_url.clone() });
+                }
+                ui.close();
+            }
+            for (i, q) in qualities.iter().enumerate() {
+                let active = !on_original && active_q_idx == Some(i);
+                let row_label = quality_label(q);
+                if menu_row(ui, &row_label, active, cyan).clicked() {
+                    if !active {
+                        actions.push(Action::SwitchQuality { url: q.url.clone() });
+                    }
+                    ui.close();
+                }
+            }
+        });
+    });
+}
+
 /// 下拉行：通用样式 — 选中时左侧加青色 ✓，hover 灰底。返回 Response 给调用方
 /// 判断 click。
 /// 下拉行：通用样式 — 选中时左侧加青色 ✓，hover 浅青底+青字。返回 Response 给调用方
@@ -2678,14 +2754,24 @@ fn draw_resource_groups(
         return;
     }
 
-    // ---- 集数方块网格（5 列）----
-    let cols = 5usize;
+    // ---- 集数方块网格 ----
     // egui ScrollArea 会在右侧自己塞滚动条，但 available_width() 不一定
     // 帮我们扣掉那点宽度——结果就是网格右列被滚动条吃掉一截。这里手工
     // 留 14px buffer（≈ scrollbar 宽 + 一点呼吸感），再算单元格尺寸。
     let total_w = (ui.available_width() - 14.0).max(0.0);
-    let gap = 6.0_f32;
-    let cell = ((total_w - gap * (cols as f32 - 1.0)) / cols as f32).floor();
+    let gap = 5.0_f32;
+    // 方块边长夹在 [MIN_CELL, MAX_CELL]。逻辑：先按「能塞下几个最小格」定
+    // 列数（窗口越宽列越多，封顶 5 列），再用列数反推单格宽度，并 clamp 到
+    // 上下限。给上限是关键——之前没封顶，窄面板降到 3 列后每格被撑到很大很
+    // 肿；现在超过 MAX_CELL 就留白不再放大，方块大小始终克制。
+    const MIN_CELL: f32 = 46.0;
+    const MAX_CELL: f32 = 60.0;
+    let fit_cols = (((total_w + gap) / (MIN_CELL + gap)).floor() as usize).clamp(1, 5);
+    let cols = fit_cols.min(total.max(1));
+    let raw_cell = (total_w - gap * (cols as f32 - 1.0)) / cols as f32;
+    let cell = raw_cell.floor().clamp(MIN_CELL, MAX_CELL);
+    // 正方形方块 —— 对标 web，高=宽。之前压成扁矩形（高 0.82×宽）显得粗笨。
+    let cell_h = cell;
 
     // 找到当前播放集的 key，用于高亮 + 默认展开。
     let active_key = movie
@@ -2703,7 +2789,72 @@ fn draw_resource_groups(
     let entries: Vec<(EpKey, &Vec<&crate::native_player::meta::ResourceMeta>)> =
         groups.iter().map(|(k, v)| (k.clone(), v)).collect();
 
-    for chunk in entries.chunks(cols) {
+    // ---- 分段（每段 30 集，与 web 端一致）----
+    // 集数多时把网格切成 1-30 / 31-60 ... 段，上方画段 tab。段内仍按上面
+    // 算好的列数/尺寸渲染。page 取 state.episode_page，但夹紧到有效范围
+    // （切季后段数可能变少，避免越界空白）。
+    const EPISODES_PER_PAGE: usize = 30;
+    let total_pages = entries.len().div_ceil(EPISODES_PER_PAGE).max(1);
+    let page = state.episode_page.min(total_pages - 1);
+    if total_pages > 1 {
+        ui.horizontal_wrapped(|ui| {
+            for p in 0..total_pages {
+                let start = p * EPISODES_PER_PAGE + 1;
+                let end = ((p + 1) * EPISODES_PER_PAGE).min(entries.len());
+                let seg_label = format!("{start}-{end}");
+                let seg_active = p == page;
+                let (rect, resp) = ui.allocate_exact_size(
+                    egui::vec2(64.0, 26.0),
+                    egui::Sense::click(),
+                );
+                let hovered = resp.hovered();
+                let (fill, border, txt) = if seg_active {
+                    (cyan.gamma_multiply(0.22), cyan, cyan)
+                } else if hovered {
+                    (
+                        cyan.gamma_multiply(0.10),
+                        cyan.gamma_multiply(0.7),
+                        Color32::WHITE,
+                    )
+                } else {
+                    (
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 26),
+                        Color32::from_gray(200),
+                    )
+                };
+                let painter = ui.painter();
+                painter.rect(
+                    rect,
+                    egui::CornerRadius::same(6),
+                    fill,
+                    egui::Stroke::new(if seg_active { 1.5 } else { 1.0 }, border),
+                    egui::StrokeKind::Inside,
+                );
+                painter.text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &seg_label,
+                    egui::FontId::monospace(12.0),
+                    txt,
+                );
+                if hovered {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if resp.clicked() && !seg_active {
+                    actions.push(Action::SetEpisodePage(p));
+                }
+                ui.add_space(6.0);
+            }
+        });
+        ui.add_space(12.0);
+    }
+
+    let page_start = page * EPISODES_PER_PAGE;
+    let page_end = (page_start + EPISODES_PER_PAGE).min(entries.len());
+    let page_entries = &entries[page_start..page_end];
+
+    for chunk in page_entries.chunks(cols) {
         ui.horizontal(|ui| {
             for (k, sources) in chunk {
                 let label = match k {
@@ -2712,47 +2863,121 @@ fn draw_resource_groups(
                     EpKey::Movie => "正片".to_string(),
                 };
                 let is_active = active_key.as_ref() == Some(k);
-                let (fill, border, text_color) = if is_active {
+                let playable = !sources[0].url.is_empty();
+
+                // egui 即时模式：先 allocate 出固定尺寸的交互区并拿到本帧的
+                // hover / 按下状态，再按状态绘制——这样鼠标移上去能立刻变色、
+                // 按下有回馈。之前的写法是先画 Frame 再 interact，状态永远慢
+                // 一帧且根本没接到绘制里，所以「死板、没触感」。
+                let (rect, resp) = ui.allocate_exact_size(
+                    egui::vec2(cell, cell_h),
+                    if playable {
+                        egui::Sense::click()
+                    } else {
+                        egui::Sense::hover()
+                    },
+                );
+                let hovered = resp.hovered() && playable;
+                let pressed = resp.is_pointer_button_down_on() && playable;
+
+                // 配色三态。对标 web 那种「深邃黑 + 微立体」高端质感：
+                // 默认块底色压到接近纯黑（比面板背景只亮一点点），靠这点明度差
+                // 在更黑的背景上「浮起」；顶部再补一道极淡高光边制造凸起感。
+                // 之前用中灰 rgb(42,45,52) 显得惨白发平，就是底色太亮了。
+                let (fill, border, border_w, text_color) = if is_active {
+                    (cyan.gamma_multiply(0.22), cyan, 1.4, cyan)
+                } else if pressed {
                     (
-                        cyan.gamma_multiply(0.22),
-                        cyan,
-                        cyan,
+                        Color32::from_rgb(16, 18, 22),
+                        cyan.gamma_multiply(0.7),
+                        1.2,
+                        Color32::from_gray(235),
+                    )
+                } else if hovered {
+                    (
+                        Color32::from_rgb(34, 38, 46),
+                        cyan.gamma_multiply(0.6),
+                        1.2,
+                        Color32::from_gray(245),
                     )
                 } else {
                     (
-                        Color32::from_rgba_unmultiplied(255, 255, 255, 12),
-                        Color32::from_rgba_unmultiplied(255, 255, 255, 28),
-                        Color32::from_gray(220),
+                        Color32::from_rgb(24, 26, 31),
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 16),
+                        1.0,
+                        Color32::from_gray(200),
                     )
                 };
-                let resp = egui::Frame::default()
-                    .fill(fill)
-                    .stroke(egui::Stroke::new(1.0, border))
-                    .corner_radius(egui::CornerRadius::same(6))
-                    .show(ui, |ui| {
-                        ui.set_width(cell);
-                        ui.set_height(cell * 0.7);
-                        ui.vertical_centered(|ui| {
-                            ui.add_space((cell * 0.7 - 18.0) * 0.5);
-                            ui.label(
-                                egui::RichText::new(label)
-                                    .color(text_color)
-                                    .size(13.0)
-                                    .strong()
-                                    .monospace(),
-                            );
-                        });
-                    });
-                let interact = ui.interact(
-                    resp.response.rect,
-                    ui.id().with(("ep", &sources[0].id)),
-                    egui::Sense::click(),
+
+                let painter = ui.painter();
+                let radius = egui::CornerRadius::same(12);
+                // 按下时下沉 1px（按进去），hover 时上浮 2px（抬起来）——配合
+                // 下方投影，鼠标移上去方块「动一下」浮起，松开/按下回落，告别死板。
+                let draw_rect = if pressed {
+                    rect.translate(egui::vec2(0.0, 1.0))
+                } else if hovered {
+                    rect.translate(egui::vec2(0.0, -2.0))
+                } else {
+                    rect
+                };
+
+                // 投影：每块默认在下方落一层「比背景更黑」的软影，让方块从面板
+                // 浮起——这是 web 那种立体感的真正来源（暗背景上的暗投影 + 块本身
+                // 略亮）。hover/active 时投影转青色辉光、更明显；hover 上浮后影子
+                // 落在原位下方，拉开距离更显「抬起」。
+                if !pressed {
+                    let (shadow_col, dy) = if hovered {
+                        (cyan.gamma_multiply(0.16), 4.0)
+                    } else if is_active {
+                        (cyan.gamma_multiply(0.20), 2.5)
+                    } else {
+                        (Color32::from_rgba_unmultiplied(0, 0, 0, 130), 2.0)
+                    };
+                    let shadow = draw_rect.translate(egui::vec2(0.0, dy));
+                    painter.rect_filled(shadow, radius, shadow_col);
+                }
+
+                painter.rect(
+                    draw_rect,
+                    radius,
+                    fill,
+                    egui::Stroke::new(border_w, border),
+                    egui::StrokeKind::Inside,
                 );
-                if interact.clicked() && !is_active && !sources[0].url.is_empty() {
+                // 顶部一道极淡高光边：模拟从上方来的光打在凸起方块的上沿，
+                // 是「凸起而非凹陷」的关键。非激活态才画，且非常克制（alpha 低），
+                // 避免又变成之前那种发白发脏。
+                if !is_active {
+                    let hi_alpha = if hovered { 40 } else { 22 };
+                    let hi_rect = egui::Rect::from_min_max(
+                        egui::pos2(draw_rect.min.x + 7.0, draw_rect.min.y + 1.0),
+                        egui::pos2(draw_rect.max.x - 7.0, draw_rect.min.y + 2.0),
+                    );
+                    painter.rect_filled(
+                        hi_rect,
+                        egui::CornerRadius::same(1),
+                        Color32::from_rgba_unmultiplied(255, 255, 255, hi_alpha),
+                    );
+                }
+                painter.text(
+                    draw_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &label,
+                    egui::FontId::new(15.0, egui::FontFamily::Monospace),
+                    text_color,
+                );
+                if hovered {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+
+                if resp.clicked() && !is_active && playable {
                     actions.push(Action::SwitchResource {
                         id: sources[0].id.clone(),
                         url: sources[0].url.clone(),
                     });
+                }
+                if chunk.last().map(|(lk, _)| lk) != Some(k) {
+                    ui.add_space(gap);
                 }
             }
         });

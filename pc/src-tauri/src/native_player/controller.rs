@@ -111,6 +111,14 @@ pub struct PlayerState {
     /// 跳到下一集。一次性标志：消费后立刻清零。
     /// 不在 SwitchResource 路径里设置（用户切集走的是 STOP reason）。
     pub pending_auto_next: bool,
+    /// 当前选中的云转码画质 URL（仅夸克/UC 资源有意义）。HUD 清晰度菜单
+    /// 按这个值判定哪一档高亮；切档时主循环更新它。None = 非云转码资源或
+    /// 尚未选档。启动时若 current_resource 有 qualities，填默认档 url。
+    pub current_quality_url: Option<String>,
+    /// 选集网格的当前分段页（每段 30 集，与 web 端一致）。集数多时网格按
+    /// 1-30 / 31-60 ... 分段，这里记当前看的是第几段（0 基）。播放集变化时
+    /// 主循环/UI 会把它对齐到当前集所在段。
+    pub episode_page: usize,
 }
 
 /// 在线字幕子系统的真值副本。所有跨线程通信都过这个 Mutex；UI 每帧 lock 一次
@@ -420,6 +428,11 @@ pub enum Action {
     /// new file looks like the same content (M3.6 keeps this dumb —
     /// only switch the URL, no time preservation yet).
     SwitchResource { id: String, url: String },
+    /// 切清晰度：同一资源换云转码档位 URL，**保留当前播放进度**（区别于
+    /// SwitchResource 的从头播放）。url 是该档位的 stream-transcoded 绝对地址。
+    /// 实际 loadfile 在 mod.rs 主循环处理——要读 state.time_pos 决定 start，
+    /// apply() 拿不到 state，所以这里只是个信号，apply() 内 noop。
+    SwitchQuality { url: String },
     /// Toggle OS fullscreen on the Win32 window. The frame loop owns
     /// `PlayerWindow`, so it gets to do the SetWindowPlacement dance.
     ToggleFullscreen,
@@ -428,6 +441,9 @@ pub enum Action {
     /// it back into PlayerState.active_season; mpv is untouched (no
     /// resource switch happens until the user actually picks an episode).
     SetSeason(i32),
+    /// 切选集网格分段页（每段 30 集）。只改 PlayerState.episode_page，不动
+    /// mpv——纯 UI 翻页，用户在 1-30 / 31-60 之间切换查看。
+    SetEpisodePage(usize),
     /// 打开「在线字幕搜索」面板。主循环把 PlayerState.online_search_open 翻 true，
     /// 默认用当前 movie title 作为关键词跑首次 search。
     OpenSubtitleSearch,
@@ -565,6 +581,11 @@ impl Action {
                 // 切季 tab 只更新 PlayerState.active_season，不动 mpv。
                 // 同样在主循环里直接读取后写状态。
                 Action::SetSeason(_) => {}
+                // 选集分段翻页只改 PlayerState.episode_page，主循环处理。
+                Action::SetEpisodePage(_) => {}
+                // 切清晰度要读 state.time_pos 决定 start=<pos>，apply 拿不到
+                // state；实际 loadfile 在 mod.rs 主循环处理。这里 noop。
+                Action::SwitchQuality { .. } => {}
                 // 在线字幕相关：所有动作都在 mod.rs 主循环里处理（开/关面板、
                 // 触发 worker 线程、拼装临时文件路径等）。这里全 noop。
                 Action::OpenSubtitleSearch
