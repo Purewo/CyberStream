@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from abc import ABC, abstractmethod
 from typing import Any
 from urllib.parse import urlparse
@@ -156,6 +157,7 @@ class BaseSource(ABC):
     def __init__(self) -> None:
         self._session: requests.Session | None = None
         self._proxy: str | None = None
+        self.request_lock = threading.RLock()
 
     @property
     def allowed_hosts(self) -> set[str]:

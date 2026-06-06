@@ -8,6 +8,8 @@
 - 每次请求只访问一个 `source`，不会在后端并发遍历全部资源站；`btbtla` 可通过后端配置走本机代理。
 - `detail` / `magnet` 的 HTTP(S) `link` 必须属于所选 `source` 域名；相对链接会按该 source 根地址补全，跨域或本机地址会被拒绝。
 - `magnet` 接口仍允许直接传 `magnet:?` 或 `ed2k://` URI；`detail` 接口不接受这两类非 HTTP 链接。
+- `keyword` 最长 120 字符，`link` 最长 2048 字符，`page` 仅接受 `1..50`，未知 `source` 会在抓取前拒绝。
+- 同一个 `source` 的抓取请求会串行执行；锁等待超时返回 `429`，避免共享 session/proxy 状态被并发请求互相覆盖。
 - 模块化 OpenAPI 新增 `aggregator` 模块，便于前端按领域懒加载契约。
 
 ## 外部 URL scheme

@@ -8,7 +8,7 @@
   频率限制，逐源由前端用户手动触发。
 - btbtla 走本机代理（地址在 config.AGGREGATOR_BTBTLA_PROXY），其他源直连。
 
-注意：抓取是同步阻塞 I/O，每个请求会占用一个 waitress 工作线程最多 ~12s
+注意：抓取是同步阻塞 I/O，每个请求会占用一个 Web 工作线程最多 ~12s
 (sources/base.py 的 TIMEOUT)，rarbt 的 ddddocr 验证码路径可能更久。实验室
 内测可接受；将来并发成问题再考虑线程池 / 把抓取移出请求线程。
 """
@@ -18,7 +18,8 @@ import logging
 from flask import Blueprint, current_app, request
 
 from backend.app.services.aggregator import (
-    search_film, get_detail, get_magnet, SOURCE_NAMES, SOURCE_PRIORITY,
+    search_film, get_detail, get_magnet, SourceBusyError,
+    SOURCE_NAMES, SOURCE_PRIORITY,
 )
 from backend.app.utils.response import api_error, api_response
 
@@ -26,9 +27,31 @@ logger = logging.getLogger(__name__)
 
 aggregator_bp = Blueprint('aggregator', __name__, url_prefix='/api/v1')
 
+MAX_KEYWORD_LENGTH = 120
+MAX_LINK_LENGTH = 2048
+MAX_PAGE = 50
+
 
 def _default_source() -> str:
     return current_app.config.get('AGGREGATOR_DEFAULT_SOURCE', 'rarbt')
+
+
+def _request_source():
+    source = (request.args.get('source') or _default_source()).strip().lower()
+    if source not in SOURCE_NAMES:
+        return None, api_error(40000, msg=f"unknown source: {source}", http_status=400)
+    return source, None
+
+
+def _request_page():
+    raw = (request.args.get('page', '1') or '1').strip()
+    try:
+        page = int(raw)
+    except ValueError:
+        return None, api_error(40000, msg="page must be an integer", http_status=400)
+    if page < 1 or page > MAX_PAGE:
+        return None, api_error(40000, msg=f"page must be between 1 and {MAX_PAGE}", http_status=400)
+    return page, None
 
 
 def _proxy_for(source: str):
@@ -52,18 +75,23 @@ def aggregator_search():
     keyword = (request.args.get('keyword') or '').strip()
     if not keyword:
         return api_error(40000, msg="keyword required")
-    source = (request.args.get('source') or _default_source()).strip()
-    try:
-        page = int(request.args.get('page', '1') or '1')
-    except ValueError:
-        page = 1
+    if len(keyword) > MAX_KEYWORD_LENGTH:
+        return api_error(40000, msg=f"keyword must be at most {MAX_KEYWORD_LENGTH} characters")
+    source, error = _request_source()
+    if error:
+        return error
+    page, error = _request_page()
+    if error:
+        return error
     try:
         items = search_film(keyword, page=page, source=source, proxy=_proxy_for(source))
+    except SourceBusyError:
+        return api_error(42900, msg="aggregator source is busy", http_status=429)
     except ValueError as exc:
         return api_error(40000, msg=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("aggregator search failed source=%s keyword=%s", source, keyword)
-        return api_error(50000, msg=str(exc)[:300], http_status=500)
+    except Exception:  # noqa: BLE001
+        logger.exception("aggregator search failed source=%s", source)
+        return api_error(50000, msg="aggregator search failed", http_status=500)
     return api_response(data={
         "source": source, "keyword": keyword, "page": page, "items": items or [],
     })
@@ -74,14 +102,20 @@ def aggregator_detail():
     link = (request.args.get('link') or '').strip()
     if not link:
         return api_error(40000, msg="link required")
-    source = (request.args.get('source') or _default_source()).strip()
+    if len(link) > MAX_LINK_LENGTH:
+        return api_error(40000, msg=f"link must be at most {MAX_LINK_LENGTH} characters")
+    source, error = _request_source()
+    if error:
+        return error
     try:
         detail = get_detail(link, source=source, proxy=_proxy_for(source))
+    except SourceBusyError:
+        return api_error(42900, msg="aggregator source is busy", http_status=429)
     except ValueError as exc:
         return api_error(40000, msg=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("aggregator detail failed source=%s link=%s", source, link)
-        return api_error(50000, msg=str(exc)[:300], http_status=500)
+    except Exception:  # noqa: BLE001
+        logger.exception("aggregator detail failed source=%s", source)
+        return api_error(50000, msg="aggregator detail failed", http_status=500)
     return api_response(data={"source": source, "link": link, "detail": detail})
 
 
@@ -90,12 +124,18 @@ def aggregator_magnet():
     link = (request.args.get('link') or '').strip()
     if not link:
         return api_error(40000, msg="link required")
-    source = (request.args.get('source') or _default_source()).strip()
+    if len(link) > MAX_LINK_LENGTH:
+        return api_error(40000, msg=f"link must be at most {MAX_LINK_LENGTH} characters")
+    source, error = _request_source()
+    if error:
+        return error
     try:
         magnet = get_magnet(link, source=source, proxy=_proxy_for(source))
+    except SourceBusyError:
+        return api_error(42900, msg="aggregator source is busy", http_status=429)
     except ValueError as exc:
         return api_error(40000, msg=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("aggregator magnet failed source=%s link=%s", source, link)
-        return api_error(50000, msg=str(exc)[:300], http_status=500)
+    except Exception:  # noqa: BLE001
+        logger.exception("aggregator magnet failed source=%s", source)
+        return api_error(50000, msg="aggregator magnet failed", http_status=500)
     return api_response(data={"source": source, "link": link, "magnet": magnet})

@@ -9,6 +9,7 @@ from .film_resource_core import (
     search_film,
     get_detail,
     get_magnet,
+    SourceBusyError,
 )
 from .sources import SOURCE_NAMES, SOURCE_PRIORITY, get_source, all_sources
 
@@ -16,6 +17,7 @@ __all__ = [
     "search_film",
     "get_detail",
     "get_magnet",
+    "SourceBusyError",
     "get_source",
     "all_sources",
     "SOURCE_NAMES",

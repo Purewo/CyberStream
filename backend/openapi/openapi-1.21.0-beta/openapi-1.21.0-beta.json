@@ -231,7 +231,8 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 120
             }
           },
           {
@@ -240,7 +241,16 @@
             "required": false,
             "description": "资源站 key；不传时使用后端默认来源。",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "bt7274",
+                "btbtla",
+                "rarbt",
+                "yinfans",
+                "renrenys",
+                "hdzu",
+                "4kzhinan"
+              ]
             }
           },
           {
@@ -250,6 +260,7 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
+              "maximum": 50,
               "default": 1
             }
           }
@@ -266,7 +277,17 @@
             }
           },
           "400": {
-            "description": "缺少 keyword 或 source 不受支持",
+            "description": "缺少 keyword、参数超出限制、page 无效或 source 不受支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "所选 source 正在处理其他请求",
             "content": {
               "application/json": {
                 "schema": {
@@ -305,7 +326,8 @@
             "description": "搜索结果返回的详情链接。相对链接会按 source 根地址补全；绝对 URL 必须属于所选 source 的域名。bt7274 兼容直接传数字 ID。",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 2048
             }
           },
           {
@@ -314,7 +336,16 @@
             "required": false,
             "description": "资源站 key；不传时使用后端默认来源。",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "bt7274",
+                "btbtla",
+                "rarbt",
+                "yinfans",
+                "renrenys",
+                "hdzu",
+                "4kzhinan"
+              ]
             }
           }
         ],
@@ -330,7 +361,17 @@
             }
           },
           "400": {
-            "description": "缺少 link 或 source 不受支持",
+            "description": "缺少 link、参数超出限制、link 域名不被允许或 source 不受支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "所选 source 正在处理其他请求",
             "content": {
               "application/json": {
                 "schema": {
@@ -369,7 +410,8 @@
             "description": "搜索结果返回的下载链接、同 source 域名下的 HTTP(S) 链接，或直接的 magnet/ed2k URI。跨 source 域名 URL 会被拒绝。",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 2048
             }
           },
           {
@@ -378,7 +420,16 @@
             "required": false,
             "description": "资源站 key；不传时使用后端默认来源。",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "bt7274",
+                "btbtla",
+                "rarbt",
+                "yinfans",
+                "renrenys",
+                "hdzu",
+                "4kzhinan"
+              ]
             }
           }
         ],
@@ -394,7 +445,17 @@
             }
           },
           "400": {
-            "description": "缺少 link 或 source 不受支持",
+            "description": "缺少 link、参数超出限制、HTTP(S) link 域名不被允许或 source 不受支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "所选 source 正在处理其他请求",
             "content": {
               "application/json": {
                 "schema": {

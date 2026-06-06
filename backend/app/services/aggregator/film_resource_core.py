@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from .sources import get_source, all_sources, SOURCE_NAMES, SOURCE_PRIORITY
 
+SOURCE_LOCK_TIMEOUT_SECONDS = 1.0
 
-def _prepare_source(source: str, proxy: str | None = None):
-    """获取 source 实例并按需设置代理。"""
-    s = get_source(source)
-    s.set_proxy(proxy)
-    return s
+
+class SourceBusyError(RuntimeError):
+    pass
+
+
+@contextmanager
+def _source_operation(source: str, proxy: str | None = None):
+    source_obj = get_source(source)
+    acquired = source_obj.request_lock.acquire(timeout=SOURCE_LOCK_TIMEOUT_SECONDS)
+    if not acquired:
+        raise SourceBusyError(f"source is busy: {source}")
+    try:
+        source_obj.set_proxy(proxy)
+        yield source_obj
+    finally:
+        source_obj.request_lock.release()
 
 
 def _normalize_source_link(source_obj, link: str, *, allow_magnet: bool = False) -> str:
@@ -48,19 +61,20 @@ def _normalize_source_link(source_obj, link: str, *, allow_magnet: bool = False)
 
 def search_film(keyword: str, page: int = 1, source: str = "rarbt", proxy: str | None = None) -> list[dict[str, str]]:
     """搜索影片。"""
-    return _prepare_source(source, proxy).search(keyword, page=page)
+    with _source_operation(source, proxy) as source_obj:
+        return source_obj.search(keyword, page=page)
 
 
 def get_detail(url: str, source: str = "rarbt", proxy: str | None = None) -> dict[str, Any] | None:
     """获取影片详情。"""
-    source_obj = _prepare_source(source, proxy)
-    return source_obj.get_detail(_normalize_source_link(source_obj, url))
+    with _source_operation(source, proxy) as source_obj:
+        return source_obj.get_detail(_normalize_source_link(source_obj, url))
 
 
 def get_magnet(link: str, source: str = "rarbt", proxy: str | None = None) -> dict[str, str] | None:
     """解析 magnet 链接。"""
-    source_obj = _prepare_source(source, proxy)
-    return source_obj.get_magnet(_normalize_source_link(source_obj, link, allow_magnet=True))
+    with _source_operation(source, proxy) as source_obj:
+        return source_obj.get_magnet(_normalize_source_link(source_obj, link, allow_magnet=True))
 
 
 __all__ = [
@@ -71,4 +85,5 @@ __all__ = [
     "all_sources",
     "SOURCE_NAMES",
     "SOURCE_PRIORITY",
+    "SourceBusyError",
 ]

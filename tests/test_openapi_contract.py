@@ -102,6 +102,33 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("metadata_match_context", schemas["OtherVideoItem"]["properties"])
         self.assertIn("actions", schemas["OtherVideoItem"]["properties"])
 
+    def test_aggregator_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        paths = openapi["paths"]
+        expected_sources = [
+            "bt7274",
+            "btbtla",
+            "rarbt",
+            "yinfans",
+            "renrenys",
+            "hdzu",
+            "4kzhinan",
+        ]
+
+        search = paths["/api/v1/aggregator/search"]["get"]
+        search_params = {param["name"]: param for param in search["parameters"]}
+        self.assertEqual(120, search_params["keyword"]["schema"]["maxLength"])
+        self.assertEqual(expected_sources, search_params["source"]["schema"]["enum"])
+        self.assertEqual(50, search_params["page"]["schema"]["maximum"])
+        self.assertIn("429", search["responses"])
+
+        for path in ["/api/v1/aggregator/detail", "/api/v1/aggregator/magnet"]:
+            operation = paths[path]["get"]
+            params = {param["name"]: param for param in operation["parameters"]}
+            self.assertEqual(2048, params["link"]["schema"]["maxLength"])
+            self.assertEqual(expected_sources, params["source"]["schema"]["enum"])
+            self.assertIn("429", operation["responses"])
+
     def test_storage_refresh_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]
