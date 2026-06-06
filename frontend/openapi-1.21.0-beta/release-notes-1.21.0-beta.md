@@ -216,8 +216,8 @@
 
 ## TMDB 本机配置
 
-- 新增 `GET /api/v1/system/tmdb-config`，返回 `token_set`、`proxy_enabled`、`proxy_url`，不会返回 TMDB token 明文。
-- 新增 `PUT /api/v1/system/tmdb-config`，支持写入或清空 `TMDB_TOKEN`，以及更新 `TMDB_PROXY_ENABLED` / `TMDB_PROXY_URL`。写入 `.env.local` 后会尽量热更新运行时配置，响应包含 `hot_reload`。
+- 新增 `GET /api/v1/system/tmdb-config`，返回 `token_set`、`proxy_enabled`、`proxy_url` 和 `proxy_url_redacted`；不会返回 TMDB token 明文，代理 URL 含凭证时也会脱敏。
+- 新增 `PUT /api/v1/system/tmdb-config`，支持写入或清空 `TMDB_TOKEN`，以及更新 `TMDB_PROXY_ENABLED` / `TMDB_PROXY_URL`。接口拒绝换行/控制字符注入，使用跨线程/Unix 进程锁和原子替换写入 `.env.local`，写盘成功后才更新运行时环境，响应包含 `hot_reload`。
 
 ## 官方客户端更新检查
 

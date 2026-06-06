@@ -320,6 +320,11 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("SystemTmdbConfig", schemas)
         self.assertIn("SystemTmdbConfigUpdateRequest", schemas)
         self.assertNotIn("token", schemas["SystemTmdbConfig"]["properties"])
+        self.assertIn("proxy_url_redacted", schemas["SystemTmdbConfig"]["properties"])
+        self.assertEqual(
+            2048,
+            schemas["SystemTmdbConfigUpdateRequest"]["properties"]["proxy_url"]["maxLength"],
+        )
 
     def test_update_check_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()

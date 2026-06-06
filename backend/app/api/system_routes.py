@@ -1,8 +1,11 @@
+from contextlib import contextmanager
 import logging
 import os
 import re
 import sys
+import tempfile
 import threading
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Blueprint, current_app, request
 
@@ -101,6 +104,9 @@ _ENV_KEYS = {
 # 仅允许这一组 key 通过 PUT 接口写入 .env.local，避免接口被滥用作"任意
 # env 写入器"。后续要扩展（比如 BANGUMI 配置）就在这里加。
 _WRITABLE_ENV_KEYS = set(_ENV_KEYS.values())
+_ENV_UPDATE_LOCK = threading.RLock()
+_CONTROL_CHARACTER_RE = re.compile(r"[\x00-\x1f\x7f]")
+_ALLOWED_PROXY_SCHEMES = {"http", "https", "socks5"}
 
 
 def _data_dir():
@@ -125,11 +131,57 @@ def _read_env_file(path):
         return [line.rstrip("\n") for line in f]
 
 
+@contextmanager
+def _env_file_update_lock(path):
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    lock_path = f"{path}.lock"
+    with _ENV_UPDATE_LOCK:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            os.chmod(lock_path, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(lock_fd, "a+", encoding="utf-8") as lock_file:
+            try:
+                import fcntl
+            except ImportError:
+                fcntl = None
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _write_env_file(path, lines):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        for line in lines:
-            f.write(line + "\n")
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=".env.local.", suffix=".tmp", dir=directory, text=True)
+    try:
+        os.chmod(temp_path, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            for line in lines:
+                f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _upsert_env_lines(lines, updates):
@@ -160,6 +212,70 @@ def _upsert_env_lines(lines, updates):
             continue
         new_lines.append(f"{key}={value}")
     return new_lines
+
+
+def _contains_unsafe_env_characters(value):
+    return bool(_CONTROL_CHARACTER_RE.search(value)) or any(char.isspace() for char in value)
+
+
+def _validate_proxy_url(value):
+    stripped = value.strip()
+    if len(stripped) > 2048 or _contains_unsafe_env_characters(stripped):
+        return None
+    try:
+        parsed = urlsplit(stripped)
+        if parsed.scheme.lower() not in _ALLOWED_PROXY_SCHEMES or not parsed.hostname:
+            return None
+        parsed.port
+    except ValueError:
+        return None
+    return stripped
+
+
+def _redact_proxy_url(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return "", False
+    try:
+        parsed = urlsplit(raw)
+        if parsed.username is None and parsed.password is None:
+            return raw, False
+        host = parsed.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if parsed.port is not None:
+            host = f"{host}:{parsed.port}"
+        netloc = f"***@{host}" if parsed.password is None else f"***:***@{host}"
+        return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)), True
+    except ValueError:
+        return "", False
+
+
+def _tmdb_config_payload():
+    token = os.environ.get("TMDB_TOKEN") or current_app.config.get("TMDB_TOKEN") or ""
+    proxy_url = os.environ.get("TMDB_PROXY_URL") or current_app.config.get("TMDB_PROXY_URL") or ""
+    proxy_enabled_raw = os.environ.get("TMDB_PROXY_ENABLED")
+    if proxy_enabled_raw not in ("", None):
+        proxy_enabled = str(proxy_enabled_raw).strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        proxy_enabled = current_app.config.get("TMDB_PROXY_ENABLED")
+        if proxy_enabled is None:
+            proxy_enabled = True
+    visible_proxy_url, proxy_url_redacted = _redact_proxy_url(proxy_url)
+    return {
+        "token_set": bool(token),
+        "proxy_enabled": bool(proxy_enabled),
+        "proxy_url": visible_proxy_url,
+        "proxy_url_redacted": proxy_url_redacted,
+    }
+
+
+def _apply_environment_updates(updates):
+    for key, value in updates.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 def _refresh_runtime_config():
@@ -207,21 +323,14 @@ def get_tmdb_config():
     永远不回明文 token —— 只回 token_set:bool。前端如需"清空 token"自己
     维护输入框 placeholder 即可。
     """
-    token = os.environ.get("TMDB_TOKEN") or current_app.config.get("TMDB_TOKEN") or ""
-    proxy_url = os.environ.get("TMDB_PROXY_URL") or current_app.config.get("TMDB_PROXY_URL") or ""
-    proxy_enabled = current_app.config.get("TMDB_PROXY_ENABLED")
-    if proxy_enabled is None:
-        proxy_enabled = True  # 跟 backend.config 默认一致
-    return api_response(data={
-        "token_set": bool(token),
-        "proxy_enabled": bool(proxy_enabled),
-        "proxy_url": proxy_url or "",
-    })
+    return api_response(data=_tmdb_config_payload())
 
 
 @system_bp.route('/system/tmdb-config', methods=['PUT'])
 def put_tmdb_config():
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return api_error(code=40027, msg="请求体必须是 JSON 对象")
 
     updates = {}
     response_data = {}
@@ -231,14 +340,14 @@ def put_tmdb_config():
         token_value = payload.get("token")
         if token_value is None or (isinstance(token_value, str) and not token_value.strip()):
             updates[_ENV_KEYS["token"]] = None  # 删除
-            os.environ.pop(_ENV_KEYS["token"], None)
             response_data["token_set"] = False
         elif isinstance(token_value, str):
             stripped = token_value.strip()
             if len(stripped) > 4096:
                 return api_error(code=40020, msg="TMDB token 过长（>4096 字符），请检查输入。")
+            if _contains_unsafe_env_characters(stripped):
+                return api_error(code=40028, msg="TMDB token 不得包含空白或控制字符")
             updates[_ENV_KEYS["token"]] = stripped
-            os.environ[_ENV_KEYS["token"]] = stripped
             response_data["token_set"] = True
         else:
             return api_error(code=40021, msg="token 字段类型错误，应为字符串")
@@ -248,56 +357,70 @@ def put_tmdb_config():
         if not isinstance(v, bool):
             return api_error(code=40022, msg="proxy_enabled 字段类型错误，应为布尔")
         updates[_ENV_KEYS["proxy_enabled"]] = "true" if v else "false"
-        os.environ[_ENV_KEYS["proxy_enabled"]] = "true" if v else "false"
         response_data["proxy_enabled"] = v
 
     if "proxy_url" in payload:
         url = payload.get("proxy_url")
         if url is None or (isinstance(url, str) and not url.strip()):
             updates[_ENV_KEYS["proxy_url"]] = None
-            os.environ.pop(_ENV_KEYS["proxy_url"], None)
             response_data["proxy_url"] = ""
+            response_data["proxy_url_redacted"] = False
         elif isinstance(url, str):
             stripped = url.strip()
-            # 简单校验：必须是 http/https/socks5 开头，跟前端代理设置卡片
-            # 的校验保持一致。
-            if not re.match(r"^(https?|socks5):\/\/.+", stripped, flags=re.IGNORECASE):
-                return api_error(
-                    code=40023,
-                    msg="代理地址格式不对（应以 http://、https:// 或 socks5:// 开头）",
-                )
-            updates[_ENV_KEYS["proxy_url"]] = stripped
-            os.environ[_ENV_KEYS["proxy_url"]] = stripped
-            response_data["proxy_url"] = stripped
+            current_proxy_url = (
+                os.environ.get(_ENV_KEYS["proxy_url"])
+                or current_app.config.get(_ENV_KEYS["proxy_url"])
+                or ""
+            )
+            visible_current_proxy, current_proxy_redacted = _redact_proxy_url(current_proxy_url)
+            if current_proxy_redacted and stripped == visible_current_proxy:
+                response_data["proxy_url"] = visible_current_proxy
+                response_data["proxy_url_redacted"] = True
+            else:
+                normalized_url = _validate_proxy_url(stripped)
+                if normalized_url is None:
+                    return api_error(
+                        code=40023,
+                        msg="代理地址格式不对（仅支持 http://、https:// 或 socks5://，且不得包含空白或控制字符）",
+                    )
+                updates[_ENV_KEYS["proxy_url"]] = normalized_url
+                visible_url, redacted = _redact_proxy_url(normalized_url)
+                response_data["proxy_url"] = visible_url
+                response_data["proxy_url_redacted"] = redacted
         else:
             return api_error(code=40024, msg="proxy_url 字段类型错误，应为字符串")
 
     if not updates:
         return api_error(code=40025, msg="没有要更新的字段（支持：token / proxy_enabled / proxy_url）")
 
-    # 校验：所有 key 都在白名单里（防御性，正常 reach 不到）
     for key in updates:
         if key not in _WRITABLE_ENV_KEYS:
             return api_error(code=40026, msg=f"非法 env key: {key}")
 
     try:
         env_path = _env_local_path()
-        lines = _read_env_file(env_path)
-        new_lines = _upsert_env_lines(lines, updates)
-        _write_env_file(env_path, new_lines)
+        with _env_file_update_lock(env_path):
+            lines = _read_env_file(env_path)
+            new_lines = _upsert_env_lines(lines, updates)
+            _write_env_file(env_path, new_lines)
+            _apply_environment_updates(updates)
     except Exception as e:
         logger.exception("Failed to write .env.local error=%s", e)
-        return api_error(code=50010, msg=f"写入 .env.local 失败：{e}", http_status=500)
+        return api_error(code=50010, msg="写入 .env.local 失败", http_status=500)
 
     try:
         _refresh_runtime_config()
     except Exception as e:
-        # 写盘已成功 —— 这里失败只是"运行时未热更新"，下次重启会读新值。
-        # 给用户一个 warning 但不是 error。
         logger.exception("Failed to refresh runtime config error=%s", e)
+        result = _tmdb_config_payload()
+        result.update(response_data)
+        result["hot_reload"] = False
         return api_response(
-            data={**response_data, "hot_reload": False},
-            msg=f"配置已保存，但热更新失败：{e}。重启后自动生效。",
+            data=result,
+            msg="配置已保存，但热更新失败。重启后自动生效。",
         )
 
-    return api_response(data={**response_data, "hot_reload": True}, msg="TMDB 配置已保存")
+    result = _tmdb_config_payload()
+    result.update(response_data)
+    result["hot_reload"] = True
+    return api_response(data=result, msg="TMDB 配置已保存")

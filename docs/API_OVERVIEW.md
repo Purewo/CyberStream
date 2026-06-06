@@ -73,6 +73,7 @@ X-Cyber-API-Token: <token>
 - `variant`：可选，`lite` 或 `full`；不传时返回该平台/架构的全部安装包，并默认选择 `full`
 
 响应重点字段：
+
 - `latest.version`：最新客户端版本号
 - `latest.release`：最新发行标识，当前示例为 `1.21.1-pc.2`
 - `update_available`：根据 `current_version/current_release` 与最新版本比较得出
@@ -85,7 +86,19 @@ X-Cyber-API-Token: <token>
 - 后端不会从接口里临时拼 GitHub 下载地址；发布清单没有 CDN 地址时，`downloads` 返回空并带 warning。
 - CDN 上传、建桶、替换下载地址属于后端发布运维流程，不作为开源 API 暴露。
 
-## 1.1 文档与契约入口
+## 1.1 TMDB 运行时配置
+
+### `GET /api/v1/system/tmdb-config`
+
+返回 `token_set`、`proxy_enabled`、`proxy_url` 和 `proxy_url_redacted`。接口不返回 TMDB token 明文；代理 URL 含 userinfo 时也会隐藏用户名和密码。
+
+### `PUT /api/v1/system/tmdb-config`
+
+支持写入或清空 `token`、`proxy_enabled`、`proxy_url`。请求体必须是 JSON 对象，token 和代理地址不得包含空白或控制字符。后端使用进程内锁、Unix 文件锁和同目录临时文件原子替换更新 `.env.local`；只有写盘成功后才更新运行时环境。写盘失败返回通用 `50010`，不会把本机文件路径或异常详情返回给调用方。
+
+当 GET 返回 `proxy_url_redacted=true` 时，PUT 原样提交该脱敏 URL 会保留已存储的真实代理凭证。
+
+## 1.2 文档与契约入口
 
 这些接口是给前端开发者自助联调用的公开只读入口，不需要猜线上 Swagger 地址。
 

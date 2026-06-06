@@ -7160,7 +7160,7 @@
     "/api/v1/system/tmdb-config": {
       "get": {
         "summary": "🔵 [新增] 获取 TMDB 配置状态",
-        "description": "返回 TMDB token 是否已配置、代理开关和代理地址。出于安全考虑，接口永远不会返回 token 明文。",
+        "description": "返回 TMDB token 是否已配置、代理开关和代理地址。接口永远不会返回 token 明文；代理 URL 含 userinfo 时会隐藏用户名和密码，并通过 proxy_url_redacted 标记。",
         "operationId": "getSystemTmdbConfig",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -7193,7 +7193,7 @@
       },
       "put": {
         "summary": "🔵 [新增] 更新 TMDB 配置",
-        "description": "将 TMDB token、代理开关和代理地址写入后端 .env.local，并尽量热更新运行时配置。token 可写入或清空，但响应只返回 token_set，不返回明文。",
+        "description": "将 TMDB token、代理开关和代理地址以加锁、原子替换方式写入后端 .env.local，并尽量热更新运行时配置。token 可写入或清空，但响应只返回 token_set；代理凭证会脱敏。输入不得包含空白或控制字符。",
         "operationId": "updateSystemTmdbConfig",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -7249,7 +7249,7 @@
             }
           },
           "400": {
-            "description": "请求字段为空、类型错误、token 过长或代理地址格式错误",
+            "description": "请求体不是对象、字段为空、类型错误、token 过长、含空白/控制字符或代理地址格式错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -20995,14 +20995,20 @@
           },
           "proxy_url": {
             "type": "string",
-            "description": "Configured TMDB proxy URL. Empty string means the default proxy URL is not explicitly configured.",
+            "description": "Configured TMDB proxy URL. Empty string means the default proxy URL is not explicitly configured. Userinfo is masked when present.",
             "example": "http://127.0.0.1:17890"
+          },
+          "proxy_url_redacted": {
+            "type": "boolean",
+            "description": "Whether proxy_url contains a redacted userinfo placeholder instead of the stored credentials.",
+            "example": false
           }
         },
         "required": [
           "token_set",
           "proxy_enabled",
-          "proxy_url"
+          "proxy_url",
+          "proxy_url_redacted"
         ]
       },
       "SystemTmdbConfigUpdateRequest": {
@@ -21011,7 +21017,7 @@
         "properties": {
           "token": {
             "type": "string",
-            "description": "New TMDB bearer token. Send an empty string to clear the token; omitted means unchanged.",
+            "description": "New TMDB bearer token. Send an empty string to clear the token; omitted means unchanged. Whitespace and control characters are rejected.",
             "maxLength": 4096,
             "example": "eyJhbGciOiJIUzI1NiJ9..."
           },
@@ -21022,7 +21028,8 @@
           },
           "proxy_url": {
             "type": "string",
-            "description": "TMDB proxy URL. Must start with http://, https:// or socks5://. Send empty string to clear the explicit value.",
+            "description": "TMDB proxy URL. Must use http, https or socks5 with a hostname, be at most 2048 characters, and contain no whitespace/control characters. Send empty string to clear the explicit value. A redacted value returned by GET preserves the stored credentials.",
+            "maxLength": 2048,
             "example": "http://127.0.0.1:17890"
           }
         },

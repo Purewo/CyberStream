@@ -66,6 +66,18 @@ class ApiAuthTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
 
+    def test_tmdb_config_is_not_public_when_api_token_auth_is_enabled(self):
+        client = self.create_client(token="secret-token", enabled=True)
+
+        missing = client.get("/api/v1/system/tmdb-config")
+        valid = client.get(
+            "/api/v1/system/tmdb-config",
+            headers={"Authorization": "Bearer secret-token"},
+        )
+
+        self.assertEqual(401, missing.status_code)
+        self.assertEqual(200, valid.status_code)
+
     def test_auth_me_is_public_probe_when_user_management_is_disabled(self):
         client = self.create_client(token="secret-token", enabled=True)
 

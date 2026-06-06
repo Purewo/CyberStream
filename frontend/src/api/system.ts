@@ -15,6 +15,7 @@ export interface TmdbConfig {
   token_set: boolean;
   proxy_enabled: boolean;
   proxy_url: string;
+  proxy_url_redacted: boolean;
 }
 
 /**
