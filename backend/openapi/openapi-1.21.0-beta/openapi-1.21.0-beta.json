@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Cyber Media Center API (赛博影视)",
-    "description": "## 专业发烧级影视中心后端接口文档\n\n此文档定义了 Cyber Media 的核心 API 交互规范。旨在取代 Plex/Emby，提供高性能、低延迟的媒体管理与流媒体服务。\n\n### 🔗 API 生命周期说明 (x-lifecycle-status)\n我们在每个接口中定义了开发状态，请前端同学注意：\n\n1.  🔴 **pending** (未开发): 接口仅有定义，后端尚未实现，调用会返回 501。\n2.  🟠 **implemented_unverified** (已开发未验证): 代码已合并，但未经完整测试，可能存在 Bug。\n3.  ❌ **failed_verification** (验证失败): 测试发现严重问题，暂时禁止使用。\n4.  ⚠️ **passed_imperfect** (验证通过但格式不规范): 功能可用，但返回字段可能不全或命名不符合规范，后续会变动。\n5.  ✅ **stable** (验证通过): 接口稳定，可放心集成。\n\n### 🛡️ 鉴权说明\n默认用户管理关闭时沿用 `CYBER_API_TOKEN` Bearer 鉴权。开启 `CYBER_USER_MANAGEMENT_ENABLED` 后，网页端通过 HttpOnly Cookie 会话访问；`CYBER_API_TOKEN` 仍可作为管理员后门。",
+    "description": "## 专业发烧级影视中心后端接口文档\n\n此文档定义了 Cyber Media 的核心 API 交互规范。旨在取代 Plex/Emby，提供高性能、低延迟的媒体管理与流媒体服务。\n\n### 🔗 API 生命周期说明 (x-lifecycle-status)\n我们在每个接口中定义了开发状态，请前端同学注意：\n\n1.  🔴 **pending** (未开发): 接口仅有定义，后端尚未实现，调用会返回 501。\n2.  🟠 **implemented_unverified** (已开发未验证): 代码已合并，但未经完整测试，可能存在 Bug。\n3.  ❌ **failed_verification** (验证失败): 测试发现严重问题，暂时禁止使用。\n4.  ⚠️ **passed_imperfect** (验证通过但格式不规范): 功能可用，但返回字段可能不全或命名不符合规范，后续会变动。\n5.  ✅ **stable** (验证通过): 接口稳定，可放心集成。\n\n### 🛡️ 鉴权说明\n默认用户管理关闭时沿用 `CYBER_API_TOKEN` Bearer 鉴权。开启 `CYBER_USER_MANAGEMENT_ENABLED` 后，网页端通过 HttpOnly Cookie 会话访问；仅当 `CYBER_AUTH_ENABLED=true` 时，`CYBER_API_TOKEN` 可作为管理员后门。",
     "version": "1.21.0-beta",
     "contact": {
       "name": "Cyber Media Core Team",
@@ -9197,7 +9197,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "Opaque API token",
-        "description": "CYBER_API_TOKEN 管理员后门；也兼容 X-Cyber-API-Token。"
+        "description": "CYBER_AUTH_ENABLED=true 时启用的 CYBER_API_TOKEN 管理员后门；也兼容 X-Cyber-API-Token。"
       },
       "cookieAuth": {
         "type": "apiKey",

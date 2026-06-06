@@ -10,6 +10,9 @@ _LOCK = threading.Lock()
 _ATTEMPTS = {}
 
 
+_MIN_DATETIME = datetime.min
+
+
 def _config_int(key, default):
     try:
         return int(current_app.config.get(key, default))
@@ -22,9 +25,6 @@ def _enabled():
 
 
 def _client_ip():
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()
     return request.remote_addr or "unknown"
 
 
@@ -40,14 +40,48 @@ def _prune_record(record, now, window_seconds):
     return False
 
 
+def _record_last_seen(record):
+    failures = record.get("failures") or []
+    last_failure = max(failures) if failures else _MIN_DATETIME
+    locked_until = record.get("locked_until") or _MIN_DATETIME
+    return max(last_failure, locked_until)
+
+
+def _prune_attempts(now, window_seconds):
+    stale_keys = []
+    for key, record in list(_ATTEMPTS.items()):
+        locked_until = record.get("locked_until")
+        if locked_until and now >= locked_until:
+            record["locked_until"] = None
+        if _prune_record(record, now, window_seconds):
+            stale_keys.append(key)
+    for key in stale_keys:
+        _ATTEMPTS.pop(key, None)
+
+
+def _drop_oldest_unlocked_bucket(now):
+    for key, record in sorted(_ATTEMPTS.items(), key=lambda item: _record_last_seen(item[1])):
+        locked_until = record.get("locked_until")
+        if locked_until and now < locked_until:
+            continue
+        _ATTEMPTS.pop(key, None)
+        return True
+    return False
+
+
 def check_login_rate_limit(username):
     if not _enabled():
         return None
 
     now = datetime.utcnow()
     window_seconds = max(1, _config_int("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300))
+    max_buckets = max(1, _config_int("LOGIN_RATE_LIMIT_MAX_BUCKETS", 10000))
     key = _key(username)
     with _LOCK:
+        if len(_ATTEMPTS) > max_buckets:
+            _prune_attempts(now, window_seconds)
+            while len(_ATTEMPTS) > max_buckets and _drop_oldest_unlocked_bucket(now):
+                pass
         record = _ATTEMPTS.get(key)
         if not record:
             return None
@@ -72,7 +106,13 @@ def record_login_failure(username):
     max_attempts = max(1, _config_int("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", 5))
     window_seconds = max(1, _config_int("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300))
     lock_seconds = max(1, _config_int("LOGIN_RATE_LIMIT_LOCK_SECONDS", 900))
+    max_buckets = max(1, _config_int("LOGIN_RATE_LIMIT_MAX_BUCKETS", 10000))
     with _LOCK:
+        record = _ATTEMPTS.get(key)
+        if record is None and len(_ATTEMPTS) >= max_buckets:
+            _prune_attempts(now, window_seconds)
+            if len(_ATTEMPTS) >= max_buckets and not _drop_oldest_unlocked_bucket(now):
+                return None
         record = _ATTEMPTS.setdefault(key, {"failures": [], "locked_until": None})
         _prune_record(record, now, window_seconds)
         record["failures"].append(now)

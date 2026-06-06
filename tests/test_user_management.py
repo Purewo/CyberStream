@@ -21,6 +21,7 @@ from backend.app.models import (
     UserLibraryRule,
     UserSubtitleSetting,
 )
+from backend.app.services import login_rate_limit
 from backend.app.services.login_rate_limit import clear_all_login_failures
 from backend.app.services.users import set_user_password
 
@@ -129,6 +130,23 @@ class UserManagementTests(unittest.TestCase):
         response = client.get("/api/v1/storage/sources", headers={"Authorization": "Bearer break-glass"})
 
         self.assertEqual(200, response.status_code)
+
+    def test_api_token_backdoor_respects_auth_enabled_switch(self):
+        app = self.create_enabled_app(API_TOKEN="disabled-token", AUTH_ENABLED=False)
+        client = app.test_client()
+
+        protected = client.get(
+            "/api/v1/storage/sources",
+            headers={"Authorization": "Bearer disabled-token"},
+        )
+        auth_probe = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Bearer disabled-token"},
+        )
+
+        self.assertEqual(401, protected.status_code)
+        self.assertFalse(auth_probe.get_json()["data"]["authenticated"])
+        self.assertIsNone(auth_probe.get_json()["data"]["auth_via"])
 
     def test_admin_can_create_user_and_assign_library_rules(self):
         app = self.create_enabled_app()
@@ -300,6 +318,48 @@ class UserManagementTests(unittest.TestCase):
         outcomes = [row.outcome for row in AuditLog.query.filter_by(action="auth.login").all()]
         self.assertIn("failure", outcomes)
         self.assertIn("rate_limited", outcomes)
+
+    def test_login_rate_limit_caps_unique_attempt_buckets(self):
+        app = self.create_enabled_app(
+            LOGIN_RATE_LIMIT_MAX_ATTEMPTS=100,
+            LOGIN_RATE_LIMIT_WINDOW_SECONDS=300,
+            LOGIN_RATE_LIMIT_LOCK_SECONDS=60,
+            LOGIN_RATE_LIMIT_MAX_BUCKETS=2,
+        )
+        client = app.test_client()
+
+        for username in ("missing-one", "missing-two", "missing-three"):
+            response = client.post("/api/v1/auth/login", json={
+                "username": username,
+                "password": "wrong-password",
+            })
+            self.assertEqual(401, response.status_code)
+
+        self.assertLessEqual(len(login_rate_limit._ATTEMPTS), 2)
+
+    def test_login_rate_limit_uses_remote_addr_not_raw_forwarded_for(self):
+        app = self.create_enabled_app(
+            TRUST_PROXY_HEADERS=False,
+            LOGIN_RATE_LIMIT_MAX_ATTEMPTS=2,
+            LOGIN_RATE_LIMIT_WINDOW_SECONDS=300,
+            LOGIN_RATE_LIMIT_LOCK_SECONDS=60,
+        )
+        client = app.test_client()
+        self._user("viewer")
+
+        first_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "viewer", "password": "wrong-password"},
+            headers={"X-Forwarded-For": "198.51.100.1"},
+        )
+        second_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "viewer", "password": "wrong-password"},
+            headers={"X-Forwarded-For": "198.51.100.2"},
+        )
+
+        self.assertEqual(401, first_response.status_code)
+        self.assertEqual(429, second_response.status_code)
 
     def test_admin_can_query_audit_logs(self):
         app = self.create_enabled_app()

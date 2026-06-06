@@ -149,6 +149,8 @@ def is_admin_request():
 
 
 def _authenticate_api_token():
+    if not is_api_auth_enabled():
+        return False
     expected = _configured_token()
     supplied = _request_token()
     if expected and supplied and hmac.compare_digest(supplied, expected):

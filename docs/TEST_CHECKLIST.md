@@ -463,7 +463,8 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 
 预期：
 - `CYBER_USER_MANAGEMENT_ENABLED=false` 时不改变现有行为
-- 开启后可通过 Cookie 会话登录，`CYBER_API_TOKEN` 仍可作为管理员后门
+- 开启后可通过 Cookie 会话登录；仅当 `CYBER_AUTH_ENABLED=true` 时，`CYBER_API_TOKEN` 可作为管理员后门
+- `CYBER_AUTH_ENABLED=false` 时，即使环境中残留 `CYBER_API_TOKEN`，也不能绕过 Cookie 登录获得管理员权限
 - 普通用户不能访问存储源、扫描、元数据修改、资源库管理等管理员接口
 - 普通用户的资源库 allow/deny 规则会过滤列表、详情、资源和播放流
 - 管理员可通过 `/api/v1/admin/users/<id>/visibility-preview` 预览目标用户可见资源库、可见影片数和样例影片

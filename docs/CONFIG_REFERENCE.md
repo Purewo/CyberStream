@@ -289,7 +289,7 @@ X-Cyber-API-Token: <token>
 未设置 `CYBER_API_TOKEN` 时，鉴权不会启用，以保持本地开发和当前前端兼容。
 
 #### `CYBER_AUTH_ENABLED`
-鉴权总开关。默认随 `CYBER_API_TOKEN` 是否存在自动启用；如果需要临时关闭，可显式设置为 `false`。
+API token 鉴权总开关。默认随 `CYBER_API_TOKEN` 是否存在自动启用；如果需要临时关闭，可显式设置为 `false`。关闭后，即使环境中仍保留 `CYBER_API_TOKEN`，该 token 也不能在用户管理模式下作为管理员后门。
 
 #### `CYBER_AUTH_EXEMPT_MEDIA_GET`
 媒体读取豁免开关，默认 `true`。开启后以下 GET 请求不要求 token，避免浏览器 `<video>`、`<img>`、外部播放器和字幕加载无法携带 Authorization 头：
@@ -386,7 +386,7 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 ### 2.15 用户管理配置
 
 #### `CYBER_USER_MANAGEMENT_ENABLED`
-用户管理总开关，默认 `false`。关闭时不改变现有业务行为；开启后网页端通过 Cookie 会话登录，`CYBER_API_TOKEN` 仍保留为管理员后门。
+用户管理总开关，默认 `false`。关闭时不改变现有业务行为；开启后网页端通过 Cookie 会话登录；当 `CYBER_AUTH_ENABLED=true` 且已配置 `CYBER_API_TOKEN` 时，该 token 保留为管理员后门。
 
 #### `CYBER_SESSION_SECRET`
 用户管理开启时必须设置，用于签名 Flask session cookie。
@@ -400,8 +400,8 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 #### `CYBER_LOGIN_RATE_LIMIT_ENABLED`
 登录失败限流开关，默认 `true`。只在用户管理登录接口中使用。
 
-#### `CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` / `CYBER_LOGIN_RATE_LIMIT_WINDOW_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_LOCK_SECONDS`
-登录限流参数，默认 5 分钟内失败 `5` 次后锁定 `900` 秒。限流按客户端 IP + 用户名在当前后端进程内记录。
+#### `CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` / `CYBER_LOGIN_RATE_LIMIT_WINDOW_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_LOCK_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_MAX_BUCKETS`
+登录限流参数，默认 5 分钟内失败 `5` 次后锁定 `900` 秒。限流按 `request.remote_addr` + 用户名在当前后端进程内记录；如需使用反代透传的真实客户端 IP，应通过 `CYBER_TRUST_PROXY_HEADERS` / `ProxyFix` 配置可信代理层，而不是直接信任任意 `X-Forwarded-For`。限流最多保留 `10000` 个唯一尝试桶，超过后优先淘汰最旧且未锁定的记录。
 
 ### 2.15 维护任务持久化配置
 
@@ -539,6 +539,7 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 - `CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`
 - `CYBER_LOGIN_RATE_LIMIT_WINDOW_SECONDS`
 - `CYBER_LOGIN_RATE_LIMIT_LOCK_SECONDS`
+- `CYBER_LOGIN_RATE_LIMIT_MAX_BUCKETS`
 
 说明：
 - 推荐使用 `CYBER_API_TOKEN`，`API_TOKEN` 只作为兼容别名

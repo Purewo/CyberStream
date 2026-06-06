@@ -29,7 +29,7 @@ X-Cyber-API-Token: <token>
 
 未设置 token 时鉴权不启用，便于本地开发和当前前端联调。
 
-启用 `CYBER_USER_MANAGEMENT_ENABLED=true` 后，网页端使用 `POST /api/v1/auth/login` 写入 HttpOnly cookie；`CYBER_API_TOKEN` 仍作为管理员后门。普通用户只允许读取可见影视、播放、维护自己的观看历史和字幕样式。
+启用 `CYBER_USER_MANAGEMENT_ENABLED=true` 后，网页端使用 `POST /api/v1/auth/login` 写入 HttpOnly cookie；当 `CYBER_AUTH_ENABLED=true` 且已配置 `CYBER_API_TOKEN` 时，该 token 仍作为管理员后门。显式关闭 `CYBER_AUTH_ENABLED` 后，残留 token 不再授予管理员权限。普通用户只允许读取可见影视、播放、维护自己的观看历史和字幕样式。
 
 前端平滑接入方案见：`docs/FRONTEND_USER_MANAGEMENT_INTEGRATION.md`。
 

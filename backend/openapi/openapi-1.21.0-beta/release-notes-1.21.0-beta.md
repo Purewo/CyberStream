@@ -2,6 +2,13 @@
 
 本文档记录 `1.21.0-beta` 的接口变化，作为其他视频归档联调基线。
 
+## API token 鉴权开关
+
+- 用户管理开启时，`CYBER_API_TOKEN` 管理员后门现在也严格遵守 `CYBER_AUTH_ENABLED`。
+- 显式设置 `CYBER_AUTH_ENABLED=false` 后，即使环境中仍保留旧 token，也不能通过 Bearer 或 `X-Cyber-API-Token` 获得管理员权限；Cookie 会话登录不受影响。
+- 登录失败限流新增 `CYBER_LOGIN_RATE_LIMIT_MAX_BUCKETS`，默认最多保留 `10000` 个 `IP:username` 尝试桶，防止公开登录接口被大量唯一用户名撑爆进程内记录。
+- 登录失败限流现在只读取 Flask/ProxyFix 处理后的 `request.remote_addr`，不再直接信任任意 `X-Forwarded-For` 头。
+
 ## 外部资源聚合搜索
 
 - 新增 `GET /api/v1/aggregator/sources`、`/search`、`/detail`、`/magnet`，将原 PC 本地桥接的外部影视资源站搜索并入后端统一 API。
