@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -109,6 +110,33 @@ MagnetResult = dict[str, str]
 TIMEOUT = 12
 
 
+def allowed_hosts_for_base_url(base_url: str) -> set[str]:
+    host = (urlparse(base_url).hostname or "").lower()
+    if not host:
+        return set()
+    hosts = {host}
+    if host.startswith("www."):
+        hosts.add(host[4:])
+    else:
+        hosts.add(f"www.{host}")
+    return hosts
+
+
+class SourceSession(requests.Session):
+    """Session that blocks cross-host requests, including redirect hops."""
+
+    def __init__(self, allowed_hosts: set[str]) -> None:
+        super().__init__()
+        self.allowed_hosts = set(allowed_hosts)
+
+    def send(self, request, **kwargs):
+        parsed = urlparse(request.url or "")
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in {"http", "https"} or host not in self.allowed_hosts:
+            raise requests.exceptions.InvalidURL("aggregator request host is not allowed")
+        return super().send(request, **kwargs)
+
+
 class BaseSource(ABC):
     """影视资源站点抽象基类。
 
@@ -130,10 +158,14 @@ class BaseSource(ABC):
         self._proxy: str | None = None
 
     @property
+    def allowed_hosts(self) -> set[str]:
+        return allowed_hosts_for_base_url(self.base_url)
+
+    @property
     def session(self) -> requests.Session:
         """懒加载并复用 requests.Session。"""
         if self._session is None:
-            self._session = requests.Session()
+            self._session = SourceSession(self.allowed_hosts)
             self._session.trust_env = False
             if self._proxy:
                 self._session.proxies = {

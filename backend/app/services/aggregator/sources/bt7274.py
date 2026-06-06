@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import requests
 from bs4 import BeautifulSoup
 
 from .base import (
@@ -41,8 +40,12 @@ class BT7274Source(BaseSource):
 
         url = f"{self.base_url}/search"
         try:
-            r = requests.get(url, params={"q": keyword},
-                             headers=self.headers(), timeout=TIMEOUT)
+            r = self.session.get(
+                url,
+                params={"q": keyword},
+                headers=self.headers(),
+                timeout=TIMEOUT,
+            )
             r.raise_for_status()
         except Exception:
             return []
@@ -96,7 +99,7 @@ class BT7274Source(BaseSource):
             link = f"{self.base_url}{link}"
 
         try:
-            r = requests.get(link, headers=self.headers(), timeout=TIMEOUT)
+            r = self.session.get(link, headers=self.headers(), timeout=TIMEOUT)
             r.raise_for_status()
         except Exception:
             return None

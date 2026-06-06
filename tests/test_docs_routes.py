@@ -77,8 +77,28 @@ class DocumentationRoutesTests(unittest.TestCase):
         modules = {item["key"]: item for item in data["modules"]}
         self.assertIn("catalog", modules)
         self.assertIn("metadata", modules)
+        self.assertIn("aggregator", modules)
         self.assertEqual("/api/v1/openapi/modules/catalog.json", modules["catalog"]["url"])
         self.assertGreater(modules["catalog"]["path_count"], 0)
+        self.assertEqual(4, modules["aggregator"]["path_count"])
+
+    def test_aggregator_openapi_module_contains_only_aggregator_paths(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/openapi/modules/aggregator.json")
+
+        self.assertEqual(200, response.status_code)
+        payload = response.get_json()
+        self.assertEqual(
+            {
+                "/api/v1/aggregator/sources",
+                "/api/v1/aggregator/search",
+                "/api/v1/aggregator/detail",
+                "/api/v1/aggregator/magnet",
+            },
+            set(payload["paths"]),
+        )
+        self.assertIn("schemas", payload["components"])
 
     def test_openapi_module_json_is_pruned_raw_contract(self):
         client = self._create_client()

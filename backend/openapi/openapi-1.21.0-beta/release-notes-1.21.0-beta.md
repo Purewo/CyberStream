@@ -2,6 +2,14 @@
 
 本文档记录 `1.21.0-beta` 的接口变化，作为其他视频归档联调基线。
 
+## 外部资源聚合搜索
+
+- 新增 `GET /api/v1/aggregator/sources`、`/search`、`/detail`、`/magnet`，将原 PC 本地桥接的外部影视资源站搜索并入后端统一 API。
+- 每次请求只访问一个 `source`，不会在后端并发遍历全部资源站；`btbtla` 可通过后端配置走本机代理。
+- `detail` / `magnet` 的 HTTP(S) `link` 必须属于所选 `source` 域名；相对链接会按该 source 根地址补全，跨域或本机地址会被拒绝。
+- `magnet` 接口仍允许直接传 `magnet:?` 或 `ed2k://` URI；`detail` 接口不接受这两类非 HTTP 链接。
+- 模块化 OpenAPI 新增 `aggregator` 模块，便于前端按领域懒加载契约。
+
 ## 外部 URL scheme
 
 - 后端播放、音频转码和字幕 URL 不再用 `PREFERRED_URL_SCHEME=https` 把公开 HTTP 请求隐式改写成 HTTPS。

@@ -40,6 +40,10 @@ OPENAPI_MODULES = {
         "title": "Images & Assets",
         "description": "海报、背景图、图片缓存、预热和刷新。",
     },
+    "aggregator": {
+        "title": "External Resource Aggregator",
+        "description": "外部影视资源站列表、搜索、详情和 magnet 解析。",
+    },
     "storage-system": {
         "title": "Storage & System",
         "description": "存储源、扫描、系统级能力和旧全库扫描入口。",
@@ -219,6 +223,8 @@ def _classify_openapi_path(path):
         return "governance"
     if path.startswith("/api/v1/jobs"):
         return "jobs"
+    if path.startswith("/api/v1/aggregator"):
+        return "aggregator"
     if path.startswith("/api/v1/storage") or path.startswith("/api/v1/system") or path == "/api/v1/scan":
         return "storage-system"
     if (

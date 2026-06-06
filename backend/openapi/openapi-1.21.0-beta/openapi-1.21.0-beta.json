@@ -302,6 +302,7 @@
             "name": "link",
             "in": "query",
             "required": true,
+            "description": "搜索结果返回的详情链接。相对链接会按 source 根地址补全；绝对 URL 必须属于所选 source 的域名。bt7274 兼容直接传数字 ID。",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -365,6 +366,7 @@
             "name": "link",
             "in": "query",
             "required": true,
+            "description": "搜索结果返回的下载链接、同 source 域名下的 HTTP(S) 链接，或直接的 magnet/ed2k URI。跨 source 域名 URL 会被拒绝。",
             "schema": {
               "type": "string",
               "minLength": 1
