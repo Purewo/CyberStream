@@ -5,6 +5,10 @@ from .base import StorageProvider
 logger = logging.getLogger(__name__)
 
 
+class LocalProviderPathError(ValueError):
+    """Raised when a local storage path escapes the configured root."""
+
+
 class LocalProvider(StorageProvider):
     def __init__(self, config):
         super().__init__(config)
@@ -12,14 +16,28 @@ class LocalProvider(StorageProvider):
         self.root_path = config.get('root_path') or config.get('path', '')
 
     def _resolve_path(self, relative_path):
-        # 拼接根目录和相对路径
-        if not relative_path: return self.root_path
-        clean_rel = relative_path.strip().strip('"').strip("'").lstrip('/')
-        return os.path.normpath(os.path.join(self.root_path, clean_rel))
+        if not self.root_path:
+            return self.root_path
+        clean_rel = str(relative_path or '').strip().strip('"').strip("'").lstrip('/')
+        root_path = os.path.realpath(os.path.abspath(os.path.expanduser(self.root_path)))
+        candidate = os.path.realpath(
+            os.path.abspath(os.path.expanduser(os.path.join(root_path, clean_rel)))
+        )
+        try:
+            inside_root = os.path.commonpath([root_path, candidate]) == root_path
+        except ValueError:
+            inside_root = False
+        if not inside_root:
+            raise LocalProviderPathError("Local path escapes storage root")
+        return candidate
 
     def list_items(self, relative_path):
         items = []
-        full_path = self._resolve_path(relative_path)
+        try:
+            full_path = self._resolve_path(relative_path)
+        except LocalProviderPathError:
+            logger.warning("Local list_items blocked path outside root: %s", relative_path)
+            return []
 
         if not os.path.exists(full_path):
             logger.warning("Local path not found: %s", full_path)
@@ -93,6 +111,9 @@ class LocalProvider(StorageProvider):
 
             return generate(), status_code, chunk_length, content_range
 
+        except LocalProviderPathError:
+            logger.warning("Local stream blocked path outside root: %s", relative_path)
+            return None, 404, 0, None
         except Exception as e:
             logger.exception("Local stream failed relative_path=%s error=%s", relative_path, e)
             return None, 500, 0, None
@@ -101,11 +122,24 @@ class LocalProvider(StorageProvider):
         return self._resolve_path(relative_path)
 
     def path_exists(self, relative_path):
-        full_path = self._resolve_path(relative_path)
+        try:
+            full_path = self._resolve_path(relative_path)
+        except LocalProviderPathError:
+            logger.warning("Local path_exists blocked path outside root: %s", relative_path)
+            return False
         return os.path.isdir(full_path)
 
     def health_check(self, relative_path=''):
-        full_path = self._resolve_path(relative_path)
+        try:
+            full_path = self._resolve_path(relative_path)
+        except LocalProviderPathError:
+            return {
+                "status": "offline",
+                "path": (relative_path or '').strip().strip('/') or "/",
+                "path_exists": False,
+                "readable": False,
+                "error": "Path escapes storage root",
+            }
         exists = os.path.isdir(full_path)
         readable = os.access(full_path, os.R_OK) if exists else False
 
@@ -125,7 +159,11 @@ class LocalProvider(StorageProvider):
         }
 
     def read_text(self, relative_path, max_bytes=262144, encoding=None):
-        file_path = self._resolve_path(relative_path)
+        try:
+            file_path = self._resolve_path(relative_path)
+        except LocalProviderPathError:
+            logger.warning("Local read_text blocked path outside root: %s", relative_path)
+            return None
         if not os.path.exists(file_path) or not os.path.isfile(file_path):
             return None
 
