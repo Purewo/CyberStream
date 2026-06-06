@@ -1,6 +1,7 @@
 import os
 import logging
 from .base import StorageProvider
+from .range_utils import parse_http_byte_range
 
 logger = logging.getLogger(__name__)
 
@@ -76,24 +77,16 @@ class LocalProvider(StorageProvider):
         try:
             file_path = self._resolve_path(relative_path)
 
-            if not os.path.exists(file_path):
+            if not os.path.exists(file_path) or not os.path.isfile(file_path):
                 return None, 404, 0, None
 
             file_size = os.path.getsize(file_path)
-
-            start, end = 0, file_size - 1
-            if range_header:
-                range_str = range_header.replace('bytes=', '')
-                range_parts = range_str.split('-')
-                if range_parts[0]: start = int(range_parts[0])
-                if len(range_parts) > 1 and range_parts[1]: end = int(range_parts[1])
-
-            if start >= file_size:
-                return None, 416, 0, f"bytes */{file_size}"
-            if end >= file_size:
-                end = file_size - 1
-
-            chunk_length = end - start + 1
+            start, end, status_code, chunk_length, content_range = parse_http_byte_range(
+                range_header,
+                file_size,
+            )
+            if status_code == 416:
+                return None, 416, 0, content_range
 
             def generate():
                 with open(file_path, 'rb') as f:
@@ -105,9 +98,6 @@ class LocalProvider(StorageProvider):
                         if not data: break
                         remaining -= len(data)
                         yield data
-
-            content_range = f"bytes {start}-{end}/{file_size}"
-            status_code = 206 if range_header else 200
 
             return generate(), status_code, chunk_length, content_range
 

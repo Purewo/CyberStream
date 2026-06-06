@@ -4,6 +4,7 @@ import posixpath
 from urllib.parse import quote
 
 from .base import StorageProvider
+from .range_utils import parse_http_byte_range
 
 logger = logging.getLogger(__name__)
 
@@ -176,21 +177,6 @@ class FTPProvider(StorageProvider):
         except Exception:
             return 0
 
-    def _parse_range(self, range_header, file_size):
-        start, end = 0, file_size - 1
-        if range_header:
-            range_str = range_header.replace('bytes=', '', 1)
-            range_parts = range_str.split('-', 1)
-            if range_parts[0]:
-                start = int(range_parts[0])
-            if len(range_parts) > 1 and range_parts[1]:
-                end = int(range_parts[1])
-        if file_size and start >= file_size:
-            return None, None, 416, f"bytes */{file_size}"
-        if file_size and end >= file_size:
-            end = file_size - 1
-        return start, end, 206 if range_header else 200, f"bytes {start}-{end}/{file_size}" if file_size else None
-
     def get_stream_data(self, relative_path, range_header=None):
         try:
             remote_path = self._remote_path(relative_path)
@@ -200,11 +186,12 @@ class FTPProvider(StorageProvider):
             finally:
                 self._close(size_probe)
 
-            start, end, status_code, content_range = self._parse_range(range_header, file_size)
+            start, end, status_code, content_length, content_range = parse_http_byte_range(
+                range_header,
+                file_size,
+            )
             if status_code == 416:
                 return None, 416, 0, content_range
-
-            content_length = (end - start + 1) if file_size else 0
 
             def generate():
                 ftp = self._connect()

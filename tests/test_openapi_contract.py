@@ -573,6 +573,21 @@ class OpenApiContractTests(unittest.TestCase):
             paths["/api/v1/resources/{id}/external-playback"]["get"]["responses"]["200"]["content"],
         )
 
+    def test_stream_openapi_documents_range_contract(self):
+        openapi = self._load_openapi()
+        operation = openapi["paths"]["/api/v1/resources/{id}/stream"]["get"]
+        parameters = {
+            (parameter["in"], parameter["name"]): parameter
+            for parameter in operation["parameters"]
+        }
+
+        self.assertIn(("header", "Range"), parameters)
+        self.assertIn("416", operation["responses"])
+        self.assertIn(
+            "Content-Range",
+            operation["responses"]["416"]["headers"],
+        )
+
     def test_user_management_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]

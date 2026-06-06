@@ -3606,6 +3606,16 @@
             }
           },
           {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "description": "可选单段 HTTP byte range，例如 bytes=0-1048575 或 bytes=-65536。非法、多段或不可满足的范围返回 416。",
+            "schema": {
+              "type": "string",
+              "example": "bytes=0-1048575"
+            }
+          },
+          {
             "name": "container",
             "in": "query",
             "schema": {
@@ -3747,6 +3757,24 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Range 请求无效或不可满足",
+            "headers": {
+              "Content-Range": {
+                "description": "不可满足范围对应的资源总大小，例如 bytes */12345。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

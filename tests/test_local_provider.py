@@ -38,8 +38,40 @@ class LocalProviderTests(unittest.TestCase):
         stream, status, length, content_range = self.provider.get_stream_data("movie.mkv")
         self.assertEqual(200, status)
         self.assertEqual(5, length)
-        self.assertEqual("bytes 0-4/5", content_range)
+        self.assertIsNone(content_range)
         self.assertEqual(b"movie", b"".join(stream))
+
+    def test_local_provider_supports_suffix_range(self):
+        stream, status, length, content_range = self.provider.get_stream_data(
+            "movie.mkv",
+            "bytes=-2",
+        )
+
+        self.assertEqual(206, status)
+        self.assertEqual(2, length)
+        self.assertEqual("bytes 3-4/5", content_range)
+        self.assertEqual(b"ie", b"".join(stream))
+
+    def test_local_provider_rejects_invalid_ranges_without_500(self):
+        for range_header in ["bytes=4-2", "bytes=nope", "bytes=0-1,3-4", "items=0-1"]:
+            with self.subTest(range_header=range_header):
+                stream, status, length, content_range = self.provider.get_stream_data(
+                    "movie.mkv",
+                    range_header,
+                )
+
+                self.assertIsNone(stream)
+                self.assertEqual(416, status)
+                self.assertEqual(0, length)
+                self.assertEqual("bytes */5", content_range)
+
+    def test_local_provider_rejects_directory_stream(self):
+        stream, status, length, content_range = self.provider.get_stream_data("")
+
+        self.assertIsNone(stream)
+        self.assertEqual(404, status)
+        self.assertEqual(0, length)
+        self.assertIsNone(content_range)
 
     def test_local_provider_blocks_parent_directory_escape(self):
         escape_path = "../outside/secret.txt"

@@ -265,7 +265,11 @@ def stream_resource(id):
 
         if status >= 400:
             logger.warning("Stream provider error status=%s resource_id=%s", status, id)
-            return Response(f"Stream Error: {status}", status=status)
+            headers = {}
+            if status == 416 and content_range:
+                headers["Accept-Ranges"] = "bytes"
+                headers["Content-Range"] = content_range
+            return Response(f"Stream Error: {status}", status=status, headers=headers)
 
         headers = {
             'Accept-Ranges': 'bytes',

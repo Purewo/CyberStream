@@ -182,6 +182,18 @@ class SMBProviderTests(unittest.TestCase):
         self.assertEqual("bytes 2-5/123", content_range)
         self.assertEqual(b"2345", data)
 
+    def test_stream_rejects_invalid_range(self):
+        with patch.object(self.provider, "_connect", return_value=FakeSMBConnection()):
+            stream, status, length, content_range = self.provider.get_stream_data(
+                "Movie A.mkv",
+                "bytes=5-2",
+            )
+
+        self.assertIsNone(stream)
+        self.assertEqual(416, status)
+        self.assertEqual(0, length)
+        self.assertEqual("bytes */123", content_range)
+
 
 class FTPProviderTests(unittest.TestCase):
     def setUp(self):
@@ -222,6 +234,28 @@ class FTPProviderTests(unittest.TestCase):
         self.assertEqual(4, length)
         self.assertEqual("bytes 3-6/10", content_range)
         self.assertEqual(b"defg", data)
+
+    def test_stream_suffix_range(self):
+        with patch.object(self.provider, "_connect", side_effect=[FakeFTP(), FakeFTP()]):
+            stream, status, length, content_range = self.provider.get_stream_data("Movie B.mkv", "bytes=-2")
+            data = b"".join(stream)
+
+        self.assertEqual(206, status)
+        self.assertEqual(2, length)
+        self.assertEqual("bytes 8-9/10", content_range)
+        self.assertEqual(b"ij", data)
+
+    def test_stream_rejects_invalid_range(self):
+        with patch.object(self.provider, "_connect", return_value=FakeFTP()):
+            stream, status, length, content_range = self.provider.get_stream_data(
+                "Movie B.mkv",
+                "bytes=bad",
+            )
+
+        self.assertIsNone(stream)
+        self.assertEqual(416, status)
+        self.assertEqual(0, length)
+        self.assertEqual("bytes */10", content_range)
 
 
 if __name__ == "__main__":

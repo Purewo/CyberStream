@@ -147,6 +147,33 @@ class ExternalPlaybackRouteTests(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertEqual(40073, response.get_json()["code"])
 
+    def test_local_stream_honors_suffix_range(self):
+        resource = self._resource()
+        self._write_file("Movies/External.Playback.Test.2026.mkv", "abcdef")
+
+        response = self.client.get(
+            f"/api/v1/resources/{resource.id}/stream",
+            headers={"Range": "bytes=-2"},
+        )
+
+        self.assertEqual(206, response.status_code)
+        self.assertEqual(b"ef", response.data)
+        self.assertEqual("bytes 4-5/6", response.headers["Content-Range"])
+        self.assertEqual("2", response.headers["Content-Length"])
+
+    def test_local_stream_invalid_range_returns_416_with_content_range(self):
+        resource = self._resource()
+        self._write_file("Movies/External.Playback.Test.2026.mkv", "abcdef")
+
+        response = self.client.get(
+            f"/api/v1/resources/{resource.id}/stream",
+            headers={"Range": "bytes=5-2"},
+        )
+
+        self.assertEqual(416, response.status_code)
+        self.assertEqual("bytes */6", response.headers["Content-Range"])
+        self.assertEqual("bytes", response.headers["Accept-Ranges"])
+
 
 class CloudTranscodeRouteTests(unittest.TestCase):
     def setUp(self):
