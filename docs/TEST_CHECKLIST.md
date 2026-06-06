@@ -604,6 +604,7 @@ curl -i "http://127.0.0.1:5004/api/v1/resources/<resource_id>/stream"
 预期之一：
 - 200 / 206 流式响应
 - 或 302 跳转到上游播放地址
+- 若 provider 返回本机、私网、链路本地、保留地址或非 HTTP(S) Location，应返回 `502`，不能把该 Location 透传给客户端
 - 代理流的 `Content-Type` 应匹配资源扩展名，例如 `.mp4` 为 `video/mp4`、`.mkv` 为 `video/x-matroska`、`.ts/.m2ts` 为 `video/mp2t`
 
 ### 6.3 Range 请求验证

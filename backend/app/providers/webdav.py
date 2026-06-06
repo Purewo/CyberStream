@@ -3,7 +3,7 @@ import posixpath
 import base64
 import logging
 import socket
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urljoin
 import requests
 from webdav3.client import Client
 from webdav3.exceptions import ConnectionException, MethodNotSupported, NoConnection, ResponseErrorCode
@@ -287,8 +287,12 @@ class WebDAVProvider(StorageProvider):
             if r.status_code in [301, 302, 303, 307, 308]:
                 location = r.headers.get('Location')
                 if location:
-                    logger.info("WebDAV redirect passthrough location=%s", location[:60])
-                    return None, 302, 0, location
+                    resolved_location = urljoin(url, location)
+                    close = getattr(r, 'close', None)
+                    if callable(close):
+                        close()
+                    logger.info("WebDAV redirect passthrough location=%s", resolved_location[:60])
+                    return None, 302, 0, resolved_location
 
             # 6. 处理错误
             if r.status_code >= 400:

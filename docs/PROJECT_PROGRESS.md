@@ -1,5 +1,16 @@
 # PROJECT_PROGRESS
 
+## 2026-06-06
+
+### 后端播放重定向安全收口
+
+接手维护期继续做后端安全基线收口，范围限定在播放链路 302 透传：
+
+- 新增通用公网 HTTP(S) URL 校验服务，图片回源与播放重定向共用同一套 localhost、私网、链路本地、保留地址和非 HTTP scheme 拦截逻辑。
+- `/api/v1/resources/<id>/stream`、字幕流和 `/stream-transcoded` 在返回 302 前校验 Location；不安全地址返回 `502`，不会透传给客户端。
+- WebDAV provider 会把相对 Location 按原请求 URL 解析为绝对地址，再交给播放层统一校验。
+- 已补播放路由、WebDAV provider、URL 安全服务和图片回源回归测试；全量后端基线为 `638 passed, 9 skipped, 16 subtests passed`。
+
 ## 2026-05-23
 
 ### 1.21.1 PC 客户端 M3.6 → M5.1 收口

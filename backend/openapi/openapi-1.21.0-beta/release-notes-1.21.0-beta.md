@@ -24,6 +24,7 @@
 - 后端播放、音频转码和字幕 URL 不再用 `PREFERRED_URL_SCHEME=https` 把公开 HTTP 请求隐式改写成 HTTPS。
 - `PREFERRED_URL_SCHEME` 仅保留 Flask 原生语义；需要固定外部入口时使用 `CYBER_BACKEND_PUBLIC_BASE_URL=http://...` 或 `https://...`，scheme 会原样保留。
 - local、SMB、FTP 视频流统一支持单段 `Range`、开放结尾范围和 suffix range；非法、多段或不可满足范围返回 `416` 与 `Content-Range: bytes */<size>`，不再落入 `500`。
+- 播放流、字幕流和云端转码的 302 Location 只允许公网 HTTP(S) URL；本机、私网、链路本地、保留地址和非 HTTP scheme 会被拒绝。
 
 ## QuarkTV / UCTV 云端转码播放
 

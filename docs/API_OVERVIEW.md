@@ -2055,6 +2055,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - Range 请求
 - 直接流式代理
 - 某些 provider 场景下 302 跳转
+- 302 Location 只允许公网 HTTP(S) URL；本机、私网、链路本地、保留地址和非 HTTP scheme 会返回 `502`
 - 代理流会按文件扩展名返回 `Content-Type`，例如 `video/mp4`、`video/x-matroska`、`video/mp2t`；无法识别时返回 `application/octet-stream`
 
 ---

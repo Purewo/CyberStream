@@ -42,6 +42,7 @@ from backend.app.services.playback import (
     guess_video_mime_type,
 )
 from backend.app.services.cloud_transcode import CloudTranscodeError, build_streaming_qualities
+from backend.app.services.url_safety import UnsafePublicUrlError, validate_public_http_url
 from backend.app.services.subtitle_settings import (
     SubtitleSettingsError,
     build_subtitle_settings_payload,
@@ -64,6 +65,22 @@ logger = logging.getLogger(__name__)
 player_bp = Blueprint('player', __name__, url_prefix='/api/v1')
 
 _guess_video_mime_type = guess_video_mime_type
+
+
+def _redirect_to_public_url(redirect_url, *, label, resource_id, unsafe_message):
+    try:
+        safe_url = validate_public_http_url(redirect_url)
+    except UnsafePublicUrlError as e:
+        logger.warning(
+            "%s redirect rejected resource_id=%s reason=%s",
+            label,
+            resource_id,
+            e.reason,
+        )
+        return Response(unsafe_message, status=502)
+
+    logger.info("%s redirect location=%s", label, safe_url[:50])
+    return redirect(safe_url, code=302)
 
 
 def _split_online_subtitle_keywords(value):
@@ -174,8 +191,12 @@ def _stream_resource_subtitle(resource, subtitle_id):
                         subtitle_id,
                     )
                     return Response("Subtitle conversion unavailable for redirected source", status=502)
-                logger.info("Subtitle redirect location=%s", redirect_url[:50])
-                return redirect(redirect_url, code=302)
+                return _redirect_to_public_url(
+                    redirect_url,
+                    label="Subtitle",
+                    resource_id=resource.id,
+                    unsafe_message="Unsafe subtitle redirect URL",
+                )
 
         if status >= 400:
             logger.warning(
@@ -260,8 +281,12 @@ def stream_resource(id):
         if status in [301, 302, 303, 307, 308]:
             redirect_url = content_range  # 此时 content_range 变量存的是 Location
             if redirect_url:
-                logger.info("Stream redirect location=%s", redirect_url[:50])
-                return redirect(redirect_url, code=302)
+                return _redirect_to_public_url(
+                    redirect_url,
+                    label="Stream",
+                    resource_id=id,
+                    unsafe_message="Unsafe stream redirect URL",
+                )
 
         if status >= 400:
             logger.warning("Stream provider error status=%s resource_id=%s", status, id)
@@ -334,7 +359,12 @@ def stream_resource_transcoded(id):
             data.get("storage_type"),
             selected_item.get("resolution"),
         )
-        return redirect(redirect_url, code=302)
+        return _redirect_to_public_url(
+            redirect_url,
+            label="Transcoded stream",
+            resource_id=id,
+            unsafe_message="Unsafe transcoded stream redirect URL",
+        )
     except CloudTranscodeError as e:
         logger.warning("Transcoded stream rejected resource_id=%s error=%s", id, e.message)
         return Response(e.message, status=e.http_status)

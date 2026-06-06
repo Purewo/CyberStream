@@ -15,7 +15,30 @@ from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.api.player_routes import _guess_video_mime_type
 from backend.app.models import MediaResource, Movie, StorageSource
-from backend.app.services.subtitles import clear_subtitle_discovery_cache
+from backend.app.services.subtitles import clear_subtitle_discovery_cache, discover_resource_subtitles
+
+
+class FakeRedirectStreamProvider:
+    def __init__(self, stream_location, subtitle_location=None):
+        self.stream_location = stream_location
+        self.subtitle_location = subtitle_location or stream_location
+
+    def list_items(self, directory):
+        if directory != "Movies":
+            return []
+        return [
+            {
+                "path": "Movies/External.Playback.Test.2026.zh-Hans.default.srt",
+                "name": "External.Playback.Test.2026.zh-Hans.default.srt",
+                "isdir": False,
+                "size": 42,
+            }
+        ]
+
+    def get_stream_data(self, path, range_header=None):
+        if str(path or "").endswith(".srt"):
+            return None, 302, 0, self.subtitle_location
+        return None, 302, 0, self.stream_location
 
 
 class PlayerRoutesTests(unittest.TestCase):
@@ -174,6 +197,52 @@ class ExternalPlaybackRouteTests(unittest.TestCase):
         self.assertEqual("bytes */6", response.headers["Content-Range"])
         self.assertEqual("bytes", response.headers["Accept-Ranges"])
 
+    def test_stream_redirect_allows_public_provider_url(self):
+        resource = self._resource()
+        provider = FakeRedirectStreamProvider("https://cdn.example.com/media/movie.mkv?token=1")
+
+        with patch("backend.app.api.player_routes.provider_factory.get_provider", return_value=provider):
+            response = self.client.get(
+                f"/api/v1/resources/{resource.id}/stream",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(302, response.status_code)
+        self.assertEqual("https://cdn.example.com/media/movie.mkv?token=1", response.headers["Location"])
+
+    def test_stream_redirect_blocks_private_provider_url(self):
+        resource = self._resource()
+        provider = FakeRedirectStreamProvider("http://127.0.0.1/internal/movie.mkv")
+
+        with patch("backend.app.api.player_routes.provider_factory.get_provider", return_value=provider):
+            response = self.client.get(
+                f"/api/v1/resources/{resource.id}/stream",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(502, response.status_code)
+        self.assertEqual(b"Unsafe stream redirect URL", response.data)
+        self.assertNotIn("Location", response.headers)
+
+    def test_subtitle_redirect_blocks_private_provider_url(self):
+        resource = self._resource()
+        provider = FakeRedirectStreamProvider(
+            "https://cdn.example.com/media/movie.mkv",
+            subtitle_location="http://127.0.0.1/internal/subtitle.srt",
+        )
+
+        with patch("backend.app.api.player_routes.provider_factory.get_provider", return_value=provider):
+            subtitle_payload = discover_resource_subtitles(resource)
+            subtitle_id = subtitle_payload["items"][0]["id"]
+            response = self.client.get(
+                f"/api/v1/resources/{resource.id}/stream?subtitle_id={subtitle_id}",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(502, response.status_code)
+        self.assertEqual(b"Unsafe subtitle redirect URL", response.data)
+        self.assertNotIn("Location", response.headers)
+
 
 class CloudTranscodeRouteTests(unittest.TestCase):
     def setUp(self):
@@ -290,6 +359,26 @@ class CloudTranscodeRouteTests(unittest.TestCase):
 
         self.assertEqual(302, response.status_code)
         self.assertEqual("https://provider.example/4k.m3u8", response.headers["Location"])
+        mocked.assert_called_once()
+
+    def test_stream_transcoded_blocks_private_provider_url(self):
+        payload = self._qualities_payload()
+        payload["selected_item"] = {
+            **payload["selected_item"],
+            "url": "http://127.0.0.1/internal/4k.m3u8",
+        }
+        with patch(
+            "backend.app.api.player_routes.build_streaming_qualities",
+            return_value=payload,
+        ) as mocked:
+            response = self.client.get(
+                f"/api/v1/resources/{self.resource.id}/stream-transcoded?resolution=4k",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(502, response.status_code)
+        self.assertEqual(b"Unsafe transcoded stream redirect URL", response.data)
+        self.assertNotIn("Location", response.headers)
         mocked.assert_called_once()
 
 

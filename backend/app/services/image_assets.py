@@ -4,12 +4,10 @@ import hashlib
 import json
 import mimetypes
 import os
-import socket
 import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -22,6 +20,7 @@ from backend.app.services.cdn_assets import (
     supercdn_serve_asset_urls_enabled,
     upload_file_to_supercdn,
 )
+from backend.app.services.url_safety import UnsafePublicUrlError, validate_public_http_url
 
 
 IMAGE_KINDS = {"poster", "backdrop"}
@@ -39,7 +38,6 @@ EXTENSION_MIMETYPES = {
     ".webp": "image/webp",
     ".gif": "image/gif",
 }
-BLOCKED_HOSTS = {"localhost"}
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 IMAGE_SOURCE_FIELDS = {
     "poster": ("cover", "poster_url"),
@@ -102,31 +100,14 @@ def _utc_timestamp(value) -> str | None:
 
 
 def _validate_source_url(source_url: str) -> str:
-    raw = str(source_url or "").strip()
-    if not raw:
-        raise MovieImageAssetError("Movie image source is empty", code=40480, http_status=404)
-
-    parsed = urlparse(raw)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise MovieImageAssetError("Movie image source URL is invalid", code=40080, http_status=400)
-
-    host = parsed.hostname.strip().lower().rstrip(".")
-    if not host:
-        raise MovieImageAssetError("Movie image source URL is invalid", code=40080, http_status=400)
-    if host in BLOCKED_HOSTS or host.endswith(".localhost"):
-        raise MovieImageAssetError("Movie image source host is not allowed", code=40081, http_status=400)
-
     try:
-        host_ip = ip_address(host)
-    except ValueError:
-        try:
-            host_ip = ip_address(socket.inet_aton(host))
-        except OSError:
-            host_ip = None
-    if host_ip and (host_ip.is_private or host_ip.is_loopback or host_ip.is_link_local or host_ip.is_unspecified):
-        raise MovieImageAssetError("Movie image source host is not allowed", code=40081, http_status=400)
-
-    return raw
+        return validate_public_http_url(source_url)
+    except UnsafePublicUrlError as e:
+        if e.reason == "empty":
+            raise MovieImageAssetError("Movie image source is empty", code=40480, http_status=404) from e
+        if e.reason == "blocked_host":
+            raise MovieImageAssetError("Movie image source host is not allowed", code=40081, http_status=400) from e
+        raise MovieImageAssetError("Movie image source URL is invalid", code=40080, http_status=400) from e
 
 
 def _movie_image_source(movie, kind: str) -> str:
