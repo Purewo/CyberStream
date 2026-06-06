@@ -360,6 +360,24 @@ SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源
 #### `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS`
 SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用源；如果网络侧访问 `srtku.com` 不稳定，后端会在超时后返回 `providers.errors`，其中 `reason=timeout`，避免前端把慢源超时误判成整体故障。
 
+#### `CYBER_ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES`
+在线字幕或归档内单个字幕解压后的最大字节数，默认 `20971520`（20MB）。超过限制返回 `413`；显式设置为 `0` 可关闭限制。
+
+#### `CYBER_ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES`
+字幕归档内嵌套压缩包允许读取的最大字节数，默认 `20971520`（20MB）。超过限制返回 `413`。
+
+#### `CYBER_ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES`
+单个 ZIP/TAR/7z 字幕归档允许包含的最大条目数，默认 `200`。用于阻止大量小文件耗尽 CPU 和内存。
+
+#### `CYBER_ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES`
+单个字幕归档内所有候选字幕累计允许解压的最大字节数，默认 `41943040`（40MB）。超过限制返回 `413`。
+
+#### `CYBER_SUBTITLE_MANUAL_UPLOAD_MAX_BYTES`
+手动上传字幕或字幕压缩包的最大请求文件大小，默认 `20971520`（20MB）。超过限制返回 `413`。
+
+#### `CYBER_SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES`
+字幕转 WebVTT 的输入大小限制，默认 `0`（不限制）；可按部署内存预算设置正整数。
+
 ### 2.15 用户管理配置
 
 #### `CYBER_USER_MANAGEMENT_ENABLED`

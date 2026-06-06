@@ -75,7 +75,7 @@ LANGUAGE_LABELS = {
 DEFAULT_MARKERS = {"default", "defaults", "默认", "缺省"}
 FORCED_MARKERS = {"forced", "force", "only", "强制"}
 DIRECTORY_CACHE_TTL_SECONDS = 30
-MAX_MANUAL_UPLOAD_SUBTITLE_BYTES = getattr(config, "SUBTITLE_MANUAL_UPLOAD_MAX_BYTES", 0)
+MAX_MANUAL_UPLOAD_SUBTITLE_BYTES = getattr(config, "SUBTITLE_MANUAL_UPLOAD_MAX_BYTES", 20 * 1024 * 1024)
 MAX_WEBVTT_CONVERSION_BYTES = getattr(config, "SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES", 0)
 WEBVTT_CONVERTIBLE_FORMATS = {"srt", "ass", "ssa", "vtt"}
 
@@ -903,7 +903,7 @@ def upload_resource_subtitle(resource, file_storage, set_default=False):
             },
         )
     except OnlineSubtitleError as e:
-        raise ResourceSubtitleError(e.message, code=40074, http_status=400) from e
+        raise ResourceSubtitleError(e.message, code=e.code, http_status=e.http_status) from e
 
     storage_path, absolute_path = _unique_cached_subtitle_path(resource, normalized["filename"])
     absolute_path.parent.mkdir(parents=True, exist_ok=True)

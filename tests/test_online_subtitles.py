@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import sys
 import tempfile
@@ -10,6 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlparse
 
+import py7zr
+
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -19,7 +22,7 @@ from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.models import MediaResource, Movie, ResourceSubtitle, StorageSource
 from backend.app.services import online_subtitles
-from backend.app.services.online_subtitles import normalize_downloaded_subtitle_file
+from backend.app.services.online_subtitles import OnlineSubtitleError, normalize_downloaded_subtitle_file
 
 
 class FakeCDNResponse:
@@ -780,20 +783,149 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual(50260, payload["code"])
         self.assertIn("SubHD download failed: RuntimeError", payload["msg"])
 
-    def test_online_subtitle_normalization_has_no_default_size_limit(self):
+    def test_online_subtitle_normalization_enforces_default_size_limit(self):
         resource = self._resource()
-        content = b"1\n00:00:00,000 --> 00:00:01,000\n" + b"x" * (30 * 1024 * 1024 + 1)
+        content = b"1\n00:00:00,000 --> 00:00:01,000\n" + b"x" * (20 * 1024 * 1024 + 1)
+
+        with self.assertRaises(OnlineSubtitleError) as context:
+            normalize_downloaded_subtitle_file(
+                resource,
+                "subhd",
+                "large-default",
+                "large-default.srt",
+                content,
+            )
+
+        self.assertEqual(413, context.exception.http_status)
+        self.assertEqual(41369, context.exception.code)
+
+    def test_online_subtitle_size_limit_can_be_explicitly_disabled(self):
+        resource = self._resource()
+        self.app.config["ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES"] = 0
+        content = b"1\n00:00:00,000 --> 00:00:01,000\n" + b"x" * (20 * 1024 * 1024 + 1)
 
         result = normalize_downloaded_subtitle_file(
             resource,
             "subhd",
-            "large-default",
-            "large-default.srt",
+            "large-disabled",
+            "large-disabled.srt",
             content,
         )
 
         self.assertEqual(len(content), len(result["content"]))
-        self.assertEqual("application/x-subrip; charset=utf-8", result["mime_type"])
+
+    def test_online_subtitle_zip_member_limit_is_enforced_during_read(self):
+        resource = self._resource()
+        self.app.config["ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES"] = 8
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("large.srt", b"x" * 1024)
+
+        with self.assertRaises(OnlineSubtitleError) as context:
+            normalize_downloaded_subtitle_file(
+                resource,
+                "subhd",
+                "large-zip",
+                "large.zip",
+                buffer.getvalue(),
+            )
+
+        self.assertEqual(413, context.exception.http_status)
+        self.assertEqual(41369, context.exception.code)
+
+    def test_online_subtitle_archive_entry_limit_is_enforced(self):
+        resource = self._resource()
+        self.app.config["ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES"] = 1
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("first.srt", b"first")
+            archive.writestr("second.srt", b"second")
+
+        with self.assertRaises(OnlineSubtitleError) as context:
+            normalize_downloaded_subtitle_file(
+                resource,
+                "subhd",
+                "many-entries",
+                "many.zip",
+                buffer.getvalue(),
+            )
+
+        self.assertEqual(413, context.exception.http_status)
+        self.assertEqual(41369, context.exception.code)
+
+    def test_online_subtitle_archive_total_limit_is_enforced(self):
+        resource = self._resource()
+        self.app.config["ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES"] = 1024
+        self.app.config["ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES"] = 12
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("first.srt", b"12345678")
+            archive.writestr("second.srt", b"abcdefgh")
+
+        with self.assertRaises(OnlineSubtitleError) as context:
+            normalize_downloaded_subtitle_file(
+                resource,
+                "subhd",
+                "large-total",
+                "large-total.zip",
+                buffer.getvalue(),
+            )
+
+        self.assertEqual(413, context.exception.http_status)
+        self.assertEqual(41369, context.exception.code)
+
+    def test_online_subtitle_gzip_limit_is_enforced_during_read(self):
+        resource = self._resource()
+        self.app.config["ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES"] = 8
+
+        with self.assertRaises(OnlineSubtitleError) as context:
+            normalize_downloaded_subtitle_file(
+                resource,
+                "subhd",
+                "large-gzip",
+                "large.srt.gz",
+                gzip.compress(b"x" * 1024),
+            )
+
+        self.assertEqual(413, context.exception.http_status)
+        self.assertEqual(41369, context.exception.code)
+
+    def test_online_subtitle_7z_member_limit_is_preflighted(self):
+        resource = self._resource()
+        self.app.config["ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES"] = 8
+        buffer = io.BytesIO()
+        with py7zr.SevenZipFile(buffer, "w") as archive:
+            archive.writestr(b"x" * 1024, "large.srt")
+
+        with self.assertRaises(OnlineSubtitleError) as context:
+            normalize_downloaded_subtitle_file(
+                resource,
+                "subhd",
+                "large-7z",
+                "large.7z",
+                buffer.getvalue(),
+            )
+
+        self.assertEqual(413, context.exception.http_status)
+        self.assertEqual(41369, context.exception.code)
+
+    def test_online_subtitle_7z_archive_extracts_subtitle(self):
+        resource = self._resource()
+        buffer = io.BytesIO()
+        with py7zr.SevenZipFile(buffer, "w") as archive:
+            archive.writestr(b"1\n00:00:00,000 --> 00:00:01,000\nSeven\n", "feature.srt")
+
+        result = normalize_downloaded_subtitle_file(
+            resource,
+            "subhd",
+            "feature-7z",
+            "feature.7z",
+            buffer.getvalue(),
+        )
+
+        self.assertEqual("feature.srt", result["filename"])
+        self.assertEqual("7z", result["meta"]["archive_kind"])
+        self.assertIn(b"Seven", result["content"])
 
     def test_online_download_accepts_string_srtku_download_index(self):
         resource = self._resource()
@@ -1043,6 +1175,22 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual("ass", subtitle["format"])
         self.assertEqual("feature.ass", subtitle["filename"])
         self.assertTrue(subtitle["upload"]["meta"]["extracted"])
+
+    def test_manual_upload_preserves_archive_size_error_status(self):
+        resource = self._resource()
+        self.app.config["ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES"] = 8
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("large.srt", b"x" * 1024)
+
+        response = self.client.post(
+            f"/api/v1/resources/{resource.id}/subtitles/upload",
+            data={"file": (io.BytesIO(buffer.getvalue()), "large.zip")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(413, response.status_code)
+        self.assertEqual(41369, response.get_json()["code"])
 
     def test_online_bound_subtitle_can_be_set_default_and_removed(self):
         resource = self._resource()

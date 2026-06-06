@@ -26,6 +26,8 @@ ONLINE_BITMAP_SUBTITLE_FORMATS = {"sub", "sup"}
 COMPOUND_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz")
 MAX_EXTRACTED_SUBTITLE_BYTES = getattr(config, "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES", 0)
 MAX_NESTED_ARCHIVE_BYTES = getattr(config, "ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES", 0)
+MAX_ARCHIVE_ENTRIES = getattr(config, "ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES", 200)
+MAX_ARCHIVE_TOTAL_BYTES = getattr(config, "ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES", 40 * 1024 * 1024)
 MAX_ARCHIVE_DEPTH = 3
 DEFAULT_QUERY_ATTEMPT_LIMIT = 6
 MAX_QUERY_ATTEMPT_LIMIT = 12
@@ -159,6 +161,21 @@ def _read_with_optional_limit(file_obj, limit):
     if limit is None:
         return file_obj.read()
     return file_obj.read(limit + 1)
+
+
+def _archive_entry_limit():
+    limit = _config_int("ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES", MAX_ARCHIVE_ENTRIES)
+    return limit if limit > 0 else None
+
+
+def _ensure_archive_entry_count(count, filename):
+    limit = _archive_entry_limit()
+    if limit is not None and count > limit:
+        raise OnlineSubtitleError(
+            f"Subtitle archive contains too many entries: {_basename(filename)}",
+            code=41369,
+            http_status=413,
+        )
 
 
 def _clamp_timeout_value(value, cap):
@@ -962,6 +979,46 @@ def _ensure_nested_archive_size(content, filename):
         )
 
 
+def _ensure_size_value(size, filename, config_name, default):
+    max_bytes = _subtitle_size_limit(config_name, default)
+    try:
+        size = int(size or 0)
+    except (TypeError, ValueError):
+        size = 0
+    if max_bytes is not None and size > max_bytes:
+        label = "Nested subtitle archive" if "NESTED_ARCHIVE" in config_name else "Subtitle file"
+        raise OnlineSubtitleError(
+            f"{label} is too large: {_basename(filename)}",
+            code=41369,
+            http_status=413,
+        )
+
+
+def _new_archive_budget():
+    limit = _config_int("ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES", MAX_ARCHIVE_TOTAL_BYTES)
+    return {
+        "limit": limit if limit > 0 else None,
+        "used": 0,
+    }
+
+
+def _reserve_archive_candidate_bytes(size, filename, budget):
+    if budget is None:
+        return
+    limit = budget.get("limit")
+    try:
+        size = max(0, int(size or 0))
+    except (TypeError, ValueError):
+        size = 0
+    if limit is not None and budget.get("used", 0) + size > limit:
+        raise OnlineSubtitleError(
+            f"Subtitle archive extracted content is too large: {_basename(filename)}",
+            code=41369,
+            http_status=413,
+        )
+    budget["used"] = budget.get("used", 0) + size
+
+
 def _archive_kind(filename, content):
     suffix = _compound_suffix(filename)
     if content.startswith(b"PK\x03\x04") or content.startswith(b"PK\x05\x06") or suffix == ".zip":
@@ -992,16 +1049,39 @@ def _collect_subtitle_candidate(filename, content, entry_name):
     }
 
 
-def _extract_zip_subtitles(content, depth=0, parent_entry=None):
+def _extract_zip_subtitles(content, depth=0, parent_entry=None, budget=None):
     candidates = []
     try:
         with zipfile.ZipFile(io.BytesIO(content), "r") as archive:
-            for info in archive.infolist():
+            infos = archive.infolist()
+            _ensure_archive_entry_count(len(infos), parent_entry or "archive.zip")
+            for info in infos:
                 if info.is_dir():
                     continue
                 entry_name = _candidate_entry_name(parent_entry, info.filename)
                 try:
-                    data = archive.read(info)
+                    if _is_subtitle_filename(info.filename):
+                        _ensure_size_value(
+                            info.file_size,
+                            info.filename,
+                            "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES",
+                            MAX_EXTRACTED_SUBTITLE_BYTES,
+                        )
+                        _reserve_archive_candidate_bytes(info.file_size, info.filename, budget)
+                        with archive.open(info, "r") as fp:
+                            data = _read_with_optional_limit(
+                                fp,
+                                _subtitle_size_limit("ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES", MAX_EXTRACTED_SUBTITLE_BYTES),
+                            )
+                    else:
+                        kind = _archive_kind(info.filename, b"")
+                        if not (_is_supported_archive_kind(kind) and depth < MAX_ARCHIVE_DEPTH):
+                            continue
+                        with archive.open(info, "r") as fp:
+                            data = _read_with_optional_limit(
+                                fp,
+                                _subtitle_size_limit("ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES", MAX_NESTED_ARCHIVE_BYTES),
+                            )
                 except RuntimeError as e:
                     raise OnlineSubtitleError(
                         "Subtitle archive is encrypted or password protected",
@@ -1015,17 +1095,19 @@ def _extract_zip_subtitles(content, depth=0, parent_entry=None):
                 kind = _archive_kind(info.filename, data)
                 if _is_supported_archive_kind(kind) and depth < MAX_ARCHIVE_DEPTH:
                     _ensure_nested_archive_size(data, info.filename)
-                    candidates.extend(_extract_archive_subtitles(info.filename, data, depth + 1, entry_name))
+                    candidates.extend(_extract_archive_subtitles(info.filename, data, depth + 1, entry_name, budget))
     except zipfile.BadZipFile as e:
         raise OnlineSubtitleError("Subtitle zip archive cannot be parsed", code=50267, http_status=502) from e
     return candidates
 
 
-def _extract_tar_subtitles(content, depth=0, parent_entry=None):
+def _extract_tar_subtitles(content, depth=0, parent_entry=None, budget=None):
     candidates = []
     try:
         with tarfile.open(fileobj=io.BytesIO(content), mode="r:*") as archive:
-            for member in archive.getmembers():
+            members = archive.getmembers()
+            _ensure_archive_entry_count(len(members), parent_entry or "archive.tar")
+            for member in members:
                 if not member.isfile():
                     continue
                 fp = archive.extractfile(member)
@@ -1034,6 +1116,13 @@ def _extract_tar_subtitles(content, depth=0, parent_entry=None):
                 entry_name = _candidate_entry_name(parent_entry, member.name)
                 kind = _archive_kind(member.name, b"")
                 if _is_subtitle_filename(member.name):
+                    _ensure_size_value(
+                        member.size,
+                        member.name,
+                        "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES",
+                        MAX_EXTRACTED_SUBTITLE_BYTES,
+                    )
+                    _reserve_archive_candidate_bytes(member.size, member.name, budget)
                     data = _read_with_optional_limit(
                         fp,
                         _subtitle_size_limit("ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES", MAX_EXTRACTED_SUBTITLE_BYTES),
@@ -1047,14 +1136,14 @@ def _extract_tar_subtitles(content, depth=0, parent_entry=None):
                         _subtitle_size_limit("ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES", MAX_NESTED_ARCHIVE_BYTES),
                     )
                     _ensure_nested_archive_size(data, member.name)
-                    candidates.extend(_extract_archive_subtitles(member.name, data, depth + 1, entry_name))
+                    candidates.extend(_extract_archive_subtitles(member.name, data, depth + 1, entry_name, budget))
                     continue
     except tarfile.TarError as e:
         raise OnlineSubtitleError("Subtitle tar archive cannot be parsed", code=50267, http_status=502) from e
     return candidates
 
 
-def _extract_7z_subtitles(content, depth=0, parent_entry=None):
+def _extract_7z_subtitles(content, depth=0, parent_entry=None, budget=None):
     try:
         import py7zr
     except ImportError as e:
@@ -1068,8 +1157,36 @@ def _extract_7z_subtitles(content, depth=0, parent_entry=None):
         archive_path.write_bytes(content)
         try:
             with py7zr.SevenZipFile(archive_path, mode="r") as archive:
-                archive.extractall(path=extract_dir)
+                infos = archive.list()
+                _ensure_archive_entry_count(len(infos), parent_entry or "archive.7z")
+                targets = []
+                for info in infos:
+                    if not getattr(info, "is_file", False) or getattr(info, "is_symlink", False):
+                        continue
+                    entry_filename = str(getattr(info, "filename", "") or "")
+                    kind = _archive_kind(entry_filename, b"")
+                    if _is_subtitle_filename(entry_filename):
+                        _ensure_size_value(
+                            getattr(info, "uncompressed", 0),
+                            entry_filename,
+                            "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES",
+                            MAX_EXTRACTED_SUBTITLE_BYTES,
+                        )
+                        _reserve_archive_candidate_bytes(getattr(info, "uncompressed", 0), entry_filename, budget)
+                        targets.append(entry_filename)
+                    elif _is_supported_archive_kind(kind) and depth < MAX_ARCHIVE_DEPTH:
+                        _ensure_size_value(
+                            getattr(info, "uncompressed", 0),
+                            entry_filename,
+                            "ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES",
+                            MAX_NESTED_ARCHIVE_BYTES,
+                        )
+                        targets.append(entry_filename)
+                if targets:
+                    archive.extract(path=extract_dir, targets=targets)
         except Exception as e:
+            if isinstance(e, OnlineSubtitleError):
+                raise
             raise OnlineSubtitleError("Subtitle 7z archive cannot be parsed", code=50267, http_status=502) from e
 
         root = extract_dir.resolve()
@@ -1093,7 +1210,7 @@ def _extract_7z_subtitles(content, depth=0, parent_entry=None):
                         http_status=413,
                     )
                 entry_name = _candidate_entry_name(parent_entry, str(path.relative_to(root)))
-                candidates.extend(_extract_archive_subtitles(path.name, path.read_bytes(), depth + 1, entry_name))
+                candidates.extend(_extract_archive_subtitles(path.name, path.read_bytes(), depth + 1, entry_name, budget))
                 continue
             resolved = path.resolve()
             try:
@@ -1116,34 +1233,49 @@ def _extract_7z_subtitles(content, depth=0, parent_entry=None):
     return candidates
 
 
-def _extract_gzip_subtitle(filename, content, depth=0, parent_entry=None):
+def _extract_gzip_subtitle(filename, content, depth=0, parent_entry=None, budget=None):
     inner_name = _basename(filename)
     if inner_name.lower().endswith(".gz"):
         inner_name = inner_name[:-3]
+    declared_kind = _archive_kind(inner_name, b"")
+    if _is_supported_archive_kind(declared_kind) and depth < MAX_ARCHIVE_DEPTH:
+        read_limit = _subtitle_size_limit(
+            "ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES",
+            MAX_NESTED_ARCHIVE_BYTES,
+        )
+    else:
+        read_limit = _subtitle_size_limit(
+            "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES",
+            MAX_EXTRACTED_SUBTITLE_BYTES,
+        )
     try:
-        data = gzip.decompress(content)
+        with gzip.GzipFile(fileobj=io.BytesIO(content), mode="rb") as gz_file:
+            data = _read_with_optional_limit(gz_file, read_limit)
     except OSError as e:
         raise OnlineSubtitleError("Subtitle gzip archive cannot be parsed", code=50267, http_status=502) from e
     entry_name = _candidate_entry_name(parent_entry, inner_name)
     if _is_subtitle_filename(inner_name) and not _archive_kind(inner_name, data):
+        _reserve_archive_candidate_bytes(len(data), inner_name, budget)
         return [_collect_subtitle_candidate(inner_name, data, entry_name)]
     kind = _archive_kind(inner_name, data)
     if _is_supported_archive_kind(kind) and depth < MAX_ARCHIVE_DEPTH:
         _ensure_nested_archive_size(data, inner_name)
-        return _extract_archive_subtitles(inner_name, data, depth + 1, entry_name)
+        return _extract_archive_subtitles(inner_name, data, depth + 1, entry_name, budget)
     return []
 
 
-def _extract_archive_subtitles(filename, content, depth=0, parent_entry=None):
+def _extract_archive_subtitles(filename, content, depth=0, parent_entry=None, budget=None):
+    if budget is None:
+        budget = _new_archive_budget()
     kind = _archive_kind(filename, content)
     if kind == "zip":
-        return _extract_zip_subtitles(content, depth=depth, parent_entry=parent_entry)
+        return _extract_zip_subtitles(content, depth=depth, parent_entry=parent_entry, budget=budget)
     if kind == "tar":
-        return _extract_tar_subtitles(content, depth=depth, parent_entry=parent_entry)
+        return _extract_tar_subtitles(content, depth=depth, parent_entry=parent_entry, budget=budget)
     if kind == "7z":
-        return _extract_7z_subtitles(content, depth=depth, parent_entry=parent_entry)
+        return _extract_7z_subtitles(content, depth=depth, parent_entry=parent_entry, budget=budget)
     if kind == "gzip":
-        return _extract_gzip_subtitle(filename, content, depth=depth, parent_entry=parent_entry)
+        return _extract_gzip_subtitle(filename, content, depth=depth, parent_entry=parent_entry, budget=budget)
     return []
 
 
