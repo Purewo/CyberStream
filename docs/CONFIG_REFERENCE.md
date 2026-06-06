@@ -146,6 +146,9 @@ ffmpeg 原生 `-re` 输入限速开关，默认 `true`。优先保护原始视�
 #### `CYBER_IMAGE_ASSET_TIMEOUT_SECONDS`
 图片回源请求超时时间，默认 `15` 秒。当前只对数据库中已有的 `cover/background_cover` 回源，不接受前端传任意 URL。
 
+#### `CYBER_IMAGE_ASSET_MAX_REDIRECTS`
+图片回源最多允许跟随的 HTTP 重定向次数，默认 `5`。后端会手动跟随重定向并校验每一跳 URL，拒绝跳到 localhost、私网 IP、链路本地 IP 或无效 scheme。
+
 #### `CYBER_IMAGE_ASSET_CACHE_MAX_AGE_SECONDS`
 图片接口响应给浏览器的 `Cache-Control` 秒数，默认 `86400`。后端落盘缓存位于 `CACHE_DIR/images/movies/<movie_id>/`。
 

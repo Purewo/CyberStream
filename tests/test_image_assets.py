@@ -23,13 +23,15 @@ ALT_JPEG_BYTES = b"\xff\xd8\xff\xe0poster-data-refetched\xff\xd9"
 
 
 class FakeImageResponse:
-    def __init__(self, body=JPEG_BYTES, content_type="image/jpeg", status_code=200):
+    def __init__(self, body=JPEG_BYTES, content_type="image/jpeg", status_code=200, headers=None):
         self.body = body
         self.status_code = status_code
         self.headers = {
             "Content-Type": content_type,
             "Content-Length": str(len(body)),
+            **(headers or {}),
         }
+        self.closed = False
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -39,7 +41,7 @@ class FakeImageResponse:
         yield self.body
 
     def close(self):
-        pass
+        self.closed = True
 
 
 class FakeCDNResponse:
@@ -186,6 +188,120 @@ class MovieImageAssetTests(unittest.TestCase):
         self.assertEqual(1, mock_get.call_count)
         first.close()
         second.close()
+
+    @patch("backend.app.services.image_assets.requests.get")
+    def test_movie_image_endpoint_follows_valid_relative_redirect(self, mock_get):
+        movie = self._movie()
+        redirect_response = FakeImageResponse(
+            status_code=302,
+            headers={"Location": "poster-final.jpg"},
+        )
+        mock_get.side_effect = [
+            redirect_response,
+            FakeImageResponse(body=JPEG_BYTES, content_type="image/jpeg"),
+        ]
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/images/poster")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(JPEG_BYTES, response.data)
+        self.assertTrue(redirect_response.closed)
+        self.assertEqual(2, mock_get.call_count)
+        self.assertEqual(
+            "https://image.tmdb.org/t/p/w500/poster-final.jpg",
+            mock_get.call_args_list[1].args[0],
+        )
+        self.assertFalse(mock_get.call_args_list[0].kwargs["allow_redirects"])
+        self.assertFalse(mock_get.call_args_list[1].kwargs["allow_redirects"])
+        response.close()
+
+    @patch("backend.app.services.image_assets.requests.get")
+    def test_movie_image_endpoint_blocks_redirect_to_private_host(self, mock_get):
+        movie = self._movie()
+        redirect_response = FakeImageResponse(
+            status_code=302,
+            headers={"Location": "http://127.0.0.1/internal/poster.jpg"},
+        )
+        mock_get.return_value = redirect_response
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/images/poster")
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(40081, response.get_json()["code"])
+        self.assertTrue(redirect_response.closed)
+        self.assertEqual(1, mock_get.call_count)
+
+    @patch("backend.app.services.image_assets.requests.get")
+    def test_movie_image_endpoint_blocks_private_source_before_request(self, mock_get):
+        movie = self._movie(cover="http://127.0.0.1/internal/poster.jpg")
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/images/poster")
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(40081, response.get_json()["code"])
+        mock_get.assert_not_called()
+
+    @patch("backend.app.services.image_assets.requests.get")
+    def test_movie_image_endpoint_blocks_localhost_with_trailing_dot(self, mock_get):
+        movie = self._movie(cover="http://localhost./internal/poster.jpg")
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/images/poster")
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(40081, response.get_json()["code"])
+        mock_get.assert_not_called()
+
+    @patch("backend.app.services.image_assets.requests.get")
+    def test_movie_image_endpoint_blocks_legacy_ipv4_loopback_source(self, mock_get):
+        movie = self._movie(cover="http://2130706433/internal/poster.jpg")
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/images/poster")
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(40081, response.get_json()["code"])
+        mock_get.assert_not_called()
+
+    @patch("backend.app.services.image_assets.requests.get")
+    def test_movie_image_preload_reports_blocked_private_redirect(self, mock_get):
+        movie = self._movie()
+        mock_get.return_value = FakeImageResponse(
+            status_code=302,
+            headers={"Location": "http://169.254.169.254/latest/meta-data/"},
+        )
+
+        response = self.client.post(
+            "/api/v1/images/preload",
+            json={"movie_ids": [movie.id], "kinds": ["poster"]},
+        )
+        item = response.get_json()["data"]["items"][0]
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("failed", item["status"])
+        self.assertEqual("fetch_failed", item["reason"])
+        self.assertEqual(40081, item["error"]["code"])
+        self.assertEqual(1, mock_get.call_count)
+
+    @patch("backend.app.services.image_assets.requests.get")
+    def test_movie_image_preload_enforces_redirect_limit(self, mock_get):
+        movie = self._movie()
+        self.app.config["IMAGE_ASSET_MAX_REDIRECTS"] = 1
+        responses = [
+            FakeImageResponse(status_code=302, headers={"Location": "first.jpg"}),
+            FakeImageResponse(status_code=302, headers={"Location": "second.jpg"}),
+        ]
+        mock_get.side_effect = responses
+
+        response = self.client.post(
+            "/api/v1/images/preload",
+            json={"movie_ids": [movie.id], "kinds": ["poster"]},
+        )
+        item = response.get_json()["data"]["items"][0]
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("failed", item["status"])
+        self.assertEqual(50284, item["error"]["code"])
+        self.assertEqual(2, mock_get.call_count)
+        self.assertTrue(all(item.closed for item in responses))
 
     @patch("backend.app.services.image_assets.requests.get")
     def test_movie_image_status_reports_cache_state(self, mock_get):

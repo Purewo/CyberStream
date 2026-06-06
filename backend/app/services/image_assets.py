@@ -4,13 +4,14 @@ import hashlib
 import json
 import mimetypes
 import os
+import socket
 import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from ipaddress import ip_address
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 from flask import current_app, has_app_context
@@ -39,6 +40,7 @@ EXTENSION_MIMETYPES = {
     ".gif": "image/gif",
 }
 BLOCKED_HOSTS = {"localhost"}
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 IMAGE_SOURCE_FIELDS = {
     "poster": ("cover", "poster_url"),
     "backdrop": ("background_cover", "backdrop_url"),
@@ -108,14 +110,19 @@ def _validate_source_url(source_url: str) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise MovieImageAssetError("Movie image source URL is invalid", code=40080, http_status=400)
 
-    host = parsed.hostname.strip().lower()
+    host = parsed.hostname.strip().lower().rstrip(".")
+    if not host:
+        raise MovieImageAssetError("Movie image source URL is invalid", code=40080, http_status=400)
     if host in BLOCKED_HOSTS or host.endswith(".localhost"):
         raise MovieImageAssetError("Movie image source host is not allowed", code=40081, http_status=400)
 
     try:
         host_ip = ip_address(host)
     except ValueError:
-        host_ip = None
+        try:
+            host_ip = ip_address(socket.inet_aton(host))
+        except OSError:
+            host_ip = None
     if host_ip and (host_ip.is_private or host_ip.is_loopback or host_ip.is_link_local or host_ip.is_unspecified):
         raise MovieImageAssetError("Movie image source host is not allowed", code=40081, http_status=400)
 
@@ -467,19 +474,55 @@ def _proxies_for_url(source_url: str):
     return None
 
 
+def _get_image_response(source_url: str, timeout: float):
+    max_redirects = int(_config_value("IMAGE_ASSET_MAX_REDIRECTS", 5))
+    current_url = _validate_source_url(source_url)
+    headers = {"User-Agent": f"CyberMedia/{getattr(config, 'APP_VERSION', 'unknown')} image-cache"}
+
+    for redirect_count in range(max_redirects + 1):
+        response = requests.get(
+            current_url,
+            stream=True,
+            timeout=timeout,
+            proxies=_proxies_for_url(current_url),
+            headers=headers,
+            allow_redirects=False,
+        )
+        if response.status_code not in REDIRECT_STATUS_CODES:
+            return response, current_url
+
+        location = str(response.headers.get("Location") or "").strip()
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+        if not location:
+            raise MovieImageAssetError(
+                "Movie image source redirect is missing a location",
+                code=50284,
+                http_status=502,
+            )
+        if redirect_count >= max_redirects:
+            raise MovieImageAssetError(
+                "Movie image source redirected too many times",
+                code=50284,
+                http_status=502,
+            )
+        current_url = _validate_source_url(urljoin(current_url, location))
+
+    raise MovieImageAssetError(
+        "Movie image source redirected too many times",
+        code=50284,
+        http_status=502,
+    )
+
+
 def _fetch_image(source_url: str, target: Path) -> tuple[int, str]:
     max_bytes = int(_config_value("IMAGE_ASSET_MAX_BYTES", 20 * 1024 * 1024))
     timeout = float(_config_value("IMAGE_ASSET_TIMEOUT_SECONDS", 15))
-    response = requests.get(
-        source_url,
-        stream=True,
-        timeout=timeout,
-        proxies=_proxies_for_url(source_url),
-        headers={"User-Agent": f"CyberMedia/{getattr(config, 'APP_VERSION', 'unknown')} image-cache"},
-    )
+    response, final_url = _get_image_response(source_url, timeout)
     try:
         response.raise_for_status()
-        extension = _extension_for_response(source_url, response.headers.get("Content-Type"))
+        extension = _extension_for_response(final_url, response.headers.get("Content-Type"))
         if target.suffix.lower() != extension:
             target = target.with_suffix(extension)
 
