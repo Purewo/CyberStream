@@ -5,8 +5,10 @@
 项目根目录：
 
 ```bash
-cd /home/pureworld/赛博影视
+cd /path/to/CyberStream
 ```
+
+当前维护服务器上的检出路径为 `/root/CyberStream`；部署机路径可以不同，后续命令均从仓库根目录执行。
 
 使用虚拟环境启动：
 
@@ -26,7 +28,7 @@ cp .env.local.example .env.local
 
 服务脚本默认 `CYBER_BACKEND_RUNNER=auto`：如果 `.venv/bin/gunicorn` 存在，会优先用 gunicorn；否则回退 Flask 内置服务器。需要指定时可设置 `CYBER_BACKEND_RUNNER=gunicorn` 或 `CYBER_BACKEND_RUNNER=flask`。
 
-开发调试时也可以前台运行 `/home/pureworld/赛博影视/.venv/bin/python -m backend.run`。
+开发调试时也可以在仓库根目录前台运行 `.venv/bin/python -m backend.run`。
 
 ## 2. 停止
 
@@ -61,6 +63,8 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 
 ### 公网验收
 
+公网域名和端口属于部署配置，不是代码库固定值。确认当前部署入口后再执行，例如历史部署：
+
 ```bash
 curl -i http://pioneer.fan:884/
 curl -i http://pioneer.fan:884/api/v1/openapi.json
@@ -68,7 +72,7 @@ curl -i http://pioneer.fan:884/api/v1/openapi.json
 
 ## 4. 当前已知运行事实
 
-- 当前 IPv4 公网入口为 `http://pioneer.fan:884`，映射到本机 `5004`
+- 历史 IPv4 部署入口为 `http://pioneer.fan:884`，曾映射到后端 `5004`；新维护环境必须单独验证，不能仅依据文档假定可用
 - 后台运行优先使用 `./scripts/backend_service.sh`，脚本会加载项目根目录 `.env.local`
 - 服务脚本优先使用 gunicorn，缺失时自动回退 Flask 内置服务器
 - `.env.local` 存放 token 等本机私密配置，已加入 git 忽略；提交前只维护 `.env.local.example`

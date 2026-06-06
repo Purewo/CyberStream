@@ -23,15 +23,17 @@
 推荐：
 
 ```bash
-cd /home/pureworld/赛博影视
+cd /path/to/CyberStream
 ./scripts/backend_service.sh restart
 ```
 
 服务脚本默认优先使用 gunicorn，缺失时回退 Flask 内置服务器。开发前台调试兼容：
 
 ```bash
-/home/pureworld/赛博影视/.venv/bin/python backend/run.py
+.venv/bin/python -m backend.run
 ```
+
+当前维护服务器上的仓库路径为 `/root/CyberStream`，但验收命令不依赖固定绝对路径。
 
 ### 2.2 端口监听检查
 
@@ -276,7 +278,7 @@ curl -s http://127.0.0.1:5004/api/v1/movies/<id>/images/status
 验证 CDN/public base URL 配置：
 
 ```bash
-CYBER_IMAGE_ASSET_PUBLIC_BASE_URL=https://cdn.example.com /home/pureworld/赛博影视/.venv/bin/python -m backend.run
+CYBER_IMAGE_ASSET_PUBLIC_BASE_URL=https://cdn.example.com .venv/bin/python -m backend.run
 curl -s http://127.0.0.1:5004/api/v1/movies/<id> | jq '.data.poster_asset_url,.data.backdrop_asset_url'
 ```
 
@@ -336,7 +338,7 @@ CYBER_SUPERCDN_ROUTE_PROFILE=china_all \
 CYBER_SUPERCDN_AUTO_UPLOAD_IMAGES=true \
 CYBER_SUPERCDN_AUTO_UPLOAD_SUBTITLES=false \
 CYBER_SUPERCDN_SERVE_ASSET_URLS=true \
-/home/pureworld/赛博影视/.venv/bin/python -m backend.run
+.venv/bin/python -m backend.run
 
 curl -s -X POST http://127.0.0.1:5004/api/v1/images/refresh \
   -H 'Content-Type: application/json' \
@@ -456,7 +458,7 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 以下在修改用户、权限、资源库可见性、历史或字幕样式时执行：
 
 ```bash
-/home/pureworld/赛博影视/.venv/bin/python -m unittest tests.test_user_management
+.venv/bin/python -m unittest tests.test_user_management
 ```
 
 预期：
@@ -694,6 +696,14 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 - 文档索引（如 README）是否同步更新
 - 文档内容与当前实际行为一致
 - OpenAPI release notes 是否同步标记版本状态
+
+当前主干包含 pytest 自动化测试。后端代码改动至少运行直接相关测试；交付前建议运行：
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+2026-06-06 维护基线：`562 passed, 9 skipped, 12 subtests passed`。
 
 ---
 
