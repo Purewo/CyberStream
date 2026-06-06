@@ -407,7 +407,8 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 返回结构与列表项一致，但适合编辑页单条拉取
-- 敏感字段会做脱敏展示，例如 `password` 仅返回 `***`
+- 敏感字段会做脱敏展示，例如 `token`、`password`、`otp_code`、`path_password` 仅返回 `***`
+- 同协议更新配置时，前端可把已脱敏字段原样传回 `PATCH /api/v1/storage/sources/<id>`；后端会保留数据库中的真实值
 
 ### `GET /api/v1/storage/sources/<id>/health`
 显式获取单个挂载点的实时健康状态。

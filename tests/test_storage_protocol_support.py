@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest.mock import MagicMock, patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
@@ -427,6 +428,92 @@ class StorageProtocolSupportTests(unittest.TestCase):
         source = StorageSource.query.first()
         self.assertEqual("/media", source.config["root"])
         self.assertEqual("token", source.config["token"])
+
+    def test_storage_source_responses_mask_all_alist_secrets(self):
+        response = self.client.post(
+            "/api/v1/storage/sources",
+            json={
+                "name": "AList Source",
+                "type": "alist",
+                "config": {
+                    "base_url": "https://alist.example.com",
+                    "root": "/media",
+                    "token": "api-token",
+                    "username": "admin",
+                    "password": "account-password",
+                    "otp_code": "123456",
+                    "path_password": "directory-password",
+                },
+            },
+        )
+
+        self.assertEqual(200, response.status_code)
+        source_id = response.get_json()["data"]["id"]
+
+        responses = [
+            response.get_json()["data"],
+            self.client.get("/api/v1/storage/sources").get_json()["data"][0],
+            self.client.get(f"/api/v1/storage/sources/{source_id}").get_json()["data"],
+        ]
+        provider = MagicMock()
+        provider.check_connection.return_value = {"status": "online", "message": "ok"}
+        with patch("backend.app.models.provider_factory.create", return_value=provider):
+            health_response = self.client.get(f"/api/v1/storage/sources/{source_id}/health")
+        self.assertEqual(200, health_response.status_code)
+        responses.append(health_response.get_json()["data"])
+
+        for source_data in responses:
+            self.assertEqual("admin", source_data["config"]["username"])
+            for field_name in ("token", "password", "otp_code", "path_password"):
+                self.assertEqual("***", source_data["config"][field_name])
+            serialized = str(source_data)
+            self.assertNotIn("api-token", serialized)
+            self.assertNotIn("account-password", serialized)
+            self.assertNotIn("123456", serialized)
+            self.assertNotIn("directory-password", serialized)
+
+        source = db.session.get(StorageSource, source_id)
+        self.assertEqual("api-token", source.config["token"])
+        self.assertEqual("account-password", source.config["password"])
+        self.assertEqual("123456", source.config["otp_code"])
+        self.assertEqual("directory-password", source.config["path_password"])
+
+    def test_update_source_preserves_masked_secrets_from_get_response(self):
+        source = StorageSource(
+            name="AList Source",
+            type="alist",
+            config={
+                "base_url": "https://alist.example.com",
+                "root": "/",
+                "token": "api-token",
+                "username": "admin",
+                "password": "account-password",
+                "otp_code": "123456",
+                "path_password": "directory-password",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        source_data = self.client.get(f"/api/v1/storage/sources/{source.id}").get_json()["data"]
+        source_data["config"]["root"] = "/电影"
+        response = self.client.patch(
+            f"/api/v1/storage/sources/{source.id}",
+            json={
+                "name": source_data["name"],
+                "type": source_data["type"],
+                "config": source_data["config"],
+            },
+        )
+
+        self.assertEqual(200, response.status_code)
+        db.session.expire_all()
+        refreshed = db.session.get(StorageSource, source.id)
+        self.assertEqual("/电影", refreshed.config["root"])
+        self.assertEqual("api-token", refreshed.config["token"])
+        self.assertEqual("account-password", refreshed.config["password"])
+        self.assertEqual("123456", refreshed.config["otp_code"])
+        self.assertEqual("directory-password", refreshed.config["path_password"])
 
     def test_update_source_normalizes_alist_config_like_create(self):
         source = StorageSource(

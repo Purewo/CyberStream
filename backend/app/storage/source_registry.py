@@ -1,6 +1,9 @@
 from backend.app.providers.base import StorageProviderError
 
 
+MASKED_SECRET_VALUE = '***'
+
+
 SOURCE_TYPE_DEFINITIONS = {
     'local': {
         'display_name': 'Local Filesystem',
@@ -257,7 +260,7 @@ SOURCE_TYPE_DEFINITIONS = {
             'credentials_required': True,
             'redirect_stream': True,
         },
-        'secret_fields': ['token', 'password', 'path_password'],
+        'secret_fields': ['token', 'password', 'otp_code', 'path_password'],
         'config_fields': [
             {
                 'name': 'base_url',
@@ -365,7 +368,7 @@ SOURCE_TYPE_DEFINITIONS = {
             'credentials_required': True,
             'redirect_stream': True,
         },
-        'secret_fields': ['token', 'password', 'path_password'],
+        'secret_fields': ['token', 'password', 'otp_code', 'path_password'],
         'config_fields': [],
     },
     'guangyapan': {
@@ -1022,11 +1025,32 @@ def sanitize_source_config(s_type, config):
         if key in hidden_fields:
             continue
         if key in secret_fields and value not in (None, ''):
-            masked[key] = '***'
+            masked[key] = MASKED_SECRET_VALUE
         else:
             masked[key] = value
 
     return normalized_type, masked
+
+
+def restore_masked_source_secrets(s_type, config, existing_config):
+    normalized_type, definition = get_source_definition(s_type)
+    if not isinstance(config, dict):
+        return normalized_type, config
+
+    restored = dict(config)
+    current = existing_config if isinstance(existing_config, dict) else {}
+    for field_name in definition.get('secret_fields', []):
+        if restored.get(field_name) != MASKED_SECRET_VALUE:
+            continue
+        current_value = current.get(field_name)
+        if current_value in (None, ''):
+            raise StorageProviderError(
+                f"Masked secret placeholder has no existing value: {field_name}",
+                code=40038,
+            )
+        restored[field_name] = current_value
+
+    return normalized_type, restored
 
 
 def build_source_display_root(s_type, config):

@@ -18,6 +18,7 @@ from backend.app.storage.source_registry import (
     get_source_capabilities,
     normalize_source_config,
     normalize_source_type,
+    restore_masked_source_secrets,
 )
 from backend.app.utils.response import api_error, api_response
 
@@ -2084,12 +2085,13 @@ def update_storage_source(id):
 
     try:
         guards = source.get_mutation_guards()
+        current_type = normalize_source_type(source.type)
         if 'name' in payload:
             name = (payload.get('name') or '').strip()
             if not name:
                 return api_error(code=40038, msg="Invalid field value: name cannot be empty")
             source.name = name
-        next_type = source.type
+        next_type = current_type
         next_config = source.config
 
         if 'type' in payload:
@@ -2101,6 +2103,8 @@ def update_storage_source(id):
                 )
         if 'config' in payload:
             next_config = payload['config']
+            if next_type == current_type:
+                _, next_config = restore_masked_source_secrets(next_type, next_config, source.config)
 
         if 'type' in payload or 'config' in payload:
             source.type = next_type

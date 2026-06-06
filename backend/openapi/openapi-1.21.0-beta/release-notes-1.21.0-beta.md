@@ -153,6 +153,7 @@
 - 当前支持 `alist/openlist/guangyapan/tianyicloud/115cloud/aliyundrive/baidunetdisk/quarktv/uctv`，底层调用上游 `fs/list` 并带 `refresh=true`
 - 该接口只刷新目录缓存并返回刷新后的列表，不触发扫描、不触发刮削
 - `StorageSource.actions` 现在会额外暴露 `can_refresh`
+- AList/OpenList 的 `StorageSource.config` 响应现在会脱敏 `token`、`password`、`otp_code`、`path_password`；同协议 `PATCH /storage/sources/{id}` 带回 `***` 时保留原始凭据，避免编辑配置时把真实 secret 覆盖为占位符。
 
 ## 托管光鸭云盘
 
