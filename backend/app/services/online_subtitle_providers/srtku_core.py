@@ -69,6 +69,32 @@ def _is_waf_page(response: requests.Response) -> bool:
 _ocr_instance = None
 
 
+class DownloadTooLarge(Exception):
+    pass
+
+
+def _positive_limit(max_bytes: int | None) -> int:
+    try:
+        return int(max_bytes or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _content_length_exceeds_limit(response: requests.Response, max_bytes: int | None) -> bool:
+    limit = _positive_limit(max_bytes)
+    if limit <= 0:
+        return False
+    try:
+        content_length = int(response.headers.get("Content-Length") or "0")
+    except (TypeError, ValueError):
+        content_length = 0
+    return content_length > limit
+
+
+def _looks_like_html_response(response: requests.Response) -> bool:
+    return "html" in (response.headers.get("Content-Type") or "").lower()
+
+
 def _solve_waf(
     session: requests.Session,
     target_url: str,
@@ -268,17 +294,23 @@ ARCHIVE_SUFFIXES = {".7z", ".zip", ".tar", ".gz", ".bz2", ".xz", ".tgz"}
 SUBTITLE_SUFFIXES = {".srt", ".ass", ".ssa", ".sub", ".vtt", ".sup"}
 
 
+def _safe_download_filename(filename: str) -> str:
+    raw = unquote(str(filename or "")).replace("\\", "/").replace("\x00", "")
+    name = raw.rsplit("/", 1)[-1].strip()
+    return name if name not in {"", ".", ".."} else "subtitle_download"
+
+
 def _guess_filename(download_url: str, response: requests.Response) -> str:
     cd = response.headers.get("Content-Disposition", "")
     m = re.search(r"filename\*=UTF-8''([^;]+)", cd, flags=re.IGNORECASE)
     if m:
-        return unquote(m.group(1)).strip().strip('"')
+        return _safe_download_filename(m.group(1).strip().strip('"'))
     m = re.search(r"filename=([^;]+)", cd, flags=re.IGNORECASE)
     if m:
-        return unquote(m.group(1).strip().strip('"'))
+        return _safe_download_filename(m.group(1).strip().strip('"'))
     path = urlparse(download_url).path
     name = unquote(Path(path).name)
-    return name if name and "." in name else "subtitle_download"
+    return _safe_download_filename(name) if name and "." in name else "subtitle_download"
 
 
 def _is_archive(path: Path) -> bool:
@@ -322,21 +354,22 @@ def _follow_redirect(download_url: str, session: requests.Session) -> requests.R
     for k, v in session.cookies.items():
         h["Cookie"] = h.get("Cookie", "") + f"; {k}={v}"
 
-    r = session.get(download_url, headers=h, timeout=30, allow_redirects=False)
-    if _is_waf_page(r):
+    r = session.get(download_url, headers=h, timeout=30, allow_redirects=False, stream=True)
+    if _looks_like_html_response(r) and _is_waf_page(r):
         _solve_waf(session, download_url, HEADERS, initial_response=r)
         h2 = dict(HEADERS)
         h2["Referer"] = download_url
         for k, v in session.cookies.items():
             h2["Cookie"] = h2.get("Cookie", "") + f"; {k}={v}"
-        r = session.get(download_url, headers=h2, timeout=30, allow_redirects=False)
+        r = session.get(download_url, headers=h2, timeout=30, allow_redirects=False, stream=True)
 
     if r.status_code == 301:
         loc = r.headers.get("Location", "")
         if loc.startswith("//"):
             loc = "https:" + loc
         if loc:
-            return requests.get(loc, timeout=30, stream=True)
+            r.close()
+            return session.get(loc, timeout=30, stream=True)
     return r
 
 
@@ -348,6 +381,7 @@ def download_subtitle(
     retries: int = 5,
     auto_extract: bool = True,
     remove_archive: bool = True,
+    max_bytes: int | None = None,
 ) -> dict:
     """下载字幕文件，自动处理重定向/WAF/解压。"""
     download_url = (download_url or "").strip()
@@ -360,6 +394,8 @@ def download_subtitle(
 
     last_err = None
     for attempt in range(1, max(1, retries) + 1):
+        r = None
+        save_to = None
         try:
             r = _follow_redirect(download_url, s)
             if r.status_code >= 400:
@@ -368,11 +404,13 @@ def download_subtitle(
             ctype = (r.headers.get("Content-Type") or "").lower()
             if "text/html" in ctype:
                 raise ValueError("anti-bot html page returned")
+            if _content_length_exceeds_limit(r, max_bytes):
+                r.close()
+                raise DownloadTooLarge()
 
-            real_name = filename.strip() if filename and filename.strip() else _guess_filename(download_url, r)
+            real_name = _safe_download_filename(filename) if filename and filename.strip() else _guess_filename(download_url, r)
             if real_name.startswith("[zmk.pw]"):
-                real_name = real_name[8:]
-            real_name = unquote(real_name)
+                real_name = _safe_download_filename(real_name[8:])
             save_to = out_path / real_name
 
             total = 0
@@ -381,6 +419,9 @@ def download_subtitle(
                     if chunk:
                         f.write(chunk)
                         total += len(chunk)
+                        limit = _positive_limit(max_bytes)
+                        if limit > 0 and total > limit:
+                            raise DownloadTooLarge()
 
             if total < 100:
                 raise ValueError(f"too small ({total} bytes)")
@@ -409,6 +450,12 @@ def download_subtitle(
 
             return result
 
+        except DownloadTooLarge:
+            if r is not None:
+                r.close()
+            if save_to is not None:
+                save_to.unlink(missing_ok=True)
+            return {"ok": False, "error": "download_too_large", "attempts": attempt}
         except Exception as e:
             last_err = str(e)
             if attempt < retries:

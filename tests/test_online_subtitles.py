@@ -174,7 +174,8 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
                 }
             ]
 
-            def download_subtitle(source_key, session=None, max_retries=5):
+            def download_subtitle(source_key, session=None, max_retries=5, max_bytes=None):
+                self.subhd_download_max_bytes = max_bytes
                 if source_key == "zip123":
                     return {
                         "success": True,
@@ -201,6 +202,12 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
                         "success": True,
                         "content": b"1\n00:00:00,000 --> 00:00:01,000\nToo large\n",
                         "ext": "srt",
+                        "attempts": 1,
+                    }
+                if source_key == "downloadlarge":
+                    return {
+                        "success": False,
+                        "reason": "download_too_large",
                         "attempts": 1,
                     }
                 if source_key == "explode":
@@ -238,10 +245,29 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
                 {"provider": "server-b", "download_links": "https://srtku.example/b"},
             ]
 
-            def download_subtitle(download_url, outdir, session=None):
+            def download_subtitle(
+                download_url,
+                outdir,
+                session=None,
+                auto_extract=True,
+                remove_archive=True,
+                max_bytes=None,
+            ):
+                self.srtku_download_kwargs = {
+                    "auto_extract": auto_extract,
+                    "remove_archive": remove_archive,
+                    "max_bytes": max_bytes,
+                }
                 suffix = "b" if download_url.endswith("/b") else "a"
-                path = Path(outdir) / f"online-subtitle-{suffix}.srt"
-                path.write_bytes(b"1\n00:00:00,000 --> 00:00:01,000\nSrtKu\n")
+                if getattr(self, "srtku_archive_file", False):
+                    path = Path(outdir) / f"online-subtitle-{suffix}.zip"
+                    path.write_bytes(self._subtitle_zip())
+                else:
+                    path = Path(outdir) / f"online-subtitle-{suffix}.srt"
+                    if getattr(self, "srtku_large_file", False):
+                        path.write_bytes(b"x" * 1024)
+                    else:
+                        path.write_bytes(b"1\n00:00:00,000 --> 00:00:01,000\nSrtKu\n")
                 return {
                     "ok": True,
                     "selected_subtitle": str(path),
@@ -765,6 +791,55 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertEqual(413, response.status_code)
         self.assertEqual(41369, response.get_json()["code"])
         self.assertIn("too large", response.get_json()["msg"])
+
+    def test_online_download_returns_payload_too_large_for_provider_download_limit(self):
+        resource = self._resource()
+
+        with patch(
+            "backend.app.services.online_subtitles._load_skill_module",
+            side_effect=self._fake_skill_module,
+        ):
+            response = self.client.post(
+                f"/api/v1/resources/{resource.id}/subtitles/online/download",
+                json={"candidate_id": "subhd:downloadlarge"},
+            )
+
+        self.assertEqual(413, response.status_code)
+        self.assertEqual(41369, response.get_json()["code"])
+
+    def test_srtku_download_uses_backend_archive_extraction(self):
+        resource = self._resource()
+        self.srtku_archive_file = True
+
+        with patch(
+            "backend.app.services.online_subtitles._load_skill_module",
+            side_effect=self._fake_skill_module,
+        ):
+            result = online_subtitles.download_online_subtitle(resource, "srtku:srt987")
+
+        self.assertEqual("feature.ass", result["filename"])
+        self.assertTrue(result["meta"]["extracted"])
+        self.assertEqual("zip", result["meta"]["archive_kind"])
+        self.assertFalse(self.srtku_download_kwargs["auto_extract"])
+        self.assertFalse(self.srtku_download_kwargs["remove_archive"])
+        self.assertEqual(20 * 1024 * 1024, self.srtku_download_kwargs["max_bytes"])
+
+    def test_srtku_download_legacy_provider_output_is_size_checked(self):
+        resource = self._resource()
+        self.srtku_large_file = True
+        self.app.config["ONLINE_SUBTITLE_DOWNLOAD_MAX_BYTES"] = 8
+
+        with patch(
+            "backend.app.services.online_subtitles._load_skill_module",
+            side_effect=self._fake_skill_module,
+        ):
+            response = self.client.post(
+                f"/api/v1/resources/{resource.id}/subtitles/online/download",
+                json={"candidate_id": "srtku:srt987"},
+            )
+
+        self.assertEqual(413, response.status_code)
+        self.assertEqual(41369, response.get_json()["code"])
 
     def test_online_download_provider_exception_returns_diagnostic_bad_gateway(self):
         resource = self._resource()

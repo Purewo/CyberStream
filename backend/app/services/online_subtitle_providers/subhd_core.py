@@ -225,10 +225,39 @@ def ocr_svg(svg_str: str) -> str:
 # 下载
 # ============================================================
 
+def _read_response_content(response: requests.Response, max_bytes: int | None = None) -> tuple[bytes, bool]:
+    try:
+        limit = int(max_bytes or 0)
+    except (TypeError, ValueError):
+        limit = 0
+
+    if limit > 0:
+        try:
+            content_length = int(response.headers.get("Content-Length") or "0")
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length > limit:
+            response.close()
+            return b"", True
+
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_content(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if limit > 0 and total > limit:
+            response.close()
+            return b"", True
+        chunks.append(chunk)
+    return b"".join(chunks), False
+
+
 def download_subtitle(
     sub_hash: str,
     session: requests.Session | None = None,
     max_retries: int = 5,
+    max_bytes: int | None = None,
 ) -> dict:
     """下载字幕文件。
 
@@ -268,18 +297,25 @@ def download_subtitle(
 
         if data.get("success") and data.get("pass"):
             url = data["url"]
-            r3 = s.get(url, timeout=30)
+            r3 = s.get(url, timeout=30, stream=True)
             if r3.status_code >= 400:
                 return {
                     "success": False,
                     "reason": f"download_http_{r3.status_code}",
                     "attempts": attempt + 1,
                 }
+            content, too_large = _read_response_content(r3, max_bytes=max_bytes)
+            if too_large:
+                return {
+                    "success": False,
+                    "reason": "download_too_large",
+                    "attempts": attempt + 1,
+                }
             ext = url.split(".")[-1]
             return {
                 "success": True,
                 "url": url,
-                "content": r3.content,
+                "content": content,
                 "ext": ext,
                 "attempts": attempt + 1,
             }

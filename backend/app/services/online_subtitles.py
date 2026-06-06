@@ -1,5 +1,6 @@
 import importlib.util
 import gzip
+import inspect
 import io
 import os
 import re
@@ -26,6 +27,7 @@ ONLINE_BITMAP_SUBTITLE_FORMATS = {"sub", "sup"}
 COMPOUND_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz")
 MAX_EXTRACTED_SUBTITLE_BYTES = getattr(config, "ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES", 0)
 MAX_NESTED_ARCHIVE_BYTES = getattr(config, "ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES", 0)
+MAX_ONLINE_SUBTITLE_DOWNLOAD_BYTES = getattr(config, "ONLINE_SUBTITLE_DOWNLOAD_MAX_BYTES", 20 * 1024 * 1024)
 MAX_ARCHIVE_ENTRIES = getattr(config, "ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES", 200)
 MAX_ARCHIVE_TOTAL_BYTES = getattr(config, "ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES", 40 * 1024 * 1024)
 MAX_ARCHIVE_DEPTH = 3
@@ -155,6 +157,10 @@ def _config_int(name, default):
 def _subtitle_size_limit(config_name, default):
     configured = _config_int(config_name, default)
     return configured if configured > 0 else None
+
+
+def _online_download_size_limit():
+    return _subtitle_size_limit("ONLINE_SUBTITLE_DOWNLOAD_MAX_BYTES", MAX_ONLINE_SUBTITLE_DOWNLOAD_BYTES)
 
 
 def _read_with_optional_limit(file_obj, limit):
@@ -858,6 +864,36 @@ def _download_exception_message(provider_name, exc):
     return f"{provider_name} download failed: {exc.__class__.__name__}{suffix}"
 
 
+def _call_provider_function(func, *args, **kwargs):
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return func(*args, **kwargs)
+    parameters = signature.parameters
+    if not any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values()):
+        kwargs = {key: value for key, value in kwargs.items() if key in parameters}
+    return func(*args, **kwargs)
+
+
+def _raise_online_download_too_large(provider_name):
+    raise OnlineSubtitleError(
+        f"{provider_name} subtitle download is too large",
+        code=41369,
+        http_status=413,
+    )
+
+
+def _ensure_online_download_payload_size(size, provider_name):
+    limit = _online_download_size_limit()
+    if limit is not None and size > limit:
+        _raise_online_download_too_large(provider_name)
+
+
+def _provider_download_too_large(result, key):
+    reason = str((result or {}).get(key) or "").strip().lower()
+    return reason == "download_too_large"
+
+
 def _safe_download_filename(resource, provider_id, source_key, extension):
     base = Path(str(getattr(resource, "filename", "") or getattr(resource, "path", "") or "subtitle")).stem
     base = re.sub(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+", ".", base).strip(".") or "subtitle"
@@ -1350,7 +1386,13 @@ def _download_subhd(resource, source_key):
     module = _load_skill_module("subhd_core")
     session = module.make_session()
     try:
-        result = module.download_subtitle(source_key, session=session, max_retries=5)
+        result = _call_provider_function(
+            module.download_subtitle,
+            source_key,
+            session=session,
+            max_retries=5,
+            max_bytes=_online_download_size_limit(),
+        )
     except OnlineSubtitleError:
         raise
     except Exception as exc:
@@ -1360,18 +1402,22 @@ def _download_subhd(resource, source_key):
             http_status=502,
         ) from exc
     if not result.get("success"):
+        if _provider_download_too_large(result, "reason"):
+            _raise_online_download_too_large("SubHD")
         raise OnlineSubtitleError(
             f"SubHD download failed: {result.get('reason') or 'unknown'}",
             code=50260,
             http_status=502,
         )
     filename = _safe_download_filename(resource, "subhd", source_key, result.get("ext") or "zip")
+    content = result.get("content") or b""
+    _ensure_online_download_payload_size(len(content), "SubHD")
     return normalize_downloaded_subtitle_file(
         resource,
         "subhd",
         source_key,
         filename,
-        result.get("content") or b"",
+        content,
         meta={"attempts": result.get("attempts")},
     )
 
@@ -1405,7 +1451,15 @@ def _download_srtku(resource, source_key, download_index=0):
 
     with tempfile.TemporaryDirectory(prefix="cyber-subtitle-") as tmpdir:
         try:
-            result = module.download_subtitle(download_url, outdir=tmpdir, session=session)
+            result = _call_provider_function(
+                module.download_subtitle,
+                download_url,
+                outdir=tmpdir,
+                session=session,
+                auto_extract=False,
+                remove_archive=False,
+                max_bytes=_online_download_size_limit(),
+            )
         except OnlineSubtitleError:
             raise
         except Exception as exc:
@@ -1415,6 +1469,8 @@ def _download_srtku(resource, source_key, download_index=0):
                 http_status=502,
             ) from exc
         if not result.get("ok"):
+            if _provider_download_too_large(result, "error"):
+                _raise_online_download_too_large("SrtKu")
             raise OnlineSubtitleError(
                 f"SrtKu download failed: {result.get('error') or 'unknown'}",
                 code=50263,
@@ -1425,6 +1481,7 @@ def _download_srtku(resource, source_key, download_index=0):
             raise OnlineSubtitleError("SrtKu subtitle file missing", code=50264, http_status=502)
         path = Path(selected_path)
         filename = path.name or _safe_download_filename(resource, "srtku", source_key, path.suffix or "srt")
+        _ensure_online_download_payload_size(path.stat().st_size, "SrtKu")
         return normalize_downloaded_subtitle_file(
             resource,
             "srtku",

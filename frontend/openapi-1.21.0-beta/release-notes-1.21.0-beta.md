@@ -232,7 +232,7 @@
 - 搜索关键字默认先使用资源展示标题，再使用原名和文件名，避免中文片名资源优先被英文文件名带偏。
 - 显式传入 `srtku` 时后端会实际尝试该备用源，但受独立超时预算限制；超时会记录到 `providers.errors`，并返回 `reason=timeout`。
 - `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS` 默认改为 `5` 秒。
-- 在线字幕解压、嵌套压缩包和手动上传默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；ZIP/GZip 按限制流式读取，7z 会先按条目元数据预检并只解压候选文件，超限返回 `413`。可通过 `CYBER_ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES`、`CYBER_ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES`、`CYBER_SUBTITLE_MANUAL_UPLOAD_MAX_BYTES` 调整，设为 `0` 可关闭对应限制；WebVTT 转换仍由 `CYBER_SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES` 独立控制。
+- 在线字幕原始下载、解压、嵌套压缩包和手动上传默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；SubHD/SrtKu 下载、ZIP/GZip 解压均按限制流式读取，SrtKu 不再在 provider 内自行解压，7z 会先按条目元数据预检并只解压候选文件，超限返回 `413`。可通过 `CYBER_ONLINE_SUBTITLE_DOWNLOAD_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES`、`CYBER_ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES`、`CYBER_SUBTITLE_MANUAL_UPLOAD_MAX_BYTES` 调整，设为 `0` 可关闭对应限制；WebVTT 转换仍由 `CYBER_SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES` 独立控制。
 - 搜索候选现在固定带 `downloads` 数组，前端可使用 `items[].downloads[].download_index` 调用下载或绑定；SubHD 只有默认入口 `0`。
 - Provider 下载运行时异常会收敛成 `502` 来源错误并返回可读 `msg`，不再统一落到泛化 `50061`。
 

@@ -3892,7 +3892,7 @@
     "/api/v1/resources/{id}/subtitles/online/download": {
       "post": {
         "summary": "下载在线字幕候选",
-        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。在线字幕解压和嵌套归档默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；超限返回 413。",
+        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。在线字幕原始下载、解压和嵌套归档默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；超限返回 413。",
         "operationId": "downloadResourceOnlineSubtitle",
         "x-lifecycle-status": "beta",
         "tags": [
