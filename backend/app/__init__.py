@@ -14,6 +14,7 @@ from backend.app.api.player_routes import player_bp
 from backend.app.api.homepage_routes import homepage_bp
 from backend.app.api.auth_routes import auth_bp
 from backend.app.api.docs_routes import docs_bp
+from backend.app.api.aggregator_routes import aggregator_bp
 from backend.app.security import require_api_token
 from backend.app.services.users import bootstrap_admin
 
@@ -72,6 +73,7 @@ def create_app(config_overrides=None):
     app.register_blueprint(homepage_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(docs_bp)
+    app.register_blueprint(aggregator_bp)
 
     # 初始化数据库表
     with app.app_context():

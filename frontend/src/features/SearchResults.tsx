@@ -1,6 +1,7 @@
 import React from 'react';
 import { MovieCard } from '../components/movies/Cards';
 import { Movie } from '../types';
+import { AggregateSearch } from './aggregator/AggregateSearch';
 
 export const SearchResults = ({ query, results, onMovieSelect }: { query: string; results: Movie[]; onMovieSelect: (m: Movie) => void }) => {
   const count = results.length;
@@ -21,9 +22,11 @@ export const SearchResults = ({ query, results, onMovieSelect }: { query: string
       ) : (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <p className="text-lg text-gray-300 font-['Noto_Sans_SC'] mb-2">没有找到相关影片</p>
-          <p className="text-sm text-gray-500 font-['Noto_Sans_SC']">换个关键词或检查拼写后再试一次</p>
+          <p className="text-sm text-gray-500 font-['Noto_Sans_SC']">本地库无结果，已自动为你聚合搜索外部资源站</p>
         </div>
       )}
+      {/* 本地库无结果时自动触发聚合搜索（仅默认源，其他源手动切）。query 为 key 保证换词重搜。 */}
+      {count === 0 && query.trim() && <AggregateSearch key={query} query={query} />}
     </div>
   );
 };
