@@ -71,6 +71,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK external_playback`，说明 PC/外部播放器播放交接 manifest 和 M3U handoff 契约可用
 - smoke check 返回 `OK subtitle_settings`，说明网页播放器字幕显示设置读取契约可用
 - smoke check 返回 `OK audio_transcode_diagnostics`，说明实时音频转码诊断读取入口可用且不会泄漏为异常状态
+- smoke check 返回 `OK storage_capabilities`，说明存储协议能力矩阵和前端挂载表单基础契约可用
 - smoke check 返回 `OK featured`，说明首页旧置顶/轮播入口仍返回详情影片契约
 - smoke check 返回 `OK homepage_config`，说明首页配置读取契约可用
 - smoke check 返回 `OK homepage`，说明首页 hero 与 sections 聚合契约可用
@@ -272,6 +273,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 - `docs_index` 返回 `OK`
 - `openapi_modules` 返回 `OK`
 - `metadata_providers` 返回 `OK`
+- `storage_capabilities` 返回 `OK`，说明存储协议能力矩阵和前端挂载表单基础契约可用
 - `storage_sources` 返回 `OK`，且至少包含当前挂载点
 - `storage_browse` 返回 `OK`，说明已保存挂载点目录选择器浏览契约可用
 - `storage_health` 返回 `OK`，且 `checked>=1`
@@ -789,7 +791,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`745 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`746 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

@@ -362,6 +362,29 @@ EXPECTED_AUDIO_TRANSCODE_DIAGNOSTICS_KEYS = [
     "active_count",
     "items",
 ]
+EXPECTED_STORAGE_CAPABILITIES_KEYS = [
+    "supported_types",
+    "items",
+]
+EXPECTED_STORAGE_CAPABILITY_ITEM_KEYS = [
+    "type",
+    "display_name",
+    "label",
+    "browse",
+    "validate_path",
+    "range_stream",
+    "library_root_path",
+    "config_root_key",
+    "preview",
+    "scan",
+    "stream",
+]
+EXPECTED_STORAGE_CAPABILITY_TYPES = {
+    "local",
+    "alist",
+    "openlist",
+    "guangyapan",
+}
 EXPECTED_CATALOG_FILTER_KEYS = [
     "genres",
     "years",
@@ -3655,6 +3678,104 @@ def _source_actions(source: dict[str, Any]) -> dict[str, Any]:
     return actions if isinstance(actions, dict) else {}
 
 
+def _storage_capability_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"capability_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_STORAGE_CAPABILITY_ITEM_KEYS, prefix))
+    for key in ("type", "display_name", "label", "config_root_key"):
+        if key in item and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in (
+        "browse",
+        "validate_path",
+        "range_stream",
+        "library_root_path",
+        "preview",
+        "scan",
+        "stream",
+        "credentials_required",
+        "health_check",
+        "managed",
+        "refresh",
+        "redirect_stream",
+        "ffmpeg_input",
+        "qr_login",
+        "sms_login",
+        "oauth_login",
+        "password_login",
+    ):
+        if key in item and item.get(key) not in (True, False):
+            issues.append(f"{prefix}_{key}_not_bool")
+    if item.get("type") == "local" and item.get("config_root_key") != "root_path":
+        issues.append(f"{prefix}_local_config_root_key={item.get('config_root_key')}")
+    if item.get("type") != "local" and item.get("config_root_key") not in (None, "root"):
+        issues.append(f"{prefix}_config_root_key={item.get('config_root_key')}")
+    if item.get("browse") is not item.get("preview"):
+        issues.append(f"{prefix}_browse_preview_mismatch={item.get('browse')}/{item.get('preview')}")
+    if item.get("validate_path") is not item.get("preview"):
+        issues.append(f"{prefix}_validate_path_preview_mismatch={item.get('validate_path')}/{item.get('preview')}")
+    if item.get("library_root_path") is not item.get("preview"):
+        issues.append(f"{prefix}_library_root_path_preview_mismatch={item.get('library_root_path')}/{item.get('preview')}")
+    return issues
+
+
+def check_storage_capabilities(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/storage/capabilities")
+    data = _response_data(payload)
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_STORAGE_CAPABILITIES_KEYS, "capabilities"))
+
+    supported_types = data.get("supported_types") if isinstance(data, dict) else None
+    if not isinstance(supported_types, list):
+        issues.append("supported_types_not_list")
+        supported_types = []
+    elif not all(isinstance(item, str) for item in supported_types):
+        issues.append("supported_types_not_str")
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    item_types = {
+        item.get("type")
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("type"), str)
+    }
+    supported_type_set = {item for item in supported_types if isinstance(item, str)}
+    if item_types != supported_type_set:
+        missing_items = sorted(supported_type_set - item_types)
+        extra_items = sorted(item_types - supported_type_set)
+        if missing_items:
+            issues.append(f"items_missing_types={','.join(missing_items[:5])}")
+        if extra_items:
+            issues.append(f"items_extra_types={','.join(extra_items[:5])}")
+
+    missing_expected = sorted(EXPECTED_STORAGE_CAPABILITY_TYPES - item_types)
+    if missing_expected:
+        issues.append(f"missing_expected_types={','.join(missing_expected)}")
+
+    for index, item in enumerate(items):
+        issues.extend(_storage_capability_item_issues(item, index))
+
+    ok = not issues
+    detail = f"types={len(supported_type_set)} items={len(items)} expected={','.join(sorted(EXPECTED_STORAGE_CAPABILITY_TYPES))}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "storage_capabilities",
+        ok,
+        detail,
+        {
+            "supported_types": sorted(supported_type_set),
+            "item_types": sorted(item_types),
+            "issues": issues,
+        },
+    )
+
+
 def check_storage_sources(client: SmokeClient, min_sources: int) -> CheckResult:
     payload = client.get_json("/api/v1/storage/sources")
     sources = [item for item in _response_list(payload) if isinstance(item, dict)]
@@ -4220,6 +4341,7 @@ def run_checks(args) -> list[CheckResult]:
             "background_jobs_prune",
             lambda: check_background_jobs_prune(client),
         ),
+        CheckSpec("storage_capabilities", lambda: check_storage_capabilities(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
         CheckSpec("storage_browse", lambda: check_storage_browse(client)),
         CheckSpec(

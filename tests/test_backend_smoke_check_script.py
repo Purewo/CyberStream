@@ -361,6 +361,81 @@ class FakeSmokeClient:
                     "http_status": 200,
                 },
             }
+        if path == "/api/v1/storage/capabilities":
+            return {
+                "data": {
+                    "supported_types": ["local", "alist", "openlist", "guangyapan"],
+                    "items": [
+                        {
+                            "type": "local",
+                            "display_name": "Local Filesystem",
+                            "label": "Local Filesystem",
+                            "browse": True,
+                            "validate_path": True,
+                            "range_stream": True,
+                            "library_root_path": True,
+                            "config_root_key": "root_path",
+                            "preview": True,
+                            "scan": True,
+                            "stream": True,
+                            "ffmpeg_input": True,
+                            "health_check": True,
+                            "credentials_required": False,
+                        },
+                        {
+                            "type": "alist",
+                            "display_name": "AList",
+                            "label": "AList",
+                            "browse": True,
+                            "validate_path": True,
+                            "range_stream": True,
+                            "library_root_path": True,
+                            "config_root_key": "root",
+                            "preview": True,
+                            "scan": True,
+                            "stream": True,
+                            "ffmpeg_input": True,
+                            "health_check": True,
+                            "credentials_required": True,
+                        },
+                        {
+                            "type": "openlist",
+                            "display_name": "OpenList",
+                            "label": "OpenList",
+                            "browse": True,
+                            "validate_path": True,
+                            "range_stream": True,
+                            "library_root_path": True,
+                            "config_root_key": "root",
+                            "preview": True,
+                            "scan": True,
+                            "stream": True,
+                            "ffmpeg_input": True,
+                            "health_check": True,
+                            "credentials_required": True,
+                        },
+                        {
+                            "type": "guangyapan",
+                            "display_name": "GuangYaPan",
+                            "label": "GuangYaPan",
+                            "browse": True,
+                            "validate_path": True,
+                            "range_stream": True,
+                            "library_root_path": True,
+                            "config_root_key": "root",
+                            "preview": True,
+                            "scan": True,
+                            "stream": True,
+                            "health_check": True,
+                            "credentials_required": False,
+                            "managed": True,
+                            "sms_login": True,
+                            "redirect_stream": True,
+                            "refresh": True,
+                        },
+                    ],
+                },
+            }
         if path == "/api/v1/storage/sources":
             return {
                 "data": [
@@ -1426,6 +1501,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_reidentify_plan",
                 "background_jobs",
                 "background_jobs_prune",
+                "storage_capabilities",
                 "storage_sources",
                 "storage_browse",
                 "metadata_fallback_pipeline_match",
@@ -2244,6 +2320,26 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         storage = next(item for item in results if item.name == "storage_sources")
         self.assertFalse(storage.ok)
         self.assertIn("sources_below_min=0/1", storage.detail)
+
+    def test_storage_capabilities_fail_when_required_provider_is_missing(self):
+        class MissingOpenListCapabilitiesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/storage/capabilities":
+                    payload["data"]["supported_types"].remove("openlist")
+                    payload["data"]["items"] = [
+                        item
+                        for item in payload["data"]["items"]
+                        if item["type"] != "openlist"
+                    ]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", MissingOpenListCapabilitiesClient):
+            results = self.module.run_checks(self._args())
+
+        capabilities = next(item for item in results if item.name == "storage_capabilities")
+        self.assertFalse(capabilities.ok)
+        self.assertIn("missing_expected_types=openlist", capabilities.detail)
 
     def test_storage_browse_fails_when_dirs_only_returns_file_items(self):
         class BrokenStorageBrowseClient(FakeSmokeClient):

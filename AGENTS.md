@@ -29,7 +29,7 @@ Current host notes:
 - Runtime services expected online for integration work: `cyberstream-backend`, `nginx`, `cyberstream-alist`, `cyberstream-openlist`, and `ddns-go`.
 - AList is local-only at `127.0.0.1:5244`; OpenList is local-only at `127.0.0.1:5245`.
 - Current app version is `1.21.0`; current OpenAPI version is `1.21.0-beta`; run smoke checks with `--expected-version 1.21.0 --expected-openapi-version 1.21.0-beta`.
-- Full pytest baseline as of 2026-06-07 is `745 passed, 9 skipped, 16 subtests passed`.
+- Full pytest baseline as of 2026-06-07 is `746 passed, 9 skipped, 16 subtests passed`.
 
 Before scraping or frontend integration, run:
 
