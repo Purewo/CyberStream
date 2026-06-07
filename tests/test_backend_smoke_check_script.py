@@ -1120,6 +1120,58 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/movies/movie-1/episode-diagnostics":
+            suggestion = {
+                "type": "update_resource_episode",
+                "reason": "fill_missing_episode_slot",
+                "resource_id": "resource-2",
+                "confidence": "high",
+                "current": {"season": 1, "episode": None},
+                "suggested": {"season": 1, "episode": 2},
+                "apply_item": {"id": "resource-2", "season": 1, "episode": 2},
+            }
+            return {
+                "data": {
+                    "movie_id": "movie-1",
+                    "title": "Sample Movie",
+                    "dry_run": True,
+                    "apply_method": "PATCH",
+                    "apply_endpoint": "/api/v1/movies/movie-1/resources/metadata",
+                    "apply_payload": {
+                        "items": [
+                            {"id": "resource-2", "season": 1, "episode": 2},
+                        ],
+                    },
+                    "summary": {
+                        "status": "warning",
+                        "coverage_status": "partial",
+                        "issue_count": 1,
+                        "issue_code_counts": {
+                            "missing_episode_numbers": 1,
+                        },
+                        "season_count": 1,
+                        "seasons_needing_attention": [1],
+                    },
+                    "seasons": [
+                        {
+                            "season": 1,
+                            "title": "Season 1",
+                            "display_title": "Season 1",
+                            "diagnostics": {
+                                "status": "warning",
+                                "coverage_status": "partial",
+                                "issue_codes": ["missing_episode_numbers"],
+                                "missing_episode_numbers": [2],
+                            },
+                            "affected_resource_ids": ["resource-2"],
+                            "affected_resources": [],
+                            "suggestions": [suggestion],
+                        },
+                    ],
+                    "suggested_updates": [suggestion],
+                    "warnings": [],
+                },
+            }
         if path == "/api/v1/resources/resource-1/external-playback":
             return {
                 "data": {
@@ -1713,6 +1765,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "movie_detail",
                 "movie_images_status",
                 "movie_resources",
+                "movie_episode_diagnostics",
                 "external_playback",
                 "subtitle_settings",
                 "audio_transcode_diagnostics",
@@ -2332,6 +2385,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         resources = next(item for item in results if item.name == "movie_resources")
         self.assertFalse(resources.ok)
         self.assertIn("resource_0_playback_cloud_transcode_reason_not_str", resources.detail)
+
+    def test_movie_episode_diagnostics_fails_when_summary_shape_is_broken(self):
+        class BrokenMovieEpisodeDiagnosticsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1/episode-diagnostics":
+                    payload["data"]["summary"]["issue_count"] = "1"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenMovieEpisodeDiagnosticsClient):
+            results = self.module.run_checks(self._args())
+
+        diagnostics = next(item for item in results if item.name == "movie_episode_diagnostics")
+        self.assertFalse(diagnostics.ok)
+        self.assertIn("episode_summary_issue_count_not_int", diagnostics.detail)
 
     def test_featured_fails_when_detail_shape_is_broken(self):
         class BrokenFeaturedClient(FakeSmokeClient):

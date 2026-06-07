@@ -344,6 +344,35 @@ EXPECTED_MOVIE_RESOURCES_SUMMARY_KEYS = [
     "needs_attention",
     "review_priority",
 ]
+EXPECTED_MOVIE_EPISODE_DIAGNOSTICS_KEYS = [
+    "movie_id",
+    "title",
+    "dry_run",
+    "apply_method",
+    "apply_endpoint",
+    "apply_payload",
+    "summary",
+    "seasons",
+    "suggested_updates",
+    "warnings",
+]
+EXPECTED_MOVIE_EPISODE_DIAGNOSTICS_SUMMARY_KEYS = [
+    "status",
+    "coverage_status",
+    "issue_count",
+    "issue_code_counts",
+    "season_count",
+    "seasons_needing_attention",
+]
+EXPECTED_MOVIE_EPISODE_DIAGNOSTICS_SEASON_KEYS = [
+    "season",
+    "title",
+    "display_title",
+    "diagnostics",
+    "affected_resource_ids",
+    "affected_resources",
+    "suggestions",
+]
 EXPECTED_MOVIE_RESOURCE_ITEM_KEYS = [
     "id",
     "resource_info",
@@ -2193,6 +2222,89 @@ def _movie_resources_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _movie_episode_diagnostics_season_issues(item: Any, index: int) -> list[str]:
+    prefix = f"episode_diagnostics_season_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_MOVIE_EPISODE_DIAGNOSTICS_SEASON_KEYS, prefix))
+    if "season" in item and not _json_int(item.get("season")):
+        issues.append(f"{prefix}_season_not_int")
+    for key in ("title", "display_title"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "diagnostics" in item and not isinstance(item.get("diagnostics"), dict):
+        issues.append(f"{prefix}_diagnostics_not_object")
+    for key in ("affected_resource_ids", "affected_resources", "suggestions"):
+        if key in item and not isinstance(item.get(key), list):
+            issues.append(f"{prefix}_{key}_not_list")
+    affected_ids = item.get("affected_resource_ids")
+    if isinstance(affected_ids, list) and not all(isinstance(resource_id, str) for resource_id in affected_ids):
+        issues.append(f"{prefix}_affected_resource_ids_not_str")
+    return issues
+
+
+def _movie_episode_diagnostics_payload_issues(data: Any, expected_movie_id: str) -> list[str]:
+    if not isinstance(data, dict):
+        return ["movie_episode_diagnostics_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_MOVIE_EPISODE_DIAGNOSTICS_KEYS, "movie_episode_diagnostics"))
+
+    movie_id = data.get("movie_id")
+    if "movie_id" in data and not isinstance(movie_id, str):
+        issues.append("movie_episode_diagnostics_movie_id_not_str")
+    elif expected_movie_id and movie_id != expected_movie_id:
+        issues.append(f"movie_episode_diagnostics_movie_id={movie_id}")
+    if "title" in data and not isinstance(data.get("title"), str):
+        issues.append("movie_episode_diagnostics_title_not_str")
+    if "dry_run" in data and data.get("dry_run") is not True:
+        issues.append(f"movie_episode_diagnostics_dry_run={data.get('dry_run')}")
+    if "apply_method" in data and data.get("apply_method") != "PATCH":
+        issues.append(f"movie_episode_diagnostics_apply_method={data.get('apply_method')}")
+    apply_endpoint = data.get("apply_endpoint")
+    if "apply_endpoint" in data:
+        expected_endpoint = f"/api/v1/movies/{expected_movie_id}/resources/metadata"
+        if not isinstance(apply_endpoint, str):
+            issues.append("movie_episode_diagnostics_apply_endpoint_not_str")
+        elif expected_movie_id and apply_endpoint != expected_endpoint:
+            issues.append(f"movie_episode_diagnostics_apply_endpoint={apply_endpoint}")
+
+    apply_payload = data.get("apply_payload")
+    if "apply_payload" in data:
+        if not isinstance(apply_payload, dict):
+            issues.append("movie_episode_diagnostics_apply_payload_not_object")
+        elif not isinstance(apply_payload.get("items"), list):
+            issues.append("movie_episode_diagnostics_apply_payload_items_not_list")
+
+    summary = data.get("summary")
+    issues.extend(_dict_missing_keys(summary, EXPECTED_MOVIE_EPISODE_DIAGNOSTICS_SUMMARY_KEYS, "episode_summary"))
+    if isinstance(summary, dict):
+        for key in ("status", "coverage_status"):
+            if key in summary and not isinstance(summary.get(key), str):
+                issues.append(f"episode_summary_{key}_not_str")
+        for key in ("issue_count", "season_count"):
+            if key in summary and not _json_int(summary.get(key)):
+                issues.append(f"episode_summary_{key}_not_int")
+        if "issue_code_counts" in summary and not isinstance(summary.get("issue_code_counts"), dict):
+            issues.append("episode_summary_issue_code_counts_not_object")
+        if "seasons_needing_attention" in summary and not isinstance(summary.get("seasons_needing_attention"), list):
+            issues.append("episode_summary_seasons_needing_attention_not_list")
+
+    seasons = data.get("seasons")
+    if not isinstance(seasons, list):
+        issues.append("movie_episode_diagnostics_seasons_not_list")
+        seasons = []
+    for index, item in enumerate(seasons[:1]):
+        issues.extend(_movie_episode_diagnostics_season_issues(item, index))
+
+    for key in ("suggested_updates", "warnings"):
+        if key in data and not isinstance(data.get(key), list):
+            issues.append(f"movie_episode_diagnostics_{key}_not_list")
+    return issues
+
+
 def _external_player_profile_issues(item: Any, index: int) -> list[str]:
     prefix = f"player_profile_{index}"
     if not isinstance(item, dict):
@@ -3525,6 +3637,60 @@ def check_movie_resources(client: SmokeClient) -> CheckResult:
             "item_count": len(items),
             "total": summary.get("total_items"),
             "playback_source_count": len(playback_sources),
+            "issues": issues,
+        },
+    )
+
+
+def check_movie_episode_diagnostics(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "movie_episode_diagnostics",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "movie_episode_diagnostics",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/episode-diagnostics")
+    data = _response_data(payload)
+    issues = _movie_episode_diagnostics_payload_issues(data, movie_id)
+    summary = data.get("summary") if isinstance(data, dict) and isinstance(data.get("summary"), dict) else {}
+    seasons = data.get("seasons") if isinstance(data, dict) and isinstance(data.get("seasons"), list) else []
+    apply_payload = data.get("apply_payload") if isinstance(data, dict) and isinstance(data.get("apply_payload"), dict) else {}
+    apply_items = apply_payload.get("items") if isinstance(apply_payload.get("items"), list) else []
+    warnings = data.get("warnings") if isinstance(data, dict) and isinstance(data.get("warnings"), list) else []
+
+    ok = not issues
+    detail = (
+        f"id={movie_id} status={summary.get('status')} coverage={summary.get('coverage_status')} "
+        f"seasons={len(seasons)} apply_items={len(apply_items)} warnings={len(warnings)}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "movie_episode_diagnostics",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "status": summary.get("status"),
+            "coverage_status": summary.get("coverage_status"),
+            "season_count": len(seasons),
+            "apply_item_count": len(apply_items),
+            "warning_count": len(warnings),
             "issues": issues,
         },
     )
@@ -4971,6 +5137,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_images_status", lambda: check_movie_images_status(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
+        CheckSpec("movie_episode_diagnostics", lambda: check_movie_episode_diagnostics(client)),
         CheckSpec("external_playback", lambda: check_external_playback(client)),
         CheckSpec("subtitle_settings", lambda: check_subtitle_settings(client)),
         CheckSpec("audio_transcode_diagnostics", lambda: check_audio_transcode_diagnostics(client)),
