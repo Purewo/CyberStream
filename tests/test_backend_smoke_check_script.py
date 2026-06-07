@@ -903,6 +903,15 @@ class FakeSmokeClient:
                     "updated_at": None,
                 },
             }
+        if path == "/api/v1/resources/resource-1/audio-transcode/diagnostics":
+            return {
+                "data": {
+                    "resource_id": "resource-1",
+                    "session_id": None,
+                    "active_count": 0,
+                    "items": [],
+                },
+            }
         if path == "/api/v1/featured":
             detail = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
             return {"data": [detail]}
@@ -1405,6 +1414,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "movie_resources",
                 "external_playback",
                 "subtitle_settings",
+                "audio_transcode_diagnostics",
                 "featured",
                 "homepage_config",
                 "homepage",
@@ -1896,6 +1906,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         subtitle_settings = next(item for item in results if item.name == "subtitle_settings")
         self.assertFalse(subtitle_settings.ok)
         self.assertIn("subtitle_display_zhColor_invalid", subtitle_settings.detail)
+
+    def test_audio_transcode_diagnostics_fail_when_active_count_mismatches(self):
+        class BrokenAudioDiagnosticsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/resources/resource-1/audio-transcode/diagnostics":
+                    payload["data"]["active_count"] = 1
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenAudioDiagnosticsClient):
+            results = self.module.run_checks(self._args())
+
+        diagnostics = next(item for item in results if item.name == "audio_transcode_diagnostics")
+        self.assertFalse(diagnostics.ok)
+        self.assertIn("audio_diagnostics_active_count_mismatch=1/0", diagnostics.detail)
 
     def test_libraries_fail_when_virtual_favorites_leaks_into_list(self):
         class BrokenLibrariesClient(FakeSmokeClient):

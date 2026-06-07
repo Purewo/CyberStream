@@ -356,6 +356,12 @@ SUBTITLE_NUMERIC_RANGES = {
     "gap": (0, 120),
     "offset": (-500, 500),
 }
+EXPECTED_AUDIO_TRANSCODE_DIAGNOSTICS_KEYS = [
+    "resource_id",
+    "session_id",
+    "active_count",
+    "items",
+]
 EXPECTED_CATALOG_FILTER_KEYS = [
     "genres",
     "years",
@@ -1786,6 +1792,67 @@ def _subtitle_settings_payload_issues(data: Any, expected_resource_id: str = "")
     return issues
 
 
+def _audio_transcode_diagnostic_item_issues(item: Any, index: int, expected_resource_id: str = "") -> list[str]:
+    prefix = f"audio_diagnostic_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    for key in ("diagnostic_id", "resource_id", "session_id", "status", "started_at", "finished_at", "close_reason"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if expected_resource_id and item.get("resource_id") != expected_resource_id:
+        issues.append(f"{prefix}_resource_id={item.get('resource_id')}")
+    if "active" in item and item.get("active") not in (True, False):
+        issues.append(f"{prefix}_active_not_bool")
+    for key in ("input", "options", "counters", "timings"):
+        if key in item and not isinstance(item.get(key), dict):
+            issues.append(f"{prefix}_{key}_not_object")
+    events = item.get("events")
+    if "events" in item and not isinstance(events, list):
+        issues.append(f"{prefix}_events_not_list")
+    elif isinstance(events, list):
+        for event_index, event in enumerate(events[:1]):
+            if not isinstance(event, dict):
+                issues.append(f"{prefix}_event_{event_index}_not_object")
+            elif "type" in event and not isinstance(event.get("type"), str):
+                issues.append(f"{prefix}_event_{event_index}_type_not_str")
+    return issues
+
+
+def _audio_transcode_diagnostics_payload_issues(data: Any, expected_resource_id: str = "") -> list[str]:
+    if not isinstance(data, dict):
+        return ["audio_diagnostics_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_AUDIO_TRANSCODE_DIAGNOSTICS_KEYS, "audio_diagnostics"))
+    resource_id = data.get("resource_id")
+    if "resource_id" in data and not isinstance(resource_id, str):
+        issues.append("audio_diagnostics_resource_id_not_str")
+    elif expected_resource_id and resource_id != expected_resource_id:
+        issues.append(f"audio_diagnostics_resource_id={resource_id}")
+    if "session_id" in data and data.get("session_id") is not None and not isinstance(data.get("session_id"), str):
+        issues.append("audio_diagnostics_session_id_not_str")
+    active_count = data.get("active_count")
+    if "active_count" in data and not _json_int(active_count):
+        issues.append("audio_diagnostics_active_count_not_int")
+    elif _json_int(active_count) and active_count < 0:
+        issues.append("audio_diagnostics_active_count_negative")
+
+    items = data.get("items")
+    if not isinstance(items, list):
+        issues.append("audio_diagnostics_items_not_list")
+        items = []
+    else:
+        for index, item in enumerate(items[:2]):
+            issues.extend(_audio_transcode_diagnostic_item_issues(item, index, expected_resource_id))
+    if _json_int(active_count):
+        actual_active = sum(1 for item in items if isinstance(item, dict) and item.get("active") is True)
+        if active_count != actual_active:
+            issues.append(f"audio_diagnostics_active_count_mismatch={active_count}/{actual_active}")
+    return issues
+
+
 def _catalog_filter_option_issues(item: Any, index: int, kind: str) -> list[str]:
     prefix = f"{kind}_{index}"
     if not isinstance(item, dict):
@@ -3045,6 +3112,79 @@ def check_subtitle_settings(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_audio_transcode_diagnostics(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "audio_transcode_diagnostics",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "audio_transcode_diagnostics",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    resources_payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/resources")
+    resources_data = _response_data(resources_payload)
+    resource_items = (
+        resources_data.get("items")
+        if isinstance(resources_data, dict) and isinstance(resources_data.get("items"), list)
+        else []
+    )
+    if not resource_items:
+        return _result(
+            "audio_transcode_diagnostics",
+            True,
+            f"skipped no resources movie_id={movie_id}",
+            {"skipped": True, "movie_id": movie_id},
+        )
+
+    sample_resource = resource_items[0] if isinstance(resource_items[0], dict) else {}
+    resource_id = sample_resource.get("id")
+    if not isinstance(resource_id, str) or not resource_id:
+        return _result(
+            "audio_transcode_diagnostics",
+            False,
+            f"resource_id_invalid={resource_id}",
+            {"movie_id": movie_id, "resource_id": resource_id},
+        )
+
+    payload = client.get_json(f"/api/v1/resources/{urllib.parse.quote(resource_id, safe='')}/audio-transcode/diagnostics")
+    data = _response_data(payload)
+    issues = _audio_transcode_diagnostics_payload_issues(data, expected_resource_id=resource_id)
+    items = data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else []
+
+    ok = not issues
+    detail = (
+        f"resource={resource_id} active={data.get('active_count') if isinstance(data, dict) else None} "
+        f"items={len(items)} session={data.get('session_id') if isinstance(data, dict) else None}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "audio_transcode_diagnostics",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "resource_id": resource_id,
+            "active_count": data.get("active_count") if isinstance(data, dict) else None,
+            "item_count": len(items),
+            "issues": issues,
+        },
+    )
+
+
 def check_featured(client: SmokeClient) -> CheckResult:
     expected_limit = 5
     payload = client.get_json("/api/v1/featured")
@@ -4059,6 +4199,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
         CheckSpec("external_playback", lambda: check_external_playback(client)),
         CheckSpec("subtitle_settings", lambda: check_subtitle_settings(client)),
+        CheckSpec("audio_transcode_diagnostics", lambda: check_audio_transcode_diagnostics(client)),
         CheckSpec("featured", lambda: check_featured(client)),
         CheckSpec("homepage_config", lambda: check_homepage_config(client)),
         CheckSpec("homepage", lambda: check_homepage(client)),
