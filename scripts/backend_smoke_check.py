@@ -784,6 +784,29 @@ EXPECTED_USER_HISTORY_KEYS = [
     "movie",
     "filename",
 ]
+EXPECTED_USER_ACHIEVEMENTS_KEYS = [
+    "defs",
+    "user",
+    "summary",
+]
+EXPECTED_USER_ACHIEVEMENT_DEF_KEYS = [
+    "id",
+    "title",
+    "desc",
+    "icon",
+    "category",
+]
+EXPECTED_USER_ACHIEVEMENT_STATE_KEYS = [
+    "id",
+    "unlocked_at",
+]
+EXPECTED_USER_ACHIEVEMENT_SUMMARY_KEYS = [
+    "total",
+    "unlocked",
+    "milestones",
+    "behaviors",
+    "newly_unlocked_ids",
+]
 EXPECTED_USER_FAVORITES_KEYS = [
     "items",
     "movie_ids",
@@ -3584,6 +3607,130 @@ def _user_history_item_issues(item: Any, index: int) -> list[str]:
     return issues
 
 
+def _user_achievements_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["achievements_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_USER_ACHIEVEMENTS_KEYS, "achievements"))
+
+    defs = data.get("defs")
+    if not isinstance(defs, list):
+        issues.append("achievements_defs_not_list")
+        defs = []
+    user_items = data.get("user")
+    if not isinstance(user_items, list):
+        issues.append("achievements_user_not_list")
+        user_items = []
+    summary = data.get("summary")
+    if not isinstance(summary, dict):
+        issues.append("achievements_summary_not_object")
+        summary = {}
+    else:
+        issues.extend(_dict_missing_keys(summary, EXPECTED_USER_ACHIEVEMENT_SUMMARY_KEYS, "achievements_summary"))
+
+    def_ids = []
+    category_counts = {"milestone": 0, "behavior": 0}
+    for index, item in enumerate(defs):
+        prefix = f"achievement_def_{index}"
+        if not isinstance(item, dict):
+            issues.append(f"{prefix}_not_object")
+            continue
+        issues.extend(_dict_missing_keys(item, EXPECTED_USER_ACHIEVEMENT_DEF_KEYS, prefix))
+        achievement_id = item.get("id")
+        if isinstance(achievement_id, str) and achievement_id:
+            if achievement_id in def_ids:
+                issues.append(f"{prefix}_duplicate_id={achievement_id}")
+            def_ids.append(achievement_id)
+        else:
+            issues.append(f"{prefix}_id_invalid={achievement_id}")
+        for key in ("title", "desc", "icon"):
+            if key in item and not isinstance(item.get(key), str):
+                issues.append(f"{prefix}_{key}_not_str")
+        category = item.get("category")
+        if category not in ("milestone", "behavior"):
+            issues.append(f"{prefix}_category={category}")
+        else:
+            category_counts[category] += 1
+        trigger = item.get("trigger")
+        if category == "milestone":
+            if not isinstance(trigger, dict):
+                issues.append(f"{prefix}_trigger_not_object")
+            else:
+                for key in ("metric", "op", "value"):
+                    if key not in trigger:
+                        issues.append(f"{prefix}_trigger_missing={key}")
+        elif "trigger" in item and trigger is not None and not isinstance(trigger, dict):
+            issues.append(f"{prefix}_trigger_not_object")
+
+    user_ids = []
+    def_id_set = set(def_ids)
+    for index, item in enumerate(user_items):
+        prefix = f"achievement_user_{index}"
+        if not isinstance(item, dict):
+            issues.append(f"{prefix}_not_object")
+            continue
+        issues.extend(_dict_missing_keys(item, EXPECTED_USER_ACHIEVEMENT_STATE_KEYS, prefix))
+        achievement_id = item.get("id")
+        if isinstance(achievement_id, str) and achievement_id:
+            if achievement_id in user_ids:
+                issues.append(f"{prefix}_duplicate_id={achievement_id}")
+            user_ids.append(achievement_id)
+            if def_id_set and achievement_id not in def_id_set:
+                issues.append(f"{prefix}_unknown_id={achievement_id}")
+        else:
+            issues.append(f"{prefix}_id_invalid={achievement_id}")
+        if "unlocked_at" in item and item.get("unlocked_at") is not None and not isinstance(item.get("unlocked_at"), str):
+            issues.append(f"{prefix}_unlocked_at_not_str")
+        if "progress" in item:
+            progress = item.get("progress")
+            if not isinstance(progress, (int, float)) or isinstance(progress, bool):
+                issues.append(f"{prefix}_progress_not_number")
+            elif progress < 0 or progress > 1:
+                issues.append(f"{prefix}_progress_out_of_range={progress}")
+
+    if def_id_set and set(user_ids) != def_id_set:
+        missing = sorted(def_id_set - set(user_ids))
+        extra = sorted(set(user_ids) - def_id_set)
+        if missing:
+            issues.append(f"achievements_user_missing={','.join(missing[:3])}")
+        if extra:
+            issues.append(f"achievements_user_extra={','.join(extra[:3])}")
+
+    total = summary.get("total")
+    unlocked = summary.get("unlocked")
+    milestones = summary.get("milestones")
+    behaviors = summary.get("behaviors")
+    for key, value in (
+        ("total", total),
+        ("unlocked", unlocked),
+        ("milestones", milestones),
+        ("behaviors", behaviors),
+    ):
+        if key in summary and not _json_int(value):
+            issues.append(f"achievements_summary_{key}_not_int")
+    newly_unlocked_ids = summary.get("newly_unlocked_ids")
+    if "newly_unlocked_ids" in summary and not isinstance(newly_unlocked_ids, list):
+        issues.append("achievements_summary_newly_unlocked_ids_not_list")
+    elif isinstance(newly_unlocked_ids, list) and not all(isinstance(item, str) for item in newly_unlocked_ids):
+        issues.append("achievements_summary_newly_unlocked_ids_not_str")
+    if _json_int(total) and total != len(defs):
+        issues.append(f"achievements_summary_total_mismatch={total}/{len(defs)}")
+    if defs and len(user_items) != len(defs):
+        issues.append(f"achievements_user_count_mismatch={len(user_items)}/{len(defs)}")
+    if _json_int(unlocked):
+        actual_unlocked = sum(
+            1 for item in user_items if isinstance(item, dict) and item.get("unlocked_at")
+        )
+        if unlocked != actual_unlocked:
+            issues.append(f"achievements_summary_unlocked_mismatch={unlocked}/{actual_unlocked}")
+    if _json_int(milestones) and milestones != category_counts["milestone"]:
+        issues.append(f"achievements_summary_milestones_mismatch={milestones}/{category_counts['milestone']}")
+    if _json_int(behaviors) and behaviors != category_counts["behavior"]:
+        issues.append(f"achievements_summary_behaviors_mismatch={behaviors}/{category_counts['behavior']}")
+    return issues
+
+
 def _expected_vault_access_error(payload: Any) -> bool:
     if not isinstance(payload, dict):
         return False
@@ -5168,6 +5315,42 @@ def check_user_history(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_user_achievements(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/user/achievements")
+    data = _response_data(payload)
+    issues = _user_achievements_payload_issues(data)
+
+    defs = data.get("defs") if isinstance(data, dict) and isinstance(data.get("defs"), list) else []
+    user_items = data.get("user") if isinstance(data, dict) and isinstance(data.get("user"), list) else []
+    summary = data.get("summary") if isinstance(data, dict) and isinstance(data.get("summary"), dict) else {}
+    total = summary.get("total")
+    unlocked = summary.get("unlocked")
+    milestones = summary.get("milestones")
+    behaviors = summary.get("behaviors")
+
+    ok = not issues
+    detail = (
+        f"defs={len(defs)} user={len(user_items)} total={total} unlocked={unlocked} "
+        f"milestones={milestones} behaviors={behaviors}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "user_achievements",
+        ok,
+        detail,
+        {
+            "definition_count": len(defs),
+            "user_count": len(user_items),
+            "total": total,
+            "unlocked": unlocked,
+            "milestones": milestones,
+            "behaviors": behaviors,
+            "issues": issues,
+        },
+    )
+
+
 def check_user_favorites(client: SmokeClient) -> CheckResult:
     catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
     catalog_data = _response_data(catalog_payload)
@@ -6465,6 +6648,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("recommendations", lambda: check_recommendations(client)),
         CheckSpec("movie_context_recommendations", lambda: check_movie_context_recommendations(client)),
         CheckSpec("user_history", lambda: check_user_history(client)),
+        CheckSpec("user_achievements", lambda: check_user_achievements(client)),
         CheckSpec("user_favorites", lambda: check_user_favorites(client)),
         CheckSpec("vault_status", lambda: check_vault_status(client)),
         CheckSpec(

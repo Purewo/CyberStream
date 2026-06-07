@@ -371,6 +371,50 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/user/achievements":
+            return {
+                "data": {
+                    "defs": [
+                        {
+                            "id": "network_legend",
+                            "title": "Network Legend",
+                            "desc": "Complete 100 movies",
+                            "icon": "Trophy",
+                            "category": "milestone",
+                            "trigger": {
+                                "metric": "completed_movies_count",
+                                "op": ">=",
+                                "value": 100,
+                            },
+                        },
+                        {
+                            "id": "overclock",
+                            "title": "Overclock",
+                            "desc": "Use 2x playback",
+                            "icon": "Gauge",
+                            "category": "behavior",
+                        },
+                    ],
+                    "user": [
+                        {
+                            "id": "network_legend",
+                            "unlocked_at": None,
+                            "progress": 0,
+                        },
+                        {
+                            "id": "overclock",
+                            "unlocked_at": None,
+                        },
+                    ],
+                    "summary": {
+                        "total": 2,
+                        "unlocked": 0,
+                        "milestones": 1,
+                        "behaviors": 1,
+                        "newly_unlocked_ids": [],
+                    },
+                },
+            }
         if path == "/api/v1/filters":
             return {
                 "data": {
@@ -2012,6 +2056,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "recommendations",
                 "movie_context_recommendations",
                 "user_history",
+                "user_achievements",
                 "user_favorites",
                 "vault_status",
                 "metadata_work_items_contract",
@@ -2950,6 +2995,24 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         history = next(item for item in results if item.name == "user_history")
         self.assertFalse(history.ok)
         self.assertIn("history_0_has_is_played", history.detail)
+
+    def test_user_achievements_fails_when_user_state_has_unknown_id(self):
+        class BrokenUserAchievementsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/user/achievements":
+                    payload["data"]["user"].append({
+                        "id": "unknown-achievement",
+                        "unlocked_at": None,
+                    })
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenUserAchievementsClient):
+            results = self.module.run_checks(self._args())
+
+        achievements = next(item for item in results if item.name == "user_achievements")
+        self.assertFalse(achievements.ok)
+        self.assertIn("achievement_user_2_unknown_id=unknown-achievement", achievements.detail)
 
     def test_user_favorites_fails_when_unlocked_list_shape_is_broken(self):
         class BrokenUserFavoritesClient(FakeSmokeClient):
