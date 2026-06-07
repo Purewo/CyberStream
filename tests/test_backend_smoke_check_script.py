@@ -758,6 +758,18 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/user/vault/status":
+            return {
+                "data": {
+                    "configured": False,
+                    "unlocked": False,
+                    "locked": False,
+                    "locked_until": None,
+                    "pin_change_limit_per_day": 10,
+                    "pin_changes_used_today": 0,
+                    "pin_changes_remaining_today": 10,
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -1107,6 +1119,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "recommendations",
                 "movie_context_recommendations",
                 "user_history",
+                "vault_status",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1679,6 +1692,22 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         history = next(item for item in results if item.name == "user_history")
         self.assertFalse(history.ok)
         self.assertIn("history_0_has_is_played", history.detail)
+
+    def test_vault_status_fails_when_state_combination_is_invalid(self):
+        class BrokenVaultStatusClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/user/vault/status":
+                    payload["data"]["configured"] = False
+                    payload["data"]["unlocked"] = True
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenVaultStatusClient):
+            results = self.module.run_checks(self._args())
+
+        vault = next(item for item in results if item.name == "vault_status")
+        self.assertFalse(vault.ok)
+        self.assertIn("vault_status_unconfigured_unlocked", vault.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):

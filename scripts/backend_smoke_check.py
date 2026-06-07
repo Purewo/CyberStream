@@ -373,6 +373,15 @@ EXPECTED_USER_HISTORY_KEYS = [
     "movie",
     "filename",
 ]
+EXPECTED_VAULT_STATUS_KEYS = [
+    "configured",
+    "unlocked",
+    "locked",
+    "locked_until",
+    "pin_change_limit_per_day",
+    "pin_changes_used_today",
+    "pin_changes_remaining_today",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -1775,6 +1784,43 @@ def _user_history_item_issues(item: Any, index: int) -> list[str]:
     return issues
 
 
+def _vault_status_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["vault_status_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_VAULT_STATUS_KEYS, "vault_status"))
+    for key in ("configured", "unlocked", "locked"):
+        if key in data and data.get(key) not in (True, False):
+            issues.append(f"vault_status_{key}_not_bool")
+    if "locked_until" in data and data.get("locked_until") is not None:
+        if not isinstance(data.get("locked_until"), str):
+            issues.append("vault_status_locked_until_not_str")
+    for key in ("pin_change_limit_per_day", "pin_changes_used_today", "pin_changes_remaining_today"):
+        if key in data and not _json_int(data.get(key)):
+            issues.append(f"vault_status_{key}_not_int")
+    if data.get("locked") is True and not data.get("locked_until"):
+        issues.append("vault_status_locked_without_locked_until")
+    if data.get("locked") is False and data.get("locked_until") is not None:
+        issues.append("vault_status_unlocked_has_locked_until")
+    if data.get("locked") is True and data.get("unlocked") is True:
+        issues.append("vault_status_locked_and_unlocked")
+    if data.get("configured") is False and data.get("unlocked") is True:
+        issues.append("vault_status_unconfigured_unlocked")
+    limit = data.get("pin_change_limit_per_day")
+    used = data.get("pin_changes_used_today")
+    remaining = data.get("pin_changes_remaining_today")
+    if _json_int(limit) and limit < 1:
+        issues.append(f"vault_status_pin_change_limit_invalid={limit}")
+    if _json_int(used) and used < 0:
+        issues.append(f"vault_status_pin_changes_used_negative={used}")
+    if _json_int(remaining) and remaining < 0:
+        issues.append(f"vault_status_pin_changes_remaining_negative={remaining}")
+    if _json_int(limit) and _json_int(used) and _json_int(remaining) and used + remaining != limit:
+        issues.append(f"vault_status_pin_change_window_mismatch={used}+{remaining}/{limit}")
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -2427,6 +2473,36 @@ def check_user_history(client: SmokeClient) -> CheckResult:
             "total": total,
             "page_size": page_size_value,
             "sample_title": sample_title,
+            "issues": issues,
+        },
+    )
+
+
+def check_vault_status(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/user/vault/status")
+    data = _response_data(payload)
+    issues = _vault_status_issues(data)
+
+    ok = not issues
+    configured = data.get("configured") if isinstance(data, dict) else None
+    unlocked = data.get("unlocked") if isinstance(data, dict) else None
+    locked = data.get("locked") if isinstance(data, dict) else None
+    remaining = data.get("pin_changes_remaining_today") if isinstance(data, dict) else None
+    detail = (
+        f"configured={configured} unlocked={unlocked} locked={locked} "
+        f"pin_changes_remaining_today={remaining}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "vault_status",
+        ok,
+        detail,
+        {
+            "configured": configured,
+            "unlocked": unlocked,
+            "locked": locked,
+            "pin_changes_remaining_today": remaining,
             "issues": issues,
         },
     )
@@ -3162,6 +3238,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("recommendations", lambda: check_recommendations(client)),
         CheckSpec("movie_context_recommendations", lambda: check_movie_context_recommendations(client)),
         CheckSpec("user_history", lambda: check_user_history(client)),
+        CheckSpec("vault_status", lambda: check_vault_status(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),
