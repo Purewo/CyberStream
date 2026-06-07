@@ -585,6 +585,23 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertFalse(modules.ok)
         self.assertIn("missing=aggregator", modules.detail)
 
+    def test_openapi_modules_fail_when_index_links_are_invalid(self):
+        class BrokenOpenApiModuleIndexClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/openapi/modules":
+                    payload["data"]["full_url"] = "/broken/openapi.json"
+                    payload["data"]["modules"][0]["content_type"] = "text/plain"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenOpenApiModuleIndexClient):
+            results = self.module.run_checks(self._args())
+
+        modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertFalse(modules.ok)
+        self.assertIn("full_url_invalid", modules.detail)
+        self.assertIn("non_json=docs", modules.detail)
+
     def test_run_checks_can_fetch_openapi_module_json_when_enabled(self):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):
             results = self.module.run_checks(self._args(openapi_module_json_check=True))

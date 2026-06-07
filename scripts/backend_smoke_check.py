@@ -358,6 +358,10 @@ def check_openapi_modules(
         if key in EXPECTED_OPENAPI_MODULES
         and _module_url_path(item.get("url")) != f"/api/v1/openapi/modules/{key}.json"
     ]
+    non_json = [
+        key for key, item in module_map.items()
+        if key in EXPECTED_OPENAPI_MODULES and not str(item.get("content_type") or "").startswith("application/json")
+    ]
     fetched = []
     fetch_errors = []
 
@@ -404,6 +408,10 @@ def check_openapi_modules(
         issues.append(f"empty={','.join(empty)}")
     if bad_urls:
         issues.append(f"bad_urls={','.join(bad_urls)}")
+    if non_json:
+        issues.append(f"non_json={','.join(non_json)}")
+    if _module_url_path(data.get("full_url")) != "/api/v1/openapi.json":
+        issues.append("full_url_invalid")
     if fetch_errors:
         issues.append(f"fetch_errors={'; '.join(fetch_errors)}")
     if expected_openapi_version and openapi_version != expected_openapi_version:
@@ -430,6 +438,8 @@ def check_openapi_modules(
             "unavailable": unavailable,
             "empty": empty,
             "bad_urls": bad_urls,
+            "non_json": non_json,
+            "full_url": data.get("full_url"),
             "fetched": fetched,
             "fetch_errors": fetch_errors,
             "openapi_version": openapi_version,
