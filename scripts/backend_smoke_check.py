@@ -310,6 +310,25 @@ EXPECTED_HOMEPAGE_SECTION_KEYS = [
     "limit",
     "items",
 ]
+EXPECTED_RECOMMENDATION_KEYS = [
+    "primary_reason",
+    "rank",
+    "reason_text",
+    "reasons",
+    "score",
+    "signals",
+    "strategy",
+]
+EXPECTED_RECOMMENDATION_REASON_KEYS = [
+    "code",
+    "label",
+    "weight",
+]
+EXPECTED_RECOMMENDATION_SIGNAL_KEYS = [
+    "progress_ratio",
+    "quality_badge",
+    "resource_count",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -1491,6 +1510,78 @@ def _homepage_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _recommendation_reason_issues(reason: Any, prefix: str) -> list[str]:
+    if not isinstance(reason, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = _dict_missing_keys(reason, EXPECTED_RECOMMENDATION_REASON_KEYS, prefix)
+    for key in ("code", "label", "detail"):
+        if key in reason and reason.get(key) is not None and not isinstance(reason.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "weight" in reason:
+        weight = reason.get("weight")
+        if not isinstance(weight, (int, float)) or isinstance(weight, bool):
+            issues.append(f"{prefix}_weight_not_number")
+    return issues
+
+
+def _recommendation_issues(value: Any, index: int, expected_strategy: str) -> list[str]:
+    prefix = f"item_{index}_recommendation"
+    if not isinstance(value, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = _dict_missing_keys(value, EXPECTED_RECOMMENDATION_KEYS, prefix)
+    if "strategy" in value and value.get("strategy") != expected_strategy:
+        issues.append(f"{prefix}_strategy={value.get('strategy')}")
+    if "rank" in value and not _json_int(value.get("rank")):
+        issues.append(f"{prefix}_rank_not_int")
+    if "rank" in value and _json_int(value.get("rank")) and value.get("rank") < 1:
+        issues.append(f"{prefix}_rank_below_one")
+    if "score" in value:
+        score = value.get("score")
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
+            issues.append(f"{prefix}_score_not_number")
+    if "reason_text" in value and not isinstance(value.get("reason_text"), str):
+        issues.append(f"{prefix}_reason_text_not_str")
+
+    issues.extend(_recommendation_reason_issues(value.get("primary_reason"), f"{prefix}_primary_reason"))
+
+    reasons = value.get("reasons")
+    if not isinstance(reasons, list):
+        issues.append(f"{prefix}_reasons_not_list")
+    elif not reasons:
+        issues.append(f"{prefix}_reasons_empty")
+    else:
+        for reason_index, reason in enumerate(reasons[:1]):
+            issues.extend(_recommendation_reason_issues(reason, f"{prefix}_reason_{reason_index}"))
+
+    signals = value.get("signals")
+    issues.extend(_dict_missing_keys(signals, EXPECTED_RECOMMENDATION_SIGNAL_KEYS, f"{prefix}_signals"))
+    if isinstance(signals, dict):
+        progress_ratio = signals.get("progress_ratio")
+        if "progress_ratio" in signals and (
+            not isinstance(progress_ratio, (int, float)) or isinstance(progress_ratio, bool)
+        ):
+            issues.append(f"{prefix}_signals_progress_ratio_not_number")
+        if "quality_badge" in signals and signals.get("quality_badge") is not None:
+            if not isinstance(signals.get("quality_badge"), str):
+                issues.append(f"{prefix}_signals_quality_badge_not_str")
+        if "resource_count" in signals and not _json_int(signals.get("resource_count")):
+            issues.append(f"{prefix}_signals_resource_count_not_int")
+    return issues
+
+
+def _recommendation_item_issues(item: Any, index: int, expected_strategy: str) -> list[str]:
+    issues = _catalog_movie_item_issues(item, index)
+    if not isinstance(item, dict):
+        return issues
+    if "recommendation" not in item:
+        issues.append(f"item_{index}_missing=recommendation")
+    else:
+        issues.extend(_recommendation_issues(item.get("recommendation"), index, expected_strategy))
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -1894,6 +1985,43 @@ def check_homepage(client: SmokeClient) -> CheckResult:
             "hero_title": hero_title,
             "section_count": len(sections),
             "section_item_count": section_item_count,
+            "issues": issues,
+        },
+    )
+
+
+def check_recommendations(client: SmokeClient) -> CheckResult:
+    strategy = "default"
+    limit = 3
+    payload = client.get_json("/api/v1/recommendations", {"strategy": strategy, "limit": limit})
+    items = _response_list(payload)
+    issues = []
+
+    if len(items) > limit:
+        issues.append(f"too_many_items={len(items)}/{limit}")
+    for index, item in enumerate(items[:1]):
+        issues.extend(_recommendation_item_issues(item, index, strategy))
+
+    ok = not issues
+    sample = items[0] if items and isinstance(items[0], dict) else None
+    sample_title = sample.get("title") if sample else None
+    recommendation = sample.get("recommendation") if sample and isinstance(sample.get("recommendation"), dict) else {}
+    primary_reason = recommendation.get("primary_reason") if isinstance(recommendation.get("primary_reason"), dict) else {}
+    primary_reason_code = primary_reason.get("code")
+    detail = f"items={len(items)} strategy={strategy}"
+    if sample_title:
+        detail = f"{detail} sample={sample_title} primary_reason={primary_reason_code}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "recommendations",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "strategy": strategy,
+            "sample_title": sample_title,
+            "sample_primary_reason": primary_reason_code,
             "issues": issues,
         },
     )
@@ -2623,6 +2751,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
         CheckSpec("homepage", lambda: check_homepage(client)),
+        CheckSpec("recommendations", lambda: check_recommendations(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),

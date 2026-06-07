@@ -622,6 +622,33 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/recommendations":
+            item = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)["data"]["items"][0].copy()
+            item["recommendation"] = {
+                "primary_reason": {
+                    "code": "high_rating",
+                    "label": "High rating",
+                    "weight": 30.0,
+                    "detail": "7.5",
+                },
+                "rank": 1,
+                "reason_text": "High rating",
+                "reasons": [
+                    {
+                        "code": "high_rating",
+                        "label": "High rating",
+                        "weight": 30.0,
+                    },
+                ],
+                "score": 72.5,
+                "signals": {
+                    "progress_ratio": 0,
+                    "quality_badge": "HD",
+                    "resource_count": 1,
+                },
+                "strategy": "default",
+            }
+            return {"data": [item]}
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -965,6 +992,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "movie_detail",
                 "movie_resources",
                 "homepage",
+                "recommendations",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1432,6 +1460,36 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         homepage = next(item for item in results if item.name == "homepage")
         self.assertFalse(homepage.ok)
         self.assertIn("section_0_missing=items", homepage.detail)
+
+    def test_recommendations_fail_when_reason_shape_is_broken(self):
+        class BrokenRecommendationsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/recommendations":
+                    del payload["data"][0]["recommendation"]["primary_reason"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenRecommendationsClient):
+            results = self.module.run_checks(self._args())
+
+        recommendations = next(item for item in results if item.name == "recommendations")
+        self.assertFalse(recommendations.ok)
+        self.assertIn("item_0_recommendation_missing=primary_reason", recommendations.detail)
+
+    def test_recommendations_fail_without_crashing_when_primary_reason_is_not_object(self):
+        class BrokenRecommendationsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/recommendations":
+                    payload["data"][0]["recommendation"]["primary_reason"] = "high_rating"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenRecommendationsClient):
+            results = self.module.run_checks(self._args())
+
+        recommendations = next(item for item in results if item.name == "recommendations")
+        self.assertFalse(recommendations.ok)
+        self.assertIn("item_0_recommendation_primary_reason_not_object", recommendations.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):
