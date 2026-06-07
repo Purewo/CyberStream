@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from unittest.mock import patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
@@ -64,6 +65,29 @@ class DbBackupScriptTests(unittest.TestCase):
             self.assertEqual("before", conn.execute("select value from items").fetchone()[0])
         finally:
             conn.close()
+
+    def test_backup_verifies_generated_copy_before_reporting_success(self):
+        self._write_value("before")
+
+        with patch.object(self.module, "_integrity_check", wraps=self.module._integrity_check) as integrity_check:
+            output = StringIO()
+            with redirect_stdout(output):
+                backup_path = self.module._backup(self._db_path(), self._backup_dir())
+
+        integrity_check.assert_called_once_with(backup_path)
+        self.assertEqual(f"{backup_path}\n", output.getvalue())
+
+    def test_backup_rejects_generated_copy_when_integrity_check_fails(self):
+        self._write_value("before")
+        output = StringIO()
+
+        with patch.object(self.module, "_integrity_check", side_effect=SystemExit("integrity check failed")):
+            with self.assertRaises(SystemExit) as context:
+                with redirect_stdout(output):
+                    self.module._backup(self._db_path(), self._backup_dir())
+
+        self.assertIn("integrity check failed", str(context.exception))
+        self.assertEqual("", output.getvalue())
 
     def test_verify_accepts_current_database_and_backup_file(self):
         self._write_value("before")

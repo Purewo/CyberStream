@@ -22,6 +22,26 @@ def _resolve(path_value):
     return Path(path_value).expanduser().resolve()
 
 
+def _integrity_check(db_path: Path):
+    if not db_path.exists():
+        raise SystemExit(f"database not found: {db_path}")
+
+    try:
+        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            results = [row[0] for row in connection.execute("PRAGMA integrity_check").fetchall()]
+        finally:
+            connection.close()
+    except sqlite3.DatabaseError as exc:
+        raise SystemExit(f"integrity check failed: {db_path}: {exc}") from exc
+
+    if results != ["ok"]:
+        detail = "; ".join(str(item) for item in results[:10])
+        raise SystemExit(f"integrity check failed: {db_path}: {detail}")
+
+    return True
+
+
 def _backup(db_path: Path, backup_dir: Path):
     if not db_path.exists():
         raise SystemExit(f"database not found: {db_path}")
@@ -43,27 +63,13 @@ def _backup(db_path: Path, backup_dir: Path):
     finally:
         source.close()
 
+    _integrity_check(target)
     print(target)
     return target
 
 
 def _verify(db_path: Path):
-    if not db_path.exists():
-        raise SystemExit(f"database not found: {db_path}")
-
-    try:
-        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        try:
-            results = [row[0] for row in connection.execute("PRAGMA integrity_check").fetchall()]
-        finally:
-            connection.close()
-    except sqlite3.DatabaseError as exc:
-        raise SystemExit(f"integrity check failed: {db_path}: {exc}") from exc
-
-    if results != ["ok"]:
-        detail = "; ".join(str(item) for item in results[:10])
-        raise SystemExit(f"integrity check failed: {db_path}: {detail}")
-
+    _integrity_check(db_path)
     print(f"{db_path}\tok")
     return True
 

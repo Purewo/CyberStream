@@ -88,6 +88,7 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 预期：
 - 当前数据库 integrity check 返回 `ok`
 - `backups/` 下生成新的 `cyber_library.<timestamp>.db`
+- `backup` 在输出路径前已自动校验新备份文件
 - 新备份文件 integrity check 返回 `ok`
 - `list` 能看到最新备份文件
 - `restore --yes` 会自动校验目标备份；备份损坏时应拒绝恢复且不替换当前数据库
@@ -747,7 +748,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`706 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`708 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
