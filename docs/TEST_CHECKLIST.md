@@ -76,6 +76,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK movie_detail`，说明列表到详情页的只读链路与详情关键字段可用
 - smoke check 返回 `OK movie_images_status`，说明详情页 poster/backdrop 图片缓存状态契约可用且不触发远端下载
 - smoke check 返回 `OK movie_resources`，说明详情页资源面板、播放源分组、主资源 ID 和云转码能力声明可用
+- smoke check 返回 `OK streaming_qualities`，说明 provider 云转码清晰度入口可用，或对不支持的资源稳定返回 `40074`
 - smoke check 返回 `OK movie_seasons`，说明详情页季列表、季级资源计数和剧集诊断 summary 契约可用
 - smoke check 返回 `OK movie_episode_diagnostics`，说明剧集诊断详情 dry-run、summary 和提交 payload 契约可用
 - smoke check 返回 `OK external_playback`，说明 PC/外部播放器播放交接 manifest 和 M3U handoff 契约可用
@@ -819,7 +820,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`765 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`766 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

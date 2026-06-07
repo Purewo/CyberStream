@@ -1754,6 +1754,13 @@ class FakeSmokeClient:
         raise AssertionError(f"unexpected path: {path}")
 
     def get_json_allow_error(self, path, query=None):
+        if path == "/api/v1/resources/resource-1/streaming-qualities":
+            return {
+                "_http_status": 400,
+                "code": 40074,
+                "data": None,
+                "msg": "Resource source does not support cloud transcoding",
+            }
         if path in {"/api/v1/user/favorites", "/api/v1/user/favorites/movie-1"}:
             return {
                 "_http_status": 403,
@@ -2045,6 +2052,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "movie_detail",
                 "movie_images_status",
                 "movie_resources",
+                "streaming_qualities",
                 "movie_seasons",
                 "movie_episode_diagnostics",
                 "external_playback",
@@ -2860,6 +2868,66 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         resources = next(item for item in results if item.name == "movie_resources")
         self.assertFalse(resources.ok)
         self.assertIn("resource_0_playback_cloud_transcode_reason_not_str", resources.detail)
+
+    def test_streaming_qualities_fails_when_supported_payload_shape_is_broken(self):
+        class BrokenStreamingQualitiesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1/resources":
+                    cloud_transcode = payload["data"]["items"][0]["playback"]["cloud_transcode"]
+                    cloud_transcode.update({
+                        "supported": True,
+                        "provider": "quarktv",
+                        "provider_name": "QuarkTV",
+                        "mode": "provider_cloud_transcode",
+                        "qualities_endpoint": "/api/v1/resources/resource-1/streaming-qualities",
+                        "stream_endpoint": "/api/v1/resources/resource-1/stream-transcoded",
+                        "available_resolutions": ["low", "4k"],
+                        "recommended_for": ["web_player"],
+                        "quality_semantics": "provider_cloud_transcode_not_original_file",
+                        "reason": None,
+                    })
+                return payload
+
+            def get_json_allow_error(self, path, query=None):
+                if path == "/api/v1/resources/resource-1/streaming-qualities":
+                    return {
+                        "_http_status": 200,
+                        "code": 200,
+                        "data": {
+                            "resource_id": "resource-1",
+                            "storage_type": "quarktv",
+                            "provider": "QuarkTV",
+                            "mode": "provider_cloud_transcode",
+                            "default_resolution": "4k",
+                            "selected_resolution": "4k",
+                            "selected_item": {
+                                "resolution": "4k",
+                                "label": "4K",
+                                "available": True,
+                                "url": "https://provider.example/4k.m3u8",
+                                "stream_url": "/bad-stream-url",
+                            },
+                            "items": [
+                                {
+                                    "resolution": "4k",
+                                    "label": "4K",
+                                    "available": True,
+                                    "url": "https://provider.example/4k.m3u8",
+                                    "stream_url": "/bad-stream-url",
+                                },
+                            ],
+                            "warnings": [],
+                        },
+                    }
+                return super().get_json_allow_error(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenStreamingQualitiesClient):
+            results = self.module.run_checks(self._args())
+
+        qualities = next(item for item in results if item.name == "streaming_qualities")
+        self.assertFalse(qualities.ok)
+        self.assertIn("quality_0_stream_url_invalid", qualities.detail)
 
     def test_movie_seasons_fails_when_primary_resource_ids_are_broken(self):
         class BrokenMovieSeasonsClient(FakeSmokeClient):

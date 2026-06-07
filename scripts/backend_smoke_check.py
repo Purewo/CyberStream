@@ -494,6 +494,24 @@ EXPECTED_MOVIE_RESOURCE_CLOUD_TRANSCODE_KEYS = [
     "quality_semantics",
     "reason",
 ]
+EXPECTED_STREAMING_QUALITIES_KEYS = [
+    "resource_id",
+    "storage_type",
+    "provider",
+    "mode",
+    "default_resolution",
+    "selected_resolution",
+    "selected_item",
+    "items",
+    "warnings",
+]
+EXPECTED_STREAMING_QUALITY_ITEM_KEYS = [
+    "resolution",
+    "label",
+    "available",
+    "stream_url",
+    "url",
+]
 EXPECTED_MOVIE_PLAYBACK_SOURCE_KEYS = [
     "id",
     "primary_resource_id",
@@ -2406,6 +2424,81 @@ def _movie_playback_source_issues(
                 issues.append(f"{source_prefix}_id_not_int")
     if "user_data" in item and item.get("user_data") is not None and not isinstance(item.get("user_data"), dict):
         issues.append(f"{prefix}_user_data_not_object")
+    return issues
+
+
+def _streaming_quality_item_issues(item: Any, index: int | str, resource_id: str) -> list[str]:
+    prefix = f"quality_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_STREAMING_QUALITY_ITEM_KEYS, prefix))
+    for key in ("resolution", "label"):
+        if key in item and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "available" in item and item.get("available") not in (True, False):
+        issues.append(f"{prefix}_available_not_bool")
+    if "stream_url" in item:
+        stream_url = item.get("stream_url")
+        expected_path = f"/api/v1/resources/{resource_id}/stream-transcoded"
+        if not isinstance(stream_url, str) or expected_path not in stream_url:
+            issues.append(f"{prefix}_stream_url_invalid")
+    if "url" in item and item.get("url") is not None and not isinstance(item.get("url"), str):
+        issues.append(f"{prefix}_url_not_str")
+    if item.get("available") is True and not item.get("url"):
+        issues.append(f"{prefix}_available_without_url")
+    return issues
+
+
+def _streaming_qualities_payload_issues(data: Any, resource_id: str) -> list[str]:
+    if not isinstance(data, dict):
+        return ["streaming_qualities_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_STREAMING_QUALITIES_KEYS, "streaming_qualities"))
+    if data.get("resource_id") != resource_id:
+        issues.append(f"streaming_qualities_resource_id={data.get('resource_id')}")
+    for key in ("storage_type", "provider", "mode"):
+        if key in data and not isinstance(data.get(key), str):
+            issues.append(f"streaming_qualities_{key}_not_str")
+    for key in ("default_resolution", "selected_resolution"):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"streaming_qualities_{key}_not_str")
+
+    items = data.get("items")
+    if not isinstance(items, list):
+        issues.append("streaming_qualities_items_not_list")
+        items = []
+    for index, item in enumerate(items[:3]):
+        issues.extend(_streaming_quality_item_issues(item, index, resource_id))
+
+    selected_item = data.get("selected_item")
+    if selected_item is not None:
+        issues.extend(_streaming_quality_item_issues(selected_item, "selected", resource_id))
+        selected_resolution = selected_item.get("resolution") if isinstance(selected_item, dict) else None
+        item_resolutions = {
+            item.get("resolution")
+            for item in items
+            if isinstance(item, dict) and isinstance(item.get("resolution"), str)
+        }
+        if selected_resolution not in item_resolutions:
+            issues.append(f"streaming_qualities_selected_resolution_missing={selected_resolution}")
+    elif any(isinstance(item, dict) and item.get("available") is True for item in items):
+        issues.append("streaming_qualities_missing_selected_item")
+
+    warnings = data.get("warnings")
+    if not isinstance(warnings, list):
+        issues.append("streaming_qualities_warnings_not_list")
+    else:
+        for index, warning in enumerate(warnings[:3]):
+            prefix = f"streaming_warning_{index}"
+            if not isinstance(warning, dict):
+                issues.append(f"{prefix}_not_object")
+                continue
+            for key in ("code", "message"):
+                if key in warning and not isinstance(warning.get(key), str):
+                    issues.append(f"{prefix}_{key}_not_str")
     return issues
 
 
@@ -4725,6 +4818,110 @@ def check_movie_resources(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_streaming_qualities(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "streaming_qualities",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "streaming_qualities",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    resources_payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/resources")
+    resources_data = _response_data(resources_payload)
+    resource_items = (
+        resources_data.get("items")
+        if isinstance(resources_data, dict) and isinstance(resources_data.get("items"), list)
+        else []
+    )
+    if not resource_items:
+        return _result(
+            "streaming_qualities",
+            True,
+            f"skipped no resources movie_id={movie_id}",
+            {"skipped": True, "movie_id": movie_id},
+        )
+
+    sample_resource = resource_items[0] if isinstance(resource_items[0], dict) else {}
+    resource_id = sample_resource.get("id")
+    if not isinstance(resource_id, str) or not resource_id:
+        return _result(
+            "streaming_qualities",
+            False,
+            f"resource_id_invalid={resource_id}",
+            {"movie_id": movie_id, "resource_id": resource_id},
+        )
+
+    playback = sample_resource.get("playback") if isinstance(sample_resource.get("playback"), dict) else {}
+    cloud_transcode = (
+        playback.get("cloud_transcode")
+        if isinstance(playback.get("cloud_transcode"), dict)
+        else {}
+    )
+    declared_supported = cloud_transcode.get("supported")
+    payload = client.get_json_allow_error(
+        f"/api/v1/resources/{urllib.parse.quote(resource_id, safe='')}/streaming-qualities"
+    )
+    status = payload.get("_http_status") if isinstance(payload, dict) else None
+    code = payload.get("code") if isinstance(payload, dict) else None
+    issues = []
+
+    if declared_supported is True:
+        if status not in (None, 200):
+            issues.append(f"streaming_qualities_http_status={status}")
+        if code not in (None, 200):
+            issues.append(f"streaming_qualities_code={code}")
+        data = _response_data(payload)
+        issues.extend(_streaming_qualities_payload_issues(data, resource_id))
+        items = data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else []
+        selected_item = data.get("selected_item") if isinstance(data, dict) else None
+        selected_resolution = selected_item.get("resolution") if isinstance(selected_item, dict) else None
+        provider = data.get("provider") if isinstance(data, dict) else None
+        detail = (
+            f"resource={resource_id} supported=True provider={provider} "
+            f"items={len(items)} selected={selected_resolution}"
+        )
+    elif declared_supported is False:
+        if status != 400:
+            issues.append(f"streaming_qualities_unsupported_http_status={status}")
+        if code != 40074:
+            issues.append(f"streaming_qualities_unsupported_code={code}")
+        detail = f"resource={resource_id} supported=False status={status} code={code}"
+    else:
+        issues.append(f"streaming_qualities_declared_supported_invalid={declared_supported}")
+        detail = f"resource={resource_id} supported={declared_supported} status={status} code={code}"
+
+    ok = not issues
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "streaming_qualities",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "resource_id": resource_id,
+            "declared_supported": declared_supported,
+            "status": status,
+            "code": code,
+            "issues": issues,
+        },
+    )
+
+
 def check_movie_seasons(client: SmokeClient) -> CheckResult:
     catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
     catalog_data = _response_data(catalog_payload)
@@ -6637,6 +6834,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_images_status", lambda: check_movie_images_status(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
+        CheckSpec("streaming_qualities", lambda: check_streaming_qualities(client)),
         CheckSpec("movie_seasons", lambda: check_movie_seasons(client)),
         CheckSpec("movie_episode_diagnostics", lambda: check_movie_episode_diagnostics(client)),
         CheckSpec("external_playback", lambda: check_external_playback(client)),
