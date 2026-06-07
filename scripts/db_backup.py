@@ -113,8 +113,19 @@ def _restore(db_path: Path, backup_path: Path, backup_dir: Path, yes: bool):
         print(f"created pre-restore backup: {safety_backup}", file=sys.stderr)
 
     tmp_path = db_path.with_suffix(db_path.suffix + ".restore_tmp")
-    shutil.copy2(backup_path, tmp_path)
-    tmp_path.replace(db_path)
+    restore_completed = False
+    try:
+        shutil.copy2(backup_path, tmp_path)
+        tmp_path.replace(db_path)
+        restore_completed = True
+    finally:
+        if not restore_completed:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"warning: failed to remove incomplete restore file {tmp_path}: {exc}", file=sys.stderr)
     print(db_path)
 
 

@@ -144,6 +144,25 @@ class DbBackupScriptTests(unittest.TestCase):
         self.assertIn("integrity check failed", str(context.exception))
         self.assertEqual("before", self._read_value())
 
+    def test_restore_cleans_temp_file_when_copy_fails(self):
+        self._write_value("before")
+        with redirect_stdout(StringIO()):
+            backup_path = self.module._backup(self._db_path(), self._backup_dir())
+        self._write_value("after")
+        tmp_path = self._db_path().with_suffix(self._db_path().suffix + ".restore_tmp")
+
+        def fail_after_copy(source, destination):
+            self.module.shutil.copyfile(source, destination)
+            raise OSError("copy interrupted")
+
+        with patch.object(self.module.shutil, "copy2", side_effect=fail_after_copy):
+            with self.assertRaises(OSError):
+                with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                    self.module._restore(self._db_path(), backup_path, self._backup_dir(), yes=True)
+
+        self.assertEqual("after", self._read_value())
+        self.assertFalse(tmp_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

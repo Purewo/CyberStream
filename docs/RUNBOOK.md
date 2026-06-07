@@ -131,7 +131,7 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 ./scripts/db_backup.py list
 ```
 
-恢复会先自动校验目标备份文件；校验通过后再自动创建一次恢复前备份，并替换当前数据库。必须显式确认：
+恢复会先自动校验目标备份文件；校验通过后再自动创建一次恢复前备份，并替换当前数据库。恢复失败时会尽量删除临时恢复文件。必须显式确认：
 
 ```bash
 ./scripts/db_backup.py verify backups/<backup-file>.db
