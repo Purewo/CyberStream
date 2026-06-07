@@ -16,6 +16,7 @@ from typing import Any
 DEFAULT_BASE_URL = os.environ.get("CYBER_BACKEND_SMOKE_BASE_URL", "http://127.0.0.1:5004")
 DEFAULT_API_TOKEN = os.environ.get("CYBER_BACKEND_SMOKE_API_TOKEN") or os.environ.get("CYBER_API_TOKEN") or ""
 DEFAULT_EXPECTED_VERSION = os.environ.get("CYBER_BACKEND_EXPECTED_VERSION", "")
+DEFAULT_EXPECTED_OPENAPI_VERSION = os.environ.get("CYBER_BACKEND_EXPECTED_OPENAPI_VERSION", "")
 DEFAULT_SYSTEMD_SERVICES = [
     "cyberstream-backend",
     "nginx",
@@ -214,9 +215,11 @@ def check_openapi_health_contract(client: SmokeClient) -> CheckResult:
     )
 
 
-def check_docs_index(client: SmokeClient) -> CheckResult:
+def check_docs_index(client: SmokeClient, expected_openapi_version: str = "") -> CheckResult:
     payload = client.get_json("/api/v1/docs")
     data = _response_data(payload)
+    openapi_version = data.get("openapi_version")
+    expected_openapi_version = str(expected_openapi_version or "").strip()
     openapi = data.get("openapi") if isinstance(data, dict) else {}
     if not isinstance(openapi, dict):
         openapi = {}
@@ -259,9 +262,13 @@ def check_docs_index(client: SmokeClient) -> CheckResult:
         issues.append(f"bad_urls={','.join(bad_urls)}")
     if non_markdown:
         issues.append(f"non_markdown={','.join(non_markdown)}")
+    if expected_openapi_version and openapi_version != expected_openapi_version:
+        issues.append(f"openapi_version_expected={expected_openapi_version} actual={openapi_version}")
 
     ok = not issues
-    detail = f"documents={len(doc_map)} expected={len(EXPECTED_DOC_KEYS)} version={data.get('openapi_version')}"
+    detail = f"documents={len(doc_map)} expected={len(EXPECTED_DOC_KEYS)} version={openapi_version}"
+    if expected_openapi_version:
+        detail = f"{detail} expected_openapi_version={expected_openapi_version}"
     if issues:
         detail = f"{detail} issues={'; '.join(issues)}"
     return _result(
@@ -276,7 +283,8 @@ def check_docs_index(client: SmokeClient) -> CheckResult:
             "bad_urls": bad_urls,
             "non_markdown": non_markdown,
             "openapi_ok": openapi_ok,
-            "openapi_version": data.get("openapi_version"),
+            "openapi_version": openapi_version,
+            "expected_openapi_version": expected_openapi_version or None,
         },
     )
 
@@ -286,9 +294,15 @@ def _module_url_path(raw_url: Any) -> str:
     return parsed.path or str(raw_url or "")
 
 
-def check_openapi_modules(client: SmokeClient, fetch_module_json: bool = False) -> CheckResult:
+def check_openapi_modules(
+    client: SmokeClient,
+    fetch_module_json: bool = False,
+    expected_openapi_version: str = "",
+) -> CheckResult:
     payload = client.get_json("/api/v1/openapi/modules")
     data = _response_data(payload)
+    openapi_version = data.get("openapi_version")
+    expected_openapi_version = str(expected_openapi_version or "").strip()
     modules = data.get("modules") if isinstance(data, dict) else []
     module_map = {
         item.get("key"): item
@@ -341,10 +355,14 @@ def check_openapi_modules(client: SmokeClient, fetch_module_json: bool = False) 
         issues.append(f"bad_urls={','.join(bad_urls)}")
     if fetch_errors:
         issues.append(f"fetch_errors={'; '.join(fetch_errors)}")
+    if expected_openapi_version and openapi_version != expected_openapi_version:
+        issues.append(f"openapi_version_expected={expected_openapi_version} actual={openapi_version}")
 
     ok = not issues
     keys = sorted(module_map)
-    detail = f"modules={len(module_map)} expected={len(EXPECTED_OPENAPI_MODULES)} version={data.get('openapi_version')}"
+    detail = f"modules={len(module_map)} expected={len(EXPECTED_OPENAPI_MODULES)} version={openapi_version}"
+    if expected_openapi_version:
+        detail = f"{detail} expected_openapi_version={expected_openapi_version}"
     if fetch_module_json:
         detail = f"{detail} fetched={len(fetched)}"
     if issues:
@@ -363,7 +381,8 @@ def check_openapi_modules(client: SmokeClient, fetch_module_json: bool = False) 
             "bad_urls": bad_urls,
             "fetched": fetched,
             "fetch_errors": fetch_errors,
-            "openapi_version": data.get("openapi_version"),
+            "openapi_version": openapi_version,
+            "expected_openapi_version": expected_openapi_version or None,
         },
     )
 
@@ -829,11 +848,15 @@ def check_systemd_services(services: list[str], timeout: float) -> CheckResult:
 
 def run_checks(args) -> list[CheckResult]:
     client = SmokeClient(args.base_url, timeout=args.timeout, api_token=args.api_token)
+    expected_openapi_version = getattr(args, "expected_openapi_version", "")
     checks = [
         CheckSpec("health", lambda: check_health(client, getattr(args, "expected_version", ""))),
         CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
-        CheckSpec("docs_index", lambda: check_docs_index(client)),
-        CheckSpec("openapi_modules", lambda: check_openapi_modules(client, args.openapi_module_json_check)),
+        CheckSpec("docs_index", lambda: check_docs_index(client, expected_openapi_version)),
+        CheckSpec(
+            "openapi_modules",
+            lambda: check_openapi_modules(client, args.openapi_module_json_check, expected_openapi_version),
+        ),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
@@ -877,6 +900,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--expected-version",
         default=DEFAULT_EXPECTED_VERSION,
         help="Expected runtime APP_VERSION; defaults to CYBER_BACKEND_EXPECTED_VERSION when set.",
+    )
+    parser.add_argument(
+        "--expected-openapi-version",
+        default=DEFAULT_EXPECTED_OPENAPI_VERSION,
+        help=(
+            "Expected OpenAPI snapshot version; defaults to "
+            "CYBER_BACKEND_EXPECTED_OPENAPI_VERSION when set."
+        ),
     )
     parser.add_argument(
         "--api-token",

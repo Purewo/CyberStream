@@ -28,8 +28,8 @@ Current host notes:
 - IPv4 NAT public ports are limited to `40160-40169`; keep backend HTTPS on `40160` unless the user reallocates ports.
 - Runtime services expected online for integration work: `cyberstream-backend`, `nginx`, `cyberstream-alist`, `cyberstream-openlist`, and `ddns-go`.
 - AList is local-only at `127.0.0.1:5244`; OpenList is local-only at `127.0.0.1:5245`.
-- Current app version is `1.21.0`; run smoke checks with `--expected-version 1.21.0`.
-- Full pytest baseline as of 2026-06-07 is `713 passed, 9 skipped, 16 subtests passed`.
+- Current app version is `1.21.0`; current OpenAPI version is `1.21.0-beta`; run smoke checks with `--expected-version 1.21.0 --expected-openapi-version 1.21.0-beta`.
+- Full pytest baseline as of 2026-06-07 is `715 passed, 9 skipped, 16 subtests passed`.
 
 Before scraping or frontend integration, run:
 
@@ -37,6 +37,7 @@ Before scraping or frontend integration, run:
 ./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
   --openapi-module-json-check \
   --expected-version 1.21.0 \
+  --expected-openapi-version 1.21.0-beta \
   --min-storage-sources 1 \
   --storage-health-check \
   --min-storage-health-checks 1 \

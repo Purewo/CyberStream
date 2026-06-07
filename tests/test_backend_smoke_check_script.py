@@ -335,6 +335,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             "base_url": "http://example.test",
             "timeout": 1.0,
             "expected_version": "",
+            "expected_openapi_version": "",
             "api_token": "",
             "live_check_limit": 500,
             "openapi_module_json_check": False,
@@ -442,6 +443,30 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         docs = next(item for item in results if item.name == "docs_index")
         self.assertFalse(docs.ok)
         self.assertIn("openapi_links_invalid", docs.detail)
+
+    def test_openapi_index_checks_accept_expected_openapi_version_when_it_matches(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(expected_openapi_version="1.21.0-beta"))
+
+        docs = next(item for item in results if item.name == "docs_index")
+        modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertTrue(docs.ok)
+        self.assertTrue(modules.ok)
+        self.assertEqual("1.21.0-beta", docs.data["expected_openapi_version"])
+        self.assertEqual("1.21.0-beta", modules.data["expected_openapi_version"])
+        self.assertIn("expected_openapi_version=1.21.0-beta", docs.detail)
+        self.assertIn("expected_openapi_version=1.21.0-beta", modules.detail)
+
+    def test_openapi_index_checks_fail_when_expected_openapi_version_does_not_match(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(expected_openapi_version="1.22.0-beta"))
+
+        docs = next(item for item in results if item.name == "docs_index")
+        modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertFalse(docs.ok)
+        self.assertFalse(modules.ok)
+        self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", docs.detail)
+        self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", modules.detail)
 
     def test_health_fails_when_database_is_not_ok(self):
         class DegradedHealthClient(FakeSmokeClient):
