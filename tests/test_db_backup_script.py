@@ -88,6 +88,7 @@ class DbBackupScriptTests(unittest.TestCase):
 
         self.assertIn("integrity check failed", str(context.exception))
         self.assertEqual("", output.getvalue())
+        self.assertEqual([], list(self._backup_dir().glob("*.db")))
 
     def test_verify_accepts_current_database_and_backup_file(self):
         self._write_value("before")

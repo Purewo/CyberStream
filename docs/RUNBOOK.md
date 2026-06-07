@@ -119,7 +119,7 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 ./scripts/db_backup.py backup
 ```
 
-`backup` 会在输出备份路径前自动校验新生成的备份文件。需要人工复查时可再次校验：
+`backup` 会在输出备份路径前自动校验新生成的备份文件；校验失败时会尽量删除未确认的副本。需要人工复查时可再次校验：
 
 ```bash
 ./scripts/db_backup.py verify backups/<backup-file>.db

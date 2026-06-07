@@ -53,17 +53,29 @@ def _backup(db_path: Path, backup_dir: Path):
         target = backup_dir / f"{db_path.stem}.{_timestamp()}.{counter}.db"
         counter += 1
 
-    source = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    backup_verified = False
     try:
-        destination = sqlite3.connect(target)
+        source = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
-            source.backup(destination)
+            destination = sqlite3.connect(target)
+            try:
+                source.backup(destination)
+            finally:
+                destination.close()
         finally:
-            destination.close()
-    finally:
-        source.close()
+            source.close()
 
-    _integrity_check(target)
+        _integrity_check(target)
+        backup_verified = True
+    finally:
+        if not backup_verified:
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"warning: failed to remove incomplete backup {target}: {exc}", file=sys.stderr)
+
     print(target)
     return target
 
