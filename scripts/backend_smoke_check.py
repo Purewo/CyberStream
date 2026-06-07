@@ -289,6 +289,11 @@ EXPECTED_MOVIE_PLAYBACK_SOURCE_KEYS = [
     "source_summary",
     "user_data",
 ]
+EXPECTED_CATALOG_FILTER_KEYS = [
+    "genres",
+    "years",
+    "countries",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -1344,6 +1349,51 @@ def _movie_resources_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _catalog_filter_option_issues(item: Any, index: int, kind: str) -> list[str]:
+    prefix = f"{kind}_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    if kind == "years":
+        expected_keys = ["year", "count"]
+    elif kind == "countries":
+        expected_keys = ["name", "code", "count"]
+    else:
+        expected_keys = ["name", "slug", "count"]
+
+    issues = _dict_missing_keys(item, expected_keys, prefix)
+    if kind == "years":
+        if "year" in item and not _json_int(item.get("year")):
+            issues.append(f"{prefix}_year_not_int")
+    else:
+        for key in ("name", "slug" if kind == "genres" else "code"):
+            if key in item and not isinstance(item.get(key), str):
+                issues.append(f"{prefix}_{key}_not_str")
+    if "count" in item:
+        count = item.get("count")
+        if not _json_int(count):
+            issues.append(f"{prefix}_count_not_int")
+        elif count < 0:
+            issues.append(f"{prefix}_count_negative")
+    return issues
+
+
+def _catalog_filters_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["filters_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_CATALOG_FILTER_KEYS, "filters"))
+    for key in EXPECTED_CATALOG_FILTER_KEYS:
+        items = data.get(key)
+        if not isinstance(items, list):
+            issues.append(f"{key}_not_list")
+            continue
+        for index, item in enumerate(items[:3]):
+            issues.extend(_catalog_filter_option_issues(item, index, key))
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -1546,6 +1596,33 @@ def check_metadata_reidentify_plan(client: SmokeClient) -> CheckResult:
             "item_count": len(plan_items),
             "apply_item_count": len(apply_items),
             "summary": summary if isinstance(summary, dict) else None,
+            "issues": issues,
+        },
+    )
+
+
+def check_catalog_filters(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/filters", {"include": "genres,years,countries"})
+    data = _response_data(payload)
+    issues = _catalog_filters_payload_issues(data)
+
+    counts = {
+        key: len(data.get(key) or []) if isinstance(data, dict) and isinstance(data.get(key), list) else 0
+        for key in EXPECTED_CATALOG_FILTER_KEYS
+    }
+    ok = not issues
+    detail = (
+        f"genres={counts['genres']} years={counts['years']} "
+        f"countries={counts['countries']}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "catalog_filters",
+        ok,
+        detail,
+        {
+            "counts": counts,
             "issues": issues,
         },
     )
@@ -2409,6 +2486,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
+        CheckSpec("catalog_filters", lambda: check_catalog_filters(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),

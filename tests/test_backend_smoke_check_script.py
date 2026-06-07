@@ -272,6 +272,31 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/filters":
+            return {
+                "data": {
+                    "genres": [
+                        {
+                            "name": "动作",
+                            "slug": "动作",
+                            "count": 1,
+                        },
+                    ],
+                    "years": [
+                        {
+                            "year": 2024,
+                            "count": 1,
+                        },
+                    ],
+                    "countries": [
+                        {
+                            "name": "Japan",
+                            "code": "Japan",
+                            "count": 1,
+                        },
+                    ],
+                },
+            }
         if path == "/api/v1/system/tmdb-config/check":
             return {
                 "data": {
@@ -912,6 +937,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "scan",
                 "metadata_providers",
                 "metadata_review_workbench",
+                "catalog_filters",
                 "catalog_movies",
                 "movie_detail",
                 "movie_resources",
@@ -1322,6 +1348,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         catalog = next(item for item in results if item.name == "catalog_movies")
         self.assertFalse(catalog.ok)
         self.assertIn("item_0_missing=metadata_state", catalog.detail)
+
+    def test_catalog_filters_fail_when_option_shape_is_broken(self):
+        class BrokenCatalogFiltersClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/filters":
+                    del payload["data"]["genres"][0]["count"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenCatalogFiltersClient):
+            results = self.module.run_checks(self._args())
+
+        filters = next(item for item in results if item.name == "catalog_filters")
+        self.assertFalse(filters.ok)
+        self.assertIn("genres_0_missing=count", filters.detail)
 
     def test_movie_detail_fails_when_detail_shape_is_broken(self):
         class BrokenMovieDetailClient(FakeSmokeClient):
