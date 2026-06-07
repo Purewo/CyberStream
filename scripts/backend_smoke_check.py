@@ -145,18 +145,51 @@ def _result(name: str, ok: bool, detail: str, data: dict[str, Any] | None = None
 
 
 def check_health(client: SmokeClient) -> CheckResult:
-    payload = client.get_json("/api/v1/health")
-    data = _response_data(payload)
-    status = data.get("status")
-    version = data.get("version")
-    database = data.get("database") if isinstance(data.get("database"), dict) else {}
-    database_status = database.get("status")
-    ok = status == "up" and database_status == "ok"
+    root_payload = client.get_json("/")
+    api_payload = client.get_json("/api/v1/health")
+    root_data = _response_data(root_payload)
+    api_data = _response_data(api_payload)
+    root_database = root_data.get("database") if isinstance(root_data.get("database"), dict) else {}
+    api_database = api_data.get("database") if isinstance(api_data.get("database"), dict) else {}
+    root_status = root_data.get("status")
+    api_status = api_data.get("status")
+    root_version = root_data.get("version")
+    api_version = api_data.get("version")
+    root_database_status = root_database.get("status")
+    api_database_status = api_database.get("status")
+
+    issues = []
+    if api_status != "up":
+        issues.append(f"api_status={api_status}")
+    if api_database_status != "ok":
+        issues.append(f"api_database={api_database_status}")
+    if root_status != api_status:
+        issues.append(f"root_status={root_status}")
+    if root_version != api_version:
+        issues.append(f"version_mismatch={root_version}/{api_version}")
+    if root_database_status != api_database_status:
+        issues.append(f"database_mismatch={root_database_status}/{api_database_status}")
+
+    ok = not issues
+    detail = (
+        f"status={api_status} version={api_version} database={api_database_status} "
+        f"root_status={root_status} root_database={root_database_status}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
     return _result(
         "health",
         ok,
-        f"status={status} version={version} database={database_status}",
-        {"status": status, "version": version, "database": database},
+        detail,
+        {
+            "status": api_status,
+            "version": api_version,
+            "database": api_database,
+            "root_status": root_status,
+            "root_version": root_version,
+            "root_database": root_database,
+            "issues": issues,
+        },
     )
 
 

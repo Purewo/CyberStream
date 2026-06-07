@@ -57,6 +57,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - 返回 JSON
 - `data.status = up`
 - `data.database.status = ok`
+- `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
 - smoke check 全部返回 `OK`
 
 ### 2.4 公网健康检查
@@ -746,7 +747,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`705 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`706 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
