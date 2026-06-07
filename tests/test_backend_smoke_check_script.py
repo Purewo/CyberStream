@@ -113,6 +113,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertFalse(governance.ok)
         self.assertIn("live=463/464", governance.detail)
 
+    def test_run_checks_reports_named_failure_when_check_raises(self):
+        class BrokenOpenApiClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                if path == "/api/v1/openapi.json":
+                    raise RuntimeError("openapi unavailable")
+                return super().get_json(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenOpenApiClient):
+            results = self.module.run_checks(self._args())
+
+        failure = next(item for item in results if not item.ok)
+        self.assertEqual("openapi_health_contract", failure.name)
+        self.assertIn("openapi unavailable", failure.detail)
+        self.assertNotIn("<lambda>", [item.name for item in results])
+
     def test_systemd_check_reports_all_services_active(self):
         completed = self.module.subprocess.CompletedProcess(
             args=["systemctl", "is-active"],

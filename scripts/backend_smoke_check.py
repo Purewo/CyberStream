@@ -8,6 +8,7 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +29,12 @@ class CheckResult:
     ok: bool
     detail: str
     data: dict[str, Any] | None = None
+
+
+@dataclass
+class CheckSpec:
+    name: str
+    run: Callable[[], CheckResult]
 
 
 class SmokeClient:
@@ -192,24 +199,29 @@ def check_systemd_services(services: list[str], timeout: float) -> CheckResult:
 def run_checks(args) -> list[CheckResult]:
     client = SmokeClient(args.base_url, timeout=args.timeout)
     checks = [
-        lambda: check_health(client),
-        lambda: check_openapi_health_contract(client),
-        lambda: check_scan(client),
-        lambda: check_work_items(client, "fallback_pipeline_match", args.max_fallback_items),
-        lambda: check_episode_review(client, args.max_episode_review_items),
-        lambda: check_resource_governance(client, args.live_check_limit, args.max_resource_actionable),
+        CheckSpec("health", lambda: check_health(client)),
+        CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
+        CheckSpec("scan", lambda: check_scan(client)),
+        CheckSpec(
+            "metadata_fallback_pipeline_match",
+            lambda: check_work_items(client, "fallback_pipeline_match", args.max_fallback_items),
+        ),
+        CheckSpec("episode_review", lambda: check_episode_review(client, args.max_episode_review_items)),
+        CheckSpec(
+            "resource_governance",
+            lambda: check_resource_governance(client, args.live_check_limit, args.max_resource_actionable),
+        ),
     ]
     if args.systemd:
         systemd_services = args.systemd_service or list(DEFAULT_SYSTEMD_SERVICES)
-        checks.insert(0, lambda: check_systemd_services(systemd_services, args.timeout))
+        checks.insert(0, CheckSpec("systemd_services", lambda: check_systemd_services(systemd_services, args.timeout)))
 
     results: list[CheckResult] = []
     for check in checks:
         try:
-            results.append(check())
+            results.append(check.run())
         except Exception as exc:  # noqa: BLE001 - smoke checks should report all failures uniformly.
-            name = getattr(check, "__name__", "check")
-            results.append(_result(name, False, str(exc)))
+            results.append(_result(check.name, False, str(exc)))
     return results
 
 
