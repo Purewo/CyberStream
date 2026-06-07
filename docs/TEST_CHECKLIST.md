@@ -58,6 +58,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - `data.status = up`
 - `data.database.status = ok`
 - `data.version = 1.21.0`
+- 文档索引 app version = `1.21.0`
 - OpenAPI index version = `1.21.0-beta`
 - `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
 - smoke check 全部返回 `OK`
@@ -756,7 +757,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`718 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`719 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

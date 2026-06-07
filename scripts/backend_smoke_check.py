@@ -249,9 +249,15 @@ def check_openapi_health_contract(client: SmokeClient, expected_openapi_version:
     )
 
 
-def check_docs_index(client: SmokeClient, expected_openapi_version: str = "") -> CheckResult:
+def check_docs_index(
+    client: SmokeClient,
+    expected_version: str = "",
+    expected_openapi_version: str = "",
+) -> CheckResult:
     payload = client.get_json("/api/v1/docs")
     data = _response_data(payload)
+    app_version = data.get("version")
+    expected_version = str(expected_version or "").strip()
     openapi_version = data.get("openapi_version")
     expected_openapi_version = str(expected_openapi_version or "").strip()
     openapi = data.get("openapi") if isinstance(data, dict) else {}
@@ -296,11 +302,18 @@ def check_docs_index(client: SmokeClient, expected_openapi_version: str = "") ->
         issues.append(f"bad_urls={','.join(bad_urls)}")
     if non_markdown:
         issues.append(f"non_markdown={','.join(non_markdown)}")
+    if expected_version and app_version != expected_version:
+        issues.append(f"version_expected={expected_version} actual={app_version}")
     if expected_openapi_version and openapi_version != expected_openapi_version:
         issues.append(f"openapi_version_expected={expected_openapi_version} actual={openapi_version}")
 
     ok = not issues
-    detail = f"documents={len(doc_map)} expected={len(EXPECTED_DOC_KEYS)} version={openapi_version}"
+    detail = (
+        f"documents={len(doc_map)} expected={len(EXPECTED_DOC_KEYS)} "
+        f"app_version={app_version} openapi_version={openapi_version}"
+    )
+    if expected_version:
+        detail = f"{detail} expected_version={expected_version}"
     if expected_openapi_version:
         detail = f"{detail} expected_openapi_version={expected_openapi_version}"
     if issues:
@@ -317,6 +330,8 @@ def check_docs_index(client: SmokeClient, expected_openapi_version: str = "") ->
             "bad_urls": bad_urls,
             "non_markdown": non_markdown,
             "openapi_ok": openapi_ok,
+            "version": app_version,
+            "expected_version": expected_version or None,
             "openapi_version": openapi_version,
             "expected_openapi_version": expected_openapi_version or None,
         },
@@ -909,14 +924,18 @@ def check_systemd_services(services: list[str], timeout: float) -> CheckResult:
 
 def run_checks(args) -> list[CheckResult]:
     client = SmokeClient(args.base_url, timeout=args.timeout, api_token=args.api_token)
+    expected_version = getattr(args, "expected_version", "")
     expected_openapi_version = getattr(args, "expected_openapi_version", "")
     checks = [
-        CheckSpec("health", lambda: check_health(client, getattr(args, "expected_version", ""))),
+        CheckSpec("health", lambda: check_health(client, expected_version)),
         CheckSpec(
             "openapi_health_contract",
             lambda: check_openapi_health_contract(client, expected_openapi_version),
         ),
-        CheckSpec("docs_index", lambda: check_docs_index(client, expected_openapi_version)),
+        CheckSpec(
+            "docs_index",
+            lambda: check_docs_index(client, expected_version, expected_openapi_version),
+        ),
         CheckSpec(
             "openapi_modules",
             lambda: check_openapi_modules(client, args.openapi_module_json_check, expected_openapi_version),

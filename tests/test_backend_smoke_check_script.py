@@ -455,7 +455,12 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
 
     def test_openapi_index_checks_accept_expected_openapi_version_when_it_matches(self):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):
-            results = self.module.run_checks(self._args(expected_openapi_version="1.21.0-beta"))
+            results = self.module.run_checks(
+                self._args(
+                    expected_version="1.21.0",
+                    expected_openapi_version="1.21.0-beta",
+                )
+            )
 
         health_contract = next(item for item in results if item.name == "openapi_health_contract")
         docs = next(item for item in results if item.name == "docs_index")
@@ -464,9 +469,11 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertTrue(docs.ok)
         self.assertTrue(modules.ok)
         self.assertEqual("1.21.0-beta", health_contract.data["expected_openapi_version"])
+        self.assertEqual("1.21.0", docs.data["expected_version"])
         self.assertEqual("1.21.0-beta", docs.data["expected_openapi_version"])
         self.assertEqual("1.21.0-beta", modules.data["expected_openapi_version"])
         self.assertIn("expected_openapi_version=1.21.0-beta", health_contract.detail)
+        self.assertIn("expected_version=1.21.0", docs.detail)
         self.assertIn("expected_openapi_version=1.21.0-beta", docs.detail)
         self.assertIn("expected_openapi_version=1.21.0-beta", modules.detail)
 
@@ -483,6 +490,14 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", health_contract.detail)
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", docs.detail)
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", modules.detail)
+
+    def test_docs_index_fails_when_expected_app_version_does_not_match(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(expected_version="1.22.0"))
+
+        docs = next(item for item in results if item.name == "docs_index")
+        self.assertFalse(docs.ok)
+        self.assertIn("version_expected=1.22.0 actual=1.21.0", docs.detail)
 
     def test_openapi_health_contract_fails_when_main_document_is_not_openapi(self):
         class BrokenOpenApiDocumentClient(FakeSmokeClient):

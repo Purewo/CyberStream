@@ -568,7 +568,7 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 说明：
 - 这组变量只供 `scripts/backend_smoke_check.py` 使用，不是后端运行时配置
 - `CYBER_BACKEND_SMOKE_API_TOKEN` 优先于 `CYBER_API_TOKEN`，用于 smoke check 访问受保护管理接口
-- `CYBER_BACKEND_EXPECTED_VERSION` 会作为 `--expected-version` 默认值，用于确认 `/` 与 `/api/v1/health` 返回的运行版本符合当前验收基线
+- `CYBER_BACKEND_EXPECTED_VERSION` 会作为 `--expected-version` 默认值，用于确认 `/`、`/api/v1/health` 与文档索引返回的运行版本符合当前验收基线
 - `CYBER_BACKEND_EXPECTED_OPENAPI_VERSION` 会作为 `--expected-openapi-version` 默认值，用于确认文档索引与 OpenAPI 模块索引符合当前契约基线
 
 ---
