@@ -1611,6 +1611,16 @@ class FakeSmokeClient:
             }
         raise AssertionError(f"unexpected path: {path}")
 
+    def get_json_allow_error(self, path, query=None):
+        if path in {"/api/v1/user/favorites", "/api/v1/user/favorites/movie-1"}:
+            return {
+                "_http_status": 403,
+                "code": 40341,
+                "data": None,
+                "msg": "Vault PIN is not configured",
+            }
+        return self.get_json(path, query=query)
+
     def post_json(self, path, body=None):
         if path == "/api/v1/metadata/re-scrape/plan":
             issue_codes = (body or {}).get("issue_codes") or [
@@ -1854,6 +1864,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "recommendations",
                 "movie_context_recommendations",
                 "user_history",
+                "user_favorites",
                 "vault_status",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
@@ -2599,6 +2610,66 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         history = next(item for item in results if item.name == "user_history")
         self.assertFalse(history.ok)
         self.assertIn("history_0_has_is_played", history.detail)
+
+    def test_user_favorites_fails_when_unlocked_list_shape_is_broken(self):
+        class BrokenUserFavoritesClient(FakeSmokeClient):
+            def get_json_allow_error(self, path, query=None):
+                if path == "/api/v1/user/favorites":
+                    movie = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)["data"]["items"][0].copy()
+                    return {
+                        "_http_status": 200,
+                        "code": 200,
+                        "data": {
+                            "items": [
+                                {
+                                    "id": 1,
+                                    "movie_id": "movie-1",
+                                    "created_at": "2026-06-07T00:00:00",
+                                    "movie": movie,
+                                },
+                            ],
+                            "movie_ids": ["movie-1"],
+                            "total": 2,
+                            "library": {
+                                "id": "favorites",
+                                "name": "我的收藏",
+                                "slug": "favorites",
+                                "description": "用户收藏的影视条目",
+                                "is_enabled": True,
+                                "sort_order": -100,
+                                "settings": {"virtual": True, "kind": "favorites"},
+                                "created_at": None,
+                                "updated_at": None,
+                                "is_virtual": True,
+                                "kind": "favorites",
+                                "movie_count": 1,
+                                "actions": {
+                                    "can_scan": False,
+                                    "can_bind_sources": False,
+                                    "can_manage_memberships": False,
+                                    "can_delete": False,
+                                },
+                            },
+                        },
+                    }
+                if path == "/api/v1/user/favorites/movie-1":
+                    return {
+                        "_http_status": 200,
+                        "code": 200,
+                        "data": {
+                            "movie_id": "movie-1",
+                            "is_favorite": True,
+                            "created_at": "2026-06-07T00:00:00",
+                        },
+                    }
+                return super().get_json_allow_error(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenUserFavoritesClient):
+            results = self.module.run_checks(self._args())
+
+        favorites = next(item for item in results if item.name == "user_favorites")
+        self.assertFalse(favorites.ok)
+        self.assertIn("favorites_total_mismatch=2/1", favorites.detail)
 
     def test_vault_status_fails_when_state_combination_is_invalid(self):
         class BrokenVaultStatusClient(FakeSmokeClient):

@@ -737,6 +737,30 @@ EXPECTED_USER_HISTORY_KEYS = [
     "movie",
     "filename",
 ]
+EXPECTED_USER_FAVORITES_KEYS = [
+    "items",
+    "movie_ids",
+    "total",
+    "library",
+]
+EXPECTED_USER_FAVORITE_ITEM_KEYS = [
+    "id",
+    "movie_id",
+    "created_at",
+]
+EXPECTED_USER_FAVORITE_STATE_KEYS = [
+    "movie_id",
+    "is_favorite",
+    "created_at",
+]
+EXPECTED_FAVORITES_LIBRARY_KEYS = [
+    *EXPECTED_LIBRARY_KEYS,
+    "is_virtual",
+    "kind",
+    "movie_count",
+    "actions",
+]
+EXPECTED_VAULT_ACCESS_ERROR_CODES = {40340, 40341, 40342, 42340}
 EXPECTED_VAULT_STATUS_KEYS = [
     "configured",
     "unlocked",
@@ -869,12 +893,24 @@ class SmokeClient:
             url = f"{url}?{urllib.parse.urlencode(query)}"
         return self._request_json("GET", url)
 
+    def get_json_allow_error(self, path: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        if query:
+            url = f"{url}?{urllib.parse.urlencode(query)}"
+        return self._request_json("GET", url, allow_http_error=True)
+
     def post_json(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         data = json.dumps(body or {}).encode("utf-8")
         return self._request_json("POST", url, data=data)
 
-    def _request_json(self, method: str, url: str, data: bytes | None = None) -> dict[str, Any]:
+    def _request_json(
+        self,
+        method: str,
+        url: str,
+        data: bytes | None = None,
+        allow_http_error: bool = False,
+    ) -> dict[str, Any]:
         headers = {"Accept": "application/json"}
         if data is not None:
             headers["Content-Type"] = "application/json"
@@ -884,9 +920,20 @@ class SmokeClient:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = response.read().decode("utf-8")
-                return json.loads(payload)
+                data = json.loads(payload)
+                if isinstance(data, dict) and allow_http_error:
+                    data["_http_status"] = response.status
+                return data
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
+            if allow_http_error:
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError:
+                    data = {"code": exc.code, "msg": body[:300]}
+                if isinstance(data, dict):
+                    data["_http_status"] = exc.code
+                    return data
             raise RuntimeError(f"HTTP {exc.code} {url}: {body[:300]}") from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"{method} {url} failed: {exc}") from exc
@@ -3340,6 +3387,122 @@ def _user_history_item_issues(item: Any, index: int) -> list[str]:
     return issues
 
 
+def _expected_vault_access_error(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    status = payload.get("_http_status")
+    return (
+        payload.get("code") in EXPECTED_VAULT_ACCESS_ERROR_CODES
+        and status in (None, 400, 403, 423)
+    )
+
+
+def _user_favorite_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"favorite_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_USER_FAVORITE_ITEM_KEYS, prefix))
+    if "id" in item and not _json_int(item.get("id")):
+        issues.append(f"{prefix}_id_not_int")
+    for key in ("movie_id", "created_at"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "movie" in item:
+        movie = item.get("movie")
+        if movie is not None and not isinstance(movie, dict):
+            issues.append(f"{prefix}_movie_not_object")
+        elif isinstance(movie, dict):
+            movie_id = movie.get("id")
+            if isinstance(movie_id, str):
+                issues.extend(f"{prefix}_movie_{issue}" for issue in _catalog_movie_item_issues(movie, index))
+            else:
+                issues.append(f"{prefix}_movie_id_invalid={movie_id}")
+    return issues
+
+
+def _user_favorites_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["favorites_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_USER_FAVORITES_KEYS, "favorites"))
+    items = data.get("items")
+    if not isinstance(items, list):
+        issues.append("favorites_items_not_list")
+        items = []
+    for index, item in enumerate(items[:1]):
+        issues.extend(_user_favorite_item_issues(item, index))
+
+    movie_ids = data.get("movie_ids")
+    if not isinstance(movie_ids, list):
+        issues.append("favorites_movie_ids_not_list")
+        movie_ids = []
+    elif not all(isinstance(movie_id, str) for movie_id in movie_ids):
+        issues.append("favorites_movie_ids_not_str")
+    if "total" in data and not _json_int(data.get("total")):
+        issues.append("favorites_total_not_int")
+    elif _json_int(data.get("total")) and data.get("total") != len(items):
+        issues.append(f"favorites_total_mismatch={data.get('total')}/{len(items)}")
+    if isinstance(movie_ids, list) and len(movie_ids) != len(items):
+        issues.append(f"favorites_movie_ids_count_mismatch={len(movie_ids)}/{len(items)}")
+
+    item_movie_ids = [
+        item.get("movie_id")
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("movie_id"), str)
+    ]
+    if isinstance(movie_ids, list) and item_movie_ids and movie_ids != item_movie_ids:
+        issues.append("favorites_movie_ids_order_mismatch")
+
+    library = data.get("library")
+    if "library" in data and library is not None:
+        issues.extend(_dict_missing_keys(library, EXPECTED_FAVORITES_LIBRARY_KEYS, "favorites_library"))
+        if isinstance(library, dict):
+            for key in ("id", "name", "slug", "description", "kind", "created_at", "updated_at"):
+                if key in library and library.get(key) is not None and not isinstance(library.get(key), str):
+                    issues.append(f"favorites_library_{key}_not_str")
+            if library.get("id") != "favorites":
+                issues.append(f"favorites_library_id={library.get('id')}")
+            if library.get("slug") != "favorites":
+                issues.append(f"favorites_library_slug={library.get('slug')}")
+            if library.get("is_virtual") is not True:
+                issues.append(f"favorites_library_is_virtual={library.get('is_virtual')}")
+            if library.get("kind") != "favorites":
+                issues.append(f"favorites_library_kind={library.get('kind')}")
+            if "is_enabled" in library and library.get("is_enabled") not in (True, False):
+                issues.append("favorites_library_is_enabled_not_bool")
+            if "sort_order" in library and not _json_int(library.get("sort_order")):
+                issues.append("favorites_library_sort_order_not_int")
+            if "settings" in library and not isinstance(library.get("settings"), dict):
+                issues.append("favorites_library_settings_not_object")
+            if "actions" in library and not isinstance(library.get("actions"), dict):
+                issues.append("favorites_library_actions_not_object")
+            if "movie_count" in library and not _json_int(library.get("movie_count")):
+                issues.append("favorites_library_movie_count_not_int")
+            if "movie_count" in library and library.get("movie_count") != len(items):
+                issues.append(f"favorites_library_movie_count_mismatch={library.get('movie_count')}/{len(items)}")
+    if not items and library is not None:
+        issues.append("favorites_empty_with_library")
+    return issues
+
+
+def _user_favorite_state_issues(data: Any, expected_movie_id: str) -> list[str]:
+    if not isinstance(data, dict):
+        return ["favorite_state_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_USER_FAVORITE_STATE_KEYS, "favorite_state"))
+    if "movie_id" in data and data.get("movie_id") != expected_movie_id:
+        issues.append(f"favorite_state_movie_id={data.get('movie_id')}")
+    if "is_favorite" in data and data.get("is_favorite") not in (True, False):
+        issues.append("favorite_state_is_favorite_not_bool")
+    if "created_at" in data and data.get("created_at") is not None and not isinstance(data.get("created_at"), str):
+        issues.append("favorite_state_created_at_not_str")
+    return issues
+
+
 def _vault_status_issues(data: Any) -> list[str]:
     if not isinstance(data, dict):
         return ["vault_status_not_object"]
@@ -4403,6 +4566,101 @@ def check_user_history(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_user_favorites(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    catalog_sample = catalog_items[0] if isinstance(catalog_items, list) and catalog_items else {}
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if movie_id is not None and not isinstance(movie_id, str):
+        movie_id = None
+
+    payload = client.get_json_allow_error("/api/v1/user/favorites", {"include_movies": "true"})
+    list_status = payload.get("_http_status") if isinstance(payload, dict) else None
+    list_code = payload.get("code") if isinstance(payload, dict) else None
+    issues = []
+
+    if _expected_vault_access_error(payload):
+        state_code = None
+        if movie_id:
+            state_payload = client.get_json_allow_error(
+                f"/api/v1/user/favorites/{urllib.parse.quote(movie_id, safe='')}"
+            )
+            state_code = state_payload.get("code") if isinstance(state_payload, dict) else None
+            if not _expected_vault_access_error(state_payload):
+                issues.append(f"favorite_state_expected_vault_error={state_code}")
+        ok = not issues
+        detail = f"vault_required list_code={list_code}"
+        if movie_id:
+            detail = f"{detail} state_code={state_code}"
+        if issues:
+            detail = f"{detail} issues={'; '.join(issues)}"
+        return _result(
+            "user_favorites",
+            ok,
+            detail,
+            {
+                "vault_required": True,
+                "list_code": list_code,
+                "state_code": state_code,
+                "movie_id": movie_id,
+                "issues": issues,
+            },
+        )
+
+    if list_status not in (None, 200):
+        issues.append(f"favorites_http_status={list_status}")
+    if list_code not in (None, 200):
+        issues.append(f"favorites_code={list_code}")
+
+    data = _response_data(payload)
+    issues.extend(_user_favorites_payload_issues(data))
+    items = data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else []
+    movie_ids = data.get("movie_ids") if isinstance(data, dict) and isinstance(data.get("movie_ids"), list) else []
+    library = data.get("library") if isinstance(data, dict) else None
+    total = data.get("total") if isinstance(data, dict) else None
+
+    favorite_state = None
+    if movie_id:
+        state_payload = client.get_json_allow_error(
+            f"/api/v1/user/favorites/{urllib.parse.quote(movie_id, safe='')}"
+        )
+        state_status = state_payload.get("_http_status") if isinstance(state_payload, dict) else None
+        state_code = state_payload.get("code") if isinstance(state_payload, dict) else None
+        if _expected_vault_access_error(state_payload):
+            issues.append(f"favorite_state_vault_error={state_code}")
+        elif state_status not in (None, 200):
+            issues.append(f"favorite_state_http_status={state_status}")
+        elif state_code not in (None, 200):
+            issues.append(f"favorite_state_code={state_code}")
+        else:
+            favorite_state = _response_data(state_payload)
+            issues.extend(_user_favorite_state_issues(favorite_state, movie_id))
+
+    ok = not issues
+    state_value = favorite_state.get("is_favorite") if isinstance(favorite_state, dict) else None
+    detail = (
+        f"items={len(items)} total={total} movie_ids={len(movie_ids)} "
+        f"library={bool(library)} state={state_value}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "user_favorites",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "total": total,
+            "movie_id_count": len(movie_ids),
+            "has_library": bool(library),
+            "movie_id": movie_id,
+            "is_favorite": state_value,
+            "issues": issues,
+        },
+    )
+
+
 def check_vault_status(client: SmokeClient) -> CheckResult:
     payload = client.get_json("/api/v1/user/vault/status")
     data = _response_data(payload)
@@ -5373,6 +5631,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("recommendations", lambda: check_recommendations(client)),
         CheckSpec("movie_context_recommendations", lambda: check_movie_context_recommendations(client)),
         CheckSpec("user_history", lambda: check_user_history(client)),
+        CheckSpec("user_favorites", lambda: check_user_favorites(client)),
         CheckSpec("vault_status", lambda: check_vault_status(client)),
         CheckSpec(
             "metadata_work_items_contract",

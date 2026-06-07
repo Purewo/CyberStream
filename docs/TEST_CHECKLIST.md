@@ -84,6 +84,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK recommendations`，说明发现页推荐流和推荐理由契约可用
 - smoke check 返回 `OK movie_context_recommendations`，说明详情页/播放页单片相关推荐契约可用
 - smoke check 返回 `OK user_history`，说明历史列表分页和播放进度上下文契约可用
+- smoke check 返回 `OK user_favorites`，说明收藏列表和单片收藏状态在保险库未解锁时也返回稳定访问契约
 - smoke check 返回 `OK vault_status`，说明保险库入口状态契约可用
 - smoke check 全部返回 `OK`
 
@@ -784,6 +785,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 - 能看到对应记录
 - `device_name`、`progress` 字段正常
 - smoke check 返回 `OK user_history`，说明历史条目不回传 `is_played`
+- smoke check 返回 `OK user_favorites`，说明收藏列表和详情页收藏按钮状态不会因保险库访问状态破坏默认联调 smoke
 
 ---
 
@@ -803,7 +805,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`753 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`754 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
