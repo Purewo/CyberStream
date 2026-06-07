@@ -228,6 +228,67 @@ EXPECTED_MOVIE_DETAIL_KEYS = [
     "metadata_diagnostics",
     "metadata_issues",
 ]
+EXPECTED_MOVIE_RESOURCES_KEYS = [
+    "items",
+    "groups",
+    "summary",
+]
+EXPECTED_MOVIE_RESOURCES_GROUP_KEYS = [
+    "standalone",
+    "seasons",
+    "playback_sources",
+]
+EXPECTED_MOVIE_RESOURCES_SUMMARY_KEYS = [
+    "total_items",
+    "hydrated_item_count",
+    "selected_season",
+    "playback_source_count",
+    "hydrated_playback_source_count",
+    "duplicate_group_count",
+    "alternate_resource_count",
+    "season_count",
+    "standalone_count",
+    "edited_items_count",
+    "season_metadata_count",
+    "episode_diagnostics",
+    "metadata_source_group",
+    "has_placeholder_metadata",
+    "is_local_only_metadata",
+    "needs_attention",
+    "review_priority",
+]
+EXPECTED_MOVIE_RESOURCE_ITEM_KEYS = [
+    "id",
+    "resource_info",
+    "playback",
+    "metadata",
+    "user_data",
+]
+EXPECTED_MOVIE_RESOURCE_INFO_KEYS = [
+    "file",
+    "display",
+    "technical",
+]
+EXPECTED_MOVIE_RESOURCE_PLAYBACK_KEYS = [
+    "stream_url",
+    "web_player",
+    "external_player",
+    "subtitles",
+]
+EXPECTED_MOVIE_PLAYBACK_SOURCE_KEYS = [
+    "id",
+    "primary_resource_id",
+    "resource_ids",
+    "alternate_resource_ids",
+    "count",
+    "is_duplicate_group",
+    "duplicate_key",
+    "match",
+    "display",
+    "file",
+    "source_summary",
+    "user_data",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -1081,6 +1142,208 @@ def _movie_detail_issues(item: Any, expected_id: str) -> list[str]:
     return issues
 
 
+def _movie_resource_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"resource_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_MOVIE_RESOURCE_ITEM_KEYS, prefix))
+    resource_id = item.get("id")
+    if "id" in item and not isinstance(resource_id, str):
+        issues.append(f"{prefix}_id_not_str")
+
+    resource_info = item.get("resource_info")
+    issues.extend(_dict_missing_keys(resource_info, EXPECTED_MOVIE_RESOURCE_INFO_KEYS, f"{prefix}_resource_info"))
+    if isinstance(resource_info, dict):
+        for key in EXPECTED_MOVIE_RESOURCE_INFO_KEYS:
+            if key in resource_info and not isinstance(resource_info.get(key), dict):
+                issues.append(f"{prefix}_resource_info_{key}_not_object")
+        file_info = resource_info.get("file") if isinstance(resource_info.get("file"), dict) else {}
+        if "filename" in file_info and not isinstance(file_info.get("filename"), str):
+            issues.append(f"{prefix}_file_filename_not_str")
+        if "size_bytes" in file_info and file_info.get("size_bytes") is not None:
+            if not _json_int(file_info.get("size_bytes")):
+                issues.append(f"{prefix}_file_size_bytes_not_int")
+        storage_source = file_info.get("storage_source")
+        if "storage_source" in file_info and not isinstance(storage_source, dict):
+            issues.append(f"{prefix}_file_storage_source_not_object")
+
+    playback = item.get("playback")
+    issues.extend(_dict_missing_keys(playback, EXPECTED_MOVIE_RESOURCE_PLAYBACK_KEYS, f"{prefix}_playback"))
+    if isinstance(playback, dict):
+        stream_url = playback.get("stream_url")
+        if "stream_url" in playback and not isinstance(stream_url, str):
+            issues.append(f"{prefix}_playback_stream_url_not_str")
+        elif isinstance(resource_id, str) and isinstance(stream_url, str):
+            expected_stream_path = f"/api/v1/resources/{resource_id}/stream"
+            if expected_stream_path not in stream_url:
+                issues.append(f"{prefix}_playback_stream_url_invalid")
+
+        if "playback_modes" in playback and not isinstance(playback.get("playback_modes"), list):
+            issues.append(f"{prefix}_playback_modes_not_list")
+        if "range_supported" in playback and playback.get("range_supported") not in (True, False):
+            issues.append(f"{prefix}_range_supported_not_bool")
+        for dict_key in ("web_player", "external_player", "subtitles", "cloud_transcode"):
+            if dict_key in playback and not isinstance(playback.get(dict_key), dict):
+                issues.append(f"{prefix}_playback_{dict_key}_not_object")
+        for bool_parent in ("web_player", "external_player"):
+            parent = playback.get(bool_parent)
+            if isinstance(parent, dict) and "supported" in parent and parent.get("supported") not in (True, False):
+                issues.append(f"{prefix}_playback_{bool_parent}_supported_not_bool")
+
+    metadata = item.get("metadata")
+    if "metadata" in item and not isinstance(metadata, dict):
+        issues.append(f"{prefix}_metadata_not_object")
+    elif isinstance(metadata, dict):
+        for key in ("trace", "analysis", "edit_context"):
+            if key in metadata and not isinstance(metadata.get(key), dict):
+                issues.append(f"{prefix}_metadata_{key}_not_object")
+
+    if "user_data" in item and item.get("user_data") is not None and not isinstance(item.get("user_data"), dict):
+        issues.append(f"{prefix}_user_data_not_object")
+    return issues
+
+
+def _movie_playback_source_issues(
+    item: Any,
+    index: int,
+    known_resource_ids: set[str],
+) -> list[str]:
+    prefix = f"playback_source_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_MOVIE_PLAYBACK_SOURCE_KEYS, prefix))
+    if "id" in item and not isinstance(item.get("id"), str):
+        issues.append(f"{prefix}_id_not_str")
+    primary_resource_id = item.get("primary_resource_id")
+    if "primary_resource_id" in item and not isinstance(primary_resource_id, str):
+        issues.append(f"{prefix}_primary_resource_id_not_str")
+
+    resource_ids = item.get("resource_ids")
+    if not isinstance(resource_ids, list):
+        issues.append(f"{prefix}_resource_ids_not_list")
+        resource_ids = []
+    elif not all(isinstance(resource_id, str) for resource_id in resource_ids):
+        issues.append(f"{prefix}_resource_ids_not_str")
+
+    alternate_resource_ids = item.get("alternate_resource_ids")
+    if not isinstance(alternate_resource_ids, list):
+        issues.append(f"{prefix}_alternate_resource_ids_not_list")
+        alternate_resource_ids = []
+    elif not all(isinstance(resource_id, str) for resource_id in alternate_resource_ids):
+        issues.append(f"{prefix}_alternate_resource_ids_not_str")
+
+    if "count" in item and not _json_int(item.get("count")):
+        issues.append(f"{prefix}_count_not_int")
+    elif item.get("count") != len(resource_ids):
+        issues.append(f"{prefix}_count_mismatch={item.get('count')}/{len(resource_ids)}")
+    if "is_duplicate_group" in item and item.get("is_duplicate_group") not in (True, False):
+        issues.append(f"{prefix}_is_duplicate_group_not_bool")
+
+    if isinstance(primary_resource_id, str) and primary_resource_id not in resource_ids:
+        issues.append(f"{prefix}_primary_not_in_resource_ids")
+    if known_resource_ids:
+        unknown_ids = [resource_id for resource_id in resource_ids if resource_id not in known_resource_ids]
+        if unknown_ids:
+            issues.append(f"{prefix}_unknown_resource_ids={','.join(unknown_ids[:3])}")
+
+    for dict_key in ("duplicate_key", "match", "display", "file"):
+        if dict_key in item and not isinstance(item.get(dict_key), dict):
+            issues.append(f"{prefix}_{dict_key}_not_object")
+    source_summary = item.get("source_summary")
+    if "source_summary" in item and not isinstance(source_summary, list):
+        issues.append(f"{prefix}_source_summary_not_list")
+    elif isinstance(source_summary, list):
+        for source_index, source in enumerate(source_summary[:1]):
+            source_prefix = f"{prefix}_source_{source_index}"
+            if not isinstance(source, dict):
+                issues.append(f"{source_prefix}_not_object")
+            elif "id" in source and source.get("id") is not None and not _json_int(source.get("id")):
+                issues.append(f"{source_prefix}_id_not_int")
+    if "user_data" in item and item.get("user_data") is not None and not isinstance(item.get("user_data"), dict):
+        issues.append(f"{prefix}_user_data_not_object")
+    return issues
+
+
+def _movie_resources_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["resources_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_MOVIE_RESOURCES_KEYS, "resources"))
+
+    items = data.get("items")
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    for index, item in enumerate(items[:1]):
+        issues.extend(_movie_resource_item_issues(item, index))
+    known_resource_ids = {
+        item.get("id")
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+
+    groups = data.get("groups")
+    issues.extend(_dict_missing_keys(groups, EXPECTED_MOVIE_RESOURCES_GROUP_KEYS, "groups"))
+    playback_sources = []
+    if isinstance(groups, dict):
+        standalone = groups.get("standalone")
+        if not isinstance(standalone, dict):
+            issues.append("groups_standalone_not_object")
+        else:
+            for key in ("resource_ids", "primary_resource_ids"):
+                if key in standalone and not isinstance(standalone.get(key), list):
+                    issues.append(f"groups_standalone_{key}_not_list")
+            for key in ("count", "playback_source_count", "alternate_resource_count"):
+                if key in standalone and not _json_int(standalone.get(key)):
+                    issues.append(f"groups_standalone_{key}_not_int")
+        if not isinstance(groups.get("seasons"), list):
+            issues.append("groups_seasons_not_list")
+        playback_sources = groups.get("playback_sources")
+        if not isinstance(playback_sources, list):
+            issues.append("groups_playback_sources_not_list")
+            playback_sources = []
+        for index, playback_source in enumerate(playback_sources[:1]):
+            issues.extend(_movie_playback_source_issues(playback_source, index, known_resource_ids))
+
+    summary = data.get("summary")
+    issues.extend(_dict_missing_keys(summary, EXPECTED_MOVIE_RESOURCES_SUMMARY_KEYS, "summary"))
+    if isinstance(summary, dict):
+        for key in (
+            "total_items",
+            "hydrated_item_count",
+            "playback_source_count",
+            "hydrated_playback_source_count",
+            "duplicate_group_count",
+            "alternate_resource_count",
+            "season_count",
+            "standalone_count",
+            "edited_items_count",
+            "season_metadata_count",
+        ):
+            if key in summary and not _json_int(summary.get(key)):
+                issues.append(f"summary_{key}_not_int")
+        for key in ("has_placeholder_metadata", "is_local_only_metadata", "needs_attention"):
+            if key in summary and summary.get(key) not in (True, False):
+                issues.append(f"summary_{key}_not_bool")
+        if "episode_diagnostics" in summary and not isinstance(summary.get("episode_diagnostics"), dict):
+            issues.append("summary_episode_diagnostics_not_object")
+        if "hydrated_item_count" in summary and summary.get("hydrated_item_count") != len(items):
+            issues.append(f"summary_hydrated_item_count_mismatch={summary.get('hydrated_item_count')}/{len(items)}")
+        if "total_items" in summary and _json_int(summary.get("total_items")) and summary["total_items"] > 0 and not items:
+            issues.append("items_empty_with_total")
+        if "hydrated_playback_source_count" in summary and summary.get("hydrated_playback_source_count") != len(playback_sources):
+            issues.append(
+                "summary_hydrated_playback_source_count_mismatch="
+                f"{summary.get('hydrated_playback_source_count')}/{len(playback_sources)}"
+            )
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -1371,6 +1634,57 @@ def check_movie_detail(client: SmokeClient) -> CheckResult:
             "movie_id": movie_id,
             "title": title,
             "actor_count": actor_count,
+            "issues": issues,
+        },
+    )
+
+
+def check_movie_resources(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "movie_resources",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "movie_resources",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/resources")
+    data = _response_data(payload)
+    issues = _movie_resources_payload_issues(data)
+    summary = data.get("summary") if isinstance(data, dict) and isinstance(data.get("summary"), dict) else {}
+    groups = data.get("groups") if isinstance(data, dict) and isinstance(data.get("groups"), dict) else {}
+    playback_sources = groups.get("playback_sources") if isinstance(groups.get("playback_sources"), list) else []
+    items = data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else []
+
+    ok = not issues
+    detail = (
+        f"id={movie_id} items={len(items)} total={summary.get('total_items')} "
+        f"playback_sources={len(playback_sources)}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "movie_resources",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "item_count": len(items),
+            "total": summary.get("total_items"),
+            "playback_source_count": len(playback_sources),
             "issues": issues,
         },
     )
@@ -2097,6 +2411,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
+        CheckSpec("movie_resources", lambda: check_movie_resources(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),

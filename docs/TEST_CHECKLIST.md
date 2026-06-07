@@ -63,6 +63,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
 - smoke check 返回 `OK catalog_movies`，说明主影视列表分页与首条样例关键字段可用
 - smoke check 返回 `OK movie_detail`，说明列表到详情页的只读链路与详情关键字段可用
+- smoke check 返回 `OK movie_resources`，说明详情页资源面板、播放源分组和主资源 ID 可用
 - smoke check 全部返回 `OK`
 
 ### 2.4 公网健康检查
@@ -470,6 +471,7 @@ curl -s "http://127.0.0.1:5004/api/v1/metadata/episode-review-items?page_size=5"
 - smoke check 返回 `OK metadata_review_workbench`，说明复核工作台分类、动作、质量汇总 issue/sample 契约可用
 - smoke check 返回 `OK catalog_movies`，说明普通影视库列表分页、可见性和样例条目关键字段可用
 - smoke check 返回 `OK movie_detail`，说明影视详情页主信息、背景图资产、元数据操作/诊断字段可用
+- smoke check 返回 `OK movie_resources`，说明资源面板 items/groups/summary 与播放源主资源 ID 契约可用
 - smoke check 返回 `OK metadata_work_items_contract`，说明复核工作台列表分页与样例条目关键字段可用
 - smoke check 返回 `OK metadata_reidentify_plan`，说明批量重识别 dry-run 计划和提交 payload 契约可用
 - smoke check 返回 `OK episode_review`，说明剧集复核队列分页、summary 和样例条目关键字段可用
@@ -767,7 +769,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`729 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`730 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

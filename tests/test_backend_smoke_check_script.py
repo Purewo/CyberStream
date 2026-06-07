@@ -454,6 +454,126 @@ class FakeSmokeClient:
                 "metadata_issues": [],
             })
             return {"data": detail}
+        if path == "/api/v1/movies/movie-1/resources":
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": "resource-1",
+                            "resource_info": {
+                                "file": {
+                                    "filename": "Sample.Movie.2024.1080p.mkv",
+                                    "relative_path": "movies/Sample.Movie.2024.1080p.mkv",
+                                    "size_bytes": 123456,
+                                    "storage_source": {
+                                        "id": 1,
+                                        "name": "GuangYaPan",
+                                        "type": "guangyapan",
+                                    },
+                                },
+                                "display": {
+                                    "title": "Sample.Movie.2024.1080p.mkv",
+                                    "label": "Movie - 1080P",
+                                    "season": None,
+                                    "episode": None,
+                                    "has_manual_metadata": False,
+                                },
+                                "technical": {
+                                    "video_resolution_bucket": "1080p",
+                                    "video_codec_code": "h264",
+                                },
+                            },
+                            "playback": {
+                                "stream_url": "/api/v1/resources/resource-1/stream",
+                                "web_player": {
+                                    "supported": True,
+                                    "url": "/api/v1/resources/resource-1/stream",
+                                },
+                                "external_player": {
+                                    "supported": True,
+                                    "url": "/api/v1/resources/resource-1/stream",
+                                },
+                                "subtitles": {
+                                    "items": [],
+                                    "settings": {},
+                                },
+                                "cloud_transcode": {
+                                    "supported": False,
+                                },
+                                "playback_modes": ["redirect"],
+                                "range_supported": True,
+                            },
+                            "metadata": {
+                                "trace": {},
+                                "analysis": {},
+                                "edit_context": {},
+                            },
+                            "user_data": None,
+                        },
+                    ],
+                    "groups": {
+                        "standalone": {
+                            "resource_ids": ["resource-1"],
+                            "primary_resource_ids": ["resource-1"],
+                            "count": 1,
+                            "playback_source_count": 1,
+                            "alternate_resource_count": 0,
+                            "user_data": None,
+                        },
+                        "seasons": [],
+                        "playback_sources": [
+                            {
+                                "id": "ps_resource_1",
+                                "primary_resource_id": "resource-1",
+                                "resource_ids": ["resource-1"],
+                                "alternate_resource_ids": [],
+                                "count": 1,
+                                "is_duplicate_group": False,
+                                "duplicate_key": {},
+                                "match": {},
+                                "display": {
+                                    "title": "Sample.Movie.2024.1080p.mkv",
+                                    "label": "Movie - 1080P",
+                                    "season": None,
+                                    "episode": None,
+                                    "episode_label": None,
+                                },
+                                "file": {
+                                    "filename": "Sample.Movie.2024.1080p.mkv",
+                                    "size_bytes": 123456,
+                                },
+                                "source_summary": [
+                                    {
+                                        "id": 1,
+                                        "name": "GuangYaPan",
+                                        "type": "guangyapan",
+                                    },
+                                ],
+                                "user_data": None,
+                            },
+                        ],
+                    },
+                    "summary": {
+                        "total_items": 1,
+                        "hydrated_item_count": 1,
+                        "selected_season": None,
+                        "playback_source_count": 1,
+                        "hydrated_playback_source_count": 1,
+                        "duplicate_group_count": 0,
+                        "alternate_resource_count": 0,
+                        "season_count": 0,
+                        "standalone_count": 1,
+                        "edited_items_count": 0,
+                        "season_metadata_count": 0,
+                        "episode_diagnostics": {},
+                        "metadata_source_group": "tmdb",
+                        "has_placeholder_metadata": False,
+                        "is_local_only_metadata": False,
+                        "needs_attention": False,
+                        "review_priority": "low",
+                    },
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -794,6 +914,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_review_workbench",
                 "catalog_movies",
                 "movie_detail",
+                "movie_resources",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1216,6 +1337,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         detail = next(item for item in results if item.name == "movie_detail")
         self.assertFalse(detail.ok)
         self.assertIn("detail_missing=metadata_actions", detail.detail)
+
+    def test_movie_resources_fails_when_playback_source_shape_is_broken(self):
+        class BrokenMovieResourcesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1/resources":
+                    del payload["data"]["groups"]["playback_sources"][0]["primary_resource_id"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenMovieResourcesClient):
+            results = self.module.run_checks(self._args())
+
+        resources = next(item for item in results if item.name == "movie_resources")
+        self.assertFalse(resources.ok)
+        self.assertIn("playback_source_0_missing=primary_resource_id", resources.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):
