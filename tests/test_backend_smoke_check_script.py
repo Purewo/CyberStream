@@ -361,6 +361,95 @@ class FakeSmokeClient:
                     "http_status": 200,
                 },
             }
+        if path == "/api/v1/storage/provider-types":
+            return {
+                "data": [
+                    {
+                        "type": "local",
+                        "display_name": "Local Filesystem",
+                        "status": "stable",
+                        "capabilities": {
+                            "preview": True,
+                            "scan": True,
+                            "stream": True,
+                            "ffmpeg_input": True,
+                            "health_check": True,
+                            "credentials_required": False,
+                        },
+                        "config_fields": [
+                            {
+                                "name": "root_path",
+                                "type": "string",
+                                "required": True,
+                                "description": "Local root path",
+                            },
+                        ],
+                    },
+                    {
+                        "type": "alist",
+                        "display_name": "AList",
+                        "status": "stable",
+                        "capabilities": {
+                            "preview": True,
+                            "scan": True,
+                            "refresh": True,
+                            "stream": True,
+                            "ffmpeg_input": True,
+                            "health_check": True,
+                            "credentials_required": True,
+                            "redirect_stream": True,
+                        },
+                        "config_fields": [
+                            {"name": "base_url", "type": "string", "required": False},
+                            {"name": "host", "type": "string", "required": False},
+                            {"name": "root", "type": "string", "required": False},
+                        ],
+                    },
+                    {
+                        "type": "openlist",
+                        "display_name": "OpenList",
+                        "status": "stable",
+                        "capabilities": {
+                            "preview": True,
+                            "scan": True,
+                            "refresh": True,
+                            "stream": True,
+                            "ffmpeg_input": True,
+                            "health_check": True,
+                            "credentials_required": True,
+                            "redirect_stream": True,
+                        },
+                        "config_fields": [
+                            {"name": "base_url", "type": "string", "required": False},
+                            {"name": "host", "type": "string", "required": False},
+                            {"name": "root", "type": "string", "required": False},
+                        ],
+                    },
+                    {
+                        "type": "guangyapan",
+                        "display_name": "GuangYaPan",
+                        "status": "beta",
+                        "capabilities": {
+                            "preview": True,
+                            "scan": True,
+                            "refresh": True,
+                            "stream": True,
+                            "ffmpeg_input": True,
+                            "health_check": True,
+                            "credentials_required": False,
+                            "redirect_stream": True,
+                            "managed": True,
+                            "sms_login": True,
+                        },
+                        "config_fields": [
+                            {"name": "alist_storage_id", "type": "integer", "required": True},
+                            {"name": "mount_path", "type": "string", "required": True},
+                            {"name": "auth_state", "type": "string", "required": False},
+                            {"name": "cloud_root_path", "type": "string", "required": False},
+                        ],
+                    },
+                ],
+            }
         if path == "/api/v1/storage/capabilities":
             return {
                 "data": {
@@ -1501,6 +1590,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_reidentify_plan",
                 "background_jobs",
                 "background_jobs_prune",
+                "storage_provider_types",
                 "storage_capabilities",
                 "storage_sources",
                 "storage_browse",
@@ -2340,6 +2430,26 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         capabilities = next(item for item in results if item.name == "storage_capabilities")
         self.assertFalse(capabilities.ok)
         self.assertIn("missing_expected_types=openlist", capabilities.detail)
+
+    def test_storage_provider_types_fail_when_required_config_field_is_missing(self):
+        class BrokenProviderTypesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/storage/provider-types":
+                    openlist = next(item for item in payload["data"] if item["type"] == "openlist")
+                    openlist["config_fields"] = [
+                        field
+                        for field in openlist["config_fields"]
+                        if field["name"] != "root"
+                    ]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenProviderTypesClient):
+            results = self.module.run_checks(self._args())
+
+        provider_types = next(item for item in results if item.name == "storage_provider_types")
+        self.assertFalse(provider_types.ok)
+        self.assertIn("provider_openlist_missing_config_fields=root", provider_types.detail)
 
     def test_storage_browse_fails_when_dirs_only_returns_file_items(self):
         class BrokenStorageBrowseClient(FakeSmokeClient):

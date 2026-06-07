@@ -385,6 +385,24 @@ EXPECTED_STORAGE_CAPABILITY_TYPES = {
     "openlist",
     "guangyapan",
 }
+EXPECTED_STORAGE_PROVIDER_TYPE_KEYS = [
+    "type",
+    "display_name",
+    "status",
+    "capabilities",
+    "config_fields",
+]
+EXPECTED_STORAGE_PROVIDER_CONFIG_FIELD_KEYS = [
+    "name",
+    "type",
+    "required",
+]
+EXPECTED_STORAGE_PROVIDER_REQUIRED_FIELDS = {
+    "local": {"root_path"},
+    "alist": {"base_url", "host", "root"},
+    "openlist": {"base_url", "host", "root"},
+    "guangyapan": {"alist_storage_id", "mount_path", "auth_state", "cloud_root_path"},
+}
 EXPECTED_CATALOG_FILTER_KEYS = [
     "genres",
     "years",
@@ -3678,6 +3696,108 @@ def _source_actions(source: dict[str, Any]) -> dict[str, Any]:
     return actions if isinstance(actions, dict) else {}
 
 
+def _storage_provider_config_field_issues(field: Any, index: int, provider_label: str) -> list[str]:
+    prefix = f"{provider_label}_field_{index}"
+    if not isinstance(field, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(field, EXPECTED_STORAGE_PROVIDER_CONFIG_FIELD_KEYS, prefix))
+    for key in ("name", "type"):
+        if key in field and not isinstance(field.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "required" in field and field.get("required") not in (True, False):
+        issues.append(f"{prefix}_required_not_bool")
+    if "description" in field and not isinstance(field.get("description"), str):
+        issues.append(f"{prefix}_description_not_str")
+    return issues
+
+
+def _storage_provider_type_issues(provider: Any, index: int) -> list[str]:
+    prefix = f"provider_{index}"
+    if not isinstance(provider, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(provider, EXPECTED_STORAGE_PROVIDER_TYPE_KEYS, prefix))
+    provider_type = provider.get("type")
+    provider_type_key = provider_type if isinstance(provider_type, str) else ""
+    provider_label = provider_type_key if provider_type_key else prefix
+
+    for key in ("type", "display_name", "status"):
+        if key in provider and not isinstance(provider.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+
+    capabilities = provider.get("capabilities")
+    if not isinstance(capabilities, dict):
+        issues.append(f"{provider_label}_capabilities_not_object")
+    else:
+        for key, value in capabilities.items():
+            if not isinstance(key, str):
+                issues.append(f"{provider_label}_capability_key_not_str")
+            if value not in (True, False):
+                issues.append(f"{provider_label}_capability_{key}_not_bool")
+
+    config_fields = provider.get("config_fields")
+    if not isinstance(config_fields, list):
+        issues.append(f"{provider_label}_config_fields_not_list")
+        config_fields = []
+
+    field_names = {
+        field.get("name")
+        for field in config_fields
+        if isinstance(field, dict) and isinstance(field.get("name"), str)
+    }
+    required_fields = EXPECTED_STORAGE_PROVIDER_REQUIRED_FIELDS.get(provider_type_key, set())
+    missing_fields = sorted(required_fields - field_names)
+    if missing_fields:
+        issues.append(f"provider_{provider_label}_missing_config_fields={','.join(missing_fields)}")
+
+    for field_index, field in enumerate(config_fields):
+        issues.extend(_storage_provider_config_field_issues(field, field_index, provider_label))
+    return issues
+
+
+def check_storage_provider_types(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/storage/provider-types")
+    data = payload.get("data")
+    issues = []
+    if not isinstance(data, list):
+        issues.append("provider_types_not_list")
+        providers = []
+    else:
+        providers = data
+
+    provider_types = {
+        provider.get("type")
+        for provider in providers
+        if isinstance(provider, dict) and isinstance(provider.get("type"), str)
+    }
+    missing_expected = sorted(EXPECTED_STORAGE_PROVIDER_REQUIRED_FIELDS.keys() - provider_types)
+    if missing_expected:
+        issues.append(f"missing_expected_types={','.join(missing_expected)}")
+
+    for index, provider in enumerate(providers):
+        issues.extend(_storage_provider_type_issues(provider, index))
+
+    ok = not issues
+    detail = (
+        f"providers={len(providers)} "
+        f"expected={','.join(sorted(EXPECTED_STORAGE_PROVIDER_REQUIRED_FIELDS.keys()))}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "storage_provider_types",
+        ok,
+        detail,
+        {
+            "provider_types": sorted(provider_types),
+            "issues": issues,
+        },
+    )
+
+
 def _storage_capability_item_issues(item: Any, index: int) -> list[str]:
     prefix = f"capability_{index}"
     if not isinstance(item, dict):
@@ -4341,6 +4461,7 @@ def run_checks(args) -> list[CheckResult]:
             "background_jobs_prune",
             lambda: check_background_jobs_prune(client),
         ),
+        CheckSpec("storage_provider_types", lambda: check_storage_provider_types(client)),
         CheckSpec("storage_capabilities", lambda: check_storage_capabilities(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
         CheckSpec("storage_browse", lambda: check_storage_browse(client)),
