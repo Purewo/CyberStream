@@ -70,6 +70,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK homepage`，说明首页 hero 与 sections 聚合契约可用
 - smoke check 返回 `OK recommendations`，说明发现页推荐流和推荐理由契约可用
 - smoke check 返回 `OK movie_context_recommendations`，说明详情页/播放页单片相关推荐契约可用
+- smoke check 返回 `OK user_history`，说明历史列表分页和播放进度上下文契约可用
 - smoke check 全部返回 `OK`
 
 ### 2.4 公网健康检查
@@ -761,6 +762,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 预期：
 - 能看到对应记录
 - `device_name`、`progress` 字段正常
+- smoke check 返回 `OK user_history`，说明历史条目不回传 `is_played`
 
 ---
 
@@ -780,7 +782,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`737 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`738 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

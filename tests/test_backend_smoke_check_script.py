@@ -701,6 +701,47 @@ class FakeSmokeClient:
                 "strategy": "context",
             }
             return {"data": [item]}
+        if path == "/api/v1/user/history":
+            movie = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)["data"]["items"][0].copy()
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 1,
+                            "resource_id": "resource-1",
+                            "last_played_at": "2026-06-07T00:00:02",
+                            "season": None,
+                            "episode": None,
+                            "episode_label": "Movie",
+                            "label": "Movie",
+                            "filename": "Sample.Movie.2024.1080p.mkv",
+                            "progress": 120,
+                            "duration": 600,
+                            "position_sec": 120,
+                            "duration_sec": 600,
+                            "progress_ratio": 0.2,
+                            "progress_percent": 20.0,
+                            "poster_url": "https://example.test/poster.jpg",
+                            "poster_source": "movie_fallback",
+                            "season_poster_url": None,
+                            "series_poster_url": "https://example.test/poster.jpg",
+                            "season_title": None,
+                            "season_display_title": None,
+                            "last_watched": "2026-06-07T00:00:02",
+                            "view_count": 1,
+                            "device_id": "test-device",
+                            "device_name": "Test Device",
+                            "movie": movie,
+                        },
+                    ],
+                    "pagination": {
+                        "current_page": 1,
+                        "page_size": 1,
+                        "total_items": 1,
+                        "total_pages": 1,
+                    },
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -1048,6 +1089,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "homepage",
                 "recommendations",
                 "movie_context_recommendations",
+                "user_history",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1590,6 +1632,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         context = next(item for item in results if item.name == "movie_context_recommendations")
         self.assertFalse(context.ok)
         self.assertIn("item_0_is_anchor=movie-1", context.detail)
+
+    def test_user_history_fails_when_is_played_leaks_back(self):
+        class BrokenUserHistoryClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/user/history":
+                    payload["data"]["items"][0]["is_played"] = True
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenUserHistoryClient):
+            results = self.module.run_checks(self._args())
+
+        history = next(item for item in results if item.name == "user_history")
+        self.assertFalse(history.ok)
+        self.assertIn("history_0_has_is_played", history.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):

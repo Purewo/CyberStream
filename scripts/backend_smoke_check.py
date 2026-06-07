@@ -345,6 +345,23 @@ EXPECTED_RECOMMENDATION_SIGNAL_KEYS = [
     "quality_badge",
     "resource_count",
 ]
+EXPECTED_USER_HISTORY_KEYS = [
+    "id",
+    "resource_id",
+    "last_played_at",
+    "progress",
+    "duration",
+    "position_sec",
+    "duration_sec",
+    "progress_ratio",
+    "progress_percent",
+    "last_watched",
+    "view_count",
+    "device_id",
+    "device_name",
+    "movie",
+    "filename",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -1652,6 +1669,71 @@ def _recommendation_item_issues(item: Any, index: int, expected_strategy: str) -
     return issues
 
 
+def _user_history_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"history_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_USER_HISTORY_KEYS, prefix))
+    if "is_played" in item:
+        issues.append(f"{prefix}_has_is_played")
+    for key in ("id", "progress", "duration", "position_sec", "duration_sec", "view_count"):
+        if key in item and not _json_int(item.get(key)):
+            issues.append(f"{prefix}_{key}_not_int")
+    for key in (
+        "resource_id",
+        "last_played_at",
+        "last_watched",
+        "device_id",
+        "device_name",
+        "filename",
+        "label",
+        "episode_label",
+        "poster_url",
+        "poster_source",
+        "season_poster_url",
+        "series_poster_url",
+        "season_title",
+        "season_display_title",
+    ):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in ("season", "episode"):
+        if key in item and item.get(key) is not None and not _json_int(item.get(key)):
+            issues.append(f"{prefix}_{key}_not_int")
+    for key in ("progress_ratio", "progress_percent"):
+        if key in item and item.get(key) is not None:
+            value = item.get(key)
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                issues.append(f"{prefix}_{key}_not_number")
+    if (
+        _json_int(item.get("progress"))
+        and _json_int(item.get("position_sec"))
+        and item.get("progress") != item.get("position_sec")
+    ):
+        issues.append(f"{prefix}_progress_position_mismatch={item.get('progress')}/{item.get('position_sec')}")
+    if (
+        _json_int(item.get("duration"))
+        and _json_int(item.get("duration_sec"))
+        and item.get("duration") != item.get("duration_sec")
+    ):
+        issues.append(f"{prefix}_duration_mismatch={item.get('duration')}/{item.get('duration_sec')}")
+    progress_ratio = item.get("progress_ratio")
+    if isinstance(progress_ratio, (int, float)) and not isinstance(progress_ratio, bool):
+        if progress_ratio < 0 or progress_ratio > 1:
+            issues.append(f"{prefix}_progress_ratio_out_of_range={progress_ratio}")
+
+    movie = item.get("movie")
+    if not isinstance(movie, dict):
+        issues.append(f"{prefix}_movie_not_object")
+    else:
+        if "is_played" in movie:
+            issues.append(f"{prefix}_movie_has_is_played")
+        issues.extend(f"{prefix}_movie_{issue}" for issue in _catalog_movie_item_issues(movie, index))
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -2228,6 +2310,54 @@ def check_movie_context_recommendations(client: SmokeClient) -> CheckResult:
             "strategy": strategy,
             "sample_title": sample_title,
             "sample_primary_reason": primary_reason_code,
+            "issues": issues,
+        },
+    )
+
+
+def check_user_history(client: SmokeClient) -> CheckResult:
+    page_size = 1
+    payload = client.get_json("/api/v1/user/history", {"page": 1, "page_size": page_size})
+    data = _response_data(payload)
+    issues = []
+
+    if not isinstance(data, dict):
+        issues.append("history_not_object")
+        items = []
+        pagination = None
+    else:
+        items = data.get("items")
+        pagination = data.get("pagination")
+        if not isinstance(items, list):
+            issues.append("history_items_not_list")
+            items = []
+        issues.extend(_pagination_contract_issues(pagination, expected_page_size=page_size))
+
+    total = pagination.get("total_items") if isinstance(pagination, dict) else None
+    page_size_value = pagination.get("page_size") if isinstance(pagination, dict) else None
+    if _json_int(total) and total > 0 and not items:
+        issues.append("history_items_empty_with_total")
+    for index, item in enumerate(items[:1]):
+        issues.extend(_user_history_item_issues(item, index))
+
+    ok = not issues
+    sample = items[0] if items and isinstance(items[0], dict) else None
+    movie = sample.get("movie") if sample and isinstance(sample.get("movie"), dict) else None
+    sample_title = movie.get("title") if movie else None
+    detail = f"items={len(items)} total={total} page_size={page_size_value}"
+    if sample_title:
+        detail = f"{detail} sample={sample_title}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "user_history",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "total": total,
+            "page_size": page_size_value,
+            "sample_title": sample_title,
             "issues": issues,
         },
     )
@@ -2961,6 +3091,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("homepage", lambda: check_homepage(client)),
         CheckSpec("recommendations", lambda: check_recommendations(client)),
         CheckSpec("movie_context_recommendations", lambda: check_movie_context_recommendations(client)),
+        CheckSpec("user_history", lambda: check_user_history(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),
