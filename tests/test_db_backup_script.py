@@ -131,6 +131,18 @@ class DbBackupScriptTests(unittest.TestCase):
         backups = list(self._backup_dir().glob("*.db"))
         self.assertGreaterEqual(len(backups), 2)
 
+    def test_restore_rejects_current_database_as_backup_source(self):
+        self._write_value("before")
+        tmp_path = self._db_path().with_suffix(self._db_path().suffix + ".restore_tmp")
+
+        with self.assertRaises(SystemExit) as context:
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                self.module._restore(self._db_path(), self._db_path(), self._backup_dir(), yes=True)
+
+        self.assertIn("backup path must be different", str(context.exception))
+        self.assertEqual("before", self._read_value())
+        self.assertFalse(tmp_path.exists())
+
     def test_restore_rejects_corrupt_backup_before_replacing_database(self):
         self._write_value("before")
         self._backup_dir().mkdir(parents=True, exist_ok=True)

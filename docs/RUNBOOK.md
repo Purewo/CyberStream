@@ -138,7 +138,7 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 ./scripts/db_backup.py restore backups/<backup-file>.db --yes
 ```
 
-手工 `verify` 用于恢复前提前确认目标文件；`restore --yes` 也会自动执行同样的校验，校验失败时不会替换当前数据库。
+手工 `verify` 用于恢复前提前确认目标文件；`restore --yes` 也会自动执行同样的校验，校验失败时不会替换当前数据库。恢复源必须是不同于当前数据库路径的备份文件，不能直接把当前数据库路径作为恢复源。
 
 ### 4.2 启用用户管理
 

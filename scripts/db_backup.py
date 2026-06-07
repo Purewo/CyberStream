@@ -105,6 +105,8 @@ def _restore(db_path: Path, backup_path: Path, backup_dir: Path, yes: bool):
         raise SystemExit("restore is destructive; rerun with --yes after verifying the backup path")
     if not backup_path.exists():
         raise SystemExit(f"backup not found: {backup_path}")
+    if backup_path.resolve() == db_path.resolve():
+        raise SystemExit("backup path must be different from the target database path")
 
     _verify(backup_path)
 
