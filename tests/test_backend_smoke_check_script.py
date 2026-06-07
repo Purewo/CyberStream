@@ -413,6 +413,47 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/movies/movie-1":
+            base_payload = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)
+            base_movie = base_payload["data"]["items"][0]
+            detail = base_movie.copy()
+            detail.update({
+                "original_title": "Sample Movie",
+                "overview": "A sample movie for smoke tests.",
+                "backdrop_url": "https://example.test/backdrop.jpg",
+                "backdrop_asset_url": "/api/v1/movies/movie-1/images/backdrop",
+                "backdrop_asset_urls": {
+                    "kind": "backdrop",
+                    "primary_url": "/api/v1/movies/movie-1/images/backdrop",
+                    "fallback_urls": ["https://example.test/backdrop.jpg"],
+                },
+                "backdrop_asset_fallback_urls": ["https://example.test/backdrop.jpg"],
+                "backdrop_source_info": {
+                    "kind": "backdrop",
+                    "provider": "tmdb",
+                    "source_type": "external_metadata",
+                },
+                "director": "Sample Director",
+                "actors": [
+                    {
+                        "name": "Sample Actor",
+                        "role": "Actor",
+                        "avatar": "",
+                    },
+                ],
+                "metadata_locked_fields": [],
+                "metadata_actions": {
+                    "can_manual_match": True,
+                    "can_refresh": True,
+                    "can_re_scrape": True,
+                    "primary_action": "refresh_metadata",
+                },
+                "metadata_diagnostics": {
+                    "resource_count": 1,
+                },
+                "metadata_issues": [],
+            })
+            return {"data": detail}
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -752,6 +793,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_providers",
                 "metadata_review_workbench",
                 "catalog_movies",
+                "movie_detail",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1159,6 +1201,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         catalog = next(item for item in results if item.name == "catalog_movies")
         self.assertFalse(catalog.ok)
         self.assertIn("item_0_missing=metadata_state", catalog.detail)
+
+    def test_movie_detail_fails_when_detail_shape_is_broken(self):
+        class BrokenMovieDetailClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1":
+                    del payload["data"]["metadata_actions"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenMovieDetailClient):
+            results = self.module.run_checks(self._args())
+
+        detail = next(item for item in results if item.name == "movie_detail")
+        self.assertFalse(detail.ok)
+        self.assertIn("detail_missing=metadata_actions", detail.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):

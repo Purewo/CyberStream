@@ -213,6 +213,21 @@ EXPECTED_CATALOG_MOVIE_ITEM_KEYS = [
     "has_multi_season_content",
     "user_data",
 ]
+EXPECTED_MOVIE_DETAIL_KEYS = [
+    "original_title",
+    "overview",
+    "backdrop_url",
+    "backdrop_asset_url",
+    "backdrop_asset_urls",
+    "backdrop_asset_fallback_urls",
+    "backdrop_source_info",
+    "director",
+    "actors",
+    "metadata_locked_fields",
+    "metadata_actions",
+    "metadata_diagnostics",
+    "metadata_issues",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -1004,6 +1019,68 @@ def _catalog_movie_item_issues(item: Any, index: int) -> list[str]:
     return issues
 
 
+def _movie_detail_issues(item: Any, expected_id: str) -> list[str]:
+    if not isinstance(item, dict):
+        return ["detail_not_object"]
+
+    issues = _catalog_movie_item_issues(item, 0)
+    missing = [key for key in EXPECTED_MOVIE_DETAIL_KEYS if key not in item]
+    if missing:
+        issues.append(f"detail_missing={','.join(missing)}")
+
+    if item.get("id") != expected_id:
+        issues.append(f"id_mismatch={item.get('id')}/{expected_id}")
+    if "resources" in item:
+        issues.append("resources_embedded")
+
+    for nullable_str_key in (
+        "original_title",
+        "overview",
+        "backdrop_url",
+        "backdrop_asset_url",
+        "director",
+    ):
+        if nullable_str_key in item and item.get(nullable_str_key) is not None:
+            if not isinstance(item.get(nullable_str_key), str):
+                issues.append(f"detail_{nullable_str_key}_not_str")
+
+    for list_key in (
+        "actors",
+        "backdrop_asset_fallback_urls",
+        "metadata_locked_fields",
+        "metadata_issues",
+    ):
+        if list_key in item and not isinstance(item.get(list_key), list):
+            issues.append(f"detail_{list_key}_not_list")
+
+    for dict_key in (
+        "backdrop_asset_urls",
+        "backdrop_source_info",
+        "metadata_actions",
+        "metadata_diagnostics",
+    ):
+        if dict_key in item and not isinstance(item.get(dict_key), dict):
+            issues.append(f"detail_{dict_key}_not_object")
+
+    if isinstance(item.get("actors"), list):
+        for index, actor in enumerate(item["actors"][:1]):
+            prefix = f"actor_{index}"
+            issues.extend(_dict_missing_keys(actor, ["name", "role", "avatar"], prefix))
+            if isinstance(actor, dict):
+                for key in ("name", "role", "avatar"):
+                    if key in actor and not isinstance(actor.get(key), str):
+                        issues.append(f"{prefix}_{key}_not_str")
+
+    issues.extend(
+        _dict_missing_keys(
+            item.get("metadata_actions"),
+            EXPECTED_METADATA_ACTION_KEYS,
+            "detail_metadata_actions",
+        )
+    )
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -1249,6 +1326,51 @@ def check_catalog_movies(client: SmokeClient) -> CheckResult:
             "item_count": len(items),
             "total": total,
             "sample_title": sample_title,
+            "issues": issues,
+        },
+    )
+
+
+def check_movie_detail(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "movie_detail",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "movie_detail",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}")
+    data = _response_data(payload)
+    issues = _movie_detail_issues(data, movie_id)
+
+    ok = not issues
+    title = data.get("title") if isinstance(data, dict) else None
+    actor_count = len(data.get("actors") or []) if isinstance(data.get("actors"), list) else 0
+    detail = f"id={movie_id} title={title} actors={actor_count}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "movie_detail",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "title": title,
+            "actor_count": actor_count,
             "issues": issues,
         },
     )
@@ -1974,6 +2096,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
+        CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),
