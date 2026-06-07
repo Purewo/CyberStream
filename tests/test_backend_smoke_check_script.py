@@ -670,6 +670,19 @@ class FakeSmokeClient:
                                     "items": [],
                                     "settings": {},
                                 },
+                                "cloud_transcode": {
+                                    "supported": False,
+                                    "provider": None,
+                                    "provider_name": None,
+                                    "mode": None,
+                                    "qualities_endpoint": None,
+                                    "stream_endpoint": None,
+                                    "resolution_param": "resolution",
+                                    "available_resolutions": [],
+                                    "recommended_for": [],
+                                    "quality_semantics": None,
+                                    "reason": "provider_not_supported",
+                                },
                             },
                             "metadata": {
                                 "trace": {},
@@ -929,6 +942,16 @@ class FakeSmokeClient:
                                 },
                                 "cloud_transcode": {
                                     "supported": False,
+                                    "provider": None,
+                                    "provider_name": None,
+                                    "mode": None,
+                                    "qualities_endpoint": None,
+                                    "stream_endpoint": None,
+                                    "resolution_param": "resolution",
+                                    "available_resolutions": [],
+                                    "recommended_for": [],
+                                    "quality_semantics": None,
+                                    "reason": "provider_not_supported",
                                 },
                                 "playback_modes": ["redirect"],
                                 "range_supported": True,
@@ -2166,6 +2189,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         resources = next(item for item in results if item.name == "movie_resources")
         self.assertFalse(resources.ok)
         self.assertIn("playback_source_0_missing=primary_resource_id", resources.detail)
+
+    def test_movie_resources_fails_when_cloud_transcode_shape_is_broken(self):
+        class BrokenMovieResourcesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1/resources":
+                    payload["data"]["items"][0]["playback"]["cloud_transcode"]["reason"] = False
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenMovieResourcesClient):
+            results = self.module.run_checks(self._args())
+
+        resources = next(item for item in results if item.name == "movie_resources")
+        self.assertFalse(resources.ok)
+        self.assertIn("resource_0_playback_cloud_transcode_reason_not_str", resources.detail)
 
     def test_featured_fails_when_detail_shape_is_broken(self):
         class BrokenFeaturedClient(FakeSmokeClient):

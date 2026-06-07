@@ -274,6 +274,20 @@ EXPECTED_MOVIE_RESOURCE_PLAYBACK_KEYS = [
     "web_player",
     "external_player",
     "subtitles",
+    "cloud_transcode",
+]
+EXPECTED_MOVIE_RESOURCE_CLOUD_TRANSCODE_KEYS = [
+    "supported",
+    "provider",
+    "provider_name",
+    "mode",
+    "qualities_endpoint",
+    "stream_endpoint",
+    "resolution_param",
+    "available_resolutions",
+    "recommended_for",
+    "quality_semantics",
+    "reason",
 ]
 EXPECTED_MOVIE_PLAYBACK_SOURCE_KEYS = [
     "id",
@@ -1555,6 +1569,63 @@ def _movie_detail_issues(item: Any, expected_id: str) -> list[str]:
     return issues
 
 
+def _movie_resource_cloud_transcode_issues(data: Any, prefix: str, resource_id: str | None = None) -> list[str]:
+    if not isinstance(data, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_MOVIE_RESOURCE_CLOUD_TRANSCODE_KEYS, prefix))
+    if "supported" in data and data.get("supported") not in (True, False):
+        issues.append(f"{prefix}_supported_not_bool")
+    for key in (
+        "provider",
+        "provider_name",
+        "mode",
+        "qualities_endpoint",
+        "stream_endpoint",
+        "resolution_param",
+        "quality_semantics",
+        "reason",
+    ):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "available_resolutions" in data:
+        resolutions = data.get("available_resolutions")
+        if not isinstance(resolutions, list):
+            issues.append(f"{prefix}_available_resolutions_not_list")
+        elif not all(isinstance(value, str) for value in resolutions):
+            issues.append(f"{prefix}_available_resolutions_not_str")
+    if "recommended_for" in data:
+        recommended_for = data.get("recommended_for")
+        if not isinstance(recommended_for, list):
+            issues.append(f"{prefix}_recommended_for_not_list")
+        elif not all(isinstance(value, str) for value in recommended_for):
+            issues.append(f"{prefix}_recommended_for_not_str")
+    if data.get("resolution_param") != "resolution":
+        issues.append(f"{prefix}_resolution_param={data.get('resolution_param')}")
+
+    supported = data.get("supported")
+    qualities_endpoint = data.get("qualities_endpoint")
+    stream_endpoint = data.get("stream_endpoint")
+    reason = data.get("reason")
+    if supported is True:
+        if not isinstance(qualities_endpoint, str) or "/streaming-qualities" not in qualities_endpoint:
+            issues.append(f"{prefix}_qualities_endpoint_invalid")
+        if not isinstance(stream_endpoint, str) or "/stream-transcoded" not in stream_endpoint:
+            issues.append(f"{prefix}_stream_endpoint_invalid")
+        if resource_id:
+            expected_qualities_path = f"/api/v1/resources/{resource_id}/streaming-qualities"
+            expected_stream_path = f"/api/v1/resources/{resource_id}/stream-transcoded"
+            if isinstance(qualities_endpoint, str) and expected_qualities_path not in qualities_endpoint:
+                issues.append(f"{prefix}_qualities_endpoint_resource_mismatch")
+            if isinstance(stream_endpoint, str) and expected_stream_path not in stream_endpoint:
+                issues.append(f"{prefix}_stream_endpoint_resource_mismatch")
+    elif supported is False:
+        if not isinstance(reason, str) or not reason:
+            issues.append(f"{prefix}_unsupported_reason_missing")
+    return issues
+
+
 def _movie_resource_item_issues(item: Any, index: int) -> list[str]:
     prefix = f"resource_{index}"
     if not isinstance(item, dict):
@@ -1604,6 +1675,12 @@ def _movie_resource_item_issues(item: Any, index: int) -> list[str]:
             parent = playback.get(bool_parent)
             if isinstance(parent, dict) and "supported" in parent and parent.get("supported") not in (True, False):
                 issues.append(f"{prefix}_playback_{bool_parent}_supported_not_bool")
+        if "cloud_transcode" in playback:
+            issues.extend(_movie_resource_cloud_transcode_issues(
+                playback.get("cloud_transcode"),
+                f"{prefix}_playback_cloud_transcode",
+                resource_id if isinstance(resource_id, str) else None,
+            ))
 
     metadata = item.get("metadata")
     if "metadata" in item and not isinstance(metadata, dict):
@@ -2222,9 +2299,15 @@ def _other_video_item_issues(item: Any, index: int) -> list[str]:
     playback = item.get("playback")
     issues.extend(_dict_missing_keys(playback, EXPECTED_MOVIE_RESOURCE_PLAYBACK_KEYS, f"{prefix}_playback"))
     if isinstance(playback, dict):
-        for key in ("web_player", "external_player", "subtitles"):
+        for key in ("web_player", "external_player", "subtitles", "cloud_transcode"):
             if key in playback and not isinstance(playback.get(key), dict):
                 issues.append(f"{prefix}_playback_{key}_not_object")
+        if "cloud_transcode" in playback:
+            issues.extend(_movie_resource_cloud_transcode_issues(
+                playback.get("cloud_transcode"),
+                f"{prefix}_playback_cloud_transcode",
+                item.get("resource_id") if isinstance(item.get("resource_id"), str) else None,
+            ))
 
     match_context = item.get("metadata_match_context")
     issues.extend(_dict_missing_keys(match_context, EXPECTED_OTHER_VIDEO_MATCH_CONTEXT_KEYS, f"{prefix}_match_context"))
