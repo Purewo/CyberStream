@@ -70,7 +70,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
   --tmdb-token-check
 ```
 
-该检查会验证 `GET /api/v1/auth/me` 的启动认证态契约，逐个拉取 `GET /api/v1/openapi/modules/<module_key>.json`，验证详情页播放资源的云转码能力声明、存储 provider 类型、挂载表单字段和协议能力矩阵，并调用 `GET /api/v1/storage/sources/<id>/health` 和 `GET /api/v1/system/tmdb-config/check`。`--min-storage-health-checks 1` 用于防止实际没有检查到资源型挂载时误判通过；TMDB 检查不返回 token 明文。
+该检查会验证 `GET /api/v1/auth/me` 的启动认证态契约，逐个拉取 `GET /api/v1/openapi/modules/<module_key>.json`，验证详情页图片缓存状态、播放资源的云转码能力声明、存储 provider 类型、挂载表单字段和协议能力矩阵，并调用 `GET /api/v1/storage/sources/<id>/health` 和 `GET /api/v1/system/tmdb-config/check`。`--min-storage-health-checks 1` 用于防止实际没有检查到资源型挂载时误判通过；TMDB 检查不返回 token 明文。
 
 如果已设置 `CYBER_API_TOKEN`，管理类接口和 smoke check 需要携带 token。`backend_smoke_check.py` 会自动读取 `CYBER_BACKEND_SMOKE_API_TOKEN` 或 `CYBER_API_TOKEN`，也可以显式传参：
 

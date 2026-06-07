@@ -228,6 +228,71 @@ EXPECTED_MOVIE_DETAIL_KEYS = [
     "metadata_diagnostics",
     "metadata_issues",
 ]
+EXPECTED_MOVIE_IMAGE_STATUS_KEYS = [
+    "movie_id",
+    "title",
+    "items",
+    "summary",
+]
+EXPECTED_MOVIE_IMAGE_STATUS_ITEM_KEYS = [
+    "kind",
+    "asset_url",
+    "asset_urls",
+    "fallback_urls",
+    "source_url",
+    "source_info",
+    "has_source",
+    "source_valid",
+    "source_error",
+    "cached",
+    "cache_state",
+    "source_changed",
+    "cache",
+    "cdn",
+]
+EXPECTED_MOVIE_IMAGE_ASSET_URLS_KEYS = [
+    "kind",
+    "strategy",
+    "primary_url",
+    "url",
+    "cdn_url",
+    "local_url",
+    "original_url",
+    "fallback_urls",
+    "source",
+]
+EXPECTED_MOVIE_IMAGE_SOURCE_INFO_KEYS = [
+    "kind",
+    "field",
+    "public_field",
+    "source_url",
+    "has_source",
+    "source_type",
+    "provider",
+    "provider_label",
+    "scraper_source",
+    "metadata_source_group",
+    "metadata_source_label",
+    "locked",
+    "confidence",
+    "evidence",
+]
+EXPECTED_MOVIE_IMAGE_STATUS_SUMMARY_KEYS = [
+    "total",
+    "cached",
+    "missing",
+    "missing_source",
+    "invalid_source",
+    "stale_source",
+]
+EXPECTED_MOVIE_IMAGE_KINDS = {"poster", "backdrop"}
+EXPECTED_MOVIE_IMAGE_CACHE_STATES = {
+    "cached",
+    "missing",
+    "missing_source",
+    "invalid_source",
+    "stale_source",
+}
 EXPECTED_MOVIE_RESOURCES_KEYS = [
     "items",
     "groups",
@@ -1567,6 +1632,198 @@ def _movie_detail_issues(item: Any, expected_id: str) -> list[str]:
         )
     )
     return issues
+
+
+def _movie_image_asset_urls_issues(data: Any, prefix: str, expected_kind: str = "") -> list[str]:
+    if not isinstance(data, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_MOVIE_IMAGE_ASSET_URLS_KEYS, prefix))
+    if expected_kind and data.get("kind") != expected_kind:
+        issues.append(f"{prefix}_kind={data.get('kind')}")
+    for key in ("kind", "strategy", "source"):
+        if key in data and not isinstance(data.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in ("primary_url", "url", "cdn_url", "local_url", "original_url"):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "fallback_urls" in data:
+        fallback_urls = data.get("fallback_urls")
+        if not isinstance(fallback_urls, list):
+            issues.append(f"{prefix}_fallback_urls_not_list")
+        elif not all(isinstance(url, str) for url in fallback_urls):
+            issues.append(f"{prefix}_fallback_urls_not_str")
+    return issues
+
+
+def _movie_image_source_info_issues(data: Any, prefix: str, expected_kind: str = "") -> list[str]:
+    if not isinstance(data, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_MOVIE_IMAGE_SOURCE_INFO_KEYS, prefix))
+    if expected_kind and data.get("kind") != expected_kind:
+        issues.append(f"{prefix}_kind={data.get('kind')}")
+    for key in (
+        "kind",
+        "field",
+        "public_field",
+        "source_url",
+        "source_type",
+        "provider",
+        "provider_label",
+        "scraper_source",
+        "metadata_source_group",
+        "metadata_source_label",
+        "confidence",
+    ):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in ("has_source", "locked"):
+        if key in data and data.get(key) not in (True, False):
+            issues.append(f"{prefix}_{key}_not_bool")
+    if "evidence" in data:
+        evidence = data.get("evidence")
+        if not isinstance(evidence, list):
+            issues.append(f"{prefix}_evidence_not_list")
+        elif not all(isinstance(item, str) for item in evidence):
+            issues.append(f"{prefix}_evidence_not_str")
+    return issues
+
+
+def _movie_image_status_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"image_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_MOVIE_IMAGE_STATUS_ITEM_KEYS, prefix))
+    kind = item.get("kind")
+    if "kind" in item and kind not in EXPECTED_MOVIE_IMAGE_KINDS:
+        issues.append(f"{prefix}_kind={kind}")
+    for key in ("asset_url", "source_url", "cache_state"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in ("has_source", "source_valid", "cached", "source_changed"):
+        if key in item and item.get(key) not in (True, False):
+            issues.append(f"{prefix}_{key}_not_bool")
+    if isinstance(item.get("cache_state"), str) and item.get("cache_state") not in EXPECTED_MOVIE_IMAGE_CACHE_STATES:
+        issues.append(f"{prefix}_cache_state={item.get('cache_state')}")
+    if "fallback_urls" in item:
+        fallback_urls = item.get("fallback_urls")
+        if not isinstance(fallback_urls, list):
+            issues.append(f"{prefix}_fallback_urls_not_list")
+        elif not all(isinstance(url, str) for url in fallback_urls):
+            issues.append(f"{prefix}_fallback_urls_not_str")
+    for nullable_dict_key in ("source_error", "cache", "cdn"):
+        if (
+            nullable_dict_key in item
+            and item.get(nullable_dict_key) is not None
+            and not isinstance(item.get(nullable_dict_key), dict)
+        ):
+            issues.append(f"{prefix}_{nullable_dict_key}_not_object")
+    issues.extend(_movie_image_asset_urls_issues(
+        item.get("asset_urls"),
+        f"{prefix}_asset_urls",
+        kind if isinstance(kind, str) else "",
+    ))
+    issues.extend(_movie_image_source_info_issues(
+        item.get("source_info"),
+        f"{prefix}_source_info",
+        kind if isinstance(kind, str) else "",
+    ))
+    return issues
+
+
+def _movie_images_status_payload_issues(data: Any, expected_movie_id: str) -> list[str]:
+    if not isinstance(data, dict):
+        return ["movie_images_status_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_MOVIE_IMAGE_STATUS_KEYS, "movie_images_status"))
+    if data.get("movie_id") != expected_movie_id:
+        issues.append(f"movie_images_status_movie_id={data.get('movie_id')}")
+    if "title" in data and data.get("title") is not None and not isinstance(data.get("title"), str):
+        issues.append("movie_images_status_title_not_str")
+
+    items = data.get("items")
+    if not isinstance(items, list):
+        issues.append("movie_images_status_items_not_list")
+        items = []
+    item_kinds = {
+        item.get("kind")
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("kind"), str)
+    }
+    missing_kinds = sorted(EXPECTED_MOVIE_IMAGE_KINDS - item_kinds)
+    if missing_kinds:
+        issues.append(f"movie_images_status_missing_kinds={','.join(missing_kinds)}")
+    for index, item in enumerate(items):
+        issues.extend(_movie_image_status_item_issues(item, index))
+
+    summary = data.get("summary")
+    issues.extend(_dict_missing_keys(summary, EXPECTED_MOVIE_IMAGE_STATUS_SUMMARY_KEYS, "image_summary"))
+    if isinstance(summary, dict):
+        for key in EXPECTED_MOVIE_IMAGE_STATUS_SUMMARY_KEYS:
+            if key in summary and not _json_int(summary.get(key)):
+                issues.append(f"image_summary_{key}_not_int")
+        if summary.get("total") != len(items):
+            issues.append(f"image_summary_total_mismatch={summary.get('total')}/{len(items)}")
+    return issues
+
+
+def check_movie_images_status(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "movie_images_status",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "movie_images_status",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/images/status")
+    data = _response_data(payload)
+    issues = _movie_images_status_payload_issues(data, movie_id)
+    items = data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else []
+    summary = data.get("summary") if isinstance(data, dict) and isinstance(data.get("summary"), dict) else {}
+    kinds = sorted({
+        item.get("kind")
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("kind"), str)
+    })
+
+    ok = not issues
+    detail = (
+        f"id={movie_id} kinds={','.join(kinds)} total={summary.get('total')} "
+        f"cached={summary.get('cached')} missing={summary.get('missing')}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "movie_images_status",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "kinds": kinds,
+            "summary": summary,
+            "issues": issues,
+        },
+    )
 
 
 def _movie_resource_cloud_transcode_issues(data: Any, prefix: str, resource_id: str | None = None) -> list[str]:
@@ -4609,6 +4866,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("catalog_filters", lambda: check_catalog_filters(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
+        CheckSpec("movie_images_status", lambda: check_movie_images_status(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
         CheckSpec("external_playback", lambda: check_external_playback(client)),
         CheckSpec("subtitle_settings", lambda: check_subtitle_settings(client)),

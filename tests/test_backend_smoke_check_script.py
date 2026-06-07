@@ -897,6 +897,69 @@ class FakeSmokeClient:
                 "metadata_issues": [],
             })
             return {"data": detail}
+        if path == "/api/v1/movies/movie-1/images/status":
+            items = []
+            for kind, field, public_field, source_url in (
+                ("backdrop", "background_cover", "backdrop_url", "https://example.test/backdrop.jpg"),
+                ("poster", "cover", "poster_url", "https://example.test/poster.jpg"),
+            ):
+                local_url = f"/api/v1/movies/movie-1/images/{kind}"
+                items.append({
+                    "kind": kind,
+                    "asset_url": local_url,
+                    "asset_urls": {
+                        "kind": kind,
+                        "strategy": "cdn_local_original",
+                        "primary_url": local_url,
+                        "url": local_url,
+                        "cdn_url": None,
+                        "local_url": local_url,
+                        "original_url": source_url,
+                        "fallback_urls": [source_url],
+                        "source": "local",
+                    },
+                    "fallback_urls": [source_url],
+                    "source_url": source_url,
+                    "source_info": {
+                        "kind": kind,
+                        "field": field,
+                        "public_field": public_field,
+                        "source_url": source_url,
+                        "has_source": True,
+                        "source_type": "external_metadata",
+                        "provider": "tmdb",
+                        "provider_label": "TMDB",
+                        "scraper_source": "TMDB",
+                        "metadata_source_group": "tmdb",
+                        "metadata_source_label": "TMDB",
+                        "locked": False,
+                        "confidence": "high",
+                        "evidence": ["image_url_host"],
+                    },
+                    "has_source": True,
+                    "source_valid": True,
+                    "source_error": None,
+                    "cached": False,
+                    "cache_state": "missing",
+                    "source_changed": False,
+                    "cache": None,
+                    "cdn": None,
+                })
+            return {
+                "data": {
+                    "movie_id": "movie-1",
+                    "title": "Sample Movie",
+                    "items": items,
+                    "summary": {
+                        "total": 2,
+                        "cached": 0,
+                        "missing": 2,
+                        "missing_source": 0,
+                        "invalid_source": 0,
+                        "stale_source": 0,
+                    },
+                },
+            }
         if path == "/api/v1/movies/movie-1/resources":
             return {
                 "data": {
@@ -1617,6 +1680,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "catalog_filters",
                 "catalog_movies",
                 "movie_detail",
+                "movie_images_status",
                 "movie_resources",
                 "external_playback",
                 "subtitle_settings",
@@ -2174,6 +2238,24 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         detail = next(item for item in results if item.name == "movie_detail")
         self.assertFalse(detail.ok)
         self.assertIn("detail_missing=metadata_actions", detail.detail)
+
+    def test_movie_images_status_fails_when_backdrop_item_is_missing(self):
+        class BrokenMovieImagesStatusClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1/images/status":
+                    payload["data"]["items"] = [
+                        item for item in payload["data"]["items"] if item["kind"] != "backdrop"
+                    ]
+                    payload["data"]["summary"]["total"] = 1
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenMovieImagesStatusClient):
+            results = self.module.run_checks(self._args())
+
+        images = next(item for item in results if item.name == "movie_images_status")
+        self.assertFalse(images.ok)
+        self.assertIn("movie_images_status_missing_kinds=backdrop", images.detail)
 
     def test_movie_resources_fails_when_playback_source_shape_is_broken(self):
         class BrokenMovieResourcesClient(FakeSmokeClient):

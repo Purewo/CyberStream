@@ -68,6 +68,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK catalog_filters`，说明目录页筛选项 `genres/years/countries` 可用
 - smoke check 返回 `OK catalog_movies`，说明主影视列表分页与首条样例关键字段可用
 - smoke check 返回 `OK movie_detail`，说明列表到详情页的只读链路与详情关键字段可用
+- smoke check 返回 `OK movie_images_status`，说明详情页 poster/backdrop 图片缓存状态契约可用且不触发远端下载
 - smoke check 返回 `OK movie_resources`，说明详情页资源面板、播放源分组、主资源 ID 和云转码能力声明可用
 - smoke check 返回 `OK external_playback`，说明 PC/外部播放器播放交接 manifest 和 M3U handoff 契约可用
 - smoke check 返回 `OK subtitle_settings`，说明网页播放器字幕显示设置读取契约可用
@@ -496,6 +497,7 @@ curl -s "http://127.0.0.1:5004/api/v1/metadata/episode-review-items?page_size=5"
 - smoke check 返回 `OK catalog_filters`，说明目录页筛选项字段和计数契约可用
 - smoke check 返回 `OK catalog_movies`，说明普通影视库列表分页、可见性和样例条目关键字段可用
 - smoke check 返回 `OK movie_detail`，说明影视详情页主信息、背景图资产、元数据操作/诊断字段可用
+- smoke check 返回 `OK movie_images_status`，说明 poster/backdrop 图片缓存状态、来源追踪和 fallback URL 契约可用
 - smoke check 返回 `OK movie_resources`，说明资源面板 items/groups/summary、播放源主资源 ID 和云转码能力声明契约可用
 - smoke check 返回 `OK metadata_work_items_contract`，说明复核工作台列表分页与样例条目关键字段可用
 - smoke check 返回 `OK metadata_reidentify_plan`，说明批量重识别 dry-run 计划和提交 payload 契约可用
@@ -795,7 +797,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`749 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`750 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
