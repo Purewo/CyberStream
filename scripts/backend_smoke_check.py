@@ -294,6 +294,22 @@ EXPECTED_CATALOG_FILTER_KEYS = [
     "years",
     "countries",
 ]
+EXPECTED_HOMEPAGE_KEYS = [
+    "hero",
+    "sections",
+]
+EXPECTED_HOMEPAGE_HERO_KEYS = [
+    "mode",
+    "movie",
+]
+EXPECTED_HOMEPAGE_SECTION_KEYS = [
+    "key",
+    "title",
+    "genre",
+    "mode",
+    "limit",
+    "items",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -1394,6 +1410,87 @@ def _catalog_filters_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _homepage_section_issues(
+    section: Any,
+    index: int,
+    seen_movie_ids: set[str],
+) -> list[str]:
+    prefix = f"section_{index}"
+    if not isinstance(section, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(section, EXPECTED_HOMEPAGE_SECTION_KEYS, prefix))
+    for key in ("key", "title", "genre", "mode"):
+        if key in section and not isinstance(section.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if section.get("mode") not in {"custom", "latest"}:
+        issues.append(f"{prefix}_mode={section.get('mode')}")
+    limit = section.get("limit")
+    if "limit" in section and not _json_int(limit):
+        issues.append(f"{prefix}_limit_not_int")
+
+    items = section.get("items")
+    if not isinstance(items, list):
+        issues.append(f"{prefix}_items_not_list")
+        return issues
+    if _json_int(limit) and len(items) > limit:
+        issues.append(f"{prefix}_items_above_limit={len(items)}/{limit}")
+
+    for item_index, item in enumerate(items[:1]):
+        issues.extend(_catalog_movie_item_issues(item, item_index))
+        if isinstance(item, dict):
+            movie_id = item.get("id")
+            if isinstance(movie_id, str):
+                if movie_id in seen_movie_ids:
+                    issues.append(f"{prefix}_duplicate_movie_id={movie_id}")
+                seen_movie_ids.add(movie_id)
+            if item.get("season_cards") not in (None, []):
+                issues.append(f"{prefix}_item_{item_index}_season_cards_not_empty")
+    for item in items[1:]:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            movie_id = item["id"]
+            if movie_id in seen_movie_ids:
+                issues.append(f"{prefix}_duplicate_movie_id={movie_id}")
+            seen_movie_ids.add(movie_id)
+    return issues
+
+
+def _homepage_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["homepage_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_HOMEPAGE_KEYS, "homepage"))
+    seen_movie_ids = set()
+
+    hero = data.get("hero")
+    issues.extend(_dict_missing_keys(hero, EXPECTED_HOMEPAGE_HERO_KEYS, "hero"))
+    if isinstance(hero, dict):
+        mode = hero.get("mode")
+        if mode is not None and mode not in {"custom", "latest"}:
+            issues.append(f"hero_mode={mode}")
+        movie = hero.get("movie")
+        if movie is not None:
+            if not isinstance(movie, dict):
+                issues.append("hero_movie_not_object")
+            else:
+                movie_id = movie.get("id")
+                if isinstance(movie_id, str):
+                    seen_movie_ids.add(movie_id)
+                    issues.extend(_movie_detail_issues(movie, movie_id))
+                else:
+                    issues.append(f"hero_movie_id_invalid={movie_id}")
+
+    sections = data.get("sections")
+    if not isinstance(sections, list):
+        issues.append("sections_not_list")
+    else:
+        for index, section in enumerate(sections[:5]):
+            issues.extend(_homepage_section_issues(section, index, seen_movie_ids))
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -1762,6 +1859,41 @@ def check_movie_resources(client: SmokeClient) -> CheckResult:
             "item_count": len(items),
             "total": summary.get("total_items"),
             "playback_source_count": len(playback_sources),
+            "issues": issues,
+        },
+    )
+
+
+def check_homepage(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/homepage")
+    data = _response_data(payload)
+    issues = _homepage_payload_issues(data)
+
+    hero = data.get("hero") if isinstance(data, dict) and isinstance(data.get("hero"), dict) else {}
+    hero_movie = hero.get("movie") if isinstance(hero.get("movie"), dict) else None
+    sections = data.get("sections") if isinstance(data, dict) and isinstance(data.get("sections"), list) else []
+    section_item_count = sum(
+        len(section.get("items") or [])
+        for section in sections
+        if isinstance(section, dict) and isinstance(section.get("items"), list)
+    )
+
+    ok = not issues
+    hero_title = hero_movie.get("title") if isinstance(hero_movie, dict) else None
+    detail = f"hero_mode={hero.get('mode')} sections={len(sections)} items={section_item_count}"
+    if hero_title:
+        detail = f"{detail} hero={hero_title}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "homepage",
+        ok,
+        detail,
+        {
+            "hero_mode": hero.get("mode"),
+            "hero_title": hero_title,
+            "section_count": len(sections),
+            "section_item_count": section_item_count,
             "issues": issues,
         },
     )
@@ -2490,6 +2622,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
+        CheckSpec("homepage", lambda: check_homepage(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),

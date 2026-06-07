@@ -65,6 +65,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK catalog_movies`，说明主影视列表分页与首条样例关键字段可用
 - smoke check 返回 `OK movie_detail`，说明列表到详情页的只读链路与详情关键字段可用
 - smoke check 返回 `OK movie_resources`，说明详情页资源面板、播放源分组和主资源 ID 可用
+- smoke check 返回 `OK homepage`，说明首页 hero 与 sections 聚合契约可用
 - smoke check 全部返回 `OK`
 
 ### 2.4 公网健康检查
@@ -222,6 +223,7 @@ curl -s http://127.0.0.1:5004/api/v1/homepage/config
 - 返回 `hero` 与 `sections`
 - 默认分类包含 `科幻` / `动作` / `剧情` / `动画`
 - 分类区块之间不重复影片
+- smoke check 返回 `OK homepage`，说明 hero 影片详情、section 条目和去重规则可用
 
 ### 3.9 元数据 provider 与动漫候选搜索
 
@@ -771,7 +773,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`731 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`732 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

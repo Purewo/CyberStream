@@ -599,6 +599,29 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/homepage":
+            hero = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
+            section_item = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)["data"]["items"][0].copy()
+            section_item["id"] = "movie-2"
+            section_item["title"] = "Section Movie"
+            return {
+                "data": {
+                    "hero": {
+                        "mode": "latest",
+                        "movie": hero,
+                    },
+                    "sections": [
+                        {
+                            "key": "action",
+                            "title": "动作",
+                            "genre": "动作",
+                            "mode": "latest",
+                            "limit": 15,
+                            "items": [section_item],
+                        },
+                    ],
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -941,6 +964,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "catalog_movies",
                 "movie_detail",
                 "movie_resources",
+                "homepage",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1393,6 +1417,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         resources = next(item for item in results if item.name == "movie_resources")
         self.assertFalse(resources.ok)
         self.assertIn("playback_source_0_missing=primary_resource_id", resources.detail)
+
+    def test_homepage_fails_when_section_shape_is_broken(self):
+        class BrokenHomepageClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/homepage":
+                    del payload["data"]["sections"][0]["items"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenHomepageClient):
+            results = self.module.run_checks(self._args())
+
+        homepage = next(item for item in results if item.name == "homepage")
+        self.assertFalse(homepage.ok)
+        self.assertIn("section_0_missing=items", homepage.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):
