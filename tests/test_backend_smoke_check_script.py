@@ -289,10 +289,63 @@ class FakeSmokeClient:
                 },
             }
         if path == "/api/v1/metadata/work-items":
-            total = 0
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
-                total = 0
-            return {"data": {"items": [], "pagination": {"total_items": total}}}
+                return {
+                    "data": {
+                        "items": [],
+                        "pagination": {
+                            "current_page": 1,
+                            "page_size": 20,
+                            "total_items": 0,
+                            "total_pages": 0,
+                        },
+                    },
+                }
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": "movie-1",
+                            "title": "Sample Movie",
+                            "scraper_source": "TMDB",
+                            "metadata_state": {
+                                "source_group": "tmdb",
+                                "source_code": "TMDB",
+                                "source_label": "TMDB",
+                                "issue_codes": [],
+                                "needs_attention": False,
+                                "review_priority": "low",
+                                "recommended_action": "refresh_metadata",
+                            },
+                            "metadata_actions": {
+                                "can_manual_match": True,
+                                "can_refresh": True,
+                                "can_re_scrape": True,
+                                "primary_action": "refresh_metadata",
+                            },
+                            "metadata_diagnostics": {
+                                "resource_count": 1,
+                            },
+                            "metadata_issues": [],
+                            "catalog_visibility": {
+                                "effective_status": "published",
+                                "status": "published",
+                                "is_visible": True,
+                                "can_publish": True,
+                            },
+                            "manual_content": {
+                                "is_manual": False,
+                            },
+                        },
+                    ],
+                    "pagination": {
+                        "current_page": 1,
+                        "page_size": 1,
+                        "total_items": 1,
+                        "total_pages": 1,
+                    },
+                },
+            }
         if path == "/api/v1/metadata/episode-review-items":
             return {"data": {"items": [], "pagination": {"total_items": 0}}}
         if path == "/api/v1/jobs":
@@ -375,6 +428,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "scan",
                 "metadata_providers",
                 "metadata_review_workbench",
+                "metadata_work_items_contract",
                 "background_jobs",
                 "storage_sources",
                 "metadata_fallback_pipeline_match",
@@ -693,6 +747,27 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         workbench = next(item for item in results if item.name == "metadata_review_workbench")
         self.assertFalse(workbench.ok)
         self.assertIn("missing_buckets=episode_review", workbench.detail)
+
+    def test_metadata_work_items_contract_fails_when_sample_shape_is_broken(self):
+        class BrokenWorkItemsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if (
+                    path == "/api/v1/metadata/work-items"
+                    and not (query or {}).get("metadata_issue_code")
+                ):
+                    del payload["data"]["items"][0]["metadata_state"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenWorkItemsClient):
+            results = self.module.run_checks(self._args())
+
+        work_items = next(
+            item for item in results
+            if item.name == "metadata_work_items_contract"
+        )
+        self.assertFalse(work_items.ok)
+        self.assertIn("item_0_missing=metadata_state", work_items.detail)
 
     def test_background_jobs_fails_when_summary_contract_is_broken(self):
         class BrokenJobsClient(FakeSmokeClient):

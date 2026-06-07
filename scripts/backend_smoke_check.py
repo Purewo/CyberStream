@@ -51,6 +51,38 @@ EXPECTED_METADATA_QUALITY_TOTALS = [
     "bulk_reidentify_movie_count",
     "episode_review_movie_count",
 ]
+EXPECTED_METADATA_WORK_ITEM_KEYS = [
+    "id",
+    "title",
+    "scraper_source",
+    "metadata_state",
+    "metadata_actions",
+    "metadata_diagnostics",
+    "metadata_issues",
+    "catalog_visibility",
+    "manual_content",
+]
+EXPECTED_METADATA_STATE_KEYS = [
+    "source_group",
+    "source_code",
+    "source_label",
+    "issue_codes",
+    "needs_attention",
+    "review_priority",
+    "recommended_action",
+]
+EXPECTED_METADATA_ACTION_KEYS = [
+    "can_manual_match",
+    "can_refresh",
+    "can_re_scrape",
+    "primary_action",
+]
+EXPECTED_CATALOG_VISIBILITY_KEYS = [
+    "effective_status",
+    "status",
+    "is_visible",
+    "can_publish",
+]
 EXPECTED_JOB_STATUSES = ["queued", "running", "succeeded", "failed"]
 EXPECTED_OPENAPI_MODULES = [
     "docs",
@@ -140,6 +172,10 @@ def _pagination_total(data: dict[str, Any]) -> int:
     if isinstance(pagination, dict):
         return int(pagination.get("total_items") or 0)
     return 0
+
+
+def _json_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _result(name: str, ok: bool, detail: str, data: dict[str, Any] | None = None) -> CheckResult:
@@ -634,6 +670,117 @@ def check_metadata_review_workbench(client: SmokeClient) -> CheckResult:
     )
 
 
+def _pagination_contract_issues(pagination: Any, expected_page_size: int | None = None) -> list[str]:
+    if not isinstance(pagination, dict):
+        return ["pagination_missing"]
+
+    issues = []
+    for key in ("current_page", "page_size", "total_items", "total_pages"):
+        if not _json_int(pagination.get(key)):
+            issues.append(f"pagination_{key}_not_int")
+    if expected_page_size is not None and pagination.get("page_size") != expected_page_size:
+        issues.append(f"pagination_page_size={pagination.get('page_size')}")
+    return issues
+
+
+def _dict_missing_keys(value: Any, keys: list[str], prefix: str) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"{prefix}_not_object"]
+    missing = [key for key in keys if key not in value]
+    return [f"{prefix}_missing={','.join(missing)}"] if missing else []
+
+
+def _work_item_contract_issues(item: Any, index: int) -> list[str]:
+    prefix = f"item_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    missing = [key for key in EXPECTED_METADATA_WORK_ITEM_KEYS if key not in item]
+    if missing:
+        issues.append(f"{prefix}_missing={','.join(missing)}")
+
+    if "id" in item and not isinstance(item.get("id"), str):
+        issues.append(f"{prefix}_id_not_str")
+    if "title" in item and not isinstance(item.get("title"), str):
+        issues.append(f"{prefix}_title_not_str")
+    if "metadata_issues" in item and not isinstance(item.get("metadata_issues"), list):
+        issues.append(f"{prefix}_metadata_issues_not_list")
+
+    metadata_state = item.get("metadata_state")
+    issues.extend(
+        _dict_missing_keys(metadata_state, EXPECTED_METADATA_STATE_KEYS, f"{prefix}_metadata_state")
+    )
+    if isinstance(metadata_state, dict):
+        if "issue_codes" in metadata_state and not isinstance(metadata_state.get("issue_codes"), list):
+            issues.append(f"{prefix}_metadata_state_issue_codes_not_list")
+        if "needs_attention" in metadata_state and metadata_state.get("needs_attention") not in (True, False):
+            issues.append(f"{prefix}_metadata_state_needs_attention_not_bool")
+
+    metadata_actions = item.get("metadata_actions")
+    issues.extend(
+        _dict_missing_keys(metadata_actions, EXPECTED_METADATA_ACTION_KEYS, f"{prefix}_metadata_actions")
+    )
+
+    catalog_visibility = item.get("catalog_visibility")
+    issues.extend(
+        _dict_missing_keys(
+            catalog_visibility,
+            EXPECTED_CATALOG_VISIBILITY_KEYS,
+            f"{prefix}_catalog_visibility",
+        )
+    )
+
+    if "metadata_diagnostics" in item and not isinstance(item.get("metadata_diagnostics"), dict):
+        issues.append(f"{prefix}_metadata_diagnostics_not_object")
+    if "manual_content" in item and not isinstance(item.get("manual_content"), dict):
+        issues.append(f"{prefix}_manual_content_not_object")
+    return issues
+
+
+def check_metadata_work_items_contract(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/metadata/work-items", {"page_size": 1})
+    data = _response_data(payload)
+    issues = []
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    if len(items) > 1:
+        issues.append(f"too_many_items={len(items)}")
+
+    pagination = data.get("pagination") if isinstance(data, dict) else None
+    issues.extend(_pagination_contract_issues(pagination, expected_page_size=1))
+    total = pagination.get("total_items") if isinstance(pagination, dict) else None
+    page_size = pagination.get("page_size") if isinstance(pagination, dict) else None
+    if _json_int(total) and total > 0 and not items:
+        issues.append("items_empty_with_total")
+
+    sample = items[0] if items else None
+    if sample is not None:
+        issues.extend(_work_item_contract_issues(sample, 0))
+
+    ok = not issues
+    sample_title = sample.get("title") if isinstance(sample, dict) else None
+    detail = f"items={len(items)} total={total} page_size={page_size}"
+    if sample_title:
+        detail = f"{detail} sample={sample_title}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "metadata_work_items_contract",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "total": total,
+            "sample_title": sample_title,
+            "issues": issues,
+        },
+    )
+
+
 def check_background_jobs(client: SmokeClient) -> CheckResult:
     payload = client.get_json("/api/v1/jobs", {"limit": 1})
     data = _response_data(payload)
@@ -943,6 +1090,10 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
+        CheckSpec(
+            "metadata_work_items_contract",
+            lambda: check_metadata_work_items_contract(client),
+        ),
         CheckSpec("background_jobs", lambda: check_background_jobs(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
         CheckSpec(
