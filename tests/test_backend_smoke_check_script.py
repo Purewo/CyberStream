@@ -881,6 +881,7 @@ class FakeSmokeClient:
                 },
             }
         if path == "/api/v1/movies":
+            page_size = (query or {}).get("page_size") or 1
             return {
                 "data": {
                     "items": [
@@ -937,7 +938,7 @@ class FakeSmokeClient:
                     ],
                     "pagination": {
                         "current_page": 1,
-                        "page_size": 1,
+                        "page_size": page_size,
                         "total_items": 1,
                         "total_pages": 1,
                     },
@@ -1970,6 +1971,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "other_videos",
                 "catalog_filters",
                 "catalog_movies",
+                "catalog_keyword_search",
                 "movie_detail",
                 "movie_images_status",
                 "movie_resources",
@@ -2539,6 +2541,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         catalog = next(item for item in results if item.name == "catalog_movies")
         self.assertFalse(catalog.ok)
         self.assertIn("item_0_missing=metadata_state", catalog.detail)
+
+    def test_catalog_keyword_search_fails_when_sample_is_missing(self):
+        class BrokenCatalogSearchClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies" and (query or {}).get("keyword"):
+                    payload["data"]["items"][0]["id"] = "movie-other"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenCatalogSearchClient):
+            results = self.module.run_checks(self._args())
+
+        search = next(item for item in results if item.name == "catalog_keyword_search")
+        self.assertFalse(search.ok)
+        self.assertIn("sample_missing_from_keyword_results=movie-1", search.detail)
 
     def test_catalog_filters_fail_when_option_shape_is_broken(self):
         class BrokenCatalogFiltersClient(FakeSmokeClient):

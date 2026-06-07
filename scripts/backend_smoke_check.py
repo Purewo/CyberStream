@@ -4152,6 +4152,88 @@ def check_catalog_movies(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_catalog_keyword_search(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "catalog_keyword_search",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "item_count": 0},
+        )
+
+    sample = catalog_items[0]
+    sample_id = sample.get("id") if isinstance(sample, dict) else None
+    sample_title = sample.get("title") if isinstance(sample, dict) else None
+    if not isinstance(sample_id, str) or not sample_id:
+        return _result(
+            "catalog_keyword_search",
+            False,
+            f"sample_id_invalid={sample_id}",
+            {"sample_id": sample_id},
+        )
+    if not isinstance(sample_title, str) or not sample_title.strip():
+        return _result(
+            "catalog_keyword_search",
+            False,
+            f"sample_title_invalid={sample_title}",
+            {"sample_id": sample_id, "sample_title": sample_title},
+        )
+
+    search_payload = client.get_json(
+        "/api/v1/movies",
+        {"page": 1, "page_size": 20, "keyword": sample_title},
+    )
+    data = _response_data(search_payload)
+    issues = []
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    if len(items) > 20:
+        issues.append(f"too_many_items={len(items)}")
+
+    pagination = data.get("pagination") if isinstance(data, dict) else None
+    issues.extend(_pagination_contract_issues(pagination, expected_page_size=20))
+    total = pagination.get("total_items") if isinstance(pagination, dict) else None
+    page_size = pagination.get("page_size") if isinstance(pagination, dict) else None
+    if _json_int(total) and total > 0 and not items:
+        issues.append("items_empty_with_total")
+    if _json_int(total) and total < 1:
+        issues.append(f"total_below_one={total}")
+
+    for index, item in enumerate(items[:1]):
+        issues.extend(_catalog_movie_item_issues(item, index))
+
+    result_ids = [item.get("id") for item in items if isinstance(item, dict)]
+    if sample_id not in result_ids:
+        issues.append(f"sample_missing_from_keyword_results={sample_id}")
+
+    ok = not issues
+    detail = (
+        f"keyword={sample_title} items={len(items)} total={total} "
+        f"page_size={page_size} sample_found={sample_id in result_ids}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "catalog_keyword_search",
+        ok,
+        detail,
+        {
+            "keyword": sample_title,
+            "sample_id": sample_id,
+            "item_count": len(items),
+            "total": total,
+            "sample_found": sample_id in result_ids,
+            "issues": issues,
+        },
+    )
+
+
 def check_movie_detail(client: SmokeClient) -> CheckResult:
     catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
     catalog_data = _response_data(catalog_payload)
@@ -6117,6 +6199,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("other_videos", lambda: check_other_videos(client)),
         CheckSpec("catalog_filters", lambda: check_catalog_filters(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
+        CheckSpec("catalog_keyword_search", lambda: check_catalog_keyword_search(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_images_status", lambda: check_movie_images_status(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
