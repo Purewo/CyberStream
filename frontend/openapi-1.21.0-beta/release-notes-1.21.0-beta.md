@@ -6,6 +6,7 @@
 
 - 后端播放、音频转码和字幕 URL 不再用 `PREFERRED_URL_SCHEME=https` 把公开 HTTP 请求隐式改写成 HTTPS。
 - `PREFERRED_URL_SCHEME` 仅保留 Flask 原生语义；需要固定外部入口时使用 `CYBER_BACKEND_PUBLIC_BASE_URL=http://...` 或 `https://...`，scheme 会原样保留。
+- 新增 `GET /api/v1/health`，作为 `GET /` 的 API 前缀健康检查别名，公开可访问，方便前端、反向代理和监控统一探活。
 
 ## QuarkTV / UCTV 云端转码播放
 

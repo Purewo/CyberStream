@@ -59,6 +59,7 @@ curl -i http://127.0.0.1:5004/
 
 ```bash
 curl -i http://pioneer.fan:884/
+curl -i http://pioneer.fan:884/api/v1/health
 curl -i http://pioneer.fan:884/api/v1/openapi.json
 ```
 

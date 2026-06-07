@@ -54,7 +54,9 @@ X-Cyber-API-Token: <token>
 ## 1. 健康检查
 
 ### `GET /`
+### `GET /api/v1/health`
 返回服务状态与版本信息。
+两个入口返回相同响应；`/api/v1/health` 供前端、反向代理和监控系统使用统一 API 前缀探活。
 
 ---
 

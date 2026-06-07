@@ -56,6 +56,7 @@ def create_app(config_overrides=None):
     db_ext.init_app(app)
 
     @app.route('/')
+    @app.route('/api/v1/health')
     def health_check():
         from backend.app.utils.response import api_response
         return api_response(data={"status": "up", "version": app.config.get("APP_VERSION", "unknown")}, msg="Pong")

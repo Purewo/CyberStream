@@ -50,6 +50,7 @@ cp .env.local.example .env.local
 
 ```bash
 curl -i http://127.0.0.1:5004/
+curl -i http://127.0.0.1:5004/api/v1/health
 ```
 
 预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`）。

@@ -225,7 +225,7 @@ def _classify_openapi_path(path):
         return "jobs"
     if path.startswith("/api/v1/aggregator"):
         return "aggregator"
-    if path.startswith("/api/v1/storage") or path.startswith("/api/v1/system") or path == "/api/v1/scan":
+    if path.startswith("/api/v1/storage") or path.startswith("/api/v1/system") or path in {"/api/v1/scan", "/api/v1/health"}:
         return "storage-system"
     if (
         path.startswith("/api/v1/metadata")

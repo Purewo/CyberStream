@@ -121,11 +121,14 @@ class ApiAuthTests(unittest.TestCase):
         client = self.create_client(token="secret-token", enabled=True)
 
         health = client.get("/")
+        api_health = client.get("/api/v1/health")
         options = client.open("/api/v1/storage/sources", method="OPTIONS")
         stream = client.get("/api/v1/resources/11111111-1111-1111-1111-111111111111/stream")
         image = client.get("/api/v1/movies/11111111-1111-1111-1111-111111111111/images/poster")
 
         self.assertEqual(200, health.status_code)
+        self.assertEqual(200, api_health.status_code)
+        self.assertEqual("up", api_health.get_json()["data"]["status"])
         self.assertNotEqual(401, options.status_code)
         self.assertNotEqual(401, stream.status_code)
         self.assertNotEqual(401, image.status_code)

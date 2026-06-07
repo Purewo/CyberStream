@@ -31,6 +31,7 @@ PUBLIC_OAUTH_GET_PATH_PATTERNS = (
 
 AUTH_PUBLIC_PATHS = {
     "/",
+    "/api/v1/health",
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
     "/api/v1/auth/me",

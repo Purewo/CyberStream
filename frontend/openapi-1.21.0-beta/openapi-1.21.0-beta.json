@@ -56,6 +56,38 @@
         "security": []
       }
     },
+    "/api/v1/health": {
+      "get": {
+        "summary": "✅ [验证通过] API 前缀健康检查",
+        "description": "与 GET / 返回相同的服务连通性和版本信息，供前端、反向代理和监控系统使用统一 API 前缀探活。",
+        "operationId": "apiHealthCheck",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "服务正常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                },
+                "example": {
+                  "code": 200,
+                  "msg": "Pong",
+                  "data": {
+                    "status": "up",
+                    "version": "1.21.0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/v1/featured": {
       "get": {
         "summary": "获取全局置顶/轮播内容",

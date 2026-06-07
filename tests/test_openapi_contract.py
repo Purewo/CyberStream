@@ -51,6 +51,14 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertEqual(set(), runtime_operations - documented_operations)
         self.assertEqual(set(), documented_operations - runtime_operations)
 
+    def test_api_prefixed_health_check_is_documented_public_contract(self):
+        openapi = self._load_openapi()
+        health_operation = openapi["paths"]["/api/v1/health"]["get"]
+
+        self.assertEqual("apiHealthCheck", health_operation["operationId"])
+        self.assertEqual([], health_operation["security"])
+        self.assertEqual("stable", health_operation["x-lifecycle-status"])
+
     def test_online_subtitle_openapi_uses_concrete_search_fields(self):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]
