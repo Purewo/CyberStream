@@ -220,6 +220,16 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 - `tencent_video.manual_only=true` 且 `supports_scrape=false`
 - 默认顺序仍为 `nfo -> tmdb -> local`
 
+批量刮削前建议跑完整 scraper readiness smoke check：
+
+```bash
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --tmdb-token-check
+```
+
+预期：
+- `metadata_providers` 返回 `OK`
+- `tmdb_token` 返回 `OK`，且 `ready=True status=ok`
+
 AniList 动漫候选搜索：
 
 ```bash

@@ -55,7 +55,15 @@ curl -i http://127.0.0.1:5004/api/v1/health
 ```
 
 预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`）。
-`backend_smoke_check.py` 会同时检查健康接口、OpenAPI 健康入口、扫描状态、fallback/episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
+`backend_smoke_check.py` 会同时检查健康接口、OpenAPI 健康入口、扫描状态、元数据 provider 注册表、fallback/episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
+
+刮削前建议额外验证 TMDB token 是否能真实请求 TMDB：
+
+```bash
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --tmdb-token-check
+```
+
+该检查会调用 `GET /api/v1/system/tmdb-config/check`，不返回 token 明文。
 
 如果已设置 `CYBER_API_TOKEN`，管理类接口需要携带 token：
 

@@ -21,6 +21,9 @@ DEFAULT_SYSTEMD_SERVICES = [
     "cyberstream-openlist",
     "ddns-go",
 ]
+EXPECTED_METADATA_PROVIDERS = ["nfo", "tmdb", "anilist", "bangumi", "tencent_video", "local"]
+EXPECTED_METADATA_DEFAULT_ORDER = ["nfo", "tmdb", "local"]
+EXPECTED_METADATA_SEARCH_PROVIDERS = ["tmdb", "anilist", "bangumi", "tencent_video"]
 
 
 @dataclass
@@ -107,6 +110,92 @@ def check_scan(client: SmokeClient) -> CheckResult:
         "status": status,
         "recent_errors": recent_errors,
     })
+
+
+def check_metadata_providers(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/metadata/providers")
+    data = _response_data(payload)
+    providers = data.get("providers") if isinstance(data, dict) else []
+    provider_map = {
+        item.get("key"): item
+        for item in providers
+        if isinstance(item, dict) and item.get("key")
+    }
+    keys = sorted(provider_map)
+    default_order = data.get("default_order") if isinstance(data, dict) else []
+    if not isinstance(default_order, list):
+        default_order = []
+
+    missing = [key for key in EXPECTED_METADATA_PROVIDERS if key not in provider_map]
+    search_missing = [
+        key for key in EXPECTED_METADATA_SEARCH_PROVIDERS
+        if not provider_map.get(key, {}).get("supports_search")
+    ]
+    tencent = provider_map.get("tencent_video") or {}
+    tencent_manual_only = tencent.get("manual_only") is True and tencent.get("supports_scrape") is False
+    anilist = provider_map.get("anilist") or {}
+    anilist_opt_in = anilist.get("default_enabled") is False
+    default_order_ok = default_order == EXPECTED_METADATA_DEFAULT_ORDER
+
+    issues = []
+    if missing:
+        issues.append(f"missing={','.join(missing)}")
+    if search_missing:
+        issues.append(f"search_missing={','.join(search_missing)}")
+    if not default_order_ok:
+        issues.append(f"default_order_expected={','.join(EXPECTED_METADATA_DEFAULT_ORDER)}")
+    if not tencent_manual_only:
+        issues.append("tencent_video_manual_only=false")
+    if not anilist_opt_in:
+        issues.append("anilist_default_enabled_not_false")
+
+    ok = not issues
+    detail = f"providers={','.join(keys)} default_order={'->'.join(str(item) for item in default_order)}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "metadata_providers",
+        ok,
+        detail,
+        {
+            "providers": keys,
+            "default_order": default_order,
+            "missing": missing,
+            "search_missing": search_missing,
+            "tencent_video_manual_only": tencent_manual_only,
+            "anilist_opt_in": anilist_opt_in,
+        },
+    )
+
+
+def check_tmdb_token(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/system/tmdb-config/check")
+    data = _response_data(payload)
+    ready = data.get("ready") is True
+    status = data.get("status")
+    token_set = data.get("token_set") is True
+    token_valid = data.get("token_valid") is True
+    proxy_enabled = data.get("proxy_enabled")
+    proxy_configured = data.get("proxy_configured")
+    elapsed_ms = data.get("elapsed_ms")
+    return _result(
+        "tmdb_token",
+        ready,
+        (
+            f"ready={ready} status={status} token_set={token_set} token_valid={token_valid} "
+            f"proxy_enabled={proxy_enabled} proxy_configured={proxy_configured} elapsed_ms={elapsed_ms}"
+        ),
+        {
+            "ready": ready,
+            "status": status,
+            "token_set": token_set,
+            "token_valid": token_valid,
+            "proxy_enabled": proxy_enabled,
+            "proxy_configured": proxy_configured,
+            "elapsed_ms": elapsed_ms,
+            "http_status": data.get("http_status"),
+        },
+    )
 
 
 def check_work_items(client: SmokeClient, issue_code: str, max_items: int) -> CheckResult:
@@ -202,6 +291,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("health", lambda: check_health(client)),
         CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
         CheckSpec("scan", lambda: check_scan(client)),
+        CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec(
             "metadata_fallback_pipeline_match",
             lambda: check_work_items(client, "fallback_pipeline_match", args.max_fallback_items),
@@ -215,6 +305,8 @@ def run_checks(args) -> list[CheckResult]:
     if args.systemd:
         systemd_services = args.systemd_service or list(DEFAULT_SYSTEMD_SERVICES)
         checks.insert(0, CheckSpec("systemd_services", lambda: check_systemd_services(systemd_services, args.timeout)))
+    if getattr(args, "tmdb_token_check", False):
+        checks.append(CheckSpec("tmdb_token", lambda: check_tmdb_token(client)))
 
     results: list[CheckResult] = []
     for check in checks:
@@ -233,6 +325,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-fallback-items", type=int, default=0, help="Maximum fallback metadata work items")
     parser.add_argument("--max-episode-review-items", type=int, default=0, help="Maximum episode review items")
     parser.add_argument("--max-resource-actionable", type=int, default=0, help="Maximum actionable resource issues")
+    parser.add_argument(
+        "--tmdb-token-check",
+        action="store_true",
+        help="Also verify the configured TMDB token with the live TMDB API; use before scraping.",
+    )
     parser.add_argument("--systemd", action="store_true", help="Also check local systemd service states")
     parser.add_argument(
         "--systemd-service",

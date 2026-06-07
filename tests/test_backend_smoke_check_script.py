@@ -42,6 +42,43 @@ class FakeSmokeClient:
             }
         if path == "/api/v1/scan":
             return {"data": {"status": "idle", "recent_errors": []}}
+        if path == "/api/v1/metadata/providers":
+            return {
+                "data": {
+                    "default_order": ["nfo", "tmdb", "local"],
+                    "providers": [
+                        {"key": "nfo", "supports_scrape": True, "supports_search": False},
+                        {"key": "tmdb", "supports_scrape": True, "supports_search": True},
+                        {
+                            "key": "anilist",
+                            "default_enabled": False,
+                            "supports_scrape": True,
+                            "supports_search": True,
+                        },
+                        {"key": "bangumi", "supports_scrape": True, "supports_search": True},
+                        {
+                            "key": "tencent_video",
+                            "manual_only": True,
+                            "supports_scrape": False,
+                            "supports_search": True,
+                        },
+                        {"key": "local", "supports_scrape": True, "supports_search": False},
+                    ],
+                },
+            }
+        if path == "/api/v1/system/tmdb-config/check":
+            return {
+                "data": {
+                    "ready": True,
+                    "status": "ok",
+                    "token_set": True,
+                    "token_valid": True,
+                    "proxy_enabled": True,
+                    "proxy_configured": True,
+                    "elapsed_ms": 123,
+                    "http_status": 200,
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             total = 0
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
@@ -75,6 +112,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             "max_fallback_items": 0,
             "max_episode_review_items": 0,
             "max_resource_actionable": 0,
+            "tmdb_token_check": False,
             "systemd": False,
             "systemd_service": None,
         }
@@ -91,6 +129,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "health",
                 "openapi_health_contract",
                 "scan",
+                "metadata_providers",
                 "metadata_fallback_pipeline_match",
                 "episode_review",
                 "resource_governance",
@@ -112,6 +151,53 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         governance = next(item for item in results if item.name == "resource_governance")
         self.assertFalse(governance.ok)
         self.assertIn("live=463/464", governance.detail)
+
+    def test_metadata_providers_fails_when_required_provider_is_missing(self):
+        class MissingBangumiClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/metadata/providers":
+                    payload["data"]["providers"] = [
+                        item for item in payload["data"]["providers"]
+                        if item["key"] != "bangumi"
+                    ]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", MissingBangumiClient):
+            results = self.module.run_checks(self._args())
+
+        providers = next(item for item in results if item.name == "metadata_providers")
+        self.assertFalse(providers.ok)
+        self.assertIn("missing=bangumi", providers.detail)
+
+    def test_run_checks_can_verify_tmdb_token_when_enabled(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(tmdb_token_check=True))
+
+        tmdb = results[-1]
+        self.assertEqual("tmdb_token", tmdb.name)
+        self.assertTrue(tmdb.ok)
+        self.assertIn("status=ok", tmdb.detail)
+
+    def test_tmdb_token_check_fails_when_token_is_not_ready(self):
+        class InvalidTmdbClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/system/tmdb-config/check":
+                    payload["data"].update({
+                        "ready": False,
+                        "status": "invalid_token",
+                        "token_valid": False,
+                        "http_status": 401,
+                    })
+                return payload
+
+        with patch.object(self.module, "SmokeClient", InvalidTmdbClient):
+            results = self.module.run_checks(self._args(tmdb_token_check=True))
+
+        tmdb = next(item for item in results if item.name == "tmdb_token")
+        self.assertFalse(tmdb.ok)
+        self.assertIn("status=invalid_token", tmdb.detail)
 
     def test_run_checks_reports_named_failure_when_check_raises(self):
         class BrokenOpenApiClient(FakeSmokeClient):
