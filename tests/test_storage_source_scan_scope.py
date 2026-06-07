@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
+from backend.app.metadata.types import EntityMetadataContext, MetadataResolution
 from backend.app.models import Library, LibrarySource, StorageSource
 from backend.app.services.scanner import CyberScanner
 
@@ -148,6 +149,38 @@ class StorageSourceScanScopeTests(unittest.TestCase):
 
         self.assertEqual(429, response.status_code)
         scanner_mock.scan.assert_not_called()
+
+    def test_scan_metadata_trace_preserves_nfo_candidate_summary(self):
+        scanner = CyberScanner()
+        context = EntityMetadataContext(
+            title="NFO Trace",
+            year=2024,
+            media_type_hint="movie",
+            parse_layer="strict",
+            parse_strategy="movie_parent_folder",
+            confidence="high",
+            sample_path="movies/NFO.Trace.2024/NFO.Trace.2024.1080p.mkv",
+            nfo_candidates=[
+                "movies/NFO.Trace.2024/movie.nfo",
+                "movies/NFO.Trace.2024/movie.nfo",
+            ],
+        )
+        resolution = MetadataResolution(
+            meta_data={"title": "NFO Trace"},
+            scrape_layer="structured",
+            scrape_strategy="movie_parent_folder",
+            reason="tmdb_match",
+        )
+
+        specs = scanner._attach_metadata_trace({}, context, resolution)
+
+        trace = specs["metadata_trace"]
+        self.assertTrue(trace["has_nfo_candidates"])
+        self.assertEqual(1, trace["nfo_candidate_count"])
+        self.assertEqual(
+            [{"path": "movies/NFO.Trace.2024/movie.nfo", "name": "movie.nfo"}],
+            trace["nfo_candidates"],
+        )
 
     def test_scan_source_route_accepts_unbound_root_scan(self):
         with patch("backend.app.api.storage_routes.threading.Thread", _ImmediateThread), \

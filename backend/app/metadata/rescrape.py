@@ -135,6 +135,7 @@ class MovieMetadataRescrapeService:
 
     def apply_resource_traces(self, resources, entity_context, resolution):
         parsed_info = entity_context.to_parsed_media_info()
+        nfo_candidates = entity_context.get_nfo_candidate_summary()
         for resource in resources:
             specs = dict(resource.tech_specs or {})
             specs['metadata_trace'] = {
@@ -142,7 +143,9 @@ class MovieMetadataRescrapeService:
                 "parse_strategy": entity_context.parse_strategy,
                 "confidence": entity_context.confidence,
                 "media_type_hint": parsed_info.media_type_hint,
-                "has_nfo_candidates": bool(entity_context.nfo_candidates),
+                "has_nfo_candidates": bool(nfo_candidates),
+                "nfo_candidate_count": len(nfo_candidates),
+                "nfo_candidates": nfo_candidates,
                 "scrape_layer": resolution.scrape_layer,
                 "scrape_strategy": resolution.scrape_strategy,
                 "scrape_reason": resolution.reason,

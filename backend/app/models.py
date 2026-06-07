@@ -2202,6 +2202,14 @@ class MediaResource(db.Model):
         container = self.filename.split('.')[-1].lower() if self.filename else None
         media_profile = self._build_media_profile(media_features, container)
         resource_info = self._build_resource_info(container, media_features, media_profile)
+        nfo_candidates = metadata_trace.get('nfo_candidates') if isinstance(metadata_trace.get('nfo_candidates'), list) else []
+        raw_nfo_candidate_count = metadata_trace.get('nfo_candidate_count')
+        try:
+            nfo_candidate_count = int(raw_nfo_candidate_count) if raw_nfo_candidate_count is not None else None
+        except (TypeError, ValueError):
+            nfo_candidate_count = None
+        if nfo_candidate_count is None:
+            nfo_candidate_count = len(nfo_candidates) if nfo_candidates else int(bool(metadata_trace.get('has_nfo_candidates')))
         edit_context = {
             "parse_layer": metadata_trace.get('parse_layer'),
             "parse_strategy": metadata_trace.get('parse_strategy'),
@@ -2211,6 +2219,8 @@ class MediaResource(db.Model):
             "media_type_hint": metadata_trace.get('media_type_hint'),
             "confidence": metadata_trace.get('confidence'),
             "has_nfo_candidates": bool(metadata_trace.get('has_nfo_candidates')),
+            "nfo_candidate_count": nfo_candidate_count,
+            "nfo_candidates": nfo_candidates,
             "has_inferred_episode": self.episode is not None,
             "has_inferred_season": self.season is not None,
         }

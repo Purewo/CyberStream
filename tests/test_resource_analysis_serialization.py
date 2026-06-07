@@ -43,6 +43,57 @@ class ResourceAnalysisSerializationTests(unittest.TestCase):
         self.assertTrue(data["metadata"]["analysis"]["path_cleaning"]["needs_review"])
         self.assertEqual("tmdb", data["metadata"]["analysis"]["scraping"]["provider"])
 
+    def test_resource_to_dict_exposes_nfo_candidate_edit_context(self):
+        resource = MediaResource(
+            filename="Nfo.Trace.2024.1080p.mkv",
+            path="movies/Nfo.Trace.2024/Nfo.Trace.2024.1080p.mkv",
+            source_id=1,
+            size=1234,
+            label="Movie - 1080P",
+            tech_specs={
+                "resolution": "1080P",
+                "metadata_trace": {
+                    "has_nfo_candidates": True,
+                    "nfo_candidate_count": 1,
+                    "nfo_candidates": [
+                        {"path": "movies/Nfo.Trace.2024/movie.nfo", "name": "movie.nfo"}
+                    ],
+                },
+            },
+        )
+
+        data = resource.to_dict()
+
+        edit_context = data["metadata"]["edit_context"]
+        self.assertTrue(edit_context["has_nfo_candidates"])
+        self.assertEqual(1, edit_context["nfo_candidate_count"])
+        self.assertEqual(
+            [{"path": "movies/Nfo.Trace.2024/movie.nfo", "name": "movie.nfo"}],
+            edit_context["nfo_candidates"],
+        )
+
+    def test_resource_to_dict_counts_legacy_nfo_candidate_trace(self):
+        resource = MediaResource(
+            filename="Legacy.Nfo.Trace.2024.1080p.mkv",
+            path="movies/Legacy.Nfo.Trace.2024/Legacy.Nfo.Trace.2024.1080p.mkv",
+            source_id=1,
+            size=1234,
+            label="Movie - 1080P",
+            tech_specs={
+                "resolution": "1080P",
+                "metadata_trace": {
+                    "has_nfo_candidates": True,
+                },
+            },
+        )
+
+        data = resource.to_dict()
+
+        edit_context = data["metadata"]["edit_context"]
+        self.assertTrue(edit_context["has_nfo_candidates"])
+        self.assertEqual(1, edit_context["nfo_candidate_count"])
+        self.assertEqual([], edit_context["nfo_candidates"])
+
     def test_resource_to_dict_does_not_infer_sdr_without_marker(self):
         resource = MediaResource(
             filename="Spider-Man.No.Way.Home.mkv",

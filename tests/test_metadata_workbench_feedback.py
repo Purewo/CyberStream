@@ -698,6 +698,29 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertTrue(captured["include_sidecar_nfo"])
 
+    def test_re_scrape_resource_trace_preserves_nfo_candidate_summary(self):
+        movie = self._add_movie(title="NFO Trace", scraper_source="TMDB")
+        resource = self._add_resource(movie, path="movies/Nfo.Trace.2024.1080p.mkv")
+        context = self._entity_context(resource)
+        context.nfo_candidates = [
+            "movies/Nfo.Trace.2024/movie.nfo",
+            "movies/Nfo.Trace.2024/movie.nfo",
+            {"path": "movies/Nfo.Trace.2024/index.nfo", "name": "index.nfo", "kind": "index"},
+        ]
+
+        MovieMetadataRescrapeService().apply_resource_traces([resource], context, self._tmdb_resolution())
+
+        trace = resource.tech_specs["metadata_trace"]
+        self.assertTrue(trace["has_nfo_candidates"])
+        self.assertEqual(2, trace["nfo_candidate_count"])
+        self.assertEqual(
+            [
+                {"path": "movies/Nfo.Trace.2024/movie.nfo", "name": "movie.nfo"},
+                {"path": "movies/Nfo.Trace.2024/index.nfo", "name": "index.nfo", "kind": "index"},
+            ],
+            trace["nfo_candidates"],
+        )
+
     def test_quality_summary_returns_issue_samples_and_actions(self):
         movie = self._add_movie(title="质量汇总", scraper_source="TMDB", cover="")
         resource = self._add_resource(movie)

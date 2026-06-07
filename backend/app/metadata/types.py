@@ -46,8 +46,38 @@ class EntityMetadataContext:
     parse_strategy: str = 'unknown'
     confidence: str = 'medium'
     sample_path: str = ''
-    nfo_candidates: list[str] = field(default_factory=list)
+    nfo_candidates: list[Any] = field(default_factory=list)
     files: list[dict[str, Any]] = field(default_factory=list)
+
+    def get_nfo_candidate_summary(self, limit: int | None = 20) -> list[dict[str, Any]]:
+        items = []
+        seen = set()
+        for raw_candidate in self.nfo_candidates:
+            if isinstance(raw_candidate, dict):
+                candidate_path = raw_candidate.get("path") or raw_candidate.get("name")
+                candidate_name = raw_candidate.get("name")
+                candidate_kind = raw_candidate.get("kind")
+            else:
+                candidate_path = raw_candidate
+                candidate_name = None
+                candidate_kind = None
+
+            path = str(candidate_path or "").replace("\\", "/").strip()
+            if not path or path in seen:
+                continue
+            seen.add(path)
+
+            name = str(candidate_name or path.rsplit("/", 1)[-1]).strip()
+            item = {
+                "path": path,
+                "name": name,
+            }
+            if candidate_kind:
+                item["kind"] = str(candidate_kind)
+            items.append(item)
+            if limit is not None and len(items) >= limit:
+                break
+        return items
 
     def to_parsed_media_info(self) -> ParsedMediaInfo:
         sample_meta = self.files[0].get('_meta', {}) if self.files else {}
