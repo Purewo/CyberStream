@@ -626,6 +626,7 @@ curl -s -X POST http://127.0.0.1:5004/api/v1/jobs/prune \
 ```
 
 预期：
+- smoke check 返回 `OK resource_governance_plan`，说明资源治理 dry-run 计划和提交 payload 契约可用
 - 接口返回 `dry_run=true`
 - 默认调用不访问存储源，只返回数据库层治理问题和 `live_check_skipped`
 - `live_check=true` 时只检查有限数量资源，不触发扫描、不删除资源、不修改数据库
@@ -759,7 +760,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`723 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`724 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

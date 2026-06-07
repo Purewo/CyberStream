@@ -117,6 +117,39 @@ EXPECTED_METADATA_REIDENTIFY_ITEM_KEYS = [
     "explanation",
     "apply_item",
 ]
+EXPECTED_RESOURCE_GOVERNANCE_ISSUE_CODES = [
+    "duplicate_playback_resource",
+    "detached_source_resource",
+]
+EXPECTED_RESOURCE_GOVERNANCE_PLAN_KEYS = [
+    "generated_at",
+    "dry_run",
+    "apply_method",
+    "apply_endpoint",
+    "selection",
+    "items",
+    "summary",
+    "returned_summary",
+    "pagination",
+    "apply_payload",
+]
+EXPECTED_RESOURCE_GOVERNANCE_SUMMARY_KEYS = [
+    "total",
+    "planned",
+    "skipped",
+    "manual_review",
+    "planned_resource_ids",
+    "issue_code_counts",
+    "skip_reason_counts",
+]
+EXPECTED_RESOURCE_GOVERNANCE_ITEM_KEYS = [
+    "issue_code",
+    "status",
+    "action",
+    "resource",
+    "apply_item",
+    "restore_snapshot_available",
+]
 EXPECTED_METADATA_WORK_ITEM_KEYS = [
     "id",
     "title",
@@ -1322,6 +1355,135 @@ def check_resource_governance(client: SmokeClient, live_check_limit: int, max_ac
     )
 
 
+def _resource_governance_plan_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"item_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_RESOURCE_GOVERNANCE_ITEM_KEYS, prefix))
+    if item.get("status") not in {"planned", "skipped", "manual_review"}:
+        issues.append(f"{prefix}_status={item.get('status')}")
+    if item.get("status") == "planned":
+        apply_item = item.get("apply_item")
+        if not isinstance(apply_item, dict):
+            issues.append(f"{prefix}_apply_item_not_object")
+        elif apply_item.get("resource_id") != (item.get("resource") or {}).get("resource_id"):
+            issues.append(f"{prefix}_apply_item_resource_id_mismatch")
+    if "restore_snapshot_available" in item and item.get("restore_snapshot_available") not in (True, False):
+        issues.append(f"{prefix}_restore_snapshot_available_not_bool")
+    return issues
+
+
+def _resource_governance_summary_issues(summary: Any, prefix: str) -> list[str]:
+    issues = _dict_missing_keys(summary, EXPECTED_RESOURCE_GOVERNANCE_SUMMARY_KEYS, prefix)
+    if not isinstance(summary, dict):
+        return issues
+
+    for key in ("total", "planned", "skipped", "manual_review"):
+        if key in summary and not _json_int(summary.get(key)):
+            issues.append(f"{prefix}_{key}_not_int")
+    for key in ("planned_resource_ids",):
+        if key in summary and not isinstance(summary.get(key), list):
+            issues.append(f"{prefix}_{key}_not_list")
+    for key in ("issue_code_counts", "skip_reason_counts"):
+        if key in summary and not isinstance(summary.get(key), dict):
+            issues.append(f"{prefix}_{key}_not_object")
+    return issues
+
+
+def check_resource_governance_plan(client: SmokeClient) -> CheckResult:
+    payload = client.post_json(
+        "/api/v1/resources/governance/plan",
+        {
+            "issue_codes": EXPECTED_RESOURCE_GOVERNANCE_ISSUE_CODES,
+            "live_check": False,
+            "limit": 1,
+        },
+    )
+    data = _response_data(payload)
+    issues = []
+
+    issues.extend(_dict_missing_keys(data, EXPECTED_RESOURCE_GOVERNANCE_PLAN_KEYS, "plan"))
+    if data.get("dry_run") is not True:
+        issues.append("dry_run_not_true")
+    if data.get("apply_method") != "POST":
+        issues.append(f"apply_method={data.get('apply_method')}")
+    if data.get("apply_endpoint") != "/api/v1/resources/governance/jobs":
+        issues.append(f"apply_endpoint={data.get('apply_endpoint')}")
+
+    selection = data.get("selection") if isinstance(data.get("selection"), dict) else {}
+    selected_issue_codes = selection.get("issue_codes") if isinstance(selection, dict) else None
+    if selected_issue_codes != EXPECTED_RESOURCE_GOVERNANCE_ISSUE_CODES:
+        issues.append(f"selection_issue_codes={selected_issue_codes}")
+    if selection.get("live_check") is not False:
+        issues.append(f"selection_live_check={selection.get('live_check')}")
+    if selection.get("limit") != 1:
+        issues.append(f"selection_limit={selection.get('limit')}")
+
+    plan_items = data.get("items")
+    if not isinstance(plan_items, list):
+        issues.append("items_not_list")
+        plan_items = []
+    if len(plan_items) > 1:
+        issues.append(f"too_many_items={len(plan_items)}")
+    for index, item in enumerate(plan_items[:1]):
+        issues.extend(_resource_governance_plan_item_issues(item, index))
+
+    apply_payload = data.get("apply_payload")
+    apply_items = []
+    if not isinstance(apply_payload, dict):
+        issues.append("apply_payload_not_object")
+    else:
+        if apply_payload.get("confirm") is not True:
+            issues.append(f"apply_payload_confirm={apply_payload.get('confirm')}")
+        apply_items = apply_payload.get("items")
+        if not isinstance(apply_items, list):
+            issues.append("apply_payload_items_not_list")
+            apply_items = []
+
+    pagination = data.get("pagination")
+    issues.extend(_pagination_contract_issues(pagination, expected_page_size=1))
+    if isinstance(pagination, dict):
+        if pagination.get("limit") != 1:
+            issues.append(f"pagination_limit={pagination.get('limit')}")
+        if pagination.get("paginated") not in (True, False):
+            issues.append("pagination_paginated_not_bool")
+
+    summary = data.get("summary")
+    returned_summary = data.get("returned_summary")
+    issues.extend(_resource_governance_summary_issues(summary, "summary"))
+    issues.extend(_resource_governance_summary_issues(returned_summary, "returned_summary"))
+    if isinstance(returned_summary, dict) and returned_summary.get("total") != len(plan_items):
+        issues.append(f"returned_summary_total_mismatch={returned_summary.get('total')}/{len(plan_items)}")
+    if isinstance(returned_summary, dict) and returned_summary.get("planned") != len(apply_items):
+        issues.append(
+            f"returned_summary_planned_mismatch={returned_summary.get('planned')}/{len(apply_items)}"
+        )
+
+    ok = not issues
+    detail = (
+        f"dry_run={data.get('dry_run')} items={len(plan_items)} "
+        f"apply_items={len(apply_items)} "
+        f"total={summary.get('total') if isinstance(summary, dict) else None}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "resource_governance_plan",
+        ok,
+        detail,
+        {
+            "dry_run": data.get("dry_run"),
+            "item_count": len(plan_items),
+            "apply_item_count": len(apply_items),
+            "summary": summary if isinstance(summary, dict) else None,
+            "returned_summary": returned_summary if isinstance(returned_summary, dict) else None,
+            "issues": issues,
+        },
+    )
+
+
 def check_systemd_services(services: list[str], timeout: float) -> CheckResult:
     if not services:
         return _result("systemd_services", True, "no services configured", {"services": {}})
@@ -1394,6 +1556,10 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec(
             "resource_governance",
             lambda: check_resource_governance(client, args.live_check_limit, args.max_resource_actionable),
+        ),
+        CheckSpec(
+            "resource_governance_plan",
+            lambda: check_resource_governance_plan(client),
         ),
     ]
     if args.systemd:

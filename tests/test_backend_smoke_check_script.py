@@ -507,6 +507,85 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/resources/governance/plan":
+            issue_codes = (body or {}).get("issue_codes") or [
+                "duplicate_playback_resource",
+                "detached_source_resource",
+            ]
+            return {
+                "data": {
+                    "generated_at": "2026-06-07T00:00:00",
+                    "dry_run": True,
+                    "apply_method": "POST",
+                    "apply_endpoint": "/api/v1/resources/governance/jobs",
+                    "selection": {
+                        "issue_codes": issue_codes,
+                        "resource_ids": [],
+                        "movie_ids": [],
+                        "live_check": False,
+                        "live_check_limit": 50,
+                        "page": None,
+                        "page_size": None,
+                        "limit": (body or {}).get("limit"),
+                    },
+                    "items": [
+                        {
+                            "issue_code": "duplicate_playback_resource",
+                            "status": "planned",
+                            "action": "remove_resource_index",
+                            "resource": {
+                                "resource_id": 10,
+                                "movie_id": "movie-1",
+                                "path": "movies/copy.mkv",
+                            },
+                            "apply_item": {
+                                "type": "remove_resource_index",
+                                "issue_code": "duplicate_playback_resource",
+                                "resource_id": 10,
+                                "primary_resource_id": 11,
+                            },
+                            "restore_snapshot_available": True,
+                        },
+                    ],
+                    "summary": {
+                        "total": 1,
+                        "planned": 1,
+                        "skipped": 0,
+                        "manual_review": 0,
+                        "planned_resource_ids": [10],
+                        "issue_code_counts": {"duplicate_playback_resource": 1},
+                        "skip_reason_counts": {},
+                    },
+                    "returned_summary": {
+                        "total": 1,
+                        "planned": 1,
+                        "skipped": 0,
+                        "manual_review": 0,
+                        "planned_resource_ids": [10],
+                        "issue_code_counts": {"duplicate_playback_resource": 1},
+                        "skip_reason_counts": {},
+                    },
+                    "pagination": {
+                        "paginated": True,
+                        "current_page": 1,
+                        "page_size": 1,
+                        "total_items": 1,
+                        "total_pages": 1,
+                        "limit": 1,
+                    },
+                    "apply_payload": {
+                        "confirm": True,
+                        "items": [
+                            {
+                                "type": "remove_resource_index",
+                                "issue_code": "duplicate_playback_resource",
+                                "resource_id": 10,
+                                "primary_resource_id": 11,
+                            },
+                        ],
+                    },
+                },
+            }
         raise AssertionError(f"unexpected post path: {path}")
 
 
@@ -557,6 +636,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_fallback_pipeline_match",
                 "episode_review",
                 "resource_governance",
+                "resource_governance_plan",
             ],
             [item.name for item in results],
         )
@@ -954,6 +1034,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         plan = next(item for item in results if item.name == "metadata_reidentify_plan")
         self.assertFalse(plan.ok)
         self.assertIn("dry_run_not_true", plan.detail)
+
+    def test_resource_governance_plan_fails_when_apply_payload_contract_is_broken(self):
+        class BrokenResourceGovernancePlanClient(FakeSmokeClient):
+            def post_json(self, path, body=None):
+                payload = super().post_json(path, body=body)
+                if path == "/api/v1/resources/governance/plan":
+                    payload["data"]["apply_payload"]["confirm"] = False
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenResourceGovernancePlanClient):
+            results = self.module.run_checks(self._args())
+
+        plan = next(item for item in results if item.name == "resource_governance_plan")
+        self.assertFalse(plan.ok)
+        self.assertIn("apply_payload_confirm=False", plan.detail)
 
     def test_background_jobs_fails_when_summary_contract_is_broken(self):
         class BrokenJobsClient(FakeSmokeClient):
