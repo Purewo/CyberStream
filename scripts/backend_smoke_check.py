@@ -149,8 +149,15 @@ def check_health(client: SmokeClient) -> CheckResult:
     data = _response_data(payload)
     status = data.get("status")
     version = data.get("version")
-    ok = status == "up"
-    return _result("health", ok, f"status={status} version={version}", {"status": status, "version": version})
+    database = data.get("database") if isinstance(data.get("database"), dict) else {}
+    database_status = database.get("status")
+    ok = status == "up" and database_status == "ok"
+    return _result(
+        "health",
+        ok,
+        f"status={status} version={version} database={database_status}",
+        {"status": status, "version": version, "database": database},
+    )
 
 
 def check_openapi_health_contract(client: SmokeClient) -> CheckResult:

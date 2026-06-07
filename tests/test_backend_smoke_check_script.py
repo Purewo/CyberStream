@@ -36,7 +36,7 @@ class FakeSmokeClient:
 
     def get_json(self, path, query=None):
         if path == "/api/v1/health":
-            return {"data": {"status": "up", "version": "1.21.0"}}
+            return {"data": {"status": "up", "version": "1.21.0", "database": {"status": "ok", "reason": "ok"}}}
         if path == "/api/v1/openapi.json":
             return {
                 "paths": {
@@ -440,6 +440,22 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         docs = next(item for item in results if item.name == "docs_index")
         self.assertFalse(docs.ok)
         self.assertIn("openapi_links_invalid", docs.detail)
+
+    def test_health_fails_when_database_is_not_ok(self):
+        class DegradedHealthClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/health":
+                    payload["data"]["status"] = "degraded"
+                    payload["data"]["database"] = {"status": "down", "reason": "query_failed"}
+                return payload
+
+        with patch.object(self.module, "SmokeClient", DegradedHealthClient):
+            results = self.module.run_checks(self._args())
+
+        health = next(item for item in results if item.name == "health")
+        self.assertFalse(health.ok)
+        self.assertIn("database=down", health.detail)
 
     def test_resource_governance_fails_when_live_paths_are_invalid(self):
         class BrokenResourceClient(FakeSmokeClient):

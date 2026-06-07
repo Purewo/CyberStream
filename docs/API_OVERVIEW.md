@@ -55,8 +55,9 @@ X-Cyber-API-Token: <token>
 
 ### `GET /`
 ### `GET /api/v1/health`
-返回服务状态与版本信息。
+返回服务状态、版本信息与数据库连接状态。
 两个入口返回相同响应；`/api/v1/health` 供前端、反向代理和监控系统使用统一 API 前缀探活。
+正常时 `data.status=up` 且 `data.database.status=ok`；数据库探测失败时返回 `503`、`data.status=degraded`，并给出机器可读的 `data.database.reason`。
 
 ---
 

@@ -27,7 +27,7 @@
     "/": {
       "get": {
         "summary": "✅ [验证通过] 健康检查",
-        "description": "检查后端服务连通性及数据库连接状态。",
+        "description": "检查后端服务连通性、版本信息及数据库连接状态。",
         "operationId": "healthCheck",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -46,7 +46,11 @@
                   "msg": "Pong",
                   "data": {
                     "status": "up",
-                    "version": "1.21.0"
+                    "version": "1.21.0",
+                    "database": {
+                      "status": "ok",
+                      "reason": "ok"
+                    }
                   }
                 }
               }
@@ -59,7 +63,7 @@
     "/api/v1/health": {
       "get": {
         "summary": "✅ [验证通过] API 前缀健康检查",
-        "description": "与 GET / 返回相同的服务连通性和版本信息，供前端、反向代理和监控系统使用统一 API 前缀探活。",
+        "description": "与 GET / 返回相同的服务连通性、版本信息和数据库状态，供前端、反向代理和监控系统使用统一 API 前缀探活。",
         "operationId": "apiHealthCheck",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -78,7 +82,11 @@
                   "msg": "Pong",
                   "data": {
                     "status": "up",
-                    "version": "1.21.0"
+                    "version": "1.21.0",
+                    "database": {
+                      "status": "ok",
+                      "reason": "ok"
+                    }
                   }
                 }
               }

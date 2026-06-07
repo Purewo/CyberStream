@@ -128,10 +128,24 @@ class ApiAuthTests(unittest.TestCase):
 
         self.assertEqual(200, health.status_code)
         self.assertEqual(200, api_health.status_code)
-        self.assertEqual("up", api_health.get_json()["data"]["status"])
+        health_data = api_health.get_json()["data"]
+        self.assertEqual("up", health_data["status"])
+        self.assertEqual("ok", health_data["database"]["status"])
         self.assertNotEqual(401, options.status_code)
         self.assertNotEqual(401, stream.status_code)
         self.assertNotEqual(401, image.status_code)
+
+    def test_health_reports_database_failure(self):
+        client = self.create_client()
+
+        with patch("backend.app.db_ext.session.execute", side_effect=RuntimeError("db unavailable")):
+            response = client.get("/api/v1/health")
+
+        self.assertEqual(503, response.status_code)
+        data = response.get_json()["data"]
+        self.assertEqual("degraded", data["status"])
+        self.assertEqual("down", data["database"]["status"])
+        self.assertEqual("query_failed", data["database"]["reason"])
 
 
 if __name__ == "__main__":

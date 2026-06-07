@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
+from sqlalchemy import text
 from werkzeug.middleware.proxy_fix import ProxyFix
 from backend import config
 from backend.app.extensions import db as db_ext
@@ -59,7 +60,26 @@ def create_app(config_overrides=None):
     @app.route('/api/v1/health')
     def health_check():
         from backend.app.utils.response import api_response
-        return api_response(data={"status": "up", "version": app.config.get("APP_VERSION", "unknown")}, msg="Pong")
+        try:
+            db_ext.session.execute(text("SELECT 1")).scalar()
+            database = {"status": "ok", "reason": "ok"}
+            status = "up"
+            http_status = 200
+        except Exception as exc:  # noqa: BLE001 - health check must convert all DB failures to status data.
+            app.logger.warning("Database health check failed: %s", exc)
+            database = {"status": "down", "reason": "query_failed"}
+            status = "degraded"
+            http_status = 503
+
+        return api_response(
+            data={
+                "status": status,
+                "version": app.config.get("APP_VERSION", "unknown"),
+                "database": database,
+            },
+            msg="Pong",
+            http_status=http_status,
+        )
 
     app.before_request(require_api_token)
 
