@@ -286,6 +286,32 @@ class FakeSmokeClient:
             return {"data": {"items": [], "pagination": {"total_items": total}}}
         if path == "/api/v1/metadata/episode-review-items":
             return {"data": {"items": [], "pagination": {"total_items": 0}}}
+        if path == "/api/v1/jobs":
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": "job-1",
+                            "type": "metadata_re_scrape",
+                            "title": "Metadata re-scrape",
+                            "status": "succeeded",
+                            "created_at": "2026-06-07T00:00:00",
+                            "started_at": "2026-06-07T00:00:01",
+                            "finished_at": "2026-06-07T00:00:02",
+                            "request": {},
+                            "progress": {"current": 1, "total": 1, "message": "done"},
+                            "result": {"summary": {"total": 1}},
+                            "error": None,
+                            "persisted": True,
+                        },
+                    ],
+                    "summary": {
+                        "count": 1,
+                        "limit": 1,
+                        "type": None,
+                    },
+                },
+            }
         if path == "/api/v1/resources/governance-summary":
             return {
                 "data": {
@@ -337,6 +363,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "scan",
                 "metadata_providers",
                 "metadata_review_workbench",
+                "background_jobs",
                 "storage_sources",
                 "metadata_fallback_pipeline_match",
                 "episode_review",
@@ -505,6 +532,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         workbench = next(item for item in results if item.name == "metadata_review_workbench")
         self.assertFalse(workbench.ok)
         self.assertIn("missing_buckets=episode_review", workbench.detail)
+
+    def test_background_jobs_fails_when_summary_contract_is_broken(self):
+        class BrokenJobsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/jobs":
+                    payload["data"]["summary"]["count"] = 2
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenJobsClient):
+            results = self.module.run_checks(self._args())
+
+        jobs = next(item for item in results if item.name == "background_jobs")
+        self.assertFalse(jobs.ok)
+        self.assertIn("count_mismatch=2/1", jobs.detail)
 
     def test_storage_sources_fail_when_resource_backed_source_cannot_stream(self):
         class BrokenStorageSourceClient(FakeSmokeClient):

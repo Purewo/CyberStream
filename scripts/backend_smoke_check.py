@@ -49,6 +49,7 @@ EXPECTED_METADATA_QUALITY_TOTALS = [
     "bulk_reidentify_movie_count",
     "episode_review_movie_count",
 ]
+EXPECTED_JOB_STATUSES = ["queued", "running", "succeeded", "failed"]
 EXPECTED_OPENAPI_MODULES = [
     "docs",
     "auth-users",
@@ -491,6 +492,71 @@ def check_metadata_review_workbench(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_background_jobs(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/jobs", {"limit": 1})
+    data = _response_data(payload)
+    items = data.get("items")
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    issues = []
+
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    if not isinstance(data.get("summary"), dict):
+        issues.append("summary_missing")
+
+    if summary.get("limit") != 1:
+        issues.append(f"limit={summary.get('limit')}")
+    if summary.get("count") != len(items):
+        issues.append(f"count_mismatch={summary.get('count')}/{len(items)}")
+    if len(items) > 1:
+        issues.append(f"too_many_items={len(items)}")
+
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            issues.append(f"item_{index}_not_object")
+            continue
+        missing = [
+            key for key in ("id", "type", "status", "created_at", "progress")
+            if key not in item
+        ]
+        if missing:
+            issues.append(f"item_{index}_missing={','.join(missing)}")
+        status = item.get("status")
+        if status not in EXPECTED_JOB_STATUSES:
+            issues.append(f"item_{index}_status={status}")
+        if "progress" in item and not isinstance(item.get("progress"), dict):
+            issues.append(f"item_{index}_progress_not_object")
+        if "persisted" in item and item.get("persisted") not in (True, False):
+            issues.append(f"item_{index}_persisted_not_bool")
+
+    ok = not issues
+    latest = items[0] if items and isinstance(items[0], dict) else {}
+    latest_detail = ""
+    if latest:
+        latest_detail = f" latest={latest.get('type')}:{latest.get('status')}"
+    detail = f"items={len(items)} limit={summary.get('limit')} type={summary.get('type')}{latest_detail}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+
+    return _result(
+        "background_jobs",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "summary": summary,
+            "issues": issues,
+            "latest": {
+                "id": latest.get("id"),
+                "type": latest.get("type"),
+                "status": latest.get("status"),
+                "persisted": latest.get("persisted"),
+            } if latest else None,
+        },
+    )
+
+
 def _source_label(source: dict[str, Any]) -> str:
     source_id = source.get("id", "?")
     source_type = source.get("type") or "unknown"
@@ -721,6 +787,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
+        CheckSpec("background_jobs", lambda: check_background_jobs(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
         CheckSpec(
             "metadata_fallback_pipeline_match",
