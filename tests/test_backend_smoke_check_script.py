@@ -394,6 +394,27 @@ class FakeSmokeClient:
                             "count": 1,
                         },
                     ],
+                    "metadata_source_groups": [
+                        {
+                            "name": "tmdb",
+                            "slug": "tmdb",
+                            "count": 1,
+                        },
+                    ],
+                    "metadata_review_priorities": [
+                        {
+                            "name": "low",
+                            "slug": "low",
+                            "count": 1,
+                        },
+                    ],
+                    "metadata_issue_codes": [
+                        {
+                            "name": "poster_missing",
+                            "slug": "poster_missing",
+                            "count": 1,
+                        },
+                    ],
                 },
             }
         if path == "/api/v1/system/tmdb-config":
@@ -1970,6 +1991,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "libraries",
                 "other_videos",
                 "catalog_filters",
+                "catalog_metadata_filters",
                 "catalog_movies",
                 "catalog_keyword_search",
                 "movie_detail",
@@ -2571,6 +2593,24 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         filters = next(item for item in results if item.name == "catalog_filters")
         self.assertFalse(filters.ok)
         self.assertIn("genres_0_missing=count", filters.detail)
+
+    def test_catalog_metadata_filters_fail_when_option_shape_is_broken(self):
+        class BrokenCatalogMetadataFiltersClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if (
+                    path == "/api/v1/filters"
+                    and "metadata_source_groups" in ((query or {}).get("include") or "")
+                ):
+                    del payload["data"]["metadata_source_groups"][0]["slug"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenCatalogMetadataFiltersClient):
+            results = self.module.run_checks(self._args())
+
+        filters = next(item for item in results if item.name == "catalog_metadata_filters")
+        self.assertFalse(filters.ok)
+        self.assertIn("metadata_source_groups_0_missing=slug", filters.detail)
 
     def test_update_check_fails_when_download_is_not_cdn_validated(self):
         class BrokenUpdateCheckClient(FakeSmokeClient):

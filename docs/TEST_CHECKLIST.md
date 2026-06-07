@@ -68,6 +68,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK libraries`，说明普通资源库列表契约可用且不混入收藏虚拟库
 - smoke check 返回 `OK other_videos`，说明其他视频归档队列、分页、summary 和手工归档动作契约可用
 - smoke check 返回 `OK catalog_filters`，说明目录页筛选项 `genres/years/countries` 可用
+- smoke check 返回 `OK catalog_metadata_filters`，说明目录页和审查工作台元数据筛选项 `source_groups/review_priorities/issue_codes` 可用
 - smoke check 返回 `OK catalog_movies`，说明主影视列表分页与首条样例关键字段可用
 - smoke check 返回 `OK catalog_keyword_search`，说明片库 keyword 搜索可用，且能通过首条样例标题反查到同一影片
 - smoke check 返回 `OK movie_detail`，说明列表到详情页的只读链路与详情关键字段可用
@@ -815,7 +816,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`761 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`762 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

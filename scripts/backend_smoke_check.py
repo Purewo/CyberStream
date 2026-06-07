@@ -627,6 +627,11 @@ EXPECTED_CATALOG_FILTER_KEYS = [
     "years",
     "countries",
 ]
+EXPECTED_CATALOG_METADATA_FILTER_KEYS = [
+    "metadata_source_groups",
+    "metadata_review_priorities",
+    "metadata_issue_codes",
+]
 EXPECTED_LIBRARY_KEYS = [
     "id",
     "name",
@@ -2896,17 +2901,20 @@ def _catalog_filter_option_issues(item: Any, index: int, kind: str) -> list[str]
 
     if kind == "years":
         expected_keys = ["year", "count"]
+        text_keys = []
     elif kind == "countries":
         expected_keys = ["name", "code", "count"]
+        text_keys = ["name", "code"]
     else:
         expected_keys = ["name", "slug", "count"]
+        text_keys = ["name", "slug"]
 
     issues = _dict_missing_keys(item, expected_keys, prefix)
     if kind == "years":
         if "year" in item and not _json_int(item.get("year")):
             issues.append(f"{prefix}_year_not_int")
     else:
-        for key in ("name", "slug" if kind == "genres" else "code"):
+        for key in text_keys:
             if key in item and not isinstance(item.get(key), str):
                 issues.append(f"{prefix}_{key}_not_str")
     if "count" in item:
@@ -2929,6 +2937,24 @@ def _catalog_filters_payload_issues(data: Any) -> list[str]:
         if not isinstance(items, list):
             issues.append(f"{key}_not_list")
             continue
+        for index, item in enumerate(items[:3]):
+            issues.extend(_catalog_filter_option_issues(item, index, key))
+    return issues
+
+
+def _catalog_metadata_filters_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["metadata_filters_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_CATALOG_METADATA_FILTER_KEYS, "metadata_filters"))
+    for key in EXPECTED_CATALOG_METADATA_FILTER_KEYS:
+        items = data.get(key)
+        if not isinstance(items, list):
+            issues.append(f"{key}_not_list")
+            continue
+        if key in {"metadata_source_groups", "metadata_review_priorities"} and not items:
+            issues.append(f"{key}_empty")
         for index, item in enumerate(items[:3]):
             issues.extend(_catalog_filter_option_issues(item, index, key))
     return issues
@@ -4100,6 +4126,37 @@ def check_catalog_filters(client: SmokeClient) -> CheckResult:
         detail = f"{detail} issues={'; '.join(issues)}"
     return _result(
         "catalog_filters",
+        ok,
+        detail,
+        {
+            "counts": counts,
+            "issues": issues,
+        },
+    )
+
+
+def check_catalog_metadata_filters(client: SmokeClient) -> CheckResult:
+    payload = client.get_json(
+        "/api/v1/filters",
+        {"include": "metadata_source_groups,metadata_review_priorities,metadata_issue_codes"},
+    )
+    data = _response_data(payload)
+    issues = _catalog_metadata_filters_payload_issues(data)
+
+    counts = {
+        key: len(data.get(key) or []) if isinstance(data, dict) and isinstance(data.get(key), list) else 0
+        for key in EXPECTED_CATALOG_METADATA_FILTER_KEYS
+    }
+    ok = not issues
+    detail = (
+        f"source_groups={counts['metadata_source_groups']} "
+        f"review_priorities={counts['metadata_review_priorities']} "
+        f"issue_codes={counts['metadata_issue_codes']}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "catalog_metadata_filters",
         ok,
         detail,
         {
@@ -6198,6 +6255,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("libraries", lambda: check_libraries(client)),
         CheckSpec("other_videos", lambda: check_other_videos(client)),
         CheckSpec("catalog_filters", lambda: check_catalog_filters(client)),
+        CheckSpec("catalog_metadata_filters", lambda: check_catalog_metadata_filters(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("catalog_keyword_search", lambda: check_catalog_keyword_search(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
