@@ -138,7 +138,9 @@ class ApiAuthTests(unittest.TestCase):
     def test_health_reports_database_failure(self):
         client = self.create_client()
 
-        with patch("backend.app.db_ext.session.execute", side_effect=RuntimeError("db unavailable")):
+        with patch("backend.app.db_ext.session.execute", side_effect=RuntimeError("db unavailable")), patch(
+            "backend.app.db_ext.session.rollback",
+        ) as rollback:
             response = client.get("/api/v1/health")
 
         self.assertEqual(503, response.status_code)
@@ -146,6 +148,7 @@ class ApiAuthTests(unittest.TestCase):
         self.assertEqual("degraded", data["status"])
         self.assertEqual("down", data["database"]["status"])
         self.assertEqual("query_failed", data["database"]["reason"])
+        rollback.assert_called_once()
 
 
 if __name__ == "__main__":

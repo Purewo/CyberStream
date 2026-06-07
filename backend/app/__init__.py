@@ -67,6 +67,10 @@ def create_app(config_overrides=None):
             http_status = 200
         except Exception as exc:  # noqa: BLE001 - health check must convert all DB failures to status data.
             app.logger.warning("Database health check failed: %s", exc)
+            try:
+                db_ext.session.rollback()
+            except Exception:
+                app.logger.debug("Database health rollback failed", exc_info=True)
             database = {"status": "down", "reason": "query_failed"}
             status = "degraded"
             http_status = 503
