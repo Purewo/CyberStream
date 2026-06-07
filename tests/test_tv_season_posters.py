@@ -336,6 +336,52 @@ class TVSeasonPosterTests(unittest.TestCase):
         self.assertEqual([1, 2], diagnostics["alternate_episode_numbers"])
         self.assertEqual("complete", data["summary"]["episode_diagnostics"]["coverage_status"])
 
+    def test_future_episodes_do_not_require_review_until_aired(self):
+        movie = Movie(
+            tmdb_id="tv/future-episode",
+            title="未来集番剧",
+            original_title="Future Episode",
+            year=2026,
+            cover="https://image.tmdb.org/t/p/w500/series.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        db.session.add(MovieSeasonMetadata(
+            movie_id=movie.id,
+            season=1,
+            title="第一季",
+            episode_count=41,
+            aired_episode_count=40,
+        ))
+        db.session.add_all([
+            MediaResource(
+                movie_id=movie.id,
+                path=f"anime/S01E{episode:02d}.mkv",
+                filename=f"S01E{episode:02d}.mkv",
+                season=1,
+                episode=episode,
+            )
+            for episode in range(1, 41)
+        ])
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/seasons")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        season = data["items"][0]
+        diagnostics = season["episode_diagnostics"]
+
+        self.assertEqual(41, season["tmdb_episode_count"])
+        self.assertEqual(40, season["aired_episode_count"])
+        self.assertEqual("ok", diagnostics["status"])
+        self.assertEqual("complete", diagnostics["coverage_status"])
+        self.assertEqual(40, diagnostics["expected_episode_count"])
+        self.assertEqual([], diagnostics["missing_episode_numbers"])
+        self.assertEqual("ok", data["summary"]["episode_diagnostics"]["status"])
+
     def test_episode_diagnostics_endpoint_returns_dry_run_repair_plan(self):
         movie = Movie(
             tmdb_id="tv/repair-plan",

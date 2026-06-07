@@ -44,6 +44,7 @@ SEASON_METADATA_FIELDS = (
     'air_date',
     'poster',
     'episode_count',
+    'aired_episode_count',
 )
 
 
@@ -634,7 +635,7 @@ class MovieDatabaseAdapter:
         normalized = {"season": season}
         for field in SEASON_METADATA_FIELDS:
             value = item.get(field)
-            if field == 'episode_count':
+            if field in {'episode_count', 'aired_episode_count'}:
                 try:
                     value = int(value) if value not in (None, '') else None
                 except (TypeError, ValueError):

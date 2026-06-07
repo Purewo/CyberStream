@@ -14234,6 +14234,11 @@
             "type": "integer",
             "nullable": true
           },
+          "aired_episode_count": {
+            "type": "integer",
+            "nullable": true,
+            "description": "截至当前日期已播出的集数。剧集完整性诊断优先使用该值，避免未来集误报缺集。"
+          },
           "has_manual_metadata": {
             "type": "boolean"
           },
@@ -14669,6 +14674,11 @@
               "tmdb_episode_count": {
                 "type": "integer",
                 "nullable": true
+              },
+              "expected_episode_count": {
+                "type": "integer",
+                "nullable": true,
+                "description": "当前诊断使用的期望集数，优先为 aired_episode_count，缺失时回退到 tmdb_episode_count。"
               },
               "edited_items_count": {
                 "type": "integer"

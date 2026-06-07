@@ -4,6 +4,7 @@ import socket
 import time
 import logging
 import threading
+from datetime import date
 from urllib.parse import urlparse
 from urllib3.util import connection as urllib3_connection
 from backend import config
@@ -15,6 +16,53 @@ _TMDB_DNS_FAMILY_LOCK = threading.Lock()
 _TMDB_DNS_FAMILY_CACHE = {}
 _TMDB_DNS_FAMILY_CACHE_TTL = 300
 _TMDB_DNS_PROBE_TIMEOUT = 0.8
+
+
+def _parse_tmdb_date(value):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_positive_int(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _aired_episode_count_for_season(season, data, today=None):
+    episode_count = _safe_positive_int(season.get('episode_count'))
+    if not episode_count:
+        return None
+
+    season_number = _safe_positive_int(season.get('season_number'))
+    if not season_number:
+        return None
+
+    today = today or date.today()
+    season_air_date = _parse_tmdb_date(season.get('air_date'))
+    if season_air_date and season_air_date > today:
+        return 0
+
+    last_episode = data.get('last_episode_to_air') if isinstance(data, dict) else None
+    if isinstance(last_episode, dict):
+        last_season = _safe_positive_int(last_episode.get('season_number'))
+        last_episode_number = _safe_positive_int(last_episode.get('episode_number'))
+        if last_season:
+            if season_number < last_season:
+                return episode_count
+            if season_number == last_season and last_episode_number is not None:
+                return min(last_episode_number, episode_count)
+
+    if season_air_date and season_air_date <= today:
+        return episode_count
+
+    return None
 
 
 def _tmdb_ipv4_gai_family():
@@ -747,6 +795,7 @@ class TMDBScraper:
                     "air_date": season.get('air_date') or None,
                     "poster": config.TMDB_IMAGE_BASE + season.get('poster_path') if season.get('poster_path') else "",
                     "episode_count": season.get('episode_count'),
+                    "aired_episode_count": _aired_episode_count_for_season(season, data),
                 })
 
         return {

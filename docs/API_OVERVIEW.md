@@ -1368,6 +1368,7 @@ X-Cyber-API-Token: <token>
 - 返回 `items`，结构与 `resources.groups.seasons` 一致
 - 返回 `summary`，便于前端直接渲染季列表视图
 - 每季的 `episode_diagnostics` 会返回 `status/coverage_status/issue_codes`，覆盖缺集、重复集号、资源缺集号和资源数与季元数据集数不一致；完整季内同集多版本片源会进入 `alternate_episode_numbers/resources`，不作为 `duplicate_episode_numbers` 复核项
+- 季元数据可能返回 `aired_episode_count`；诊断优先按已播集数计算，未来未播集不会进入缺集复核
 - `summary.episode_diagnostics` 汇总整部影片的剧集诊断状态、问题计数和需要复核的季号
 - 该诊断是只读视图，不修改扫描结果；前端可把它作为剧集复核工作台入口，再调用资源批量编辑接口修正季/集
 

@@ -947,11 +947,11 @@ class Movie(db.Model):
 
         metadata_lock = self.get_locked_fields()
         season_metadata_items = [item for item in self.season_metadata.all() if not item.is_empty()]
-        season_episode_counts = {
-            item.season: item.episode_count
-            for item in season_metadata_items
-            if item.episode_count
-        }
+        season_episode_counts = {}
+        for item in season_metadata_items:
+            expected_count = item.aired_episode_count if item.aired_episode_count is not None else item.episode_count
+            if expected_count:
+                season_episode_counts[item.season] = expected_count
         episode_diagnostics = build_movie_episode_diagnostics(resources, season_episode_counts)
 
         return {
@@ -1452,6 +1452,7 @@ class MovieSeasonMetadata(db.Model):
     air_date = db.Column(db.String(10))
     poster = db.Column(db.String(500))
     episode_count = db.Column(db.Integer)
+    aired_episode_count = db.Column(db.Integer)
     metadata_edited_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1463,7 +1464,14 @@ class MovieSeasonMetadata(db.Model):
         return bool(self.title or self.overview or self.air_date)
 
     def has_metadata(self):
-        return bool(self.title or self.overview or self.air_date or self.poster or self.episode_count is not None)
+        return bool(
+            self.title
+            or self.overview
+            or self.air_date
+            or self.poster
+            or self.episode_count is not None
+            or self.aired_episode_count is not None
+        )
 
     def is_empty(self):
         return not self.has_metadata()
@@ -1477,6 +1485,7 @@ class MovieSeasonMetadata(db.Model):
             "air_date": self.air_date,
             "poster_url": self.poster,
             "episode_count": self.episode_count,
+            "aired_episode_count": self.aired_episode_count,
             "has_manual_metadata": self.has_manual_metadata(),
             "has_metadata": self.has_metadata(),
             "metadata_edited_at": self.metadata_edited_at.isoformat() if self.metadata_edited_at else None,

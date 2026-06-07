@@ -294,6 +294,76 @@ class TMDBSearchRankingTests(unittest.TestCase):
         self.assertEqual("https://image.tmdb.org/t/p/w500/foundation.jpg", details["cover"])
         self.assertEqual("https://image.tmdb.org/t/p/original/foundation-bg.jpg", details["background_cover"])
 
+    def test_tv_details_include_aired_episode_count_for_ongoing_season(self):
+        scraper = self.build_scraper()
+
+        def fake_get(url, params=None):
+            return {
+                "id": 88319,
+                "name": "罗小黑战记",
+                "original_name": "罗小黑战记",
+                "first_air_date": "2011-03-17",
+                "overview": "test",
+                "poster_path": "/poster.jpg",
+                "backdrop_path": "/backdrop.jpg",
+                "vote_average": 9.1,
+                "genres": [{"name": "动画"}],
+                "production_countries": [{"name": "CN"}],
+                "created_by": [{"name": "MTJJ"}],
+                "last_episode_to_air": {
+                    "season_number": 1,
+                    "episode_number": 40,
+                    "air_date": "2021-07-17",
+                },
+                "seasons": [
+                    {
+                        "season_number": 0,
+                        "name": "特别篇",
+                        "episode_count": 5,
+                        "air_date": "2011-07-10",
+                    },
+                    {
+                        "season_number": 1,
+                        "name": "第 1 季",
+                        "overview": "season one",
+                        "air_date": "2011-03-17",
+                        "poster_path": "/season-1.jpg",
+                        "episode_count": 41,
+                    },
+                    {
+                        "season_number": 2,
+                        "name": "第 2 季",
+                        "air_date": "2021-04-24",
+                        "episode_count": 1,
+                    },
+                ],
+            }
+
+        with patch.object(scraper, "_get", side_effect=fake_get):
+            details = scraper.get_movie_details("tv/88319")
+
+        self.assertEqual("tv/88319", details["tmdb_id"])
+        self.assertEqual([
+            {
+                "season": 1,
+                "title": "第 1 季",
+                "overview": "season one",
+                "air_date": "2011-03-17",
+                "poster": "https://image.tmdb.org/t/p/w500/season-1.jpg",
+                "episode_count": 41,
+                "aired_episode_count": 40,
+            },
+            {
+                "season": 2,
+                "title": "第 2 季",
+                "overview": None,
+                "air_date": "2021-04-24",
+                "poster": "",
+                "episode_count": 1,
+                "aired_episode_count": 1,
+            },
+        ], details["season_metadata"])
+
 
 if __name__ == "__main__":
     unittest.main()

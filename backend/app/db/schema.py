@@ -10,6 +10,7 @@ SQLITE_COLUMN_PATCHES = {
     "movie_season_metadata": {
         "poster": "ALTER TABLE movie_season_metadata ADD COLUMN poster VARCHAR(500)",
         "episode_count": "ALTER TABLE movie_season_metadata ADD COLUMN episode_count INTEGER",
+        "aired_episode_count": "ALTER TABLE movie_season_metadata ADD COLUMN aired_episode_count INTEGER",
     },
     "library_sources": {
         "scraper_policy": "ALTER TABLE library_sources ADD COLUMN scraper_policy JSON",
@@ -115,6 +116,7 @@ SQLITE_TABLE_PATCHES = {
             air_date VARCHAR(10),
             poster VARCHAR(500),
             episode_count INTEGER,
+            aired_episode_count INTEGER,
             metadata_edited_at DATETIME,
             created_at DATETIME,
             updated_at DATETIME,

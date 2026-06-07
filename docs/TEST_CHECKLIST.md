@@ -388,6 +388,7 @@ curl -s "http://127.0.0.1:5004/api/v1/metadata/work-items?metadata_issue_code=mi
 - dry-run 接口返回 `dry_run=true`，并给出可确认后提交的 `apply_payload`
 - `apply_payload.items` 只包含无冲突的补齐建议；解析结果与现有集号冲突时只出现在人工复核建议和 `warnings`
 - 缺集返回 `missing_episode_numbers`
+- 已登记但未播出的未来集不进入 `missing_episode_numbers`
 - 重复集号返回 `duplicate_episode_numbers`
 - 完整季内同集多版本片源返回 `alternate_episode_numbers`，且不进入 `duplicate_episode_numbers`
 - 季内资源缺集号时返回 `episode_number_missing`

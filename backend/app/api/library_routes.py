@@ -2200,10 +2200,16 @@ def _build_movie_resource_groups(movie, season_filter=None):
                 "air_date": None,
                 "poster_url": None,
                 "episode_count": None,
+                "aired_episode_count": None,
                 "has_manual_metadata": False,
                 "has_metadata": False,
                 "metadata_edited_at": None,
             }
+            expected_episode_count = (
+                season_data.get("aired_episode_count")
+                if season_data.get("aired_episode_count") is not None
+                else season_data.get("episode_count")
+            )
             season_poster = season_data.get("poster_url")
             season_entry = {
                 **season_data,
@@ -2213,6 +2219,7 @@ def _build_movie_resource_groups(movie, season_filter=None):
                 "resource_ids": [],
                 "episode_count": 0,
                 "tmdb_episode_count": season_data.get("episode_count"),
+                "expected_episode_count": expected_episode_count,
                 "edited_items_count": 0,
                 "has_manual_metadata": season_data["has_manual_metadata"],
                 "has_metadata": season_data.get("has_metadata", False),
@@ -2292,7 +2299,7 @@ def _build_movie_resource_groups(movie, season_filter=None):
         ]
         season_entry["episode_diagnostics"] = build_season_episode_diagnostics(
             primary_resources,
-            expected_episode_count=season_entry.get("tmdb_episode_count"),
+            expected_episode_count=season_entry.get("expected_episode_count"),
         )
 
     episode_diagnostics_summary = build_episode_diagnostics_summary({
