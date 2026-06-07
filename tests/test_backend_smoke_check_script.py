@@ -382,7 +382,24 @@ class FakeSmokeClient:
                 },
             }
         if path == "/api/v1/metadata/episode-review-items":
-            return {"data": {"items": [], "pagination": {"total_items": 0}}}
+            return {
+                "data": {
+                    "items": [],
+                    "pagination": {
+                        "current_page": 1,
+                        "page_size": 20,
+                        "total_items": 0,
+                        "total_pages": 0,
+                    },
+                    "summary": {
+                        "total_items": 0,
+                        "issue_code_counts": {},
+                        "auto_update_count": 0,
+                        "manual_suggestion_count": 0,
+                        "warning_count": 0,
+                    },
+                },
+            }
         if path == "/api/v1/jobs":
             return {
                 "data": {
@@ -1034,6 +1051,72 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         plan = next(item for item in results if item.name == "metadata_reidentify_plan")
         self.assertFalse(plan.ok)
         self.assertIn("dry_run_not_true", plan.detail)
+
+    def test_episode_review_fails_when_queue_sample_shape_is_broken(self):
+        class BrokenEpisodeReviewClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/metadata/episode-review-items":
+                    payload["data"] = {
+                        "items": [
+                            {
+                                "movie_id": "movie-1",
+                                "title": "Episode Queue",
+                                "playable": True,
+                                "primary_resource_id": 1,
+                                "scraper_source": "TMDB",
+                                "metadata_state": {
+                                    "source_group": "tmdb",
+                                    "source_code": "TMDB",
+                                    "source_label": "TMDB",
+                                    "issue_codes": ["missing_episode_numbers"],
+                                    "needs_attention": True,
+                                    "review_priority": "medium",
+                                    "recommended_action": "episode_review_queue",
+                                },
+                                "metadata_issues": [
+                                    {"code": "missing_episode_numbers", "count": 1},
+                                ],
+                                "episode_diagnostics": {
+                                    "status": "warning",
+                                },
+                                "season_count": 1,
+                                "seasons_needing_attention": [1],
+                                "auto_update_count": 1,
+                                "manual_suggestion_count": 0,
+                                "warning_count": 0,
+                                "diagnostics_endpoint": "/api/v1/movies/movie-1/episode-diagnostics",
+                                "apply_method": "PATCH",
+                                "apply_endpoint": "/api/v1/movies/movie-1/resources/metadata",
+                                "apply_payload": {
+                                    "items": [
+                                        {"id": 1, "season": 1, "episode": 2},
+                                    ],
+                                },
+                            },
+                        ],
+                        "pagination": {
+                            "current_page": 1,
+                            "page_size": 20,
+                            "total_items": 1,
+                            "total_pages": 1,
+                        },
+                        "summary": {
+                            "total_items": 1,
+                            "issue_code_counts": {"missing_episode_numbers": 1},
+                            "auto_update_count": 1,
+                            "manual_suggestion_count": 0,
+                            "warning_count": 0,
+                        },
+                    }
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenEpisodeReviewClient):
+            results = self.module.run_checks(self._args(max_episode_review_items=1))
+
+        episode = next(item for item in results if item.name == "episode_review")
+        self.assertFalse(episode.ok)
+        self.assertIn("item_0_missing=metadata_actions", episode.detail)
 
     def test_resource_governance_plan_fails_when_apply_payload_contract_is_broken(self):
         class BrokenResourceGovernancePlanClient(FakeSmokeClient):

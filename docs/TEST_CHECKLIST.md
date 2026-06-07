@@ -467,6 +467,7 @@ curl -s "http://127.0.0.1:5004/api/v1/metadata/episode-review-items?page_size=5"
 - smoke check 返回 `OK metadata_review_workbench`，说明复核工作台分类、动作、质量汇总 issue/sample 契约可用
 - smoke check 返回 `OK metadata_work_items_contract`，说明复核工作台列表分页与样例条目关键字段可用
 - smoke check 返回 `OK metadata_reidentify_plan`，说明批量重识别 dry-run 计划和提交 payload 契约可用
+- smoke check 返回 `OK episode_review`，说明剧集复核队列分页、summary 和样例条目关键字段可用
 - smoke check 返回 `OK background_jobs`，说明后台任务列表和前端轮询入口可用
 - 质量汇总返回 issue 计数、样例和建议动作
 - 批量重识别计划返回 `dry_run=true`，且不修改影片元数据
@@ -760,7 +761,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`724 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`725 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

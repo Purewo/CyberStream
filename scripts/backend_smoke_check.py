@@ -150,6 +150,33 @@ EXPECTED_RESOURCE_GOVERNANCE_ITEM_KEYS = [
     "apply_item",
     "restore_snapshot_available",
 ]
+EXPECTED_EPISODE_REVIEW_SUMMARY_KEYS = [
+    "total_items",
+    "issue_code_counts",
+    "auto_update_count",
+    "manual_suggestion_count",
+    "warning_count",
+]
+EXPECTED_EPISODE_REVIEW_ITEM_KEYS = [
+    "movie_id",
+    "title",
+    "playable",
+    "primary_resource_id",
+    "scraper_source",
+    "metadata_state",
+    "metadata_actions",
+    "metadata_issues",
+    "episode_diagnostics",
+    "season_count",
+    "seasons_needing_attention",
+    "auto_update_count",
+    "manual_suggestion_count",
+    "warning_count",
+    "diagnostics_endpoint",
+    "apply_method",
+    "apply_endpoint",
+    "apply_payload",
+]
 EXPECTED_METADATA_WORK_ITEM_KEYS = [
     "id",
     "title",
@@ -1318,16 +1345,115 @@ def check_work_items(client: SmokeClient, issue_code: str, max_items: int) -> Ch
     )
 
 
+def _episode_review_summary_issues(summary: Any, expected_total: int | None = None) -> list[str]:
+    issues = _dict_missing_keys(summary, EXPECTED_EPISODE_REVIEW_SUMMARY_KEYS, "summary")
+    if not isinstance(summary, dict):
+        return issues
+
+    for key in ("total_items", "auto_update_count", "manual_suggestion_count", "warning_count"):
+        if key in summary and not _json_int(summary.get(key)):
+            issues.append(f"summary_{key}_not_int")
+    if "issue_code_counts" in summary and not isinstance(summary.get("issue_code_counts"), dict):
+        issues.append("summary_issue_code_counts_not_object")
+    if expected_total is not None and summary.get("total_items") != expected_total:
+        issues.append(f"summary_total_mismatch={summary.get('total_items')}/{expected_total}")
+    return issues
+
+
+def _episode_review_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"item_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_EPISODE_REVIEW_ITEM_KEYS, prefix))
+    if "playable" in item and item.get("playable") not in (True, False):
+        issues.append(f"{prefix}_playable_not_bool")
+    if "metadata_issues" in item and not isinstance(item.get("metadata_issues"), list):
+        issues.append(f"{prefix}_metadata_issues_not_list")
+    if "episode_diagnostics" in item and not isinstance(item.get("episode_diagnostics"), dict):
+        issues.append(f"{prefix}_episode_diagnostics_not_object")
+    if "seasons_needing_attention" in item and not isinstance(item.get("seasons_needing_attention"), list):
+        issues.append(f"{prefix}_seasons_needing_attention_not_list")
+    for key in ("season_count", "auto_update_count", "manual_suggestion_count", "warning_count"):
+        if key in item and not _json_int(item.get(key)):
+            issues.append(f"{prefix}_{key}_not_int")
+    if (
+        "diagnostics_endpoint" in item
+        and not str(item.get("diagnostics_endpoint") or "").startswith("/api/v1/movies/")
+    ):
+        issues.append(f"{prefix}_diagnostics_endpoint_invalid")
+    if "apply_method" in item and item.get("apply_method") != "PATCH":
+        issues.append(f"{prefix}_apply_method={item.get('apply_method')}")
+    if (
+        "apply_endpoint" in item
+        and not str(item.get("apply_endpoint") or "").startswith("/api/v1/movies/")
+    ):
+        issues.append(f"{prefix}_apply_endpoint_invalid")
+    apply_payload = item.get("apply_payload")
+    if "apply_payload" in item:
+        if not isinstance(apply_payload, dict):
+            issues.append(f"{prefix}_apply_payload_not_object")
+        elif not isinstance(apply_payload.get("items"), list):
+            issues.append(f"{prefix}_apply_payload_items_not_list")
+
+    issues.extend(
+        _dict_missing_keys(
+            item.get("metadata_state"),
+            EXPECTED_METADATA_STATE_KEYS,
+            f"{prefix}_metadata_state",
+        )
+    )
+    issues.extend(
+        _dict_missing_keys(
+            item.get("metadata_actions"),
+            EXPECTED_METADATA_ACTION_KEYS,
+            f"{prefix}_metadata_actions",
+        )
+    )
+    return issues
+
+
 def check_episode_review(client: SmokeClient, max_items: int) -> CheckResult:
     payload = client.get_json("/api/v1/metadata/episode-review-items", {"page_size": 20})
     data = _response_data(payload)
     total = _pagination_total(data)
-    titles = [item.get("title") for item in data.get("items") or [] if isinstance(item, dict)]
-    ok = total <= max_items
-    return _result("episode_review", ok, f"total={total} max={max_items}", {
-        "total": total,
-        "sample_titles": titles[:10],
-    })
+    issues = []
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    if len(items) > 20:
+        issues.append(f"too_many_items={len(items)}")
+    if total > 0 and not items:
+        issues.append("items_empty_with_total")
+    for index, item in enumerate(items[:1]):
+        issues.extend(_episode_review_item_issues(item, index))
+
+    pagination = data.get("pagination") if isinstance(data, dict) else None
+    issues.extend(_pagination_contract_issues(pagination, expected_page_size=20))
+    if isinstance(pagination, dict) and pagination.get("total_items") != total:
+        issues.append(f"pagination_total_mismatch={pagination.get('total_items')}/{total}")
+    issues.extend(_episode_review_summary_issues(data.get("summary") if isinstance(data, dict) else None, total))
+    if total > max_items:
+        issues.append(f"total_above_max={total}/{max_items}")
+
+    ok = not issues
+    titles = [item.get("title") for item in items if isinstance(item, dict)]
+    detail = f"total={total} max={max_items} items={len(items)}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "episode_review",
+        ok,
+        detail,
+        {
+            "total": total,
+            "sample_titles": titles[:10],
+            "issues": issues,
+        },
+    )
 
 
 def check_resource_governance(client: SmokeClient, live_check_limit: int, max_actionable: int) -> CheckResult:

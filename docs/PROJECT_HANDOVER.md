@@ -12,7 +12,7 @@
 
 - GitHub 仓库已检出到 `/root/CyberStream`
 - Python 3.10 虚拟环境与运行依赖已就绪
-- pytest 全量基线通过：`724 passed, 9 skipped, 16 subtests passed`
+- pytest 全量基线通过：`725 passed, 9 skipped, 16 subtests passed`
 - gunicorn 由 `cyberstream-backend` systemd 服务托管，本地 `5004` 健康检查正常
 - `cyberstream-alist`、`cyberstream-openlist`、`nginx`、`ddns-go` 均已纳入当前维护服务器运行基线
 - GitHub SSH 读取与推送已通过本机代理验证
@@ -81,7 +81,7 @@
 - 存储源目录预览、已保存来源浏览、扫描与播放链路
 - 观看历史保留，但不再返回 `is_played` 给前端展示“已观看”标签
 - OpenAPI `1.21.0-beta` 与运行时路由对齐
-- 当前自动化测试基线为 `724 passed, 9 skipped, 16 subtests passed`
+- 当前自动化测试基线为 `725 passed, 9 skipped, 16 subtests passed`
 
 当前项目暂按单主干维护，后续小步提交直接进入 `main`。
 
