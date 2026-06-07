@@ -603,6 +603,21 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/jobs/prune":
+            return {
+                "data": {
+                    "dry_run": True,
+                    "retention_days": (body or {}).get("retention_days"),
+                    "cutoff": "2026-05-08T00:00:00",
+                    "type": None,
+                    "matched": 1,
+                    "matched_ids": ["job-1"],
+                    "removed": 0,
+                    "removed_ids": [],
+                    "type_counts": {"metadata_re_scrape": 1},
+                    "status_counts": {"succeeded": 1},
+                },
+            }
         raise AssertionError(f"unexpected post path: {path}")
 
 
@@ -649,6 +664,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
+                "background_jobs_prune",
                 "storage_sources",
                 "metadata_fallback_pipeline_match",
                 "episode_review",
@@ -1147,6 +1163,23 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         jobs = next(item for item in results if item.name == "background_jobs")
         self.assertFalse(jobs.ok)
         self.assertIn("count_mismatch=2/1", jobs.detail)
+
+    def test_background_jobs_prune_fails_when_dry_run_would_remove_jobs(self):
+        class BrokenJobsPruneClient(FakeSmokeClient):
+            def post_json(self, path, body=None):
+                payload = super().post_json(path, body=body)
+                if path == "/api/v1/jobs/prune":
+                    payload["data"]["removed"] = 1
+                    payload["data"]["removed_ids"] = ["job-1"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenJobsPruneClient):
+            results = self.module.run_checks(self._args())
+
+        prune = next(item for item in results if item.name == "background_jobs_prune")
+        self.assertFalse(prune.ok)
+        self.assertIn("removed=1", prune.detail)
+        self.assertIn("removed_ids=['job-1']", prune.detail)
 
     def test_storage_sources_fail_when_resource_backed_source_cannot_stream(self):
         class BrokenStorageSourceClient(FakeSmokeClient):

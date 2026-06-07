@@ -210,6 +210,18 @@ EXPECTED_CATALOG_VISIBILITY_KEYS = [
     "can_publish",
 ]
 EXPECTED_JOB_STATUSES = ["queued", "running", "succeeded", "failed"]
+EXPECTED_JOB_PRUNE_KEYS = [
+    "dry_run",
+    "retention_days",
+    "cutoff",
+    "type",
+    "matched",
+    "matched_ids",
+    "removed",
+    "removed_ids",
+    "type_counts",
+    "status_counts",
+]
 EXPECTED_OPENAPI_MODULES = [
     "docs",
     "auth-users",
@@ -1192,6 +1204,59 @@ def check_background_jobs(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_background_jobs_prune(client: SmokeClient) -> CheckResult:
+    payload = client.post_json(
+        "/api/v1/jobs/prune",
+        {
+            "retention_days": 30,
+            "dry_run": True,
+        },
+    )
+    data = _response_data(payload)
+    issues = []
+
+    issues.extend(_dict_missing_keys(data, EXPECTED_JOB_PRUNE_KEYS, "prune"))
+    if data.get("dry_run") is not True:
+        issues.append("dry_run_not_true")
+    if data.get("retention_days") != 30:
+        issues.append(f"retention_days={data.get('retention_days')}")
+    if data.get("removed") != 0:
+        issues.append(f"removed={data.get('removed')}")
+    if data.get("removed_ids") != []:
+        issues.append(f"removed_ids={data.get('removed_ids')}")
+    for key in ("matched", "removed"):
+        if key in data and not _json_int(data.get(key)):
+            issues.append(f"{key}_not_int")
+    for key in ("matched_ids", "removed_ids"):
+        if key in data and not isinstance(data.get(key), list):
+            issues.append(f"{key}_not_list")
+    for key in ("type_counts", "status_counts"):
+        if key in data and not isinstance(data.get(key), dict):
+            issues.append(f"{key}_not_object")
+    if data.get("type") is not None:
+        issues.append(f"type={data.get('type')}")
+
+    ok = not issues
+    detail = (
+        f"dry_run={data.get('dry_run')} retention_days={data.get('retention_days')} "
+        f"matched={data.get('matched')} removed={data.get('removed')}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "background_jobs_prune",
+        ok,
+        detail,
+        {
+            "dry_run": data.get("dry_run"),
+            "retention_days": data.get("retention_days"),
+            "matched": data.get("matched"),
+            "removed": data.get("removed"),
+            "issues": issues,
+        },
+    )
+
+
 def _source_label(source: dict[str, Any]) -> str:
     source_id = source.get("id", "?")
     source_type = source.get("type") or "unknown"
@@ -1673,6 +1738,10 @@ def run_checks(args) -> list[CheckResult]:
             lambda: check_metadata_reidentify_plan(client),
         ),
         CheckSpec("background_jobs", lambda: check_background_jobs(client)),
+        CheckSpec(
+            "background_jobs_prune",
+            lambda: check_background_jobs_prune(client),
+        ),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
         CheckSpec(
             "metadata_fallback_pipeline_match",
