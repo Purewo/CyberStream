@@ -181,6 +181,7 @@
               "enum": [
                 "release-notes",
                 "api-overview",
+                "terminology",
                 "frontend-review-workbench",
                 "frontend-user-management",
                 "frontend-audio-transcode",

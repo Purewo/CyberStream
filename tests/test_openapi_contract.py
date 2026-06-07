@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app import create_app
+from backend.app.api.docs_routes import DOCUMENTS
 
 
 OPENAPI_PATH = PROJECT_ROOT / "backend/openapi/openapi-1.21.0-beta/openapi-1.21.0-beta.json"
@@ -58,6 +59,12 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertEqual("apiHealthCheck", health_operation["operationId"])
         self.assertEqual([], health_operation["security"])
         self.assertEqual("stable", health_operation["x-lifecycle-status"])
+
+    def test_documentation_doc_key_enum_matches_runtime_index(self):
+        openapi = self._load_openapi()
+        doc_key_enum = openapi["paths"]["/api/v1/docs/{doc_key}"]["get"]["parameters"][0]["schema"]["enum"]
+
+        self.assertEqual(list(DOCUMENTS), doc_key_enum)
 
     def test_online_subtitle_openapi_uses_concrete_search_fields(self):
         openapi = self._load_openapi()
