@@ -389,6 +389,7 @@ curl -s "http://127.0.0.1:5004/api/v1/metadata/work-items?metadata_issue_code=mi
 - `apply_payload.items` 只包含无冲突的补齐建议；解析结果与现有集号冲突时只出现在人工复核建议和 `warnings`
 - 缺集返回 `missing_episode_numbers`
 - 重复集号返回 `duplicate_episode_numbers`
+- 完整季内同集多版本片源返回 `alternate_episode_numbers`，且不进入 `duplicate_episode_numbers`
 - 季内资源缺集号时返回 `episode_number_missing`
 - `metadata_issue_code` 能按剧集诊断问题筛进元数据工作台
 - 诊断与 dry-run 建议只读，不会修改资源、季元数据或扫描结果

@@ -50,7 +50,7 @@ def build_season_episode_diagnostics(resources, expected_episode_count=None):
         episode_resources[episode].append(resource.id)
 
     available_episode_numbers = sorted(episode_resources.keys())
-    duplicate_episode_resources = [
+    duplicate_episode_candidates = [
         {
             "episode": episode,
             "resource_ids": resource_ids,
@@ -58,7 +58,6 @@ def build_season_episode_diagnostics(resources, expected_episode_count=None):
         for episode, resource_ids in sorted(episode_resources.items())
         if len(resource_ids) > 1
     ]
-    duplicate_episode_numbers = [item["episode"] for item in duplicate_episode_resources]
 
     expected_episode_count = normalize_expected_episode_count(expected_episode_count)
     first_episode = available_episode_numbers[0] if available_episode_numbers else None
@@ -76,6 +75,25 @@ def build_season_episode_diagnostics(resources, expected_episode_count=None):
             for episode in range(1, expected_episode_count + 1)
             if episode not in available_set
         ]
+
+    duplicate_episode_resources = []
+    alternate_episode_resources = []
+    if duplicate_episode_candidates:
+        duplicates_need_review = bool(unnumbered_resource_ids or missing_episode_numbers)
+        if (
+            not duplicates_need_review
+            and expected_source == "metadata"
+            and expected_episode_count is not None
+            and len(available_episode_numbers) != expected_episode_count
+        ):
+            duplicates_need_review = True
+        if duplicates_need_review:
+            duplicate_episode_resources = duplicate_episode_candidates
+        else:
+            alternate_episode_resources = duplicate_episode_candidates
+
+    duplicate_episode_numbers = [item["episode"] for item in duplicate_episode_resources]
+    alternate_episode_numbers = [item["episode"] for item in alternate_episode_resources]
 
     issue_codes = []
     if unnumbered_resource_ids:
@@ -120,6 +138,8 @@ def build_season_episode_diagnostics(resources, expected_episode_count=None):
         "missing_episode_numbers": missing_episode_numbers,
         "duplicate_episode_numbers": duplicate_episode_numbers,
         "duplicate_episode_resources": duplicate_episode_resources,
+        "alternate_episode_numbers": alternate_episode_numbers,
+        "alternate_episode_resources": alternate_episode_resources,
         "unnumbered_resource_ids": unnumbered_resource_ids,
         "first_episode": first_episode,
         "last_episode": last_episode,

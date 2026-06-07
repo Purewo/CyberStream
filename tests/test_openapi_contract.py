@@ -402,6 +402,9 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("EpisodeRepairSeason", schemas)
         self.assertIn("MovieEpisodeDiagnosticsData", schemas)
         self.assertIn("MovieEpisodeDiagnosticsResponse", schemas)
+        diagnostics_properties = schemas["SeasonEpisodeDiagnostics"]["properties"]
+        self.assertIn("alternate_episode_numbers", diagnostics_properties)
+        self.assertIn("alternate_episode_resources", diagnostics_properties)
         season_group_properties = schemas["SeasonGroup"]["allOf"][1]["properties"]
         summary_properties = schemas["MovieResourceGroupsSummary"]["properties"]
         metadata_diagnostics_properties = schemas["MetadataDiagnostics"]["properties"]

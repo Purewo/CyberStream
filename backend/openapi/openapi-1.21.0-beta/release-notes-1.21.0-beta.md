@@ -82,6 +82,11 @@
 - `plan.apply_endpoint` 默认指向 `/metadata/re-scrape/jobs`；创建任务后响应会返回 `progress_endpoint` 和建议轮询间隔 `poll_interval_ms`。
 - 修复 `DTS5.1` 这类音轨标记被路径解析器误识别为 `S5` 季号的问题，避免电影被当作剧集搜索。
 
+## 剧集诊断多版本片源
+
+- `SeasonEpisodeDiagnostics` 新增 `alternate_episode_numbers` 和 `alternate_episode_resources`。
+- 当一季集数完整、同一集只是存在多个可播放版本时，后端会把这些资源标记为 alternate，不再作为 `duplicate_episode_numbers` 进入剧集复核队列。
+
 
 ## 电视剧资源按季 hydrate
 

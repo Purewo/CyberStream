@@ -302,6 +302,40 @@ class TVSeasonPosterTests(unittest.TestCase):
         self.assertEqual("needs_attention", data["summary"]["episode_diagnostics"]["status"])
         self.assertEqual([1], data["summary"]["episode_diagnostics"]["seasons_needing_attention"])
 
+    def test_complete_episode_alternates_do_not_require_review(self):
+        movie = Movie(
+            tmdb_id="tv/episode-alternates",
+            title="多版本番剧",
+            original_title="Episode Alternates",
+            year=2026,
+            cover="https://image.tmdb.org/t/p/w500/series.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        db.session.add(MovieSeasonMetadata(movie_id=movie.id, season=1, title="第一季", episode_count=2))
+        db.session.add_all([
+            MediaResource(movie_id=movie.id, path="anime/S01E01.AMZN.mkv", filename="S01E01.AMZN.mkv", season=1, episode=1),
+            MediaResource(movie_id=movie.id, path="anime/S01E01.NOW.mkv", filename="S01E01.NOW.mkv", season=1, episode=1),
+            MediaResource(movie_id=movie.id, path="anime/S01E02.AMZN.mkv", filename="S01E02.AMZN.mkv", season=1, episode=2),
+            MediaResource(movie_id=movie.id, path="anime/S01E02.NOW.mkv", filename="S01E02.NOW.mkv", season=1, episode=2),
+        ])
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/seasons")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        diagnostics = data["items"][0]["episode_diagnostics"]
+
+        self.assertEqual("ok", diagnostics["status"])
+        self.assertEqual("complete", diagnostics["coverage_status"])
+        self.assertEqual([], diagnostics["issue_codes"])
+        self.assertEqual([], diagnostics["duplicate_episode_numbers"])
+        self.assertEqual([1, 2], diagnostics["alternate_episode_numbers"])
+        self.assertEqual("complete", data["summary"]["episode_diagnostics"]["coverage_status"])
+
     def test_episode_diagnostics_endpoint_returns_dry_run_repair_plan(self):
         movie = Movie(
             tmdb_id="tv/repair-plan",

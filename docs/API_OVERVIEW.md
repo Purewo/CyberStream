@@ -1367,7 +1367,7 @@ X-Cyber-API-Token: <token>
 说明：
 - 返回 `items`，结构与 `resources.groups.seasons` 一致
 - 返回 `summary`，便于前端直接渲染季列表视图
-- 每季的 `episode_diagnostics` 会返回 `status/coverage_status/issue_codes`，覆盖缺集、重复集号、资源缺集号和资源数与季元数据集数不一致
+- 每季的 `episode_diagnostics` 会返回 `status/coverage_status/issue_codes`，覆盖缺集、重复集号、资源缺集号和资源数与季元数据集数不一致；完整季内同集多版本片源会进入 `alternate_episode_numbers/resources`，不作为 `duplicate_episode_numbers` 复核项
 - `summary.episode_diagnostics` 汇总整部影片的剧集诊断状态、问题计数和需要复核的季号
 - 该诊断是只读视图，不修改扫描结果；前端可把它作为剧集复核工作台入口，再调用资源批量编辑接口修正季/集
 
@@ -1377,7 +1377,7 @@ X-Cyber-API-Token: <token>
 说明：
 - 该接口只读，不写入数据库，不修改扫描结果
 - `summary` 返回整部影片的剧集诊断汇总
-- `seasons[].diagnostics` 返回每季缺集、重复集号、资源缺集号和集数不一致等诊断
+- `seasons[].diagnostics` 返回每季缺集、重复集号、资源缺集号和集数不一致等诊断；完整季内同集多版本片源会作为 `alternate_episode_numbers/resources` 返回
 - `seasons[].suggestions` 返回建议动作：补齐资源集号、复核重复集号、定位缺失剧集、复核季元数据集数或人工复核
 - `suggested_updates` 只包含可自动形成批量资源编辑 payload 的建议；解析结果如果和现有集号冲突，或不在当前缺失集号列表内，只返回人工复核建议
 - `apply_method/apply_endpoint/apply_payload` 给前端确认后复用；真正写入仍走 `PATCH /api/v1/movies/<id>/resources/metadata`

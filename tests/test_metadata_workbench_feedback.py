@@ -1122,9 +1122,13 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         missing_episode_three.episode = 3
 
         duplicate = self._add_movie(title="重复集号", scraper_source="TMDB")
-        db.session.add(MovieSeasonMetadata(movie_id=duplicate.id, season=1, title="第一季", episode_count=1))
+        db.session.add(MovieSeasonMetadata(movie_id=duplicate.id, season=1, title="第一季", episode_count=2))
         self._add_resource(duplicate, path="shows/Duplicate.Episodes.S01E01.1080p.mkv")
         self._add_resource(duplicate, path="shows/Duplicate.Episodes.S01E01.2160p.mkv")
+        duplicate_episode_two = self._add_resource(duplicate, path="shows/Duplicate.Episodes.S01E02.1080p.mkv")
+        duplicate_episode_two.episode = 2
+        duplicate_episode_three = self._add_resource(duplicate, path="shows/Duplicate.Episodes.S01E03.1080p.mkv")
+        duplicate_episode_three.episode = 3
 
         unnumbered = self._add_movie(title="缺集号", scraper_source="TMDB")
         self._add_resource(unnumbered, path="shows/Unnumbered.Special.mkv")
@@ -1133,7 +1137,7 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         db.session.commit()
 
         self.assertEqual(["缺集"], self._work_item_titles("missing_episode_numbers"))
-        self.assertEqual(["缺集"], self._work_item_titles("episode_count_mismatch"))
+        self.assertCountEqual(["缺集", "重复集号"], self._work_item_titles("episode_count_mismatch"))
         self.assertEqual(["重复集号"], self._work_item_titles("duplicate_episode_numbers"))
         self.assertEqual(["缺集号"], self._work_item_titles("episode_number_missing"))
 

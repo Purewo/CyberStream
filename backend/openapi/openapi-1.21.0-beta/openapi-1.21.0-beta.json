@@ -14330,6 +14330,31 @@
               }
             }
           },
+          "alternate_episode_numbers": {
+            "type": "array",
+            "description": "同一集存在多个可播放版本且不需要人工复核时返回的集号列表。",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "alternate_episode_resources": {
+            "type": "array",
+            "description": "同一集存在多个可播放版本且不需要人工复核时返回的资源分组。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "episode": {
+                  "type": "integer"
+                },
+                "resource_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
           "unnumbered_resource_ids": {
             "type": "array",
             "items": {
