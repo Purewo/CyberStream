@@ -188,6 +188,31 @@ EXPECTED_METADATA_WORK_ITEM_KEYS = [
     "catalog_visibility",
     "manual_content",
 ]
+EXPECTED_CATALOG_MOVIE_ITEM_KEYS = [
+    "id",
+    "title",
+    "poster_url",
+    "poster_asset_url",
+    "poster_asset_urls",
+    "poster_asset_fallback_urls",
+    "poster_source_info",
+    "rating",
+    "year",
+    "country",
+    "quality_badge",
+    "scraper_source",
+    "metadata_state",
+    "catalog_visibility",
+    "manual_content",
+    "date_added",
+    "updated_at",
+    "tags",
+    "source_ids",
+    "season_cards",
+    "season_count",
+    "has_multi_season_content",
+    "user_data",
+]
 EXPECTED_METADATA_STATE_KEYS = [
     "source_group",
     "source_code",
@@ -901,6 +926,84 @@ def _work_item_contract_issues(item: Any, index: int) -> list[str]:
     return issues
 
 
+def _catalog_movie_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"item_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    missing = [key for key in EXPECTED_CATALOG_MOVIE_ITEM_KEYS if key not in item]
+    if missing:
+        issues.append(f"{prefix}_missing={','.join(missing)}")
+
+    if "id" in item and not isinstance(item.get("id"), str):
+        issues.append(f"{prefix}_id_not_str")
+    if "title" in item and not isinstance(item.get("title"), str):
+        issues.append(f"{prefix}_title_not_str")
+    for nullable_str_key in (
+        "poster_url",
+        "poster_asset_url",
+        "country",
+        "quality_badge",
+        "scraper_source",
+    ):
+        if nullable_str_key in item and item.get(nullable_str_key) is not None:
+            if not isinstance(item.get(nullable_str_key), str):
+                issues.append(f"{prefix}_{nullable_str_key}_not_str")
+    if "rating" in item and item.get("rating") is not None:
+        if not isinstance(item.get("rating"), (int, float)) or isinstance(item.get("rating"), bool):
+            issues.append(f"{prefix}_rating_not_number")
+    if "year" in item and item.get("year") is not None and not _json_int(item.get("year")):
+        issues.append(f"{prefix}_year_not_int")
+    for list_key in ("poster_asset_fallback_urls", "tags", "source_ids", "season_cards"):
+        if list_key in item and not isinstance(item.get(list_key), list):
+            issues.append(f"{prefix}_{list_key}_not_list")
+    if "source_ids" in item and isinstance(item.get("source_ids"), list):
+        invalid_source_ids = [value for value in item["source_ids"] if not _json_int(value)]
+        if invalid_source_ids:
+            issues.append(f"{prefix}_source_ids_not_int")
+    if "season_count" in item and not _json_int(item.get("season_count")):
+        issues.append(f"{prefix}_season_count_not_int")
+    if (
+        "has_multi_season_content" in item
+        and item.get("has_multi_season_content") not in (True, False)
+    ):
+        issues.append(f"{prefix}_has_multi_season_content_not_bool")
+
+    for dict_key in ("poster_asset_urls", "poster_source_info", "manual_content"):
+        if dict_key in item and not isinstance(item.get(dict_key), dict):
+            issues.append(f"{prefix}_{dict_key}_not_object")
+    if (
+        "user_data" in item
+        and item.get("user_data") is not None
+        and not isinstance(item.get("user_data"), dict)
+    ):
+        issues.append(f"{prefix}_user_data_not_object")
+
+    issues.extend(
+        _dict_missing_keys(
+            item.get("metadata_state"),
+            EXPECTED_METADATA_STATE_KEYS,
+            f"{prefix}_metadata_state",
+        )
+    )
+    metadata_state = item.get("metadata_state")
+    if isinstance(metadata_state, dict):
+        if "issue_codes" in metadata_state and not isinstance(metadata_state.get("issue_codes"), list):
+            issues.append(f"{prefix}_metadata_state_issue_codes_not_list")
+        if "needs_attention" in metadata_state and metadata_state.get("needs_attention") not in (True, False):
+            issues.append(f"{prefix}_metadata_state_needs_attention_not_bool")
+
+    issues.extend(
+        _dict_missing_keys(
+            item.get("catalog_visibility"),
+            EXPECTED_CATALOG_VISIBILITY_KEYS,
+            f"{prefix}_catalog_visibility",
+        )
+    )
+    return issues
+
+
 def _quality_summary_contract_issues(quality: Any) -> list[str]:
     if not isinstance(quality, dict):
         return ["quality_not_object"]
@@ -1103,6 +1206,49 @@ def check_metadata_reidentify_plan(client: SmokeClient) -> CheckResult:
             "item_count": len(plan_items),
             "apply_item_count": len(apply_items),
             "summary": summary if isinstance(summary, dict) else None,
+            "issues": issues,
+        },
+    )
+
+
+def check_catalog_movies(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    data = _response_data(payload)
+    issues = []
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    if len(items) > 1:
+        issues.append(f"too_many_items={len(items)}")
+
+    pagination = data.get("pagination") if isinstance(data, dict) else None
+    issues.extend(_pagination_contract_issues(pagination, expected_page_size=1))
+    total = pagination.get("total_items") if isinstance(pagination, dict) else None
+    page_size = pagination.get("page_size") if isinstance(pagination, dict) else None
+    if _json_int(total) and total > 0 and not items:
+        issues.append("items_empty_with_total")
+
+    sample = items[0] if items else None
+    if sample is not None:
+        issues.extend(_catalog_movie_item_issues(sample, 0))
+
+    ok = not issues
+    sample_title = sample.get("title") if isinstance(sample, dict) else None
+    detail = f"items={len(items)} total={total} page_size={page_size}"
+    if sample_title:
+        detail = f"{detail} sample={sample_title}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "catalog_movies",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "total": total,
+            "sample_title": sample_title,
             "issues": issues,
         },
     )
@@ -1827,6 +1973,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
+        CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),

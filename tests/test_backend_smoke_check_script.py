@@ -350,6 +350,69 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/movies":
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": "movie-1",
+                            "title": "Sample Movie",
+                            "poster_url": "https://example.test/poster.jpg",
+                            "poster_asset_url": "/api/v1/movies/movie-1/images/poster",
+                            "poster_asset_urls": {
+                                "kind": "poster",
+                                "primary_url": "/api/v1/movies/movie-1/images/poster",
+                                "fallback_urls": ["https://example.test/poster.jpg"],
+                            },
+                            "poster_asset_fallback_urls": ["https://example.test/poster.jpg"],
+                            "poster_source_info": {
+                                "kind": "poster",
+                                "provider": "tmdb",
+                                "source_type": "external_metadata",
+                            },
+                            "rating": 7.2,
+                            "year": 2024,
+                            "country": "Japan",
+                            "quality_badge": "HD",
+                            "scraper_source": "TMDB",
+                            "metadata_state": {
+                                "source_group": "tmdb",
+                                "source_code": "TMDB",
+                                "source_label": "TMDB",
+                                "issue_codes": [],
+                                "needs_attention": False,
+                                "review_priority": "low",
+                                "recommended_action": "refresh_metadata",
+                            },
+                            "catalog_visibility": {
+                                "effective_status": "published",
+                                "status": "published",
+                                "is_visible": True,
+                                "can_publish": True,
+                            },
+                            "manual_content": {
+                                "is_manual": False,
+                                "media_type": None,
+                                "scraper_source": "TMDB",
+                            },
+                            "date_added": "2026-06-07T00:00:00",
+                            "updated_at": "2026-06-07T00:00:01",
+                            "tags": ["动作"],
+                            "source_ids": [1],
+                            "season_cards": [],
+                            "season_count": 0,
+                            "has_multi_season_content": False,
+                            "user_data": None,
+                        },
+                    ],
+                    "pagination": {
+                        "current_page": 1,
+                        "page_size": 1,
+                        "total_items": 1,
+                        "total_pages": 1,
+                    },
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -688,6 +751,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "scan",
                 "metadata_providers",
                 "metadata_review_workbench",
+                "catalog_movies",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1080,6 +1144,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         )
         self.assertFalse(work_items.ok)
         self.assertIn("item_0_missing=metadata_state", work_items.detail)
+
+    def test_catalog_movies_fails_when_sample_shape_is_broken(self):
+        class BrokenCatalogMoviesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies":
+                    del payload["data"]["items"][0]["metadata_state"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenCatalogMoviesClient):
+            results = self.module.run_checks(self._args())
+
+        catalog = next(item for item in results if item.name == "catalog_movies")
+        self.assertFalse(catalog.ok)
+        self.assertIn("item_0_missing=metadata_state", catalog.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):
