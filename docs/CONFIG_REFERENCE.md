@@ -275,10 +275,10 @@ CYBER_UPDATE_CDN_URL_PREFIXES=https://qwk.ccwu.cc
 示例：
 
 ```bash
-CYBER_BACKEND_PUBLIC_BASE_URL=https://pw.pioneer.fan:84
+CYBER_BACKEND_PUBLIC_BASE_URL=https://cyberstream.gameuniverse.top:40160
 ```
 
-设置后，资源播放、音频转码和字幕等后端生成 URL 会返回 `https://pw.pioneer.fan:84/api/v1/...`。
+设置后，资源播放、音频转码和字幕等后端生成 URL 会返回 `https://cyberstream.gameuniverse.top:40160/api/v1/...`。
 
 ### 2.11 最小 API 鉴权配置
 

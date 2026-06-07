@@ -8,14 +8,15 @@
 
 ## 2. 本次接手结论
 
-2026-06-06 当前维护环境已确认：
+2026-06-07 当前维护环境已确认：
 
 - GitHub 仓库已检出到 `/root/CyberStream`
 - Python 3.10 虚拟环境与运行依赖已就绪
-- pytest 全量基线通过：`562 passed, 9 skipped, 12 subtests passed`
-- gunicorn 可通过 `./scripts/backend_service.sh start` 启动，本地 `5004` 健康检查正常
-- GitHub SSH 读取与推送 dry-run 已验证
-- 历史公网入口属于原部署环境，本维护服务器尚未将其视为已验证入口
+- pytest 全量基线通过：`682 passed, 9 skipped, 16 subtests passed`
+- gunicorn 由 `cyberstream-backend` systemd 服务托管，本地 `5004` 健康检查正常
+- `cyberstream-alist`、`cyberstream-openlist`、`nginx`、`ddns-go` 均已纳入当前维护服务器运行基线
+- GitHub SSH 读取与推送已通过本机代理验证
+- 当前公网联调入口已验证：`https://cyberstream.gameuniverse.top:40160`
 
 ## 3. 当前运行事实
 
@@ -24,7 +25,13 @@
 - 默认监听端口：`5004`
 - 当前数据库：项目根目录下 `cyber_library.db`
 - 当前日志：项目根目录下 `backend_server.log`
-- 反向代理和公网入口由具体部署环境决定，不能从仓库配置中推断为已生效
+- 当前维护服务器公网入口：`https://cyberstream.gameuniverse.top:40160`
+- 当前反向代理链路：公网 `40160` HTTPS -> nginx -> `127.0.0.1:5004`
+- 当前 IPv4 NAT 可用端口范围为 `40160-40169`；如需新增公网服务，应先确认端口分配
+- 当前域名托管在 Cloudflare，仅做 DNS 解析，不启用 Cloudflare 代理
+- 当前公网 IP 可能变化，`ddns-go` 负责维护域名解析
+- 托管光鸭 AList 仅本机监听：`127.0.0.1:5244`
+- 托管 OpenList 仅本机监听：`127.0.0.1:5245`
 - 当前统一版本：`1.21.0`（以 `backend/config.py` 的 `APP_VERSION` 为单一版本源）
 
 ## 4. 已知风险
@@ -55,7 +62,7 @@
 
 ## 5.1 当前主干基线
 
-截至 2026-06-06，`1.21.0` 已作为当前 `main` 主干联调基线。`1.16.0` 保留为历史稳定标签。
+截至 2026-06-07，`1.21.0` 已作为当前 `main` 主干联调基线。`1.16.0` 保留为历史稳定标签。
 
 已确认的稳定能力：
 
@@ -74,7 +81,7 @@
 - 存储源目录预览、已保存来源浏览、扫描与播放链路
 - 观看历史保留，但不再返回 `is_played` 给前端展示“已观看”标签
 - OpenAPI `1.21.0-beta` 与运行时路由对齐
-- 当前自动化测试基线为 `562 passed, 9 skipped, 12 subtests passed`
+- 当前自动化测试基线为 `682 passed, 9 skipped, 16 subtests passed`
 
 当前项目暂按单主干维护，后续小步提交直接进入 `main`。
 

@@ -61,10 +61,10 @@ curl -i http://127.0.0.1:5004/api/v1/health
 ### 2.4 公网健康检查
 
 ```bash
-curl -i http://pioneer.fan:884/
-curl -i http://pioneer.fan:884/api/v1/health
-curl -i http://pioneer.fan:884/api/v1/openapi.json
-./scripts/backend_smoke_check.py --base-url http://pioneer.fan:884
+curl -i https://cyberstream.gameuniverse.top:40160/
+curl -i https://cyberstream.gameuniverse.top:40160/api/v1/health
+curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
+./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160
 ```
 
 预期：
@@ -713,7 +713,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-06 维护基线：`562 passed, 9 skipped, 12 subtests passed`。
+2026-06-07 维护基线：`682 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
@@ -736,7 +736,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 ## 10. 每次发布前建议人工确认的问题
 
 1. 本地 5004 是否正常
-2. 当前公网入口 `http://pioneer.fan:884` 是否正常
+2. 当前公网入口 `https://cyberstream.gameuniverse.top:40160` 是否正常
 3. 扫描状态接口是否正常
 4. 电影列表是否正常
 5. 至少一个资源是否能播放
@@ -746,13 +746,14 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 
 ## 11. 当前已确认通过的基础项（接手阶段）
 
-截至 2026-04-02，已确认：
+截至 2026-06-07，已确认：
 
 - 服务可在本地 `5004` 启动
 - `GET /` 本地访问正常
-- `GET /` 公网访问正常：当前 IPv4 入口为 `http://pioneer.fan:884`
-- 公网接口返回的后端生成 URL 应与实际入口 scheme 一致；HTTP 入口返回 `http://...`，HTTPS 入口返回 `https://...`
-- Lucky/反代将公网入口映射到本机 `5004`
+- `GET /` 公网访问正常：当前入口为 `https://cyberstream.gameuniverse.top:40160`
+- 公网接口返回的后端生成 URL 应与实际入口 scheme 一致；当前入口统一返回 `https://...`
+- nginx 将公网 `40160` HTTPS 映射到本机 `5004`
+- `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist`、`ddns-go` 均为 `active`
 - `backend/run.py` 已兼容直接执行，不再因包导入路径报错
 
 后续每次功能开发后，应在本文件中按需补充新的已验证项。

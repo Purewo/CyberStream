@@ -66,17 +66,20 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 
 ### 公网验收
 
-公网域名和端口属于部署配置，不是代码库固定值。确认当前部署入口后再执行，例如历史部署：
+公网域名和端口属于部署配置，不是代码库固定值。当前维护服务器已验证的联调入口为：
 
 ```bash
-curl -i http://pioneer.fan:884/
-curl -i http://pioneer.fan:884/api/v1/openapi.json
-./scripts/backend_smoke_check.py --base-url http://pioneer.fan:884
+curl -i https://cyberstream.gameuniverse.top:40160/
+curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
+./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160
 ```
 
 ## 4. 当前已知运行事实
 
-- 历史 IPv4 部署入口为 `http://pioneer.fan:884`，曾映射到后端 `5004`；新维护环境必须单独验证，不能仅依据文档假定可用
+- 当前公网联调入口为 `https://cyberstream.gameuniverse.top:40160`
+- 当前 IPv4 NAT 可用端口范围为 `40160-40169`，后端统一使用 `40160` 对外提供 HTTPS
+- 当前反向代理链路为公网 `40160` HTTPS -> nginx -> `127.0.0.1:5004`
+- Cloudflare 仅做 DNS 解析，不启用代理；公网 IP 可能变化，`ddns-go` 负责维护解析
 - 后台运行优先使用 `./scripts/backend_service.sh`，脚本会加载项目根目录 `.env.local`
 - 服务脚本优先使用 gunicorn，缺失时自动回退 Flask 内置服务器
 - `.env.local` 存放 token 等本机私密配置，已加入 git 忽略；提交前只维护 `.env.local.example`
@@ -169,13 +172,13 @@ CYBER_MANAGED_OPENLIST_ALIYUNDRIVE_CLIENT_SECRET=<optional-aliyundrive-openapi-c
 CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_ID=
 CYBER_MANAGED_OPENLIST_BAIDUNETDISK_CLIENT_SECRET=
 CYBER_MANAGED_OPENLIST_BAIDUNETDISK_RENEW_API_URL=https://api.oplist.org/baiduyun/renewapi
-CYBER_BACKEND_PUBLIC_BASE_URL=https://cyberstream.ma1.gameuniverse.top
+CYBER_BACKEND_PUBLIC_BASE_URL=https://cyberstream.gameuniverse.top:40160
 ```
 
 如果配置自有百度网盘 OAuth 应用，会走 CyberStream callback 自动完成授权，百度开放平台回调地址必须与公网后端一致：
 
 ```text
-https://cyberstream.ma1.gameuniverse.top/api/v1/storage/managed/baidunetdisk/oauth/callback
+https://cyberstream.gameuniverse.top:40160/api/v1/storage/managed/baidunetdisk/oauth/callback
 ```
 
 扫码登录流程：
@@ -246,8 +249,10 @@ python -m backend.run
 重点排查：
 
 1. 本地 `5004` 是否已启动
-2. Lucky 是否正常运行
-3. Lucky/反代的 `884 -> 5004` 映射是否还在
+2. nginx 是否正常运行并监听 `40160`
+3. nginx 反代的 `40160 -> 127.0.0.1:5004` 映射是否还在
+4. `ddns-go` 是否仍在维护 `cyberstream.gameuniverse.top` 的当前解析
+5. Cloudflare 是否仍保持 DNS only，没有切到代理模式
 
 ### 5.3 WebDAV 无法播放
 重点排查：
