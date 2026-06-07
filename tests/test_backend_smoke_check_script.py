@@ -903,6 +903,8 @@ class FakeSmokeClient:
             }
         if path == "/api/v1/movies":
             page_size = (query or {}).get("page_size") or 1
+            metadata_issue_code = (query or {}).get("metadata_issue_code")
+            metadata_issue_codes = [metadata_issue_code] if metadata_issue_code else []
             return {
                 "data": {
                     "items": [
@@ -931,9 +933,9 @@ class FakeSmokeClient:
                                 "source_group": "tmdb",
                                 "source_code": "TMDB",
                                 "source_label": "TMDB",
-                                "issue_codes": [],
-                                "needs_attention": False,
-                                "review_priority": "low",
+                                "issue_codes": metadata_issue_codes,
+                                "needs_attention": bool(metadata_issue_code),
+                                "review_priority": "medium" if metadata_issue_code else "low",
                                 "recommended_action": "refresh_metadata",
                             },
                             "catalog_visibility": {
@@ -1992,6 +1994,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "other_videos",
                 "catalog_filters",
                 "catalog_metadata_filters",
+                "catalog_metadata_issue_filter",
                 "catalog_movies",
                 "catalog_keyword_search",
                 "movie_detail",
@@ -2611,6 +2614,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         filters = next(item for item in results if item.name == "catalog_metadata_filters")
         self.assertFalse(filters.ok)
         self.assertIn("metadata_source_groups_0_missing=slug", filters.detail)
+
+    def test_catalog_metadata_issue_filter_fails_when_item_lacks_issue_code(self):
+        class BrokenCatalogMetadataIssueFilterClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies" and (query or {}).get("metadata_issue_code"):
+                    payload["data"]["items"][0]["metadata_state"]["issue_codes"] = []
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenCatalogMetadataIssueFilterClient):
+            results = self.module.run_checks(self._args())
+
+        filters = next(item for item in results if item.name == "catalog_metadata_issue_filter")
+        self.assertFalse(filters.ok)
+        self.assertIn("item_0_missing_metadata_issue_code=poster_missing", filters.detail)
 
     def test_update_check_fails_when_download_is_not_cdn_validated(self):
         class BrokenUpdateCheckClient(FakeSmokeClient):

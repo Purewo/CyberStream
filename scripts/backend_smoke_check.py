@@ -2960,6 +2960,20 @@ def _catalog_metadata_filters_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _catalog_metadata_issue_codes_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["metadata_issue_filters_not_object"]
+
+    items = data.get("metadata_issue_codes")
+    if not isinstance(items, list):
+        return ["metadata_issue_codes_not_list"]
+
+    issues = []
+    for index, item in enumerate(items[:3]):
+        issues.extend(_catalog_filter_option_issues(item, index, "metadata_issue_codes"))
+    return issues
+
+
 def _library_item_issues(item: Any, index: int) -> list[str]:
     prefix = f"library_{index}"
     if not isinstance(item, dict):
@@ -4162,6 +4176,86 @@ def check_catalog_metadata_filters(client: SmokeClient) -> CheckResult:
         {
             "counts": counts,
             "issues": issues,
+        },
+    )
+
+
+def check_catalog_metadata_issue_filter(client: SmokeClient) -> CheckResult:
+    filter_payload = client.get_json("/api/v1/filters", {"include": "metadata_issue_codes"})
+    filter_data = _response_data(filter_payload)
+    issues = _catalog_metadata_issue_codes_payload_issues(filter_data)
+    issue_items = filter_data.get("metadata_issue_codes") if isinstance(filter_data, dict) else None
+    if not isinstance(issue_items, list):
+        issue_items = []
+    if issues:
+        return _result(
+            "catalog_metadata_issue_filter",
+            False,
+            f"filter_issues={'; '.join(issues)}",
+            {"issues": issues},
+        )
+    if not issue_items:
+        return _result(
+            "catalog_metadata_issue_filter",
+            True,
+            "skipped no metadata issue filters",
+            {"skipped": True, "issue_code_count": 0},
+        )
+
+    issue_code = issue_items[0].get("slug") if isinstance(issue_items[0], dict) else None
+    if not isinstance(issue_code, str) or not issue_code:
+        return _result(
+            "catalog_metadata_issue_filter",
+            False,
+            f"issue_code_invalid={issue_code}",
+            {"issue_code": issue_code},
+        )
+
+    payload = client.get_json(
+        "/api/v1/movies",
+        {"page": 1, "page_size": 1, "metadata_issue_code": issue_code},
+    )
+    data = _response_data(payload)
+    result_issues = []
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        result_issues.append("items_not_list")
+        items = []
+    if len(items) > 1:
+        result_issues.append(f"too_many_items={len(items)}")
+
+    pagination = data.get("pagination") if isinstance(data, dict) else None
+    result_issues.extend(_pagination_contract_issues(pagination, expected_page_size=1))
+    total = pagination.get("total_items") if isinstance(pagination, dict) else None
+    if _json_int(total) and total > 0 and not items:
+        result_issues.append("items_empty_with_total")
+    if _json_int(total) and total < 1:
+        result_issues.append(f"total_below_one={total}")
+
+    for index, item in enumerate(items[:1]):
+        result_issues.extend(_catalog_movie_item_issues(item, index))
+        metadata_state = item.get("metadata_state") if isinstance(item, dict) else None
+        issue_codes = metadata_state.get("issue_codes") if isinstance(metadata_state, dict) else None
+        if isinstance(issue_codes, list) and issue_code not in issue_codes:
+            result_issues.append(f"item_{index}_missing_metadata_issue_code={issue_code}")
+
+    ok = not result_issues
+    sample_title = items[0].get("title") if items and isinstance(items[0], dict) else None
+    detail = f"issue_code={issue_code} items={len(items)} total={total}"
+    if sample_title:
+        detail = f"{detail} sample={sample_title}"
+    if result_issues:
+        detail = f"{detail} issues={'; '.join(result_issues)}"
+    return _result(
+        "catalog_metadata_issue_filter",
+        ok,
+        detail,
+        {
+            "issue_code": issue_code,
+            "item_count": len(items),
+            "total": total,
+            "sample_title": sample_title,
+            "issues": result_issues,
         },
     )
 
@@ -6256,6 +6350,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("other_videos", lambda: check_other_videos(client)),
         CheckSpec("catalog_filters", lambda: check_catalog_filters(client)),
         CheckSpec("catalog_metadata_filters", lambda: check_catalog_metadata_filters(client)),
+        CheckSpec("catalog_metadata_issue_filter", lambda: check_catalog_metadata_issue_filter(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("catalog_keyword_search", lambda: check_catalog_keyword_search(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
