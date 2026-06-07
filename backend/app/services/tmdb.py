@@ -146,6 +146,7 @@ def _tmdb_race_dns_families(host, port):
 
 class TMDBScraper:
     PRECISE_MATCH_SCORE_THRESHOLD = 400
+    YEAR_HINT_MATCH_SCORE_THRESHOLD = 150
 
     def __init__(self):
         self.session = requests.Session()
@@ -304,7 +305,10 @@ class TMDBScraper:
         if year and result_year == year:
             score += 350
         elif year and result_year is not None:
-            score -= min(abs(result_year - year), 20) * 12
+            year_delta = abs(result_year - year)
+            score -= min(year_delta, 20) * 60
+            if year_delta > 1:
+                score -= 500
 
         return score
 
@@ -355,14 +359,14 @@ class TMDBScraper:
         if cache_key:
             _tmdb_clear_family(cache_key, family=family)
 
-    def _session_get(self, url, params=None, family=None):
+    def _session_get(self, url, params=None, family=None, timeout=10):
         if family not in (socket.AF_INET, socket.AF_INET6):
             return self.session.get(
                 url,
                 headers=self.headers,
                 params=params,
                 proxies=self.proxies,
-                timeout=10
+                timeout=timeout
             )
 
         with _TMDB_DNS_FAMILY_LOCK:
@@ -374,10 +378,112 @@ class TMDBScraper:
                     headers=self.headers,
                     params=params,
                     proxies=self.proxies,
-                    timeout=10
+                    timeout=timeout
                 )
             finally:
                 urllib3_connection.allowed_gai_family = original_gai_family
+
+    def check_token_status(self):
+        token = str(config.TMDB_TOKEN or "").strip()
+        proxy_enabled = bool(getattr(config, "TMDB_PROXY_ENABLED", True))
+        proxy_url = str(getattr(config, "TMDB_PROXY_URL", "") or "").strip()
+        base_payload = {
+            "ready": False,
+            "token_set": bool(token),
+            "token_valid": False,
+            "status": "missing_token" if not token else "unknown",
+            "message": "TMDB token is not configured" if not token else "",
+            "http_status": None,
+            "tmdb_status_code": None,
+            "tmdb_status_message": "",
+            "proxy_enabled": proxy_enabled,
+            "proxy_configured": bool(proxy_url),
+            "elapsed_ms": None,
+        }
+        if not token:
+            return base_payload
+
+        self.refresh_runtime_config(reset_session=False)
+        url = "https://api.themoviedb.org/3/authentication"
+        started = time.monotonic()
+        family = None if self.proxies else self._pick_dns_family(url)
+
+        try:
+            response = self._session_get(url, family=family, timeout=6)
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+
+            tmdb_status_code = data.get("status_code")
+            tmdb_status_message = data.get("status_message") or ""
+            payload = {
+                **base_payload,
+                "http_status": response.status_code,
+                "tmdb_status_code": tmdb_status_code,
+                "tmdb_status_message": tmdb_status_message,
+                "elapsed_ms": elapsed_ms,
+            }
+
+            if response.status_code == 200 and data.get("success") is True:
+                return {
+                    **payload,
+                    "ready": True,
+                    "token_valid": True,
+                    "status": "ok",
+                    "message": "TMDB token is valid",
+                }
+
+            if response.status_code in {401, 403}:
+                return {
+                    **payload,
+                    "status": "invalid_token",
+                    "message": tmdb_status_message or "TMDB rejected the configured token",
+                }
+
+            if response.status_code == 429:
+                return {
+                    **payload,
+                    "status": "rate_limited",
+                    "message": tmdb_status_message or "TMDB rate limit reached",
+                }
+
+            return {
+                **payload,
+                "status": "tmdb_error",
+                "message": tmdb_status_message or f"TMDB returned HTTP {response.status_code}",
+            }
+        except requests.exceptions.ProxyError as e:
+            status = "proxy_error"
+            message = "TMDB proxy connection failed"
+            error = e
+        except requests.exceptions.Timeout as e:
+            status = "timeout"
+            message = "TMDB token check timed out"
+            error = e
+        except requests.exceptions.SSLError as e:
+            status = "tls_error"
+            message = "TMDB TLS verification failed"
+            error = e
+        except requests.exceptions.RequestException as e:
+            status = "network_error"
+            message = "TMDB token check request failed"
+            error = e
+        except OSError as e:
+            status = "network_error"
+            message = "TMDB network lookup failed"
+            error = e
+
+        if family:
+            self._clear_dns_family_cache(url, family=family)
+        logger.warning("TMDB token check failed status=%s error=%s", status, error)
+        return {
+            **base_payload,
+            "status": status,
+            "message": message,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
 
     def _get(self, url, params=None):
         if not config.TMDB_TOKEN:
@@ -420,7 +526,7 @@ class TMDBScraper:
             if broad_result and (broad_score or 0) >= self.PRECISE_MATCH_SCORE_THRESHOLD:
                 return f"{broad_result['media_type']}/{broad_result['id']}"
 
-        best_result, _ = self._search_best_result(
+        best_result, best_score = self._search_best_result(
             self._build_search_variants(clean_query, year=year, media_type_hint=media_type_hint),
             clean_query,
             year=year,
@@ -429,6 +535,8 @@ class TMDBScraper:
         )
 
         if not best_result:
+            return None
+        if year and not strict and (best_score or 0) < self.YEAR_HINT_MATCH_SCORE_THRESHOLD:
             return None
         return f"{best_result['media_type']}/{best_result['id']}"
 

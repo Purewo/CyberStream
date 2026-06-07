@@ -43,6 +43,8 @@ TMDB 专用代理地址，默认 `http://127.0.0.1:17890`。
 
 桌面端可通过 `GET/PUT /api/v1/system/tmdb-config` 查询或更新上述 TMDB 配置。运行时接口不会返回 token 明文，代理 URL 含凭证时会脱敏；写入采用加锁和原子替换，拒绝换行/控制字符注入，并在持久化成功后才更新进程环境。
 
+刮削前可调用 `GET /api/v1/system/tmdb-config/check` 做主动预检。只有 `data.ready=true` 才表示 token 已配置、TMDB 已接受且本次检查请求成功；`data.status` 会区分 `missing_token`、`invalid_token`、`proxy_error`、`timeout`、`network_error` 等状态，方便前端阻止无效配置下的批量刮削。
+
 说明：
 - 该代理只在 `app/services/tmdb.py` 中使用
 - TMDB 请求会关闭 `requests` 的环境代理读取，仅使用 `TMDB_PROXY_URL` 指定的代理
@@ -64,6 +66,13 @@ Bangumi API 请求使用的 User-Agent，默认 `Purewo/CyberStream/1.21.0 (http
 
 #### `BANGUMI_TIMEOUT_SECONDS`
 Bangumi API 请求超时时间，默认 `10` 秒。
+
+#### `BANGUMI_PROXY_ENABLED`
+控制 Bangumi API 请求是否走独立代理，默认关闭。
+
+#### `BANGUMI_PROXY_URL`
+Bangumi 专用代理地址。该代理只在 `app/services/metadata_providers/bangumi.py`
+中使用，不影响 TMDB、AniList 或存储 provider。
 
 ---
 

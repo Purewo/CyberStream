@@ -17,6 +17,7 @@ class AListProvider(StorageProvider):
     ENDPOINT_CACHE_TTL_SECONDS = 1800
     ENDPOINT_PROBE_TIMEOUT_SECONDS = 1.5
     TOKEN_CACHE_TTL_SECONDS = 1800
+    LIST_PAGE_SIZE = 500
     _endpoint_cache = {}
     _endpoint_cache_lock = threading.Lock()
     _token_cache = {}
@@ -386,18 +387,7 @@ class AListProvider(StorageProvider):
             },
         )
 
-    def _list_items(self, relative_path, refresh=False):
-        data = self._api_post(
-            '/api/fs/list',
-            {
-                'path': self._remote_path(relative_path),
-                'password': self.path_password,
-                'page': 1,
-                'per_page': 0,
-                'refresh': bool(refresh),
-            },
-        )
-
+    def _parse_list_items(self, relative_path, data):
         items = []
         for entry in (data or {}).get('content') or []:
             name = str(entry.get('name') or '').strip()
@@ -411,6 +401,44 @@ class AListProvider(StorageProvider):
                 'isdir': is_dir,
                 'size': 0 if is_dir else int(entry.get('size') or 0),
             })
+        return items
+
+    def _list_items(self, relative_path, refresh=False):
+        page = 1
+        per_page = self.LIST_PAGE_SIZE
+        items = []
+
+        while True:
+            data = self._api_post(
+                '/api/fs/list',
+                {
+                    'path': self._remote_path(relative_path),
+                    'password': self.path_password,
+                    'page': page,
+                    'per_page': per_page,
+                    'refresh': bool(refresh) and page == 1,
+                },
+            )
+            page_items = self._parse_list_items(relative_path, data)
+            items.extend(page_items)
+
+            raw_content = (data or {}).get('content') or []
+            total = (data or {}).get('total')
+            try:
+                total = int(total)
+            except (TypeError, ValueError):
+                total = None
+
+            if total is not None:
+                if page * per_page >= total:
+                    break
+            elif len(raw_content) < per_page:
+                break
+
+            if not raw_content:
+                break
+            page += 1
+
         return items
 
     def list_items(self, relative_path):

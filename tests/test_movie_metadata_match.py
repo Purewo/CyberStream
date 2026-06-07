@@ -386,6 +386,66 @@ class MovieMetadataMatchTests(unittest.TestCase):
         season = MovieSeasonMetadata.query.filter_by(movie_id=target.id, season=1).first()
         self.assertEqual("Season 1", season.title)
 
+    def test_applying_movie_match_clears_stale_episode_resources(self):
+        movie = Movie(
+            tmdb_id="loc-venom",
+            title="Venom The Last Danc Blu ray 1 HDT",
+            original_title="Venom The Last Danc Blu ray 1 HDT",
+            year=2024,
+            scraper_source="LOCAL_FALLBACK",
+        )
+        db.session.add(movie)
+        db.session.flush()
+        resource = MediaResource(
+            movie_id=movie.id,
+            path=(
+                "Movies/Venom The Last Dance 2024 2160p UHD Blu-ray Remux HEVC DV TrueHD 7.1 Atmos-HDT/"
+                "Venom The Last Dance 2024 2160p UHD Blu-ray Remux HEVC DV TrueHD 7.1 Atmos-HDT.mkv"
+            ),
+            filename="Venom The Last Dance 2024 2160p UHD Blu-ray Remux HEVC DV TrueHD 7.1 Atmos-HDT.mkv",
+            season=3,
+            episode=1,
+            label="S03E01 - 2160P",
+            tech_specs={
+                "resolution": "2160P",
+                "features": {"is_movie_feature": False},
+                "metadata_trace": {"media_type_hint": "tv"},
+            },
+        )
+        db.session.add(resource)
+        db.session.commit()
+
+        tmdb_payload = {
+            "tmdb_id": "movie/912649",
+            "title": "毒液：最后一舞",
+            "original_title": "Venom: The Last Dance",
+            "year": 2024,
+            "rating": 6.7,
+            "description": "movie",
+            "cover": "poster",
+            "background_cover": "",
+            "category": ["动作"],
+            "director": "Director",
+            "actors": [],
+            "country": "US",
+            "scraper_source": "TMDB",
+            "media_type_hint": "movie",
+        }
+
+        with patch("backend.app.api.library_routes.scraper.get_movie_details", return_value=tmdb_payload):
+            response = self.client.post(
+                f"/api/v1/movies/{movie.id}/metadata/match",
+                json={"tmdb_id": "movie/912649", "media_type_hint": "movie", "apply": True},
+            )
+
+        self.assertEqual(200, response.status_code)
+        refreshed = db.session.get(MediaResource, resource.id)
+        self.assertIsNone(refreshed.season)
+        self.assertIsNone(refreshed.episode)
+        self.assertEqual("Movie - 2160P", refreshed.label)
+        self.assertTrue(refreshed.tech_specs["features"]["is_movie_feature"])
+        self.assertEqual("movie", refreshed.tech_specs["metadata_trace"]["media_type_hint"])
+        self.assertEqual("movie_filename_year", refreshed.tech_specs["metadata_trace"]["parse_strategy"])
 
     def test_applying_tv_match_repairs_parenthesized_episode_resources(self):
         movie = Movie(

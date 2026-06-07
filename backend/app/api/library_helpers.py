@@ -243,12 +243,20 @@ def apply_movie_filters(query, genre=None, keyword=None, country=None, year_para
 
     if keyword:
         keyword_like = f"%{keyword}%"
+        resource_match = db.session.query(MediaResource.id).filter(
+            MediaResource.movie_id == Movie.id,
+            db.or_(
+                MediaResource.filename.like(keyword_like),
+                MediaResource.path.like(keyword_like),
+            ),
+        ).exists()
         query = query.filter(
             db.or_(
                 Movie.title.like(keyword_like),
                 Movie.original_title.like(keyword_like),
                 Movie.director.like(keyword_like),
-                Movie.actors.cast(db.String).like(keyword_like)
+                Movie.actors.cast(db.String).like(keyword_like),
+                resource_match,
             )
         )
 

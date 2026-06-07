@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest.mock import patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
@@ -74,6 +75,27 @@ class ApiAuthTests(unittest.TestCase):
             "/api/v1/system/tmdb-config",
             headers={"Authorization": "Bearer secret-token"},
         )
+
+        self.assertEqual(401, missing.status_code)
+        self.assertEqual(200, valid.status_code)
+
+    def test_tmdb_config_check_is_not_public_when_api_token_auth_is_enabled(self):
+        client = self.create_client(token="secret-token", enabled=True)
+
+        missing = client.get("/api/v1/system/tmdb-config/check")
+        with patch("backend.app.api.system_routes._refresh_runtime_config"), patch(
+            "backend.app.api.system_routes.tmdb_scraper.check_token_status",
+            return_value={
+                "ready": False,
+                "token_set": False,
+                "token_valid": False,
+                "status": "missing_token",
+            },
+        ):
+            valid = client.get(
+                "/api/v1/system/tmdb-config/check",
+                headers={"Authorization": "Bearer secret-token"},
+            )
 
         self.assertEqual(401, missing.status_code)
         self.assertEqual(200, valid.status_code)

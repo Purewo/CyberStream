@@ -120,6 +120,40 @@ class ExpiredTokenSession(FakeSession):
         return super().post(url, json=json, headers=headers, timeout=timeout, verify=verify)
 
 
+class PaginatedListSession(FakeSession):
+    def post(self, url, json=None, headers=None, timeout=None, verify=None):
+        if url.endswith('/api/fs/list'):
+            self.calls.append(("POST", url, json, headers))
+            page = (json or {}).get("page")
+            if page == 1:
+                return FakeResponse(
+                    {
+                        "code": 200,
+                        "data": {
+                            "total": 3,
+                            "content": [
+                                {"name": "A.mkv", "is_dir": False, "size": 1},
+                                {"name": "B", "is_dir": True, "size": 0},
+                            ],
+                        },
+                    }
+                )
+            if page == 2:
+                return FakeResponse(
+                    {
+                        "code": 200,
+                        "data": {
+                            "total": 3,
+                            "content": [
+                                {"name": "C.mkv", "is_dir": False, "size": 3},
+                            ],
+                        },
+                    }
+                )
+            return FakeResponse({"code": 200, "data": {"total": 3, "content": []}})
+        return super().post(url, json=json, headers=headers, timeout=timeout, verify=verify)
+
+
 class AListProviderTests(unittest.TestCase):
     def setUp(self):
         AListProvider._endpoint_cache.clear()
@@ -263,6 +297,19 @@ class AListProviderTests(unittest.TestCase):
         list_calls = [call for call in provider.session.calls if call[0] == "POST" and call[1].endswith('/api/fs/list')]
         self.assertEqual("/library/电影", list_calls[-1][2]["path"])
         self.assertTrue(list_calls[-1][2]["refresh"])
+
+    def test_list_items_fetches_all_alist_pages(self):
+        provider = self.create_provider()
+        provider.LIST_PAGE_SIZE = 2
+        provider.session = PaginatedListSession()
+
+        items = provider.refresh_directory("电影")
+
+        self.assertEqual(["A.mkv", "B", "C.mkv"], [item["name"] for item in items])
+        list_calls = [call for call in provider.session.calls if call[0] == "POST" and call[1].endswith('/api/fs/list')]
+        self.assertEqual([1, 2], [call[2]["page"] for call in list_calls])
+        self.assertEqual([2, 2], [call[2]["per_page"] for call in list_calls])
+        self.assertEqual([True, False], [call[2]["refresh"] for call in list_calls])
 
     def test_list_items_prefixes_child_path_with_config_root(self):
         provider = self.create_provider()

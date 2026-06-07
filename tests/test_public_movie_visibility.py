@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
-from backend.app.models import Movie
+from backend.app.models import MediaResource, Movie
 
 
 class PublicMovieVisibilityTests(unittest.TestCase):
@@ -136,6 +136,21 @@ class PublicMovieVisibilityTests(unittest.TestCase):
         self.assertNotIn(public_movie.id, item_ids)
         self.assertIn(no_poster_movie.id, item_ids)
         self.assertEqual(["poster_missing"], items[0]["metadata_state"]["issue_codes"])
+
+    def test_movie_keyword_search_matches_resource_path_alias(self):
+        movie = self._movie("Spider-Man: No Way Home", country="美国", year=2021)
+        db.session.add(MediaResource(
+            movie_id=movie.id,
+            path="Movies/蜘蛛侠：英雄无归/Spider-Man.No.Way.Home.2021.mkv",
+            filename="Spider-Man.No.Way.Home.2021.mkv",
+        ))
+        db.session.commit()
+
+        response = self.client.get("/api/v1/movies?keyword=蜘蛛侠&page_size=20")
+
+        self.assertEqual(200, response.status_code)
+        items = response.get_json()["data"]["items"]
+        self.assertEqual([movie.id], [item["id"] for item in items])
 
 
 if __name__ == "__main__":

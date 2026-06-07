@@ -242,7 +242,11 @@ class MovieMetadataRescrapeService:
             if not clean_path or clean_path in seen:
                 continue
             seen.add(clean_path)
-            content = provider.read_text(clean_path)
+            try:
+                content = provider.read_text(clean_path)
+            except Exception as e:
+                logger.warning("Rescrape skipped unreadable NFO path=%s error=%s", clean_path, e)
+                continue
             if not content:
                 continue
             payloads.append({

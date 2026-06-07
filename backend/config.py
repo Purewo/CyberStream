@@ -118,6 +118,9 @@ TMDB_PROXIES = _build_http_proxy_map(TMDB_PROXY_URL) if TMDB_PROXY_ENABLED else 
 BANGUMI_API_BASE = _env('BANGUMI_API_BASE', 'https://api.bgm.tv')
 BANGUMI_USER_AGENT = _env('BANGUMI_USER_AGENT', 'Purewo/CyberStream/1.21.0 (https://github.com/Purewo/CyberStream)')
 BANGUMI_TIMEOUT_SECONDS = _env_float('BANGUMI_TIMEOUT_SECONDS', 10)
+BANGUMI_PROXY_ENABLED = _env_bool('BANGUMI_PROXY_ENABLED', False)
+BANGUMI_PROXY_URL = _normalize_proxy_url(_env('BANGUMI_PROXY_URL', ''))
+BANGUMI_PROXIES = _build_http_proxy_map(BANGUMI_PROXY_URL) if BANGUMI_PROXY_ENABLED else None
 
 # --- AniList metadata provider ---
 # Official no-auth GraphQL API. Not part of the default scan order; use
@@ -319,7 +322,11 @@ FFMPEG_AUDIO_TRANSCODE_RANGE_CACHE_BYTES = _env_int('FFMPEG_AUDIO_TRANSCODE_RANG
 
 # --- 扫描规则 ---
 VIDEO_EXTENSIONS = ('.MKV', '.MP4', '.MOV', '.AVI', '.M2TS', '.TS', '.ISO', '.WMV', '.FLV', '.RMVB')
-IGNORE_FOLDERS = ['BDMV', 'CERTIFICATE', '@EADIR', '$RECYCLE.BIN', 'SYSTEM VOLUME INFORMATION', '__MACOSX', 'BACKUP', 'RECOVERY']
+IGNORE_FOLDERS = [
+    'BDMV', 'CERTIFICATE', '@EADIR', '$RECYCLE.BIN', 'SYSTEM VOLUME INFORMATION', '__MACOSX',
+    'BACKUP', 'RECOVERY', 'EXTRAS', 'SPECIAL FEATURES', 'DELETED SCENES', 'STORYBOARDS',
+    'FEATURETTES', 'BONUS', 'BONUS FEATURES', 'SAMPLES',
+]
 # 移除了 NFO 以便后续支持本地元数据
 IGNORE_FILES = ['SAMPLE', 'TRAILER', 'EXTRAS', 'FEATURETTE', 'TXT', 'JPG', 'PNG', 'SRT', 'ASS', 'SUB']
 

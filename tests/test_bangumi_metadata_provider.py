@@ -106,6 +106,22 @@ class BangumiMetadataProviderTests(unittest.TestCase):
         self.assertIn("User-Agent", call["headers"])
         self.assertIn("https://github.com/Purewo/CyberStream", call["headers"]["User-Agent"])
         self.assertEqual([2], call["kwargs"]["json"]["filter"]["type"])
+        self.assertIn("proxies", call["kwargs"])
+
+    def test_request_uses_dedicated_proxy_config_when_enabled(self):
+        provider = self.build_provider()
+
+        with patch("backend.app.services.metadata_providers.bangumi.config.BANGUMI_PROXIES", {
+            "http": "http://127.0.0.1:7890",
+            "https": "http://127.0.0.1:7890",
+        }):
+            provider.search_candidates("葬送的芙莉莲", year=2023, limit=3, media_type_hint="tv")
+
+        call = provider.session.calls[0]
+        self.assertEqual({
+            "http": "http://127.0.0.1:7890",
+            "https": "http://127.0.0.1:7890",
+        }, call["kwargs"]["proxies"])
 
     def test_search_accepts_bangumi_subject_url(self):
         provider = self.build_provider()

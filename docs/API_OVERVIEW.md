@@ -98,6 +98,10 @@ X-Cyber-API-Token: <token>
 
 当 GET 返回 `proxy_url_redacted=true` 时，PUT 原样提交该脱敏 URL 会保留已存储的真实代理凭证。
 
+### `GET /api/v1/system/tmdb-config/check`
+
+主动调用 TMDB 认证接口验证当前 token 是否可用，不返回 token 明文。前端在扫描或批量刮削前应检查 `data.ready === true`；否则按 `data.status` 展示原因，例如 `missing_token`、`invalid_token`、`proxy_error`、`timeout` 或 `network_error`。
+
 ## 1.2 文档与契约入口
 
 这些接口是给前端开发者自助联调用的公开只读入口，不需要猜线上 Swagger 地址。
@@ -901,6 +905,7 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 与专辑扫描、指定挂载点扫描共用同一个运行锁；已有扫描任务执行中时返回 `429`
+- 不要求预先创建专辑或资源库目录绑定；未配置专辑时仍会扫描已配置存储源。
 
 ---
 

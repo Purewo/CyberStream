@@ -1768,6 +1768,16 @@ def _metadata_describes_tv(meta_data):
     return False
 
 
+def _metadata_describes_movie(meta_data):
+    if not isinstance(meta_data, dict):
+        return False
+    media_type = str(meta_data.get("media_type_hint") or "").strip().lower()
+    if media_type == "movie":
+        return True
+    tmdb_id = str(meta_data.get("tmdb_id") or "").strip().lower()
+    return tmdb_id.startswith("movie/")
+
+
 def _first_metadata_season(meta_data):
     for item in (meta_data or {}).get("season_metadata") or []:
         if not isinstance(item, dict):
@@ -1779,6 +1789,67 @@ def _first_metadata_season(meta_data):
         if season > 0:
             return season
     return None
+
+
+def _repair_movie_resource_episode_metadata(movie, meta_data):
+    if not _metadata_describes_movie(meta_data):
+        return {"updated": 0, "updated_resource_ids": []}
+
+    cleaner = MediaPathCleaner()
+    updated_resource_ids = []
+
+    for resource in movie.resources.order_by(MediaResource.path.asc()).all():
+        changed = False
+        episode_changed = False
+        parsed = cleaner.parse_path_metadata(resource.path or resource.filename or "")
+
+        if resource.season is not None:
+            resource.season = None
+            changed = True
+            episode_changed = True
+        if resource.episode is not None:
+            resource.episode = None
+            changed = True
+            episode_changed = True
+
+        specs = dict(resource.tech_specs or {})
+        features = dict(specs.get("features") or {})
+        if features.get("is_movie_feature") is not True:
+            features["is_movie_feature"] = True
+            specs["features"] = features
+            changed = True
+
+        trace = dict(specs.get("metadata_trace") or {})
+        trace_changed = False
+        if trace.get("media_type_hint") != "movie":
+            trace["media_type_hint"] = "movie"
+            trace_changed = True
+        if parsed.parse_strategy and trace.get("parse_strategy") != parsed.parse_strategy:
+            trace["parse_strategy"] = parsed.parse_strategy
+            trace_changed = True
+        if parsed.parse_mode and trace.get("parse_layer") != parsed.parse_mode:
+            trace["parse_layer"] = parsed.parse_mode
+            trace_changed = True
+        if trace_changed:
+            specs["metadata_trace"] = trace
+            changed = True
+
+        if specs != (resource.tech_specs or {}):
+            resource.tech_specs = specs
+
+        next_label = _build_resource_label(resource, None, None)
+        if (episode_changed or resource.label is None) and resource.label != next_label:
+            resource.label = next_label
+            changed = True
+
+        if changed:
+            resource.metadata_edited_at = datetime.utcnow()
+            updated_resource_ids.append(resource.id)
+
+    return {
+        "updated": len(updated_resource_ids),
+        "updated_resource_ids": updated_resource_ids,
+    }
 
 
 def _repair_tv_resource_episode_metadata(movie, meta_data):
@@ -1846,6 +1917,14 @@ def _repair_tv_resource_episode_metadata(movie, meta_data):
         "updated": len(updated_resource_ids),
         "updated_resource_ids": updated_resource_ids,
     }
+
+
+def _repair_resource_episode_metadata(movie, meta_data):
+    if _metadata_describes_tv(meta_data):
+        return _repair_tv_resource_episode_metadata(movie, meta_data)
+    if _metadata_describes_movie(meta_data):
+        return _repair_movie_resource_episode_metadata(movie, meta_data)
+    return {"updated": 0, "updated_resource_ids": []}
 
 
 def _is_newer_user_history(candidate, current):
@@ -3421,7 +3500,7 @@ def _apply_metadata_rescrape_result(movie, result, unlock_fields=None):
         respect_locked=True,
     )
     season_result = _sync_movie_season_metadata(movie, meta_data)
-    _repair_tv_resource_episode_metadata(movie, meta_data)
+    _repair_resource_episode_metadata(movie, meta_data)
     if movie.apply_pending_review_default(previously_visible=previously_visible):
         updated_fields.append("catalog_visibility_status")
     return {
@@ -5185,7 +5264,7 @@ def refresh_movie_metadata(id):
             respect_locked=True,
         )
         _sync_movie_season_metadata(movie, meta_data)
-        _repair_tv_resource_episode_metadata(movie, meta_data)
+        _repair_resource_episode_metadata(movie, meta_data)
         if movie.apply_pending_review_default(previously_visible=previously_visible):
             updated_fields.append("catalog_visibility_status")
         db.session.commit()
@@ -5679,7 +5758,7 @@ def match_movie_metadata(id):
             respect_locked=True,
         )
         _sync_movie_season_metadata(movie, meta_data)
-        _repair_tv_resource_episode_metadata(movie, meta_data)
+        _repair_resource_episode_metadata(movie, meta_data)
         if movie.apply_pending_review_default(previously_visible=previously_visible):
             updated_fields.append("catalog_visibility_status")
         db.session.commit()
@@ -5711,7 +5790,7 @@ def match_movie_metadata(id):
                     respect_locked=True,
                 )
                 _sync_movie_season_metadata(target_movie, meta_data)
-                _repair_tv_resource_episode_metadata(target_movie, meta_data)
+                _repair_resource_episode_metadata(target_movie, meta_data)
                 if target_movie.apply_pending_review_default(previously_visible=previously_visible):
                     updated_fields.append("catalog_visibility_status")
                 db.session.commit()

@@ -17,3 +17,8 @@ Use short, imperative commit subjects consistent with the existing history, such
 
 ## Security & Configuration Tips
 Do not hardcode new secrets in code or docs. Prefer environment variables for deployment-specific values such as `TMDB_TOKEN`, storage credentials, and path overrides. If you change `APP_VERSION`, also update the related references called out in `docs/VERSIONING.md`.
+
+## Project Runtime Memory
+Keep CyberStream-specific operational facts in this repository, not in global agent memory, unless explicitly requested. Current host notes: use explicit proxy `127.0.0.1:7890` for GitHub/overseas access; public backend HTTPS is `https://cyberstream.gameuniverse.top:40160/`; nginx terminates TLS on port `40160` and proxies to `127.0.0.1:5004`; backend stays online in dev mode via `cyberstream-backend.service`; AList/OpenList/DDNS-GO run locally; do not print secrets from `/etc/cyberstream/`, `/var/lib/ddns-go/`, or `.env.local`. Frontend work is owned separately; avoid touching `frontend/` unless the user explicitly redirects.
+
+Fallback review status as of 2026-06-07: 30 manually checked `fallback_pipeline_match` items were published through `/api/v1/metadata/pending-review/publish`; 37 remain pending because they are local placeholders, missing posters, low confidence, episode/season diagnostics, or visible mismatches such as same-title wrong-year TMDB matches. Do not bulk-publish the remaining fallback queue without re-scrape/manual matching first.

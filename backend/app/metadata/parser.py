@@ -23,7 +23,9 @@ class PathMetadataParser:
         self.re_mixed_season_folder = re.compile(
             r'(?i)^(.+?)(?:[\s._-]+|(?=(?<![A-Z0-9])S)|(?=第)|(?=\d))(?:S|Season|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Season)?(?:$|[\s._\-\[])'
         )
-        self.re_episode = re.compile(r'(?i)(?:E|EP|第)\s*(\d+)(?:集)?(?=[\s._\-]|$)')
+        self.re_episode = re.compile(
+            r'(?i)(?<![A-Z0-9])(?:EP?|第)\s*0*(\d{1,3})(?:集)?(?=$|[\s._\-\]\)）】])'
+        )
         self.re_s_e = re.compile(r'(?i)S(\d+)[.\s_-]*E(\d+)')
         self.re_s_parenthesized_episode = re.compile(
             r'(?i)(?<![A-Z0-9])S(?P<season>\d{1,2})(?!\d)[\s._-]*[\(\[（【]\s*0*(?P<episode>\d{1,3})\s*[\)\]）】]'
@@ -35,7 +37,13 @@ class PathMetadataParser:
             r'(?P<episode>\d{1,3})\s*[集话話]?(?:\s*(?:END|完结))?$'
         )
         self.re_leading_number = re.compile(r'^(\d{1,4})[\s\.]+')
-        self.re_episode_token = re.compile(r'(?i)S\d{1,2}[.\s_-]*E\d{1,3}|(?:E|EP|第)\s*\d+(?:集)?')
+        self.re_episode_token = re.compile(
+            r'(?i)(?<![A-Z0-9])(?:'
+            r'S\d{1,2}[.\s_-]*E\d{1,3}|'
+            r'EP?\s*0*\d{1,3}|'
+            r'第\s*0*\d{1,3}(?:集)?'
+            r')(?=$|[\s._\-\]\)）】])'
+        )
         self.re_year = re.compile(r'(?:19|20)\d{2}')
         self.re_noise = re.compile(
             r'(?i)\b(?:'
@@ -44,10 +52,10 @@ class PathMetadataParser:
             r'HDR\d*|DV|DOVI|DOLBY|VISION|ATMOS|TRUEHD|DTS-?X?|DTS-?HD|MA|HD-?MA|AAC|AC3|E-?AC3|DDP\d(?:\.\d)?|DDP\d*|H|'
             r'[57]\.1|[257]\.0|'
             r'\d{1,2}bit|SDR|'
-            r'BLURAY|REMUX|WEB-?DL|WEBRIP|HDTV|BD|'
+            r'BLU[\s._-]?RAY|BLURAY|REMUX|WEB-?DL|WEBRIP|HDTV|BD|'
             r'PROPER|REPACK|EXTENDED|UNRATED|DIRECTORS?|CUT|'
             r'MULTI|COMPLETE|INTERNAL|ATVP|AMZN|DSNP|NF|'
-            r'SWTYBLZ|FGT|OMFUG|DREAMHD|EPSiLON|SPARKS|RARBG|'
+            r'SWTYBLZ|FGT|OMFUG|DREAMHD|EPSiLON|SPARKS|RARBG|HDT|'
             r'HQ|FPS\d*|60FPS|120FPS|\d+FPS|HIGH BITRATE|'
             r'MP4|MKV|AVI|'
             r'日|粤|国|英|中|韩'
@@ -184,6 +192,13 @@ class PathMetadataParser:
             return inline["title"]
 
         name = (filename or '').rsplit('.', 1)[0]
+        numeric_title_match = re.match(
+            r'^((?:19|20)\d{2})[\s._-]+((?:19|20)\d{2})(?:$|[\s._-])',
+            name,
+        )
+        if numeric_title_match:
+            return numeric_title_match.group(1)
+
         name = self.re_s_parenthesized_episode.sub(' ', name)
         name = self.re_episode_token.sub(' ', name)
         name = re.sub(r'^\d+[\s\.]+', '', name)
@@ -207,7 +222,9 @@ class PathMetadataParser:
 
         m2 = self.re_episode.search(filename)
         if m2:
-            return None, int(m2.group(1))
+            episode = int(m2.group(1))
+            if 1 <= episode <= 200:
+                return None, episode
 
         m3 = self.re_leading_number.match(filename)
         if m3:
@@ -220,8 +237,13 @@ class PathMetadataParser:
     def extract_year(self, text):
         if not text:
             return None
-        match = self.re_year.search(text)
-        return int(match.group(0)) if match else None
+        tokens = re.split(r'[\s._\-\(\)\[\]]+', str(text))
+        year_tokens = [
+            int(item)
+            for item in tokens
+            if re.fullmatch(r'(?:19|20)\d{2}', item or '')
+        ]
+        return year_tokens[-1] if year_tokens else None
 
     def is_garbage_title(self, title):
         if not title:
@@ -234,7 +256,7 @@ class PathMetadataParser:
 
     def is_generic_folder(self, folder_name):
         generic = [
-            'DOWNLOAD', 'MOVIE', 'FILM', 'VIDEO', '我的视频', 'DOWNLOADS', 'ANIME', 'TV', 'COLLECTION', 'PUBLIC', 'DAV',
+            'DOWNLOAD', 'MOVIE', 'MOVIES', 'FILM', 'VIDEO', '我的视频', 'DOWNLOADS', 'ANIME', 'TV', 'COLLECTION', 'PUBLIC', 'DAV',
             '高码率', 'HIGH BITRATE', '60FPS', '120FPS', 'HQ', 'EXTRAS', 'SPECIALS', 'FEATURETTES',
             '未分类', '独立资源',
         ]

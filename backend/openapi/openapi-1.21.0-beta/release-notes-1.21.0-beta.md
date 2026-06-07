@@ -26,6 +26,11 @@
 - local、SMB、FTP 视频流统一支持单段 `Range`、开放结尾范围和 suffix range；非法、多段或不可满足范围返回 `416` 与 `Content-Range: bytes */<size>`，不再落入 `500`。
 - 播放流、字幕流和云端转码的 302 Location 只允许公网 HTTP(S) URL；本机、私网、链路本地、保留地址和非 HTTP scheme 会被拒绝。
 
+## TMDB 配置预检
+
+- 新增 `GET /api/v1/system/tmdb-config/check`，主动调用 TMDB 认证接口验证当前 token 是否有效。
+- 响应不返回 token 明文；前端可在批量刮削前检查 `data.ready === true`，否则根据 `data.status` 展示 `missing_token`、`invalid_token`、`proxy_error`、`network_error` 等原因，避免无效配置下继续刮削。
+
 ## QuarkTV / UCTV 云端转码播放
 
 - 新增 `GET /api/v1/resources/{id}/streaming-qualities`，返回 provider 云端转码画质列表；当前支持 QuarkTV、UCTV 和 Aliyundrive。
@@ -247,8 +252,8 @@
 - `POST /api/v1/libraries/{id}/scan` 默认会在扫描前刷新支持该能力的 `alist/openlist/guangyapan/tianyicloud/115cloud/aliyundrive/baidunetdisk/123pan/quarktv/uctv` 绑定目录。
 - 前端可传 `{"refresh": false}` 跳过上游刷新，维持纯扫描行为。
 - 目录刷新失败只写入扫描状态和后端日志，不会阻断后续扫描与刮削。
-- `POST /api/v1/scan` 在没有任何启用的资源库目录绑定时会返回 `40013`，避免旧全库扫描入口误扫存储源根目录。
-- `POST /api/v1/storage/sources/{id}/scan` 在没有显式 `root_path` 且该存储源未绑定任何资源库时会返回 `40013`，避免误触发存储源根目录扫描。
+- `POST /api/v1/scan` 不要求预先创建专辑或资源库目录绑定；没有专辑时仍会扫描已配置存储源。
+- `POST /api/v1/storage/sources/{id}/scan` 不要求该存储源已绑定专辑；没有显式 `root_path` 时按存储源根目录扫描。
 
 ## TMDB 本机配置
 

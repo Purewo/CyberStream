@@ -314,17 +314,25 @@ class OpenApiContractTests(unittest.TestCase):
         openapi = self._load_openapi()
         schemas = openapi["components"]["schemas"]
         operation = openapi["paths"]["/api/v1/system/tmdb-config"]
+        check_operation = openapi["paths"]["/api/v1/system/tmdb-config/check"]["get"]
 
         self.assertIn("get", operation)
         self.assertIn("put", operation)
         self.assertIn("SystemTmdbConfig", schemas)
         self.assertIn("SystemTmdbConfigUpdateRequest", schemas)
+        self.assertIn("SystemTmdbConfigCheckResult", schemas)
         self.assertNotIn("token", schemas["SystemTmdbConfig"]["properties"])
         self.assertIn("proxy_url_redacted", schemas["SystemTmdbConfig"]["properties"])
         self.assertEqual(
             2048,
             schemas["SystemTmdbConfigUpdateRequest"]["properties"]["proxy_url"]["maxLength"],
         )
+        check_schema = schemas["SystemTmdbConfigCheckResult"]
+        self.assertIn("ready", check_schema["properties"])
+        self.assertIn("token_valid", check_schema["properties"])
+        self.assertIn("invalid_token", check_schema["properties"]["status"]["enum"])
+        self.assertIn("network_error", check_schema["properties"]["status"]["enum"])
+        self.assertNotIn("security", check_operation)
 
     def test_update_check_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()

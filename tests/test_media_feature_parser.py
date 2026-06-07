@@ -66,10 +66,23 @@ class MediaFeatureParserTests(unittest.TestCase):
             "【更多无水印高清电影请访问 www.BBQDDQ.com】【更多无水印高清电影请访问 www.BBQDDQ.com】.MKV",
             636976,
         ))
+        self.assertTrue(ResourceValidator.is_probable_promotional_video(
+            "RARBG.com.mp4",
+            1016764,
+        ))
         self.assertFalse(ResourceValidator.is_probable_promotional_video(
             "落凡尘.Into.The.Mortal.World.2024.2160p.HQ.WEB-DL.DTS5.1.H264.60fps.2Audio-ParkHD.mkv",
             24732970473,
         ))
+        self.assertFalse(ResourceValidator.is_probable_promotional_video(
+            "Kung.Fu.Panda.3.2016.1080p.BluRay.REMUX.AVC.DTS-HD.MA.7.1-RARBG.mkv",
+            24944881664,
+        ))
+
+    def test_ignores_bluray_extras_folders(self):
+        self.assertTrue(ResourceValidator.is_ignored_folder("Special Features"))
+        self.assertTrue(ResourceValidator.is_ignored_folder("Deleted Scenes"))
+        self.assertTrue(ResourceValidator.is_ignored_folder("Storyboards"))
 
 
 if __name__ == "__main__":

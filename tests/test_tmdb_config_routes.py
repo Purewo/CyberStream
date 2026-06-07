@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
+
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -16,6 +18,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
+from backend.app.services import tmdb as tmdb_module
+from backend.app.services.tmdb import TMDBScraper
 
 
 TMDB_ENV_KEYS = ("TMDB_TOKEN", "TMDB_PROXY_ENABLED", "TMDB_PROXY_URL")
@@ -48,7 +52,7 @@ class TmdbConfigRouteTests(unittest.TestCase):
         )
         self.env_path_patch.start()
         self.refresh_patch = patch("backend.app.api.system_routes._refresh_runtime_config")
-        self.refresh_patch.start()
+        self.refresh_runtime_config_mock = self.refresh_patch.start()
 
     def tearDown(self):
         self.refresh_patch.stop()
@@ -171,6 +175,137 @@ class TmdbConfigRouteTests(unittest.TestCase):
             self.env_path.read_text(encoding="utf-8"),
         )
         self.assertTrue(response.get_json()["data"]["proxy_url_redacted"])
+
+    def test_check_returns_tmdb_status_without_leaking_token(self):
+        status = {
+            "ready": True,
+            "token_set": True,
+            "token_valid": True,
+            "status": "ok",
+            "message": "TMDB token is valid",
+            "http_status": 200,
+            "tmdb_status_code": 1,
+            "tmdb_status_message": "Success.",
+            "proxy_enabled": True,
+            "proxy_configured": False,
+            "elapsed_ms": 42,
+        }
+        with patch(
+            "backend.app.api.system_routes.tmdb_scraper.check_token_status",
+            return_value=status,
+        ) as check_mock:
+            response = self.client.get("/api/v1/system/tmdb-config/check")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertEqual(status, data)
+        self.assertNotIn("token", data)
+        check_mock.assert_called_once_with()
+        self.refresh_runtime_config_mock.assert_called()
+
+    def test_check_reports_runtime_refresh_failure(self):
+        self.refresh_runtime_config_mock.side_effect = RuntimeError("secret path")
+
+        response = self.client.get("/api/v1/system/tmdb-config/check")
+
+        payload = response.get_json()
+        self.assertEqual(500, response.status_code)
+        self.assertEqual(50011, payload["code"])
+        self.assertEqual("刷新 TMDB 运行配置失败", payload["msg"])
+
+
+class _FakeResponse:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class TMDBTokenCheckTests(unittest.TestCase):
+    def create_scraper(self, token="valid-token"):
+        patches = [
+            patch.object(tmdb_module.config, "TMDB_TOKEN", token),
+            patch.object(tmdb_module.config, "TMDB_PROXY_ENABLED", False),
+            patch.object(tmdb_module.config, "TMDB_PROXY_URL", ""),
+            patch.object(tmdb_module.config, "TMDB_PROXIES", None),
+        ]
+        for item in patches:
+            item.start()
+            self.addCleanup(item.stop)
+        scraper = TMDBScraper()
+        self.addCleanup(scraper.session.close)
+        return scraper
+
+    def test_check_token_status_reports_missing_token_without_network(self):
+        scraper = self.create_scraper(token="")
+
+        with patch.object(scraper, "_session_get") as session_get:
+            status = scraper.check_token_status()
+
+        self.assertFalse(status["ready"])
+        self.assertFalse(status["token_set"])
+        self.assertFalse(status["token_valid"])
+        self.assertEqual("missing_token", status["status"])
+        session_get.assert_not_called()
+
+    def test_check_token_status_accepts_valid_tmdb_response(self):
+        scraper = self.create_scraper()
+
+        with patch.object(scraper, "_pick_dns_family", return_value=None), patch.object(
+            scraper,
+            "_session_get",
+            return_value=_FakeResponse(200, {
+                "success": True,
+                "status_code": 1,
+                "status_message": "Success.",
+            }),
+        ):
+            status = scraper.check_token_status()
+
+        self.assertTrue(status["ready"])
+        self.assertTrue(status["token_set"])
+        self.assertTrue(status["token_valid"])
+        self.assertEqual("ok", status["status"])
+        self.assertEqual(200, status["http_status"])
+        self.assertEqual(1, status["tmdb_status_code"])
+
+    def test_check_token_status_reports_invalid_token(self):
+        scraper = self.create_scraper(token="bad-token")
+
+        with patch.object(scraper, "_pick_dns_family", return_value=None), patch.object(
+            scraper,
+            "_session_get",
+            return_value=_FakeResponse(401, {
+                "success": False,
+                "status_code": 7,
+                "status_message": "Invalid API key: You must be granted a valid key.",
+            }),
+        ):
+            status = scraper.check_token_status()
+
+        self.assertFalse(status["ready"])
+        self.assertTrue(status["token_set"])
+        self.assertFalse(status["token_valid"])
+        self.assertEqual("invalid_token", status["status"])
+        self.assertEqual(401, status["http_status"])
+        self.assertEqual(7, status["tmdb_status_code"])
+
+    def test_check_token_status_reports_proxy_error(self):
+        scraper = self.create_scraper()
+
+        with patch.object(scraper, "_pick_dns_family", return_value=None), patch.object(
+            scraper,
+            "_session_get",
+            side_effect=requests.exceptions.ProxyError("proxy down"),
+        ):
+            status = scraper.check_token_status()
+
+        self.assertFalse(status["ready"])
+        self.assertTrue(status["token_set"])
+        self.assertEqual("proxy_error", status["status"])
+        self.assertIsNone(status["http_status"])
 
 
 if __name__ == "__main__":

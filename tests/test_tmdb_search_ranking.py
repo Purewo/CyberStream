@@ -123,6 +123,57 @@ class TMDBSearchRankingTests(unittest.TestCase):
             self.assertEqual("movie/667717", scraper.search_movie("Deep Sea", 2023, strict=True, media_type_hint="movie"))
             self.assertIsNone(scraper.search_movie("Deep Sea", 2022, strict=True, media_type_hint="movie"))
 
+    def test_year_hint_beats_exact_title_with_wrong_year(self):
+        scraper = self.build_scraper()
+
+        def fake_get(url, params=None):
+            return {
+                "results": [
+                    {
+                        "id": 93560,
+                        "media_type": "movie",
+                        "title": "Batman and Robin",
+                        "original_title": "Batman and Robin",
+                        "release_date": "1949-05-26",
+                        "popularity": 1,
+                    },
+                    {
+                        "id": 415,
+                        "media_type": "movie",
+                        "title": "Batman & Robin",
+                        "original_title": "Batman & Robin",
+                        "release_date": "1997-06-20",
+                        "popularity": 7,
+                    },
+                ]
+            }
+
+        with patch.object(scraper, "_get", side_effect=fake_get):
+            self.assertEqual(
+                "movie/415",
+                scraper.search_movie("Batman and Robin", 1997, media_type_hint="movie"),
+            )
+
+    def test_year_hint_rejects_low_score_wrong_year_fallback(self):
+        scraper = self.build_scraper()
+
+        def fake_get(url, params=None):
+            return {
+                "results": [
+                    {
+                        "id": 161620,
+                        "media_type": "movie",
+                        "title": "Wonder Woman",
+                        "original_title": "Wonder Woman",
+                        "release_date": "1974-03-12",
+                        "popularity": 2,
+                    },
+                ]
+            }
+
+        with patch.object(scraper, "_get", side_effect=fake_get):
+            self.assertIsNone(scraper.search_movie("Wonder Woman", 1984, media_type_hint="movie"))
+
     def test_tmdb_scraper_uses_dedicated_proxy_config_and_ignores_env_proxy(self):
         scraper = TMDBScraper()
         self.assertFalse(scraper.session.trust_env)

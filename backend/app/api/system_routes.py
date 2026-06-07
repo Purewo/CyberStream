@@ -10,9 +10,8 @@ from urllib.parse import urlsplit, urlunsplit
 from flask import Blueprint, current_app, request
 
 from backend.app import config as backend_config
-from backend.app.extensions import db
-from backend.app.models import LibrarySource
 from backend.app.services.scanner import scanner_engine
+from backend.app.services.tmdb import scraper as tmdb_scraper
 from backend.app.services.update_check import get_update_check_payload
 from backend.app.utils.response import api_error, api_response
 
@@ -36,19 +35,6 @@ def get_scan_status():
 
 @system_bp.route('/scan', methods=['POST'])
 def trigger_scan():
-    # 安全护栏：未配置任何媒体库的目录绑定时，拒绝触发"全盘扫描"。
-    # 历史上 scanner_engine.scan() 不带参数 = 遍历所有 storage source 的根
-    # 目录，当用户存储源指向云盘根（OneDrive / 天翼云 / AList 顶级）时
-    # 会瞬间扫几千个 GB 的数据，触发限流 / 流量爆炸。**任何场景下**只要
-    # 没有 enabled 的 library_sources 绑定就直接拒，前端正确引导用户去
-    # 「资源库 → 添加目录」绑定具体路径。
-    has_binding = db.session.query(LibrarySource.id).filter_by(is_enabled=True).first() is not None
-    if not has_binding:
-        return api_error(
-            code=40013,
-            msg="未配置任何媒体库的目录绑定，无法启动扫描。请先在「资源库」中绑定要扫描的具体目录。",
-        )
-
     if not scanner_engine.try_start_scan():
         return api_error(code=42900, msg="Scanner is already running", http_status=429)
 
@@ -324,6 +310,24 @@ def get_tmdb_config():
     维护输入框 placeholder 即可。
     """
     return api_response(data=_tmdb_config_payload())
+
+
+@system_bp.route('/system/tmdb-config/check', methods=['GET'])
+def check_tmdb_config():
+    """Actively verify that the configured TMDB token can authenticate.
+
+    This endpoint intentionally returns a normal API response even when the
+    token is missing, invalid, or TMDB is unreachable. The frontend can gate
+    scraping on data.ready without treating expected configuration states as
+    transport-level API failures.
+    """
+    try:
+        _refresh_runtime_config()
+    except Exception as e:
+        logger.exception("Failed to refresh TMDB runtime config before check error=%s", e)
+        return api_error(code=50011, msg="刷新 TMDB 运行配置失败", http_status=500)
+
+    return api_response(data=tmdb_scraper.check_token_status())
 
 
 @system_bp.route('/system/tmdb-config', methods=['PUT'])

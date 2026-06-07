@@ -34,6 +34,9 @@ class BangumiMetadataProvider(MetadataProviderBase):
             "User-Agent": getattr(config, "BANGUMI_USER_AGENT", "pureworld/cyber-media/1.19.0"),
         }
 
+    def _proxies(self):
+        return getattr(config, "BANGUMI_PROXIES", None)
+
     def _request(self, method, path, **kwargs):
         url = urljoin(f"{self._api_base()}/", path.lstrip("/"))
         timeout = float(getattr(config, "BANGUMI_TIMEOUT_SECONDS", 10))
@@ -43,6 +46,7 @@ class BangumiMetadataProvider(MetadataProviderBase):
                     method,
                     url,
                     headers=self._headers(),
+                    proxies=self._proxies(),
                     timeout=timeout,
                     **kwargs,
                 )

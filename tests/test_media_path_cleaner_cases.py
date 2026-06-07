@@ -38,6 +38,40 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
             needs_review=False,
         )
 
+    def test_standard_movie_filename_preserves_sequel_number(self):
+        self.assert_metadata(
+            "Movies/Despicable.Me.2.2013.2160p.BluRay.REMUX.mkv",
+            title="Despicable Me 2",
+            year=2013,
+            season=None,
+            episode=None,
+            parse_mode="standard",
+            parse_strategy="movie_filename_year",
+            needs_review=False,
+        )
+
+    def test_parent_movie_folder_preserves_sequel_number(self):
+        self.assert_metadata(
+            "Movies/Final Destination 5 2011 BluRay 2160p/feature.mkv",
+            title="Final Destination 5",
+            year=2011,
+            season=None,
+            episode=None,
+            parse_mode="standard",
+            parse_strategy="movie_parent",
+            needs_review=False,
+        )
+
+    def test_group_title_repair_preserves_sequel_number(self):
+        repaired = self.cleaner.repair_group_title(
+            "Kung Fu Panda 3",
+            "Movies/Kung.Fu.Panda.3.2016/Kung.Fu.Panda.3.2016.mkv",
+            current_year=2016,
+        )
+
+        self.assertEqual("Kung Fu Panda 3", repaired.title)
+        self.assertEqual(2016, repaired.year)
+
     def test_episode_file_keeps_year_and_episode(self):
         self.assert_metadata(
             "剧集/Shogun.2024.S01E01.mkv",
@@ -207,6 +241,61 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
         self.assertIsNone(parsed.episode)
         self.assertIn(parsed.parse_strategy, {"movie_parent_folder", "movie_filename_with_year"})
         self.assertEqual("落凡尘 Into The Mortal World", cleaned.title)
+        self.assertIsNone(cleaned.season)
+        self.assertIsNone(cleaned.episode)
+        self.assertEqual("movie_filename_year", cleaned.parse_strategy)
+
+    def test_metadata_pipeline_parser_keeps_numeric_movie_title_and_last_year(self):
+        parser = PathMetadataParser()
+        parsed = parser.parse("Movies/2012.2009.2160p.BluRay.REMUX.mkv")
+
+        self.assertEqual("2012", parsed.title)
+        self.assertEqual(2009, parsed.year)
+        self.assertEqual("movie", parsed.media_type_hint)
+        self.assertEqual("movie_filename_with_year", parsed.parse_strategy)
+
+    def test_metadata_pipeline_parser_uses_last_year_for_title_with_year_number(self):
+        parser = PathMetadataParser()
+        parsed = parser.parse(
+            "Movies/Wonder.Woman.1984.2020.PROPER.IMAX.2160p.BluRay.REMUX/"
+            "Wonder.Woman.1984.2020.PROPER.IMAX.2160p.BluRay.REMUX.mkv"
+        )
+
+        self.assertEqual(2020, parsed.year)
+        self.assertEqual("movie", parsed.media_type_hint)
+        self.assertEqual("movie_parent_folder", parsed.parse_strategy)
+
+    def test_metadata_pipeline_parser_ignores_resolution_as_year(self):
+        parser = PathMetadataParser()
+        parsed = parser.parse(
+            "[KMTeams] Legend of LuoXiaohei 1-40+movie (Bilibili 1920x1080 x264 AAC)/"
+            "S1_1-28/[KMTeams] Legend of LuoXiaohei 01 (Bilibili 1280x1024 x264 AAC).mp4"
+        )
+
+        self.assertEqual("Legend of LuoXiaohei 1 40+movie", parsed.title)
+        self.assertIsNone(parsed.year)
+        self.assertEqual("tv", parsed.media_type_hint)
+        self.assertEqual("season_folder", parsed.parse_strategy)
+
+    def test_movie_title_keeps_dance_and_ignores_truehd_channel(self):
+        parser = PathMetadataParser()
+        path = (
+            "来自：分享/来自：云添加/"
+            "Venom The Last Dance 2024 2160p UHD Blu-ray Remux HEVC DV TrueHD 7.1 Atmos-HDT/"
+            "Venom The Last Dance 2024 2160p UHD Blu-ray Remux HEVC DV TrueHD 7.1 Atmos-HDT.mkv"
+        )
+
+        parsed = parser.parse(path)
+        cleaned = self.cleaner.parse_path_metadata(path)
+
+        self.assertEqual("Venom The Last Dance", parsed.title)
+        self.assertEqual(2024, parsed.year)
+        self.assertIsNone(parsed.season)
+        self.assertIsNone(parsed.episode)
+        self.assertEqual("movie", parsed.media_type_hint)
+        self.assertEqual("movie_parent_folder", parsed.parse_strategy)
+        self.assertEqual("Venom The Last Dance", cleaned.title)
+        self.assertEqual(2024, cleaned.year)
         self.assertIsNone(cleaned.season)
         self.assertIsNone(cleaned.episode)
         self.assertEqual("movie_filename_year", cleaned.parse_strategy)

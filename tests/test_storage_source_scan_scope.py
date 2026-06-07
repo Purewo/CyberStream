@@ -15,6 +15,15 @@ from backend.app.models import Library, LibrarySource, StorageSource
 from backend.app.services.scanner import CyberScanner
 
 
+class _NfoContext:
+    nfo_candidates = ["movie.nfo"]
+
+
+class _FailingTextProvider:
+    def read_text(self, path):
+        raise RuntimeError("upstream rejected nfo")
+
+
 class _ImmediateThread:
     def __init__(self, target=None, args=None, kwargs=None):
         self.target = target
@@ -140,25 +149,34 @@ class StorageSourceScanScopeTests(unittest.TestCase):
         self.assertEqual(429, response.status_code)
         scanner_mock.scan.assert_not_called()
 
-    def test_scan_source_route_rejects_unbound_root_scan(self):
-        with patch("backend.app.api.storage_routes.scanner_engine") as scanner_mock:
+    def test_scan_source_route_accepts_unbound_root_scan(self):
+        with patch("backend.app.api.storage_routes.threading.Thread", _ImmediateThread), \
+             patch("backend.app.api.storage_routes.scanner_engine") as scanner_mock:
+            scanner_mock.try_start_scan.return_value = True
+
             response = self.client.post(f"/api/v1/storage/sources/{self.source.id}/scan")
 
-        self.assertEqual(400, response.status_code)
         payload = response.get_json()
-        self.assertEqual(40013, payload["code"])
-        scanner_mock.try_start_scan.assert_not_called()
-        scanner_mock.scan.assert_not_called()
+        self.assertEqual(202, response.status_code)
+        self.assertEqual("/", payload["data"]["root_path"])
+        scanner_mock.scan.assert_called_once_with(
+            self.source.id,
+            root_path="",
+            content_type=None,
+            scrape_enabled=True,
+            scraper_policy={},
+            lock_acquired=True,
+        )
 
-    def test_global_scan_route_rejects_when_no_library_bindings(self):
-        with patch("backend.app.api.system_routes.scanner_engine") as scanner_mock:
+    def test_global_scan_route_accepts_when_no_library_bindings(self):
+        with patch("backend.app.api.system_routes.threading.Thread", _ImmediateThread), \
+             patch("backend.app.api.system_routes.scanner_engine") as scanner_mock:
+            scanner_mock.try_start_scan.return_value = True
+
             response = self.client.post("/api/v1/scan")
 
-        self.assertEqual(400, response.status_code)
-        payload = response.get_json()
-        self.assertEqual(40013, payload["code"])
-        scanner_mock.try_start_scan.assert_not_called()
-        scanner_mock.scan.assert_not_called()
+        self.assertEqual(202, response.status_code)
+        scanner_mock.scan.assert_called_once_with(lock_acquired=True)
 
     def test_scanner_scan_passes_scope_for_specific_source(self):
         scanner = CyberScanner()
@@ -192,6 +210,13 @@ class StorageSourceScanScopeTests(unittest.TestCase):
             scan_source_mock.assert_not_called()
         finally:
             scanner.finish_scan()
+
+    def test_scanner_skips_unreadable_nfo_without_failing_entity(self):
+        scanner = CyberScanner()
+
+        payloads = scanner._load_nfo_payloads(_FailingTextProvider(), _NfoContext())
+
+        self.assertEqual([], payloads)
 
 
 if __name__ == "__main__":

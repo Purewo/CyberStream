@@ -7271,6 +7271,51 @@
         }
       }
     },
+    "/api/v1/system/tmdb-config/check": {
+      "get": {
+        "summary": "🔵 [新增] 检查 TMDB Token 可用性",
+        "description": "主动调用 TMDB /3/authentication 验证当前 token 是否可认证，并返回代理、网络、限流等状态。接口不返回 token 明文；未配置、无效 token 或网络失败都通过 data.ready=false 表达，方便前端在刮削前统一拦截。",
+        "operationId": "checkSystemTmdbConfig",
+        "x-lifecycle-status": "beta",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "TMDB token 和连接检查结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SystemTmdbConfigCheckResult"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "刷新 TMDB 运行配置失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/storage/managed/guangyapan/sms/start": {
       "post": {
         "summary": "🟠 [已开发未验证] 启动托管光鸭云盘短信登录",
@@ -24265,6 +24310,95 @@
             ]
           }
         }
+      },
+      "SystemTmdbConfigCheckResult": {
+        "type": "object",
+        "description": "Active TMDB token and connectivity check result. The token value is never returned.",
+        "properties": {
+          "ready": {
+            "type": "boolean",
+            "description": "True only when TMDB token is configured, accepted by TMDB, and the check request succeeded.",
+            "example": true
+          },
+          "token_set": {
+            "type": "boolean",
+            "description": "Whether TMDB_TOKEN is currently configured.",
+            "example": true
+          },
+          "token_valid": {
+            "type": "boolean",
+            "description": "Whether TMDB accepted the configured token.",
+            "example": true
+          },
+          "status": {
+            "type": "string",
+            "description": "Machine-readable check status for frontend gating before scraping.",
+            "enum": [
+              "ok",
+              "missing_token",
+              "invalid_token",
+              "rate_limited",
+              "tmdb_error",
+              "proxy_error",
+              "timeout",
+              "tls_error",
+              "network_error",
+              "unknown"
+            ],
+            "example": "ok"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable status message safe to show in settings UI.",
+            "example": "TMDB token is valid"
+          },
+          "http_status": {
+            "type": "integer",
+            "nullable": true,
+            "description": "HTTP status returned by TMDB, or null when no HTTP response was received.",
+            "example": 200
+          },
+          "tmdb_status_code": {
+            "type": "integer",
+            "nullable": true,
+            "description": "TMDB status_code field when present.",
+            "example": 1
+          },
+          "tmdb_status_message": {
+            "type": "string",
+            "description": "TMDB status_message field when present.",
+            "example": "Success."
+          },
+          "proxy_enabled": {
+            "type": "boolean",
+            "description": "Whether TMDB requests are configured to use a proxy.",
+            "example": true
+          },
+          "proxy_configured": {
+            "type": "boolean",
+            "description": "Whether a TMDB proxy URL is configured. The URL itself is not returned by this check endpoint.",
+            "example": false
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Elapsed milliseconds for the active check, or null when no request was attempted.",
+            "example": 120
+          }
+        },
+        "required": [
+          "ready",
+          "token_set",
+          "token_valid",
+          "status",
+          "message",
+          "http_status",
+          "tmdb_status_code",
+          "tmdb_status_message",
+          "proxy_enabled",
+          "proxy_configured",
+          "elapsed_ms"
+        ]
       }
     }
   },

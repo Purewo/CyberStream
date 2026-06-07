@@ -38,7 +38,9 @@ class MediaPathCleaner:
         self.re_mixed_season_folder = re.compile(
             r'(?i)^(.+?)(?:[\s._-]+|(?=(?<![A-Z0-9])S)|(?=第)|(?=\d))(?:S|Season|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Season)?(?:$|[\s._\-\[])'
         )
-        self.re_episode = re.compile(r'(?i)(?:E|EP|第)\s*(\d+)(?:集|\s|$)')
+        self.re_episode = re.compile(
+            r'(?i)(?<![A-Z0-9])(?:EP?|第)\s*0*(\d{1,3})(?:集)?(?=$|[\s._\-\]\)）】])'
+        )
         self.re_s_e = re.compile(r'(?i)S(\d+)[.\s_-]*E(\d+)')
         self.re_s_parenthesized_episode = re.compile(
             r'(?i)(?<![A-Z0-9])S(?P<season>\d{1,2})(?!\d)[\s._-]*[\(\[（【]\s*0*(?P<episode>\d{1,3})\s*[\)\]）】]'
@@ -58,10 +60,10 @@ class MediaPathCleaner:
             r'HDR\d*|DV|DOVI|DOLBY|VISION|ATMOS|TRUEHD|DTS-?X?|DTS-?HD|MA|HD-?MA|AAC|AC3|E-?AC3|DDP\d(?:\.\d)?|DDP\d*|H|'
             r'[57]\.1|[257]\.0|'
             r'\d{1,2}bit|SDR|'
-            r'BLURAY|REMUX|WEB-?DL|WEBRIP|HDTV|BD|'
+            r'BLU[\s._-]?RAY|BLURAY|REMUX|WEB-?DL|WEBRIP|HDTV|BD|'
             r'PROPER|REPACK|EXTENDED|UNRATED|DIRECTORS?|CUT|'
             r'MULTI|COMPLETE|INTERNAL|ATVP|AMZN|DSNP|NF|'
-            r'SWTYBLZ|FGT|OMFUG|DREAMHD|EPSiLON|SPARKS|RARBG|'
+            r'SWTYBLZ|FGT|OMFUG|DREAMHD|EPSiLON|SPARKS|RARBG|HDT|'
             r'HQ|FPS\d*|60FPS|120FPS|\d+FPS|HIGH BITRATE|'
             r'MP4|MKV|AVI|'
             r'日|粤|国|英|中|韩'
@@ -148,7 +150,7 @@ class MediaPathCleaner:
             "episode": episode,
         }
 
-    def clean_name(self, text):
+    def clean_name(self, text, *, preserve_trailing_number=False):
         if not text:
             return ""
         text = self.re_resolution_pair.sub(' ', text)
@@ -162,7 +164,8 @@ class MediaPathCleaner:
         text = re.sub(r'\(.*?\)', '', text)
         text = re.sub(r'[\[\]【】]', ' ', text)
         text = re.sub(r'[._\-]+', ' ', text).strip()
-        text = re.sub(r'\s+\d{1,3}(?:v\d+)?(?:END)?$', '', text, flags=re.I).strip()
+        if not preserve_trailing_number:
+            text = re.sub(r'\s+\d{1,3}(?:v\d+)?(?:END)?$', '', text, flags=re.I).strip()
         tokens = [item for item in re.split(r'\s+', text) if item]
         non_year_tokens = [item for item in tokens if not re.fullmatch(r'(?:19|20)\d{2}', item)]
         if non_year_tokens:
@@ -197,7 +200,9 @@ class MediaPathCleaner:
 
         m2 = self.re_episode.search(filename)
         if m2:
-            return None, int(m2.group(1))
+            episode = int(m2.group(1))
+            if 1 <= episode <= 200:
+                return None, episode
 
         m3 = self.re_leading_number.match(filename)
         if m3:
@@ -294,7 +299,7 @@ class MediaPathCleaner:
             match = pattern.match(base_name)
             if not match:
                 continue
-            title = self.clean_name(match.group('title'))
+            title = self.clean_name(match.group('title'), preserve_trailing_number=True)
             year = self.extract_year(match.group('year'))
             if not self._is_garbage_title(title):
                 return self._build_result(title, year, None, None, 'standard', 'movie_filename_year')
@@ -473,7 +478,7 @@ class MediaPathCleaner:
             release_group_result.episode = episode if episode is not None else release_group_result.episode
             return release_group_result
 
-        clean_parent = self.clean_name(parent)
+        clean_parent = self.clean_name(parent, preserve_trailing_number=True)
         if not self._is_generic_folder(parent) and not self._is_garbage_title(clean_parent):
             return self._build_result(
                 clean_parent,
@@ -578,7 +583,7 @@ class MediaPathCleaner:
         return self._parse_fallback_path(file_path)
 
     def repair_group_title(self, title, sample_file_path, current_year=None):
-        clean_title = self.clean_name(title)
+        clean_title = self.clean_name(title, preserve_trailing_number=True)
         if not self._is_garbage_title(clean_title):
             return self._build_result(
                 title=clean_title,
