@@ -61,11 +61,13 @@ curl -i http://127.0.0.1:5004/
 curl -i http://pioneer.fan:884/
 curl -i http://pioneer.fan:884/api/v1/health
 curl -i http://pioneer.fan:884/api/v1/openapi.json
+./scripts/backend_smoke_check.py --base-url http://pioneer.fan:884
 ```
 
 预期：
 - HTTP/HTTPS 均能返回 200
 - 返回健康检查 JSON
+- smoke check 全部返回 `OK`
 
 ### 2.5 数据库备份检查
 

@@ -51,9 +51,11 @@ cp .env.local.example .env.local
 ```bash
 curl -i http://127.0.0.1:5004/
 curl -i http://127.0.0.1:5004/api/v1/health
+./scripts/backend_smoke_check.py --base-url http://127.0.0.1:5004
 ```
 
 预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`）。
+`backend_smoke_check.py` 会同时检查健康接口、OpenAPI 健康入口、扫描状态、fallback/episode 队列和资源治理 live check。
 
 如果已设置 `CYBER_API_TOKEN`，管理类接口需要携带 token：
 
@@ -69,6 +71,7 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 ```bash
 curl -i http://pioneer.fan:884/
 curl -i http://pioneer.fan:884/api/v1/openapi.json
+./scripts/backend_smoke_check.py --base-url http://pioneer.fan:884
 ```
 
 ## 4. 当前已知运行事实
