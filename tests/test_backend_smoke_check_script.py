@@ -37,6 +37,57 @@ class FakeSmokeClient:
     def get_json(self, path, query=None):
         if path in {"/", "/api/v1/health"}:
             return {"data": {"status": "up", "version": "1.21.0", "database": {"status": "ok", "reason": "ok"}}}
+        if path == "/api/v1/system/update-check":
+            current_version = (query or {}).get("current_version") or "1.21.0"
+            current_release = (query or {}).get("current_release") or f"{current_version}-pc.0"
+            download = {
+                "variant": "full",
+                "name": "CyberStream_1.21.1-pc.5_full_x64.msi",
+                "platform": (query or {}).get("platform") or "windows",
+                "arch": (query or {}).get("arch") or "x64",
+                "url": "https://qwk.ccwu.cc/cyberstream/CyberStream_1.21.1-pc.5_full_x64.msi",
+                "cdn": True,
+                "size": 123456,
+                "sha256": "a" * 64,
+                "content_type": "application/octet-stream",
+                "label": "Full installer",
+                "notes": None,
+            }
+            return {
+                "data": {
+                    "product": "CyberStream",
+                    "channel": "stable",
+                    "platform": (query or {}).get("platform") or "windows",
+                    "arch": (query or {}).get("arch") or "x64",
+                    "variant": None,
+                    "current": {
+                        "version": current_version,
+                        "release": current_release,
+                        "backend_version": "1.21.0",
+                    },
+                    "latest": {
+                        "version": "1.21.1",
+                        "release": "1.21.1-pc.5",
+                        "tag": "v1.21.1-pc.5",
+                        "title": "CyberStream PC 1.21.1-pc.5",
+                        "released_at": None,
+                        "notes": None,
+                        "notes_url": None,
+                        "mandatory": False,
+                        "minimum_supported_version": None,
+                    },
+                    "update_available": True,
+                    "downloads": [download],
+                    "selected_download": download,
+                    "cdn": {
+                        "required": True,
+                        "validated": True,
+                    },
+                    "source": "manifest",
+                    "warnings": [],
+                    "checked_at": "2026-06-07T00:00:00Z",
+                },
+            }
         if path == "/api/v1/openapi.json":
             return {
                 "openapi": "3.0.0",
@@ -1104,6 +1155,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "health",
                 "openapi_health_contract",
                 "docs_index",
+                "update_check",
                 "openapi_modules",
                 "scan",
                 "metadata_providers",
@@ -1542,6 +1594,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         filters = next(item for item in results if item.name == "catalog_filters")
         self.assertFalse(filters.ok)
         self.assertIn("genres_0_missing=count", filters.detail)
+
+    def test_update_check_fails_when_download_is_not_cdn_validated(self):
+        class BrokenUpdateCheckClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/system/update-check":
+                    payload["data"]["downloads"][0]["cdn"] = False
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenUpdateCheckClient):
+            results = self.module.run_checks(self._args(expected_version="1.21.0"))
+
+        update = next(item for item in results if item.name == "update_check")
+        self.assertFalse(update.ok)
+        self.assertIn("update_download_0_cdn_not_true", update.detail)
 
     def test_libraries_fail_when_virtual_favorites_leaks_into_list(self):
         class BrokenLibrariesClient(FakeSmokeClient):

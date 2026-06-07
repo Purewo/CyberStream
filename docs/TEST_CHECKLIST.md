@@ -61,6 +61,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - 文档索引 app version = `1.21.0`
 - OpenAPI index version = `1.21.0-beta`
 - `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
+- smoke check 返回 `OK update_check`，说明官方客户端公开更新检查契约可用
 - smoke check 返回 `OK libraries`，说明普通资源库列表契约可用且不混入收藏虚拟库
 - smoke check 返回 `OK catalog_filters`，说明目录页筛选项 `genres/years/countries` 可用
 - smoke check 返回 `OK catalog_movies`，说明主影视列表分页与首条样例关键字段可用
@@ -784,7 +785,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`740 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`741 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

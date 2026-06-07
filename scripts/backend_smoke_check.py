@@ -305,6 +305,43 @@ EXPECTED_LIBRARY_KEYS = [
     "created_at",
     "updated_at",
 ]
+EXPECTED_SYSTEM_UPDATE_KEYS = [
+    "product",
+    "channel",
+    "platform",
+    "arch",
+    "variant",
+    "current",
+    "latest",
+    "update_available",
+    "downloads",
+    "selected_download",
+    "cdn",
+    "source",
+    "warnings",
+    "checked_at",
+]
+EXPECTED_SYSTEM_UPDATE_CURRENT_KEYS = [
+    "version",
+    "release",
+    "backend_version",
+]
+EXPECTED_SYSTEM_UPDATE_LATEST_KEYS = [
+    "version",
+    "release",
+    "title",
+    "mandatory",
+]
+EXPECTED_SYSTEM_UPDATE_CDN_KEYS = [
+    "required",
+    "validated",
+]
+EXPECTED_SYSTEM_UPDATE_DOWNLOAD_KEYS = [
+    "platform",
+    "arch",
+    "url",
+    "cdn",
+]
 EXPECTED_HOMEPAGE_KEYS = [
     "hero",
     "sections",
@@ -724,6 +761,51 @@ def check_docs_index(
             "expected_version": expected_version or None,
             "openapi_version": openapi_version,
             "expected_openapi_version": expected_openapi_version or None,
+        },
+    )
+
+
+def check_update_check(client: SmokeClient, expected_version: str = "") -> CheckResult:
+    current_version = expected_version or "1.21.0"
+    current_release = f"{current_version}-pc.0"
+    payload = client.get_json(
+        "/api/v1/system/update-check",
+        {
+            "current_version": current_version,
+            "current_release": current_release,
+            "platform": "windows",
+            "arch": "x64",
+        },
+    )
+    data = _response_data(payload)
+    issues = _system_update_check_issues(data, expected_backend_version=expected_version)
+
+    downloads = data.get("downloads") if isinstance(data, dict) and isinstance(data.get("downloads"), list) else []
+    latest = data.get("latest") if isinstance(data, dict) and isinstance(data.get("latest"), dict) else {}
+    current = data.get("current") if isinstance(data, dict) and isinstance(data.get("current"), dict) else {}
+    cdn = data.get("cdn") if isinstance(data, dict) and isinstance(data.get("cdn"), dict) else {}
+    warnings = data.get("warnings") if isinstance(data, dict) and isinstance(data.get("warnings"), list) else []
+
+    ok = not issues
+    detail = (
+        f"source={data.get('source') if isinstance(data, dict) else None} "
+        f"current={current.get('version')} latest={latest.get('release')} "
+        f"update_available={data.get('update_available') if isinstance(data, dict) else None} "
+        f"downloads={len(downloads)} cdn_validated={cdn.get('validated')} warnings={len(warnings)}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "update_check",
+        ok,
+        detail,
+        {
+            "source": data.get("source") if isinstance(data, dict) else None,
+            "current_version": current.get("version"),
+            "latest_release": latest.get("release"),
+            "download_count": len(downloads),
+            "warning_count": len(warnings),
+            "issues": issues,
         },
     )
 
@@ -1509,6 +1591,111 @@ def _library_item_issues(item: Any, index: int) -> list[str]:
         issues.append(f"{prefix}_sort_order_not_int")
     if "settings" in item and not isinstance(item.get("settings"), dict):
         issues.append(f"{prefix}_settings_not_object")
+    return issues
+
+
+def _system_update_download_issues(download: Any, prefix: str) -> list[str]:
+    if not isinstance(download, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(download, EXPECTED_SYSTEM_UPDATE_DOWNLOAD_KEYS, prefix))
+    for key in ("platform", "arch", "url", "variant", "name", "sha256", "content_type", "label", "notes"):
+        if key in download and download.get(key) is not None and not isinstance(download.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "variant" in download and download.get("variant") is not None and download.get("variant") not in {"lite", "full"}:
+        issues.append(f"{prefix}_variant={download.get('variant')}")
+    if "cdn" in download and download.get("cdn") is not True:
+        issues.append(f"{prefix}_cdn_not_true")
+    if "url" in download and isinstance(download.get("url"), str):
+        if not download["url"].startswith(("https://", "http://")):
+            issues.append(f"{prefix}_url_not_http")
+    if "size" in download and download.get("size") is not None:
+        if not _json_int(download.get("size")):
+            issues.append(f"{prefix}_size_not_int")
+        elif download.get("size") < 0:
+            issues.append(f"{prefix}_size_negative")
+    return issues
+
+
+def _system_update_check_issues(data: Any, expected_backend_version: str = "") -> list[str]:
+    if not isinstance(data, dict):
+        return ["update_check_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_SYSTEM_UPDATE_KEYS, "update_check"))
+    for key in ("product", "channel", "platform", "arch", "source", "checked_at", "variant"):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"update_check_{key}_not_str")
+    if "variant" in data and data.get("variant") is not None and data.get("variant") not in {"lite", "full"}:
+        issues.append(f"update_check_variant={data.get('variant')}")
+    if "source" in data and data.get("source") not in {"manifest", "source_tree"}:
+        issues.append(f"update_check_source={data.get('source')}")
+    if "update_available" in data and data.get("update_available") not in (True, False):
+        issues.append("update_check_update_available_not_bool")
+
+    current = data.get("current")
+    issues.extend(_dict_missing_keys(current, EXPECTED_SYSTEM_UPDATE_CURRENT_KEYS, "update_current"))
+    if isinstance(current, dict):
+        for key in EXPECTED_SYSTEM_UPDATE_CURRENT_KEYS:
+            if key in current and current.get(key) is not None and not isinstance(current.get(key), str):
+                issues.append(f"update_current_{key}_not_str")
+        if expected_backend_version and current.get("backend_version") != expected_backend_version:
+            issues.append(f"update_current_backend_version={current.get('backend_version')}")
+
+    latest = data.get("latest")
+    issues.extend(_dict_missing_keys(latest, EXPECTED_SYSTEM_UPDATE_LATEST_KEYS, "update_latest"))
+    if isinstance(latest, dict):
+        for key in (
+            "version",
+            "release",
+            "tag",
+            "title",
+            "released_at",
+            "notes",
+            "notes_url",
+            "release_page_url",
+            "minimum_supported_version",
+        ):
+            if key in latest and latest.get(key) is not None and not isinstance(latest.get(key), str):
+                issues.append(f"update_latest_{key}_not_str")
+        if "mandatory" in latest and latest.get("mandatory") not in (True, False):
+            issues.append("update_latest_mandatory_not_bool")
+
+    cdn = data.get("cdn")
+    issues.extend(_dict_missing_keys(cdn, EXPECTED_SYSTEM_UPDATE_CDN_KEYS, "update_cdn"))
+    if isinstance(cdn, dict):
+        for key in EXPECTED_SYSTEM_UPDATE_CDN_KEYS:
+            if key in cdn and cdn.get(key) not in (True, False):
+                issues.append(f"update_cdn_{key}_not_bool")
+
+    downloads = data.get("downloads")
+    if not isinstance(downloads, list):
+        issues.append("update_downloads_not_list")
+        downloads = []
+    else:
+        for index, download in enumerate(downloads[:3]):
+            issues.extend(_system_update_download_issues(download, f"update_download_{index}"))
+
+    selected_download = data.get("selected_download")
+    if selected_download is not None:
+        issues.extend(_system_update_download_issues(selected_download, "update_selected_download"))
+        selected_url = selected_download.get("url") if isinstance(selected_download, dict) else None
+        download_urls = {
+            item.get("url")
+            for item in downloads
+            if isinstance(item, dict) and isinstance(item.get("url"), str)
+        }
+        if selected_url not in download_urls:
+            issues.append("update_selected_download_not_in_downloads")
+
+    warnings = data.get("warnings")
+    if not isinstance(warnings, list):
+        issues.append("update_warnings_not_list")
+    else:
+        invalid_warnings = [warning for warning in warnings if not isinstance(warning, str)]
+        if invalid_warnings:
+            issues.append("update_warnings_not_str")
     return issues
 
 
@@ -3220,6 +3407,7 @@ def run_checks(args) -> list[CheckResult]:
             "docs_index",
             lambda: check_docs_index(client, expected_version, expected_openapi_version),
         ),
+        CheckSpec("update_check", lambda: check_update_check(client, expected_version)),
         CheckSpec(
             "openapi_modules",
             lambda: check_openapi_modules(client, args.openapi_module_json_check, expected_openapi_version),
