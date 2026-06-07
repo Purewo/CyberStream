@@ -65,6 +65,27 @@ class DbBackupScriptTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_verify_accepts_current_database_and_backup_file(self):
+        self._write_value("before")
+        with redirect_stdout(StringIO()):
+            backup_path = self.module._backup(self._db_path(), self._backup_dir())
+
+        current_output = StringIO()
+        with redirect_stdout(current_output):
+            self.assertTrue(self.module._verify(self._db_path()))
+        self.assertIn("\tok", current_output.getvalue())
+
+        backup_output = StringIO()
+        with redirect_stdout(backup_output):
+            self.assertTrue(self.module._verify(backup_path))
+        self.assertIn("\tok", backup_output.getvalue())
+
+    def test_verify_rejects_missing_database_file(self):
+        with self.assertRaises(SystemExit) as context:
+            self.module._verify(self._db_path())
+
+        self.assertIn("database not found", str(context.exception))
+
     def test_restore_requires_confirmation_and_keeps_pre_restore_backup(self):
         self._write_value("before")
         with redirect_stdout(StringIO()):

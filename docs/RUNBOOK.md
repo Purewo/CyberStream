@@ -115,7 +115,14 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 风险操作前先备份：
 
 ```bash
+./scripts/db_backup.py verify
 ./scripts/db_backup.py backup
+```
+
+备份后建议校验新生成的备份文件：
+
+```bash
+./scripts/db_backup.py verify backups/<backup-file>.db
 ```
 
 查看已有备份：
@@ -127,6 +134,7 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 恢复会先自动创建一次恢复前备份，再替换当前数据库；必须显式确认：
 
 ```bash
+./scripts/db_backup.py verify backups/<backup-file>.db
 ./scripts/db_backup.py restore backups/<backup-file>.db --yes
 ```
 

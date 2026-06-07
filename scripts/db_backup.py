@@ -47,6 +47,24 @@ def _backup(db_path: Path, backup_dir: Path):
     return target
 
 
+def _verify(db_path: Path):
+    if not db_path.exists():
+        raise SystemExit(f"database not found: {db_path}")
+
+    connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        results = [row[0] for row in connection.execute("PRAGMA integrity_check").fetchall()]
+    finally:
+        connection.close()
+
+    if results != ["ok"]:
+        detail = "; ".join(str(item) for item in results[:10])
+        raise SystemExit(f"integrity check failed: {db_path}: {detail}")
+
+    print(f"{db_path}\tok")
+    return True
+
+
 def _list(backup_dir: Path):
     if not backup_dir.exists():
         return
@@ -78,6 +96,8 @@ def main(argv=None):
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("backup", help="create a timestamped SQLite backup")
+    verify_parser = subparsers.add_parser("verify", help="run SQLite integrity_check on a database or backup")
+    verify_parser.add_argument("target", nargs="?", help="database or backup .db file to verify; defaults to --db")
     subparsers.add_parser("list", help="list existing backups")
     restore_parser = subparsers.add_parser("restore", help="restore a database backup")
     restore_parser.add_argument("backup", help="backup .db file to restore")
@@ -89,6 +109,8 @@ def main(argv=None):
 
     if args.command == "backup":
         _backup(db_path, backup_dir)
+    elif args.command == "verify":
+        _verify(_resolve(args.target) if args.target else db_path)
     elif args.command == "list":
         _list(backup_dir)
     elif args.command == "restore":
