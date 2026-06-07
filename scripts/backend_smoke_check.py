@@ -25,6 +25,30 @@ DEFAULT_SYSTEMD_SERVICES = [
 EXPECTED_METADATA_PROVIDERS = ["nfo", "tmdb", "anilist", "bangumi", "tencent_video", "local"]
 EXPECTED_METADATA_DEFAULT_ORDER = ["nfo", "tmdb", "local"]
 EXPECTED_METADATA_SEARCH_PROVIDERS = ["tmdb", "anilist", "bangumi", "tencent_video"]
+EXPECTED_METADATA_REVIEW_BUCKETS = [
+    "metadata_review",
+    "manual_content",
+    "episode_review",
+    "resource_governance",
+    "catalog_visibility",
+]
+EXPECTED_METADATA_REVIEW_ACTIONS = [
+    "batch_reidentify_plan",
+    "match_metadata",
+    "edit_episode_metadata",
+    "resource_governance_plan",
+    "resource_live_check",
+    "manual_review",
+    "create_manual_content",
+    "catalog_publish",
+]
+EXPECTED_METADATA_QUALITY_ACTIONS = ["bulk_reidentify", "episode_review_queue"]
+EXPECTED_METADATA_QUALITY_TOTALS = [
+    "movie_count",
+    "issue_movie_count",
+    "bulk_reidentify_movie_count",
+    "episode_review_movie_count",
+]
 EXPECTED_OPENAPI_MODULES = [
     "docs",
     "auth-users",
@@ -394,6 +418,79 @@ def check_tmdb_token(client: SmokeClient) -> CheckResult:
     )
 
 
+def _id_map(items: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(items, list):
+        return {}
+    return {
+        item.get("id"): item
+        for item in items
+        if isinstance(item, dict) and item.get("id")
+    }
+
+
+def check_metadata_review_workbench(client: SmokeClient) -> CheckResult:
+    taxonomy_payload = client.get_json("/api/v1/metadata/review-taxonomy")
+    taxonomy = _response_data(taxonomy_payload)
+    buckets = _id_map(taxonomy.get("buckets"))
+    taxonomy_actions = _id_map(taxonomy.get("actions"))
+
+    quality_payload = client.get_json("/api/v1/metadata/quality-summary", {"sample_size": 1})
+    quality = _response_data(quality_payload)
+    totals = quality.get("totals") if isinstance(quality.get("totals"), dict) else {}
+    quality_actions = _id_map(quality.get("actions"))
+
+    missing_buckets = [bucket_id for bucket_id in EXPECTED_METADATA_REVIEW_BUCKETS if bucket_id not in buckets]
+    missing_bucket_entrypoints = [
+        bucket_id
+        for bucket_id in EXPECTED_METADATA_REVIEW_BUCKETS
+        if bucket_id in buckets and not buckets[bucket_id].get("entrypoints")
+    ]
+    missing_actions = [action_id for action_id in EXPECTED_METADATA_REVIEW_ACTIONS if action_id not in taxonomy_actions]
+    missing_quality_actions = [
+        action_id for action_id in EXPECTED_METADATA_QUALITY_ACTIONS if action_id not in quality_actions
+    ]
+    missing_quality_totals = [key for key in EXPECTED_METADATA_QUALITY_TOTALS if key not in totals]
+
+    issues = []
+    if missing_buckets:
+        issues.append(f"missing_buckets={','.join(missing_buckets)}")
+    if missing_bucket_entrypoints:
+        issues.append(f"missing_bucket_entrypoints={','.join(missing_bucket_entrypoints)}")
+    if missing_actions:
+        issues.append(f"missing_actions={','.join(missing_actions)}")
+    if missing_quality_actions:
+        issues.append(f"missing_quality_actions={','.join(missing_quality_actions)}")
+    if missing_quality_totals:
+        issues.append(f"missing_quality_totals={','.join(missing_quality_totals)}")
+
+    ok = not issues
+    detail = (
+        f"buckets={len(buckets)} actions={len(taxonomy_actions)} "
+        f"quality_actions={len(quality_actions)} movie_count={totals.get('movie_count')} "
+        f"issue_movies={totals.get('issue_movie_count')}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+
+    return _result(
+        "metadata_review_workbench",
+        ok,
+        detail,
+        {
+            "buckets": sorted(buckets),
+            "actions": sorted(taxonomy_actions),
+            "quality_actions": sorted(quality_actions),
+            "missing_buckets": missing_buckets,
+            "missing_bucket_entrypoints": missing_bucket_entrypoints,
+            "missing_actions": missing_actions,
+            "missing_quality_actions": missing_quality_actions,
+            "missing_quality_totals": missing_quality_totals,
+            "movie_count": totals.get("movie_count"),
+            "issue_movie_count": totals.get("issue_movie_count"),
+        },
+    )
+
+
 def _source_label(source: dict[str, Any]) -> str:
     source_id = source.get("id", "?")
     source_type = source.get("type") or "unknown"
@@ -623,6 +720,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("openapi_modules", lambda: check_openapi_modules(client, args.openapi_module_json_check)),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
+        CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
         CheckSpec(
             "metadata_fallback_pipeline_match",

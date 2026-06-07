@@ -155,6 +155,79 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/metadata/review-taxonomy":
+            return {
+                "data": {
+                    "buckets": [
+                        {
+                            "id": "normal_catalog",
+                            "entrypoints": [{"endpoint": "/api/v1/movies", "method": "GET"}],
+                        },
+                        {
+                            "id": "metadata_review",
+                            "entrypoints": [{"endpoint": "/api/v1/metadata/work-items", "method": "GET"}],
+                        },
+                        {
+                            "id": "manual_content",
+                            "entrypoints": [{"endpoint": "/api/v1/other-videos", "method": "GET"}],
+                        },
+                        {
+                            "id": "episode_review",
+                            "entrypoints": [{"endpoint": "/api/v1/metadata/episode-review-items", "method": "GET"}],
+                        },
+                        {
+                            "id": "resource_governance",
+                            "entrypoints": [{"endpoint": "/api/v1/resources/governance-summary", "method": "GET"}],
+                        },
+                        {
+                            "id": "catalog_visibility",
+                            "entrypoints": [{"endpoint": "/api/v1/movies/{movie_id}/catalog-visibility", "method": "PATCH"}],
+                        },
+                    ],
+                    "actions": [
+                        {"id": "none"},
+                        {"id": "refresh_metadata", "method": "POST"},
+                        {"id": "re_scrape", "method": "POST"},
+                        {"id": "batch_reidentify_plan", "method": "POST"},
+                        {"id": "match_metadata"},
+                        {"id": "review_match", "method": "POST"},
+                        {"id": "rename_and_match"},
+                        {"id": "edit_episode_metadata", "method": "PATCH"},
+                        {"id": "resource_governance_plan", "method": "POST"},
+                        {"id": "resource_live_check", "method": "POST"},
+                        {"id": "manual_review"},
+                        {"id": "create_manual_content", "method": "POST"},
+                        {"id": "inspect_metadata", "method": "GET"},
+                        {"id": "catalog_publish", "method": "POST"},
+                    ],
+                },
+            }
+        if path == "/api/v1/metadata/quality-summary":
+            return {
+                "data": {
+                    "totals": {
+                        "movie_count": 359,
+                        "issue_movie_count": 0,
+                        "bulk_reidentify_movie_count": 0,
+                        "episode_review_movie_count": 0,
+                    },
+                    "actions": [
+                        {
+                            "id": "bulk_reidentify",
+                            "endpoint": "/api/v1/metadata/re-scrape/plan",
+                            "method": "POST",
+                            "enabled": False,
+                        },
+                        {
+                            "id": "episode_review_queue",
+                            "endpoint": "/api/v1/metadata/episode-review-items",
+                            "method": "GET",
+                            "enabled": False,
+                        },
+                    ],
+                    "issues": [],
+                },
+            }
         if path == "/api/v1/system/tmdb-config/check":
             return {
                 "data": {
@@ -263,6 +336,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "openapi_modules",
                 "scan",
                 "metadata_providers",
+                "metadata_review_workbench",
                 "storage_sources",
                 "metadata_fallback_pipeline_match",
                 "episode_review",
@@ -413,6 +487,24 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         providers = next(item for item in results if item.name == "metadata_providers")
         self.assertFalse(providers.ok)
         self.assertIn("missing=bangumi", providers.detail)
+
+    def test_metadata_review_workbench_fails_when_required_bucket_is_missing(self):
+        class MissingEpisodeReviewBucketClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/metadata/review-taxonomy":
+                    payload["data"]["buckets"] = [
+                        item for item in payload["data"]["buckets"]
+                        if item["id"] != "episode_review"
+                    ]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", MissingEpisodeReviewBucketClient):
+            results = self.module.run_checks(self._args())
+
+        workbench = next(item for item in results if item.name == "metadata_review_workbench")
+        self.assertFalse(workbench.ok)
+        self.assertIn("missing_buckets=episode_review", workbench.detail)
 
     def test_storage_sources_fail_when_resource_backed_source_cannot_stream(self):
         class BrokenStorageSourceClient(FakeSmokeClient):
