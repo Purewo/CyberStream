@@ -1770,6 +1770,21 @@ class FakeSmokeClient:
             }
         return self.get_json(path, query=query)
 
+    def get_text(self, path, query=None):
+        if path == "/api/v1/resources/resource-1/external-playback" and (query or {}).get("format") == "m3u":
+            return {
+                "_http_status": 200,
+                "_content_type": "audio/x-mpegurl; charset=utf-8",
+                "_content_disposition": "attachment; filename=\"cyberstream-resource-1.m3u\"",
+                "text": (
+                    "#EXTM3U\n"
+                    "#EXTINF:-1,Sample.Movie.2024.1080p.mkv\n"
+                    "#EXTVLCOPT:network-caching=1000\n"
+                    "http://example.test/api/v1/resources/resource-1/stream\n"
+                ),
+            }
+        raise AssertionError(f"unexpected text path: {path}")
+
     def post_json(self, path, body=None):
         if path == "/api/v1/metadata/re-scrape/plan":
             issue_codes = (body or {}).get("issue_codes") or [
@@ -2121,6 +2136,46 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertEqual(2.5, timeout)
         self.assertEqual("application/json", request.get_header("Accept"))
         self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
+
+    def test_smoke_client_can_get_text_payload(self):
+        class FakeHeaders:
+            def get(self, key):
+                return {
+                    "Content-Type": "audio/x-mpegurl; charset=utf-8",
+                    "Content-Disposition": "attachment; filename=\"sample.m3u\"",
+                }.get(key)
+
+        class FakeResponse:
+            status = 200
+            headers = FakeHeaders()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"#EXTM3U\nhttp://example.test/video.mkv\n"
+
+        requests = []
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        client = self.module.SmokeClient("http://example.test", timeout=2.5, api_token="secret-token")
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=fake_urlopen):
+            payload = client.get_text("/api/v1/resources/resource-1/external-playback", {"format": "m3u"})
+
+        self.assertEqual(200, payload["_http_status"])
+        self.assertEqual("audio/x-mpegurl; charset=utf-8", payload["_content_type"])
+        self.assertIn("#EXTM3U", payload["text"])
+        request, timeout = requests[0]
+        self.assertEqual(2.5, timeout)
+        self.assertEqual("text/plain, */*", request.get_header("Accept"))
+        self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
+        self.assertIn("format=m3u", request.full_url)
 
     def test_smoke_client_can_post_json_payload(self):
         class FakeResponse:
@@ -2745,6 +2800,30 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         external_playback = next(item for item in results if item.name == "external_playback")
         self.assertFalse(external_playback.ok)
         self.assertIn("external_handoff_playlist_url_invalid", external_playback.detail)
+
+    def test_external_playback_fails_when_m3u_stream_url_is_missing(self):
+        class BrokenExternalPlaybackM3uClient(FakeSmokeClient):
+            def get_text(self, path, query=None):
+                if path == "/api/v1/resources/resource-1/external-playback" and (query or {}).get("format") == "m3u":
+                    return {
+                        "_http_status": 200,
+                        "_content_type": "audio/x-mpegurl; charset=utf-8",
+                        "_content_disposition": "attachment; filename=\"cyberstream-resource-1.m3u\"",
+                        "text": (
+                            "#EXTM3U\n"
+                            "#EXTINF:-1,Sample.Movie.2024.1080p.mkv\n"
+                            "#EXTVLCOPT:network-caching=1000\n"
+                            "http://example.test/wrong-resource/stream\n"
+                        ),
+                    }
+                return super().get_text(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenExternalPlaybackM3uClient):
+            results = self.module.run_checks(self._args())
+
+        external_playback = next(item for item in results if item.name == "external_playback")
+        self.assertFalse(external_playback.ok)
+        self.assertIn("external_playlist_missing_stream_url", external_playback.detail)
 
     def test_auth_me_fails_when_unauthenticated_permissions_are_enabled(self):
         class BrokenAuthMeClient(FakeSmokeClient):

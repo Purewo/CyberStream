@@ -1036,6 +1036,12 @@ class SmokeClient:
             url = f"{url}?{urllib.parse.urlencode(query)}"
         return self._request_json("GET", url, allow_http_error=True)
 
+    def get_text(self, path: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        if query:
+            url = f"{url}?{urllib.parse.urlencode(query)}"
+        return self._request_text("GET", url)
+
     def post_json(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         data = json.dumps(body or {}).encode("utf-8")
@@ -1073,6 +1079,26 @@ class SmokeClient:
                     return data
             raise RuntimeError(f"HTTP {exc.code} {url}: {body[:300]}") from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"{method} {url} failed: {exc}") from exc
+
+    def _request_text(self, method: str, url: str) -> dict[str, Any]:
+        headers = {"Accept": "text/plain, */*"}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+        request = urllib.request.Request(url, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                body = response.read().decode("utf-8", errors="replace")
+                return {
+                    "_http_status": response.status,
+                    "_content_type": response.headers.get("Content-Type"),
+                    "_content_disposition": response.headers.get("Content-Disposition"),
+                    "text": body,
+                }
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP {exc.code} {url}: {body[:300]}") from exc
+        except (urllib.error.URLError, TimeoutError, UnicodeDecodeError) as exc:
             raise RuntimeError(f"{method} {url} failed: {exc}") from exc
 
 
@@ -2900,6 +2926,46 @@ def _external_playback_manifest_issues(data: Any, expected_resource_id: str = ""
     warnings = data.get("warnings")
     if "warnings" in data and not isinstance(warnings, list):
         issues.append("external_warnings_not_list")
+    return issues
+
+
+def _external_playback_m3u_issues(
+    playlist: Any,
+    expected_resource_id: str,
+    expected_stream_url: str | None = None,
+    expected_subtitle_url: str | None = None,
+) -> list[str]:
+    if not isinstance(playlist, dict):
+        return ["external_playlist_not_object"]
+
+    issues = []
+    status = playlist.get("_http_status")
+    content_type = playlist.get("_content_type")
+    text = playlist.get("text")
+    if status != 200:
+        issues.append(f"external_playlist_http_status={status}")
+    if not isinstance(content_type, str) or not content_type.startswith("audio/x-mpegurl"):
+        issues.append(f"external_playlist_content_type={content_type}")
+    if not isinstance(text, str):
+        issues.append("external_playlist_text_not_str")
+        return issues
+
+    lines = text.splitlines()
+    if not lines or lines[0] != "#EXTM3U":
+        issues.append("external_playlist_missing_extm3u")
+    if not any(line.startswith("#EXTINF:") for line in lines):
+        issues.append("external_playlist_missing_extinf")
+    if not any(line == "#EXTVLCOPT:network-caching=1000" for line in lines):
+        issues.append("external_playlist_missing_network_caching")
+
+    expected_resource_path = f"/api/v1/resources/{expected_resource_id}/stream"
+    if expected_stream_url:
+        if expected_stream_url not in text:
+            issues.append("external_playlist_missing_stream_url")
+    elif expected_resource_path not in text:
+        issues.append("external_playlist_missing_resource_stream")
+    if expected_subtitle_url and f"#EXTVLCOPT:sub-file={expected_subtitle_url}" not in text:
+        issues.append("external_playlist_missing_default_subtitle")
     return issues
 
 
@@ -5085,12 +5151,27 @@ def check_external_playback(client: SmokeClient) -> CheckResult:
     stream = data.get("stream") if isinstance(data, dict) and isinstance(data.get("stream"), dict) else {}
     subtitles = data.get("subtitles") if isinstance(data, dict) and isinstance(data.get("subtitles"), dict) else {}
     profiles = data.get("player_profiles") if isinstance(data, dict) and isinstance(data.get("player_profiles"), list) else []
+    playlist_checked = False
+    if handoff.get("supported") is True:
+        playlist = client.get_text(
+            f"/api/v1/resources/{urllib.parse.quote(resource_id, safe='')}/external-playback",
+            {"format": "m3u"},
+        )
+        playlist_checked = True
+        stream_url = stream.get("url") if isinstance(stream.get("url"), str) else None
+        subtitle_url = subtitles.get("default_url") if isinstance(subtitles.get("default_url"), str) else None
+        issues.extend(_external_playback_m3u_issues(
+            playlist,
+            resource_id,
+            expected_stream_url=stream_url,
+            expected_subtitle_url=subtitle_url,
+        ))
 
     ok = not issues
     detail = (
         f"resource={resource_id} supported={handoff.get('supported')} "
         f"stream={bool(stream.get('url'))} subtitles={len(subtitles.get('items') or [])} "
-        f"profiles={len(profiles)}"
+        f"profiles={len(profiles)} playlist={playlist_checked}"
     )
     if issues:
         detail = f"{detail} issues={'; '.join(issues)}"
@@ -5103,6 +5184,7 @@ def check_external_playback(client: SmokeClient) -> CheckResult:
             "resource_id": resource_id,
             "supported": handoff.get("supported"),
             "profile_count": len(profiles),
+            "playlist_checked": playlist_checked,
             "issues": issues,
         },
     )
