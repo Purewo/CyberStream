@@ -1008,7 +1008,12 @@ class Movie(db.Model):
         elif state["is_local_only"]:
             add_issue("local_only_metadata", "Local Only Metadata", "medium")
 
-        if diagnostics["fallback_resource_count"] > 0:
+        catalog_visibility_status = (
+            self.normalize_catalog_visibility_status(self.catalog_visibility_status)
+            or self.CATALOG_VISIBILITY_AUTO
+        )
+        fallback_match_reviewed = catalog_visibility_status == self.CATALOG_VISIBILITY_PUBLISHED
+        if diagnostics["fallback_resource_count"] > 0 and not fallback_match_reviewed:
             add_issue("fallback_pipeline_match", "Fallback Pipeline Match", "medium", diagnostics["fallback_resource_count"])
 
         if diagnostics["low_confidence_resource_count"] > 0:

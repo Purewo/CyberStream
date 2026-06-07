@@ -721,6 +721,32 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         self.assertTrue(actions["bulk_reidentify"]["enabled"])
         self.assertEqual("/api/v1/metadata/re-scrape/plan", actions["bulk_reidentify"]["endpoint"])
 
+    def test_published_fallback_matches_are_not_pending_metadata_issues(self):
+        reviewed = self._add_movie(title="已审核兜底", scraper_source="TMDB", cover="poster")
+        reviewed.catalog_visibility_status = Movie.CATALOG_VISIBILITY_PUBLISHED
+        reviewed.catalog_visibility_note = "reviewed:fallback_pipeline_match:manual_pass"
+        reviewed_resource = self._add_resource(reviewed, path="movies/Reviewed.Match.2024.1080p.mkv")
+        reviewed_resource.tech_specs = {
+            "metadata_trace": {
+                "confidence": "high",
+                "scrape_layer": "fallback",
+            }
+        }
+
+        pending = self._add_movie(title="未审核兜底", scraper_source="TMDB", cover="poster")
+        pending_resource = self._add_resource(pending, path="movies/Pending.Match.2024.1080p.mkv")
+        pending_resource.tech_specs = {
+            "metadata_trace": {
+                "confidence": "high",
+                "scrape_layer": "fallback",
+            }
+        }
+        db.session.commit()
+
+        reviewed_issue_codes = {item["code"] for item in reviewed.get_metadata_issues()}
+        self.assertNotIn("fallback_pipeline_match", reviewed_issue_codes)
+        self.assertEqual(["未审核兜底"], self._work_item_titles("fallback_pipeline_match"))
+
     def test_review_taxonomy_returns_frontend_contract_dictionary(self):
         response = self.client.get("/api/v1/metadata/review-taxonomy")
 
