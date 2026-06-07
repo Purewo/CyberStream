@@ -51,11 +51,14 @@ def _verify(db_path: Path):
     if not db_path.exists():
         raise SystemExit(f"database not found: {db_path}")
 
-    connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        results = [row[0] for row in connection.execute("PRAGMA integrity_check").fetchall()]
-    finally:
-        connection.close()
+        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            results = [row[0] for row in connection.execute("PRAGMA integrity_check").fetchall()]
+        finally:
+            connection.close()
+    except sqlite3.DatabaseError as exc:
+        raise SystemExit(f"integrity check failed: {db_path}: {exc}") from exc
 
     if results != ["ok"]:
         detail = "; ".join(str(item) for item in results[:10])
@@ -78,6 +81,8 @@ def _restore(db_path: Path, backup_path: Path, backup_dir: Path, yes: bool):
         raise SystemExit("restore is destructive; rerun with --yes after verifying the backup path")
     if not backup_path.exists():
         raise SystemExit(f"backup not found: {backup_path}")
+
+    _verify(backup_path)
 
     if db_path.exists():
         safety_backup = _backup(db_path, backup_dir)

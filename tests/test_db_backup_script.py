@@ -102,6 +102,19 @@ class DbBackupScriptTests(unittest.TestCase):
         backups = list(self._backup_dir().glob("*.db"))
         self.assertGreaterEqual(len(backups), 2)
 
+    def test_restore_rejects_corrupt_backup_before_replacing_database(self):
+        self._write_value("before")
+        self._backup_dir().mkdir(parents=True, exist_ok=True)
+        corrupt_backup = self._backup_dir() / "corrupt.db"
+        corrupt_backup.write_bytes(b"not sqlite")
+
+        with self.assertRaises(SystemExit) as context:
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                self.module._restore(self._db_path(), corrupt_backup, self._backup_dir(), yes=True)
+
+        self.assertIn("integrity check failed", str(context.exception))
+        self.assertEqual("before", self._read_value())
+
 
 if __name__ == "__main__":
     unittest.main()
