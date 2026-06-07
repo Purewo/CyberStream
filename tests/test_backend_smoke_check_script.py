@@ -1995,6 +1995,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "catalog_filters",
                 "catalog_metadata_filters",
                 "catalog_metadata_issue_filter",
+                "catalog_metadata_source_group_filter",
                 "catalog_movies",
                 "catalog_keyword_search",
                 "movie_detail",
@@ -2629,6 +2630,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         filters = next(item for item in results if item.name == "catalog_metadata_issue_filter")
         self.assertFalse(filters.ok)
         self.assertIn("item_0_missing_metadata_issue_code=poster_missing", filters.detail)
+
+    def test_catalog_metadata_source_group_filter_fails_when_item_group_mismatches(self):
+        class BrokenCatalogMetadataSourceGroupFilterClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies" and (query or {}).get("metadata_source_group"):
+                    payload["data"]["items"][0]["metadata_state"]["source_group"] = "local"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenCatalogMetadataSourceGroupFilterClient):
+            results = self.module.run_checks(self._args())
+
+        filters = next(item for item in results if item.name == "catalog_metadata_source_group_filter")
+        self.assertFalse(filters.ok)
+        self.assertIn("item_0_source_group=local/tmdb", filters.detail)
 
     def test_update_check_fails_when_download_is_not_cdn_validated(self):
         class BrokenUpdateCheckClient(FakeSmokeClient):
