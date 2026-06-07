@@ -1277,6 +1277,7 @@ X-Cyber-API-Token: <token>
   - `metadata.trace`：解析/刮削留痕
   - `metadata.analysis`：路径清洗与刮削分析
   - `metadata.edit_context`：人工编辑上下文
+- `metadata.trace` 和 `metadata.edit_context` 都会暴露 `has_nfo_candidates`、`nfo_candidate_count` 和 `nfo_candidates[]`；后续扫描/re-scrape 会保存 `{ path, name, kind }` 候选摘要，历史旧资源可能只有 `nfo_candidate_count=1` 且 `nfo_candidates=[]`
 - 电影/剧集级 `tags` 表示内容分类；资源额外标签读取 `resource_info.technical.extra_tags`
 - `4K` 不再作为独立标签重复返回；前端可由 `resource_info.technical.video_resolution_bucket = "4k"` 推导展示
 - `resource_info.technical` 已在 OpenAPI 中完全展开，前端推荐按以下稳定字段读取：

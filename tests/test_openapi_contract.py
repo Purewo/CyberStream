@@ -417,6 +417,16 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("selected_season", summary_properties)
         self.assertIn("hydrated_playback_source_count", summary_properties)
         self.assertIn("episode_diagnostics", metadata_diagnostics_properties)
+        trace_properties = schemas["MetadataTrace"]["properties"]
+        edit_context_properties = schemas["MetadataEditContext"]["properties"]
+        for properties in (trace_properties, edit_context_properties):
+            self.assertIn("has_nfo_candidates", properties)
+            self.assertIn("nfo_candidate_count", properties)
+            self.assertIn("nfo_candidates", properties)
+            candidate_schema = properties["nfo_candidates"]["items"]["properties"]
+            self.assertIn("path", candidate_schema)
+            self.assertIn("name", candidate_schema)
+            self.assertIn("kind", candidate_schema)
 
     def test_movie_resource_sync_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()

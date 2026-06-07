@@ -88,6 +88,12 @@
 - 当一季集数完整、同一集只是存在多个可播放版本时，后端会把这些资源标记为 alternate，不再作为 `duplicate_episode_numbers` 进入剧集复核队列。
 - `SeasonMetadata` 新增 `aired_episode_count`；剧集完整性诊断优先按已播集数计算，避免 TMDB 已登记但尚未播出的未来集进入缺集复核。
 
+## NFO 候选资源留痕
+
+- `MetadataTrace` 和 `MetadataEditContext` 新增 `nfo_candidate_count` 与 `nfo_candidates`。
+- 后续扫描和 re-scrape 会把同目录 sidecar NFO 候选以 `{ path, name, kind }` 摘要写入资源 trace，前端可在资源审查或手动编辑界面直接展示。
+- 历史资源可能只保存了 `has_nfo_candidates=true`，没有候选路径；这类资源详情会兼容返回 `nfo_candidate_count=1` 且 `nfo_candidates=[]`。
+
 
 ## 电视剧资源按季 hydrate
 

@@ -43,6 +43,12 @@
 - 手工来源为 `LOCAL_MANUAL_MOVIE` / `LOCAL_MANUAL_TV`，默认不进入 `needs_attention` 元数据工作台。
 - 接口只修改数据库索引和资源元数据，不移动、不删除实体视频文件。
 
+## NFO 候选资源留痕
+
+- `MetadataTrace` 和 `MetadataEditContext` 新增 `nfo_candidate_count` 与 `nfo_candidates`。
+- 后续扫描和 re-scrape 会把同目录 sidecar NFO 候选以 `{ path, name, kind }` 摘要写入资源 trace，前端可在资源审查或手动编辑界面直接展示。
+- 历史资源可能只保存了 `has_nfo_candidates=true`，没有候选路径；这类资源详情会兼容返回 `nfo_candidate_count=1` 且 `nfo_candidates=[]`。
+
 ## 电视剧资源按季 hydrate
 
 - `GET /api/v1/movies/{id}/resources` 新增可选 `season` query。

@@ -12784,6 +12784,29 @@
           },
           "has_nfo_candidates": {
             "type": "boolean"
+          },
+          "nfo_candidate_count": {
+            "type": "integer",
+            "description": "Number of unique sidecar NFO candidates captured for this resource trace."
+          },
+          "nfo_candidates": {
+            "type": "array",
+            "description": "Deduplicated sidecar NFO candidate summaries. Legacy resources may only expose nfo_candidate_count.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
           }
         }
       },
@@ -12830,6 +12853,29 @@
           },
           "has_nfo_candidates": {
             "type": "boolean"
+          },
+          "nfo_candidate_count": {
+            "type": "integer",
+            "description": "Number of unique sidecar NFO candidates. Legacy traces without candidate paths return 1 when has_nfo_candidates is true."
+          },
+          "nfo_candidates": {
+            "type": "array",
+            "description": "Deduplicated sidecar NFO candidate summaries available to editing/review UI.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
           }
         }
       },
