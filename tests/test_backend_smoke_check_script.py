@@ -233,6 +233,36 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/metadata/overview":
+            return {
+                "data": {
+                    "totals": {
+                        "movie_count": 359,
+                        "needs_attention_count": 14,
+                        "placeholder_count": 0,
+                        "local_only_count": 0,
+                        "external_match_count": 359,
+                        "low_confidence_resource_count": 0,
+                        "fallback_resource_count": 139,
+                        "locked_movie_count": 0,
+                        "nfo_candidate_movie_count": 14,
+                    },
+                    "source_groups": [
+                        {"key": "tmdb", "count": 359},
+                    ],
+                    "review_priorities": [
+                        {"key": "low", "count": 349},
+                        {"key": "none", "count": 10},
+                    ],
+                    "recommended_actions": [
+                        {"key": "refresh_metadata", "count": 349},
+                        {"key": "none", "count": 10},
+                    ],
+                    "issues": [
+                        {"key": "nfo_candidates_available", "count": 14},
+                    ],
+                },
+            }
         if path == "/api/v1/metadata/review-taxonomy":
             return {
                 "data": {
@@ -1674,6 +1704,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "openapi_modules",
                 "scan",
                 "metadata_providers",
+                "metadata_overview",
                 "metadata_review_workbench",
                 "libraries",
                 "other_videos",
@@ -2029,6 +2060,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         providers = next(item for item in results if item.name == "metadata_providers")
         self.assertFalse(providers.ok)
         self.assertIn("missing=bangumi", providers.detail)
+
+    def test_metadata_overview_fails_when_total_shape_is_broken(self):
+        class BrokenMetadataOverviewClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/metadata/overview":
+                    payload["data"]["totals"]["movie_count"] = "359"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenMetadataOverviewClient):
+            results = self.module.run_checks(self._args())
+
+        overview = next(item for item in results if item.name == "metadata_overview")
+        self.assertFalse(overview.ok)
+        self.assertIn("metadata_overview_totals_movie_count_not_int", overview.detail)
 
     def test_metadata_review_workbench_fails_when_required_bucket_is_missing(self):
         class MissingEpisodeReviewBucketClient(FakeSmokeClient):

@@ -63,6 +63,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
 - smoke check 返回 `OK auth_me`，说明前端启动认证态探测和未登录权限契约可用
 - smoke check 返回 `OK update_check`，说明官方客户端公开更新检查契约可用
+- smoke check 返回 `OK metadata_overview`，说明元数据刮削/审核工作台顶部统计契约可用
 - smoke check 返回 `OK libraries`，说明普通资源库列表契约可用且不混入收藏虚拟库
 - smoke check 返回 `OK other_videos`，说明其他视频归档队列、分页、summary 和手工归档动作契约可用
 - smoke check 返回 `OK catalog_filters`，说明目录页筛选项 `genres/years/countries` 可用
@@ -499,6 +500,7 @@ curl -s "http://127.0.0.1:5004/api/v1/metadata/episode-review-items?page_size=5"
 - smoke check 返回 `OK movie_detail`，说明影视详情页主信息、背景图资产、元数据操作/诊断字段可用
 - smoke check 返回 `OK movie_images_status`，说明 poster/backdrop 图片缓存状态、来源追踪和 fallback URL 契约可用
 - smoke check 返回 `OK movie_resources`，说明资源面板 items/groups/summary、播放源主资源 ID 和云转码能力声明契约可用
+- smoke check 返回 `OK metadata_overview`，说明元数据概览 totals、来源分组、优先级和推荐动作计数契约可用
 - smoke check 返回 `OK metadata_work_items_contract`，说明复核工作台列表分页与样例条目关键字段可用
 - smoke check 返回 `OK metadata_reidentify_plan`，说明批量重识别 dry-run 计划和提交 payload 契约可用
 - smoke check 返回 `OK episode_review`，说明剧集复核队列分页、summary 和样例条目关键字段可用
@@ -797,7 +799,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`750 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`751 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

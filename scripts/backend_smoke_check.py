@@ -27,6 +27,28 @@ DEFAULT_SYSTEMD_SERVICES = [
 EXPECTED_METADATA_PROVIDERS = ["nfo", "tmdb", "anilist", "bangumi", "tencent_video", "local"]
 EXPECTED_METADATA_DEFAULT_ORDER = ["nfo", "tmdb", "local"]
 EXPECTED_METADATA_SEARCH_PROVIDERS = ["tmdb", "anilist", "bangumi", "tencent_video"]
+EXPECTED_METADATA_OVERVIEW_KEYS = [
+    "totals",
+    "source_groups",
+    "review_priorities",
+    "recommended_actions",
+    "issues",
+]
+EXPECTED_METADATA_OVERVIEW_TOTALS = [
+    "movie_count",
+    "needs_attention_count",
+    "placeholder_count",
+    "local_only_count",
+    "external_match_count",
+    "low_confidence_resource_count",
+    "fallback_resource_count",
+    "locked_movie_count",
+    "nfo_candidate_movie_count",
+]
+EXPECTED_METADATA_OVERVIEW_COUNTER_KEYS = [
+    "key",
+    "count",
+]
 EXPECTED_METADATA_REVIEW_BUCKETS = [
     "metadata_review",
     "manual_content",
@@ -1346,6 +1368,86 @@ def check_tmdb_token(client: SmokeClient) -> CheckResult:
             "proxy_configured": proxy_configured,
             "elapsed_ms": elapsed_ms,
             "http_status": data.get("http_status"),
+        },
+    )
+
+
+def _metadata_counter_item_issues(item: Any, index: int, section: str) -> list[str]:
+    prefix = f"{section}_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_METADATA_OVERVIEW_COUNTER_KEYS, prefix))
+    if "key" in item and not isinstance(item.get("key"), str):
+        issues.append(f"{prefix}_key_not_str")
+    if "count" in item and not _json_int(item.get("count")):
+        issues.append(f"{prefix}_count_not_int")
+    return issues
+
+
+def _metadata_overview_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["metadata_overview_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_METADATA_OVERVIEW_KEYS, "metadata_overview"))
+
+    totals = data.get("totals")
+    issues.extend(_dict_missing_keys(totals, EXPECTED_METADATA_OVERVIEW_TOTALS, "metadata_overview_totals"))
+    if isinstance(totals, dict):
+        for key in EXPECTED_METADATA_OVERVIEW_TOTALS:
+            if key in totals and not _json_int(totals.get(key)):
+                issues.append(f"metadata_overview_totals_{key}_not_int")
+
+    for section in ("source_groups", "review_priorities", "recommended_actions", "issues"):
+        items = data.get(section)
+        if not isinstance(items, list):
+            issues.append(f"metadata_overview_{section}_not_list")
+            continue
+        if section != "issues" and not items:
+            issues.append(f"metadata_overview_{section}_empty")
+        for index, item in enumerate(items[:10]):
+            issues.extend(_metadata_counter_item_issues(item, index, f"metadata_overview_{section}"))
+    return issues
+
+
+def check_metadata_overview(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/metadata/overview")
+    data = _response_data(payload)
+    issues = _metadata_overview_payload_issues(data)
+    totals = data.get("totals") if isinstance(data, dict) and isinstance(data.get("totals"), dict) else {}
+    source_groups = data.get("source_groups") if isinstance(data, dict) and isinstance(data.get("source_groups"), list) else []
+    review_priorities = (
+        data.get("review_priorities")
+        if isinstance(data, dict) and isinstance(data.get("review_priorities"), list)
+        else []
+    )
+    recommended_actions = (
+        data.get("recommended_actions")
+        if isinstance(data, dict) and isinstance(data.get("recommended_actions"), list)
+        else []
+    )
+
+    ok = not issues
+    detail = (
+        f"movies={totals.get('movie_count')} needs_attention={totals.get('needs_attention_count')} "
+        f"source_groups={len(source_groups)} review_priorities={len(review_priorities)} "
+        f"actions={len(recommended_actions)}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "metadata_overview",
+        ok,
+        detail,
+        {
+            "movie_count": totals.get("movie_count"),
+            "needs_attention_count": totals.get("needs_attention_count"),
+            "source_group_count": len(source_groups),
+            "review_priority_count": len(review_priorities),
+            "recommended_action_count": len(recommended_actions),
+            "issues": issues,
         },
     )
 
@@ -4860,6 +4962,7 @@ def run_checks(args) -> list[CheckResult]:
         ),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
+        CheckSpec("metadata_overview", lambda: check_metadata_overview(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
         CheckSpec("libraries", lambda: check_libraries(client)),
         CheckSpec("other_videos", lambda: check_other_videos(client)),
