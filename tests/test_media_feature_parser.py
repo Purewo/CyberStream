@@ -70,6 +70,10 @@ class MediaFeatureParserTests(unittest.TestCase):
             "RARBG.com.mp4",
             1016764,
         ))
+        self.assertTrue(ResourceValidator.is_probable_promotional_video(
+            "〔 高清电影下载 www.mkvhome.com 〕.mkv",
+            636976,
+        ))
         self.assertFalse(ResourceValidator.is_probable_promotional_video(
             "落凡尘.Into.The.Mortal.World.2024.2160p.HQ.WEB-DL.DTS5.1.H264.60fps.2Audio-ParkHD.mkv",
             24732970473,

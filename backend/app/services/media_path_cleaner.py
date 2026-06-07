@@ -73,7 +73,7 @@ class MediaPathCleaner:
             r'(?i)(?:^|[\s._\-])(?:EP?)?\d{1,3}(?:v\d+)?(?:END)?(?:$|[\s._\-])'
         )
         self.re_release_group_episode = re.compile(
-            r'(?i)(?:^|[\s._\-])(?P<episode>\d{1,3})(?:v\d+)?(?:END)?(?:$|[\s._\-\[])'
+            r'(?i)(?:^|[\s._\-])(?P<episode>\d{1,3})(?:v\d+)?(?:END)?(?:$|[\s._\-\[&])'
         )
         self.re_audio_channel = re.compile(r'(?<!\d)(?:[257]\.1|[257]\.0)(?!\d)')
         self.re_resolution_pair = re.compile(r'(?<!\d)\d{3,4}[x×]\d{3,4}(?!\d)', re.I)
@@ -399,7 +399,11 @@ class MediaPathCleaner:
         grandparent_is_season = self._is_season_folder(grandparent)
 
         if parent_is_season:
-            episode = episode or self._extract_numeric_episode_filename(filename)
+            episode = (
+                episode
+                or self._extract_numeric_episode_filename(filename)
+                or self._extract_release_group_episode(filename)
+            )
             title_candidate_folder = grandparent
             if grandparent_is_season or not title_candidate_folder:
                 title_candidate_folder = great_grandparent
@@ -423,6 +427,11 @@ class MediaPathCleaner:
 
         mixed_match = self.re_mixed_season_folder.match(parent)
         if mixed_match:
+            episode = (
+                episode
+                or self._extract_numeric_episode_filename(filename)
+                or self._extract_release_group_episode(filename)
+            )
             title = self.clean_name(mixed_match.group(1))
             if not self._is_garbage_title(title):
                 season_num = self._season_number_from_match(mixed_match, 2) or 1

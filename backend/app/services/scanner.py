@@ -554,6 +554,25 @@ class CyberScanner:
         if not expected_count or episode <= expected_count:
             return season, episode, None
 
+        cumulative_total = 0
+        for season_number, episode_count in sorted(season_counts.items()):
+            season_start = cumulative_total + 1
+            season_end = cumulative_total + episode_count
+            if season_start <= episode <= season_end:
+                normalized_episode = episode - cumulative_total
+                if season_number == season and normalized_episode == episode:
+                    return season, episode, None
+                return season_number, normalized_episode, {
+                    "strategy": "absolute_episode_offset",
+                    "original_season": season,
+                    "original_episode": episode,
+                    "normalized_season": season_number,
+                    "normalized_episode": normalized_episode,
+                    "offset": cumulative_total,
+                    "expected_episode_count": episode_count,
+                }
+            cumulative_total = season_end
+
         previous_total = sum(
             count
             for season_number, count in season_counts.items()

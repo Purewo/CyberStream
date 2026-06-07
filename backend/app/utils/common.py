@@ -211,7 +211,10 @@ def check_ffmpeg():
 class ResourceValidator:
     PROMOTIONAL_VIDEO_MARKERS = (
         '更多无水印',
+        '更多高清电影访问',
+        '高清电影下载',
         'BBQDDQ.COM',
+        'MKVHOME.COM',
         'RARBG.COM',
     )
     PROMOTIONAL_VIDEO_MAX_BYTES = 5 * 1024 * 1024

@@ -61,6 +61,11 @@ class PathMetadataParser:
             r'日|粤|国|英|中|韩'
             r')\b'
         )
+        self.re_release_group_episode = re.compile(
+            r'(?i)(?:^|[\s._\-])(?P<episode>\d{1,3})(?:v\d+)?(?:END)?(?:$|[\s._\-\[\(（&])'
+        )
+        self.re_audio_channel = re.compile(r'(?<!\d)(?:[257]\.1|[257]\.0)(?!\d)')
+        self.re_resolution_pair = re.compile(r'(?<!\d)\d{3,4}[x×]\d{3,4}(?!\d)', re.I)
 
     def generate_stable_id(self, title, year):
         raw = f"{(title or '').strip().lower()}|{year}"
@@ -245,6 +250,19 @@ class PathMetadataParser:
 
         return None, None
 
+    def extract_release_group_episode(self, text):
+        if not text:
+            return None
+        sanitized = self.re_resolution_pair.sub(' ', str(text))
+        sanitized = self.re_audio_channel.sub(' ', sanitized)
+        match = self.re_release_group_episode.search(sanitized)
+        if not match:
+            return None
+        episode = int(match.group('episode'))
+        if 1 <= episode <= 200:
+            return episode
+        return None
+
     def extract_year(self, text):
         if not text:
             return None
@@ -343,6 +361,7 @@ class PathMetadataParser:
         grandparent_is_season = self.is_season_folder(grandparent)
 
         if parent_is_season:
+            episode = episode or self.extract_release_group_episode(filename)
             title_candidate_folder = grandparent
             if grandparent_is_season or not title_candidate_folder:
                 title_candidate_folder = great_grandparent
@@ -369,6 +388,7 @@ class PathMetadataParser:
 
         mixed_match = self.re_mixed_season_folder.match(parent)
         if mixed_match:
+            episode = episode or self.extract_release_group_episode(filename)
             raw_title = mixed_match.group(1)
             title = self.clean_name(raw_title)
             if title and not self.is_garbage_title(title):
@@ -509,6 +529,7 @@ class PathMetadataParser:
         grandparent_is_season = self.is_season_folder(grandparent)
 
         if parent_is_season:
+            episode = episode or self.extract_release_group_episode(filename)
             title_candidate_folder = grandparent
             if grandparent_is_season or not title_candidate_folder:
                 title_candidate_folder = great_grandparent
@@ -538,6 +559,7 @@ class PathMetadataParser:
 
         mixed_match = self.re_mixed_season_folder.match(parent)
         if mixed_match:
+            episode = episode or self.extract_release_group_episode(filename)
             raw_title = mixed_match.group(1)
             title = self.clean_name(raw_title)
             season_num = self.season_number_from_match(mixed_match, 2) or 1

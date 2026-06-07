@@ -274,6 +274,7 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
 
         self.assertEqual("Legend of LuoXiaohei 1 40+movie", parsed.title)
         self.assertIsNone(parsed.year)
+        self.assertEqual(1, parsed.episode)
         self.assertEqual("tv", parsed.media_type_hint)
         self.assertEqual("season_folder", parsed.parse_strategy)
 
@@ -311,7 +312,23 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
         self.assertEqual("Legend of LuoXiaohei 1 40+movie", cleaned.title)
         self.assertIsNone(cleaned.year)
         self.assertEqual(1, cleaned.season)
+        self.assertEqual(1, cleaned.episode)
         self.assertEqual("nested_season", cleaned.parse_strategy)
+
+    def test_release_group_episode_allows_ampersand_suffix(self):
+        path = (
+            "来自：分享/来自：云添加/"
+            "[KMTeams] Legend of LuoXiaohei 1-40+movie (Bilibili 1920x1080 x264 AAC)/"
+            "S1_1-28/[KMTeams] Legend of LuoXiaohei 28&movie-pv (Bilibili 1920x1080 x264 AAC).mp4"
+        )
+
+        parsed = PathMetadataParser().parse(path)
+        cleaned = self.cleaner.parse_path_metadata(path)
+
+        self.assertEqual(1, parsed.season)
+        self.assertEqual(28, parsed.episode)
+        self.assertEqual(1, cleaned.season)
+        self.assertEqual(28, cleaned.episode)
 
     def test_release_site_prefix_removed_from_movie_parent_folder(self):
         path = (
@@ -366,6 +383,25 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
         self.assertEqual(2, season)
         self.assertEqual(1, episode)
         self.assertEqual("absolute_episode_offset", normalization["strategy"])
+
+    def test_scanner_maps_continuous_episode_numbers_to_metadata_season_window(self):
+        scanner = CyberScanner()
+        season, episode, normalization = scanner._normalize_episode_for_season_metadata(
+            2,
+            29,
+            {
+                "season_metadata": [
+                    {"season": 1, "episode_count": 41},
+                    {"season": 2, "episode_count": 1},
+                ],
+            },
+        )
+
+        self.assertEqual(1, season)
+        self.assertEqual(29, episode)
+        self.assertEqual("absolute_episode_offset", normalization["strategy"])
+        self.assertEqual(2, normalization["original_season"])
+        self.assertEqual(1, normalization["normalized_season"])
 
     def test_generic_dirty_path_stays_in_fallback(self):
         self.assert_metadata(
