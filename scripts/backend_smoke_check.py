@@ -2064,6 +2064,75 @@ def check_recommendations(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_movie_context_recommendations(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "movie_context_recommendations",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "movie_context_recommendations",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    strategy = "context"
+    limit = 3
+    payload = client.get_json(
+        f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/recommendations",
+        {"limit": limit},
+    )
+    items = _response_list(payload)
+    issues = []
+
+    if len(items) > limit:
+        issues.append(f"too_many_items={len(items)}/{limit}")
+    for index, item in enumerate(items):
+        if isinstance(item, dict) and item.get("id") == movie_id:
+            issues.append(f"item_{index}_is_anchor={movie_id}")
+    for index, item in enumerate(items[:1]):
+        issues.extend(_recommendation_item_issues(item, index, strategy))
+
+    ok = not issues
+    sample = items[0] if items and isinstance(items[0], dict) else None
+    sample_title = sample.get("title") if sample else None
+    recommendation = sample.get("recommendation") if sample and isinstance(sample.get("recommendation"), dict) else {}
+    primary_reason = recommendation.get("primary_reason") if isinstance(recommendation.get("primary_reason"), dict) else {}
+    primary_reason_code = primary_reason.get("code")
+    anchor_title = catalog_sample.get("title") if isinstance(catalog_sample, dict) else None
+    detail = f"anchor={movie_id} items={len(items)} strategy={strategy}"
+    if anchor_title:
+        detail = f"{detail} anchor_title={anchor_title}"
+    if sample_title:
+        detail = f"{detail} sample={sample_title} primary_reason={primary_reason_code}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "movie_context_recommendations",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "anchor_title": anchor_title,
+            "item_count": len(items),
+            "strategy": strategy,
+            "sample_title": sample_title,
+            "sample_primary_reason": primary_reason_code,
+            "issues": issues,
+        },
+    )
+
+
 def check_metadata_work_items_contract(client: SmokeClient) -> CheckResult:
     payload = client.get_json("/api/v1/metadata/work-items", {"page_size": 1})
     data = _response_data(payload)
@@ -2790,6 +2859,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("featured", lambda: check_featured(client)),
         CheckSpec("homepage", lambda: check_homepage(client)),
         CheckSpec("recommendations", lambda: check_recommendations(client)),
+        CheckSpec("movie_context_recommendations", lambda: check_movie_context_recommendations(client)),
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),

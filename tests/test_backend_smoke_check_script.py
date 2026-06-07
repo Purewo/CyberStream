@@ -652,6 +652,35 @@ class FakeSmokeClient:
                 "strategy": "default",
             }
             return {"data": [item]}
+        if path == "/api/v1/movies/movie-1/recommendations":
+            item = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)["data"]["items"][0].copy()
+            item["id"] = "movie-2"
+            item["title"] = "Related Sample Movie"
+            item["recommendation"] = {
+                "primary_reason": {
+                    "code": "same_title_family",
+                    "label": "Same series",
+                    "weight": 180.0,
+                    "detail": "sample",
+                },
+                "rank": 1,
+                "reason_text": "Same series",
+                "reasons": [
+                    {
+                        "code": "same_title_family",
+                        "label": "Same series",
+                        "weight": 180.0,
+                    },
+                ],
+                "score": 259.2,
+                "signals": {
+                    "progress_ratio": 0,
+                    "quality_badge": "HD",
+                    "resource_count": 1,
+                },
+                "strategy": "context",
+            }
+            return {"data": [item]}
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -997,6 +1026,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "featured",
                 "homepage",
                 "recommendations",
+                "movie_context_recommendations",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
                 "background_jobs",
@@ -1509,6 +1539,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         recommendations = next(item for item in results if item.name == "recommendations")
         self.assertFalse(recommendations.ok)
         self.assertIn("item_0_recommendation_primary_reason_not_object", recommendations.detail)
+
+    def test_movie_context_recommendations_fail_when_anchor_is_returned(self):
+        class BrokenContextRecommendationsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1/recommendations":
+                    payload["data"][0]["id"] = "movie-1"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenContextRecommendationsClient):
+            results = self.module.run_checks(self._args())
+
+        context = next(item for item in results if item.name == "movie_context_recommendations")
+        self.assertFalse(context.ok)
+        self.assertIn("item_0_is_anchor=movie-1", context.detail)
 
     def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
         class BrokenReidentifyPlanClient(FakeSmokeClient):

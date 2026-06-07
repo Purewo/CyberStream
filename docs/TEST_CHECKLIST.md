@@ -68,6 +68,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK featured`，说明首页旧置顶/轮播入口仍返回详情影片契约
 - smoke check 返回 `OK homepage`，说明首页 hero 与 sections 聚合契约可用
 - smoke check 返回 `OK recommendations`，说明发现页推荐流和推荐理由契约可用
+- smoke check 返回 `OK movie_context_recommendations`，说明详情页/播放页单片相关推荐契约可用
 - smoke check 全部返回 `OK`
 
 ### 2.4 公网健康检查
@@ -164,6 +165,7 @@ curl -s "http://127.0.0.1:5004/api/v1/recommendations?limit=3"
 - 返回数组
 - 不报错
 - smoke check 返回 `OK recommendations`，说明影片条目带 `recommendation.primary_reason/reasons/signals`
+- smoke check 返回 `OK movie_context_recommendations`，说明单片相关推荐返回 `strategy=context` 且不会推荐锚点影片
 
 ### 3.6 获取首页 featured
 
@@ -777,7 +779,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`735 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`736 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
