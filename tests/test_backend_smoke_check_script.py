@@ -323,6 +323,33 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/storage/sources/1/browse":
+            return {
+                "data": {
+                    "source": {
+                        "id": 1,
+                        "name": "GuangYaPan",
+                        "type": "guangyapan",
+                        "is_supported": True,
+                        "config_valid": True,
+                        "actions": {
+                            "can_preview": True,
+                            "can_scan": True,
+                            "can_stream": True,
+                        },
+                    },
+                    "current_path": "/",
+                    "parent_path": None,
+                    "items": [
+                        {
+                            "name": "Movies",
+                            "path": "Movies",
+                            "type": "dir",
+                            "size": 0,
+                        },
+                    ],
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
                 return {
@@ -666,6 +693,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "background_jobs",
                 "background_jobs_prune",
                 "storage_sources",
+                "storage_browse",
                 "metadata_fallback_pipeline_match",
                 "episode_review",
                 "resource_governance",
@@ -1209,6 +1237,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         storage = next(item for item in results if item.name == "storage_sources")
         self.assertFalse(storage.ok)
         self.assertIn("sources_below_min=0/1", storage.detail)
+
+    def test_storage_browse_fails_when_dirs_only_returns_file_items(self):
+        class BrokenStorageBrowseClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/storage/sources/1/browse":
+                    payload["data"]["items"][0]["type"] = "file"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenStorageBrowseClient):
+            results = self.module.run_checks(self._args())
+
+        browse = next(item for item in results if item.name == "storage_browse")
+        self.assertFalse(browse.ok)
+        self.assertIn("item_0_type=file", browse.detail)
 
     def test_run_checks_can_verify_storage_health_when_enabled(self):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):

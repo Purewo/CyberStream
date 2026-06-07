@@ -252,6 +252,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 - `openapi_modules` 返回 `OK`
 - `metadata_providers` 返回 `OK`
 - `storage_sources` 返回 `OK`，且至少包含当前挂载点
+- `storage_browse` 返回 `OK`，说明已保存挂载点目录选择器浏览契约可用
 - `storage_health` 返回 `OK`，且 `checked>=1`
 - `tmdb_token` 返回 `OK`，且 `ready=True status=ok`
 
@@ -762,7 +763,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`726 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`727 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

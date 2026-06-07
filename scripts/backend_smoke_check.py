@@ -209,6 +209,18 @@ EXPECTED_CATALOG_VISIBILITY_KEYS = [
     "is_visible",
     "can_publish",
 ]
+EXPECTED_STORAGE_BROWSE_KEYS = [
+    "source",
+    "current_path",
+    "parent_path",
+    "items",
+]
+EXPECTED_STORAGE_BROWSE_ITEM_KEYS = [
+    "name",
+    "path",
+    "type",
+    "size",
+]
 EXPECTED_JOB_STATUSES = ["queued", "running", "succeeded", "failed"]
 EXPECTED_JOB_PRUNE_KEYS = [
     "dry_run",
@@ -1341,6 +1353,92 @@ def check_storage_sources(client: SmokeClient, min_sources: int) -> CheckResult:
     )
 
 
+def _browseable_storage_sources(client: SmokeClient) -> list[dict[str, Any]]:
+    payload = client.get_json("/api/v1/storage/sources")
+    sources = [item for item in _response_list(payload) if isinstance(item, dict)]
+    return [
+        source
+        for source in sources
+        if source.get("is_supported") is True
+        and source.get("config_valid") is True
+        and _source_actions(source).get("can_preview") is True
+    ]
+
+
+def _storage_browse_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"item_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_STORAGE_BROWSE_ITEM_KEYS, prefix))
+    if "name" in item and not isinstance(item.get("name"), str):
+        issues.append(f"{prefix}_name_not_str")
+    if "path" in item and not isinstance(item.get("path"), str):
+        issues.append(f"{prefix}_path_not_str")
+    if item.get("type") != "dir":
+        issues.append(f"{prefix}_type={item.get('type')}")
+    if "size" in item and not isinstance(item.get("size"), (int, float)):
+        issues.append(f"{prefix}_size_not_number")
+    return issues
+
+
+def check_storage_browse(client: SmokeClient) -> CheckResult:
+    sources = _browseable_storage_sources(client)
+    if not sources:
+        return _result(
+            "storage_browse",
+            True,
+            "skipped no browseable sources",
+            {"source_count": 0, "skipped": True},
+        )
+
+    source = sources[0]
+    source_id = source.get("id")
+    payload = client.get_json(
+        f"/api/v1/storage/sources/{source_id}/browse",
+        {"path": "/", "dirs_only": "true"},
+    )
+    data = _response_data(payload)
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_STORAGE_BROWSE_KEYS, "browse"))
+
+    browse_source = data.get("source") if isinstance(data, dict) else {}
+    if not isinstance(browse_source, dict):
+        issues.append("browse_source_not_object")
+    elif browse_source.get("id") != source_id:
+        issues.append(f"source_id_mismatch={browse_source.get('id')}/{source_id}")
+
+    if data.get("current_path") != "/":
+        issues.append(f"current_path={data.get('current_path')}")
+    if "parent_path" in data and data.get("parent_path") is not None:
+        issues.append(f"parent_path={data.get('parent_path')}")
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    for index, item in enumerate(items[:3]):
+        issues.extend(_storage_browse_item_issues(item, index))
+
+    ok = not issues
+    source_name = source.get("name") or source.get("display_name")
+    detail = f"source={source_id}:{source_name} items={len(items)} path={data.get('current_path')}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "storage_browse",
+        ok,
+        detail,
+        {
+            "source_id": source_id,
+            "source_name": source.get("name") or source.get("display_name"),
+            "item_count": len(items),
+            "issues": issues,
+        },
+    )
+
+
 def check_storage_health(client: SmokeClient, min_checked: int = 0) -> CheckResult:
     payload = client.get_json("/api/v1/storage/sources")
     sources = [item for item in _response_list(payload) if isinstance(item, dict)]
@@ -1743,6 +1841,7 @@ def run_checks(args) -> list[CheckResult]:
             lambda: check_background_jobs_prune(client),
         ),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
+        CheckSpec("storage_browse", lambda: check_storage_browse(client)),
         CheckSpec(
             "metadata_fallback_pipeline_match",
             lambda: check_work_items(client, "fallback_pipeline_match", args.max_fallback_items),
