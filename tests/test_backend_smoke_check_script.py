@@ -422,6 +422,93 @@ class FakeSmokeClient:
             }
         raise AssertionError(f"unexpected path: {path}")
 
+    def post_json(self, path, body=None):
+        if path == "/api/v1/metadata/re-scrape/plan":
+            issue_codes = (body or {}).get("issue_codes") or [
+                "fallback_pipeline_match",
+                "poster_missing",
+                "low_confidence_resources",
+            ]
+            return {
+                "data": {
+                    "dry_run": True,
+                    "plan_mode": "keyword_preview",
+                    "provider_search": False,
+                    "selection": {
+                        "issue_codes": issue_codes,
+                        "limit": (body or {}).get("limit"),
+                        "media_type_hint": None,
+                        "metadata_unlocked_fields": [],
+                        "movie_ids": None,
+                    },
+                    "apply_method": "POST",
+                    "apply_endpoint": "/api/v1/metadata/re-scrape/jobs",
+                    "sync_apply_endpoint": "/api/v1/metadata/re-scrape",
+                    "progress_endpoint_template": "/api/v1/jobs/{job_id}",
+                    "apply_payload": {
+                        "items": [
+                            {
+                                "id": "movie-1",
+                                "search_title": "Sample Movie",
+                                "search_year": 2024,
+                            },
+                        ],
+                    },
+                    "items": [
+                        {
+                            "movie_id": "movie-1",
+                            "title": "Sample Movie",
+                            "scraper_source": "TMDB",
+                            "status": "planned",
+                            "dry_run": True,
+                            "plan_mode": "keyword_preview",
+                            "matched_issue_codes": ["poster_missing"],
+                            "metadata_state": {
+                                "source_group": "tmdb",
+                                "source_code": "TMDB",
+                                "source_label": "TMDB",
+                                "issue_codes": ["poster_missing"],
+                                "needs_attention": True,
+                                "review_priority": "medium",
+                                "recommended_action": "refresh_metadata",
+                            },
+                            "metadata_actions": {
+                                "can_manual_match": True,
+                                "can_refresh": True,
+                                "can_re_scrape": True,
+                                "primary_action": "refresh_metadata",
+                            },
+                            "search_query": {
+                                "search_title": "Sample Movie",
+                                "search_year": 2024,
+                                "source": "path_parser",
+                            },
+                            "search_title": "Sample Movie",
+                            "search_year": 2024,
+                            "preview": None,
+                            "diff": None,
+                            "resolution": None,
+                            "explanation": None,
+                            "apply_item": {
+                                "id": "movie-1",
+                                "search_title": "Sample Movie",
+                                "search_year": 2024,
+                            },
+                        },
+                    ],
+                    "summary": {
+                        "total": 1,
+                        "planned": 1,
+                        "failed": 0,
+                        "apply_item_count": 1,
+                        "status_counts": {"planned": 1},
+                        "issue_code_counts": {"poster_missing": 1},
+                        "failed_movie_ids": [],
+                    },
+                },
+            }
+        raise AssertionError(f"unexpected post path: {path}")
+
 
 class BackendSmokeCheckScriptTests(unittest.TestCase):
     def setUp(self):
@@ -464,6 +551,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_providers",
                 "metadata_review_workbench",
                 "metadata_work_items_contract",
+                "metadata_reidentify_plan",
                 "background_jobs",
                 "storage_sources",
                 "metadata_fallback_pipeline_match",
@@ -508,6 +596,36 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertEqual(2.5, timeout)
         self.assertEqual("application/json", request.get_header("Accept"))
         self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
+
+    def test_smoke_client_can_post_json_payload(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"data":{"ok":true}}'
+
+        requests = []
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        client = self.module.SmokeClient("http://example.test", timeout=2.5, api_token="secret-token")
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=fake_urlopen):
+            payload = client.post_json("/api/v1/metadata/re-scrape/plan", {"limit": 1})
+
+        self.assertEqual({"data": {"ok": True}}, payload)
+        request, timeout = requests[0]
+        self.assertEqual(2.5, timeout)
+        self.assertEqual("POST", request.get_method())
+        self.assertEqual("application/json", request.get_header("Accept"))
+        self.assertEqual("application/json", request.get_header("Content-type"))
+        self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
+        self.assertEqual(b'{"limit": 1}', request.data)
 
     def test_docs_index_fails_when_expected_document_is_missing(self):
         class MissingTerminologyDocClient(FakeSmokeClient):
@@ -821,6 +939,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         )
         self.assertFalse(work_items.ok)
         self.assertIn("item_0_missing=metadata_state", work_items.detail)
+
+    def test_metadata_reidentify_plan_fails_when_dry_run_contract_is_broken(self):
+        class BrokenReidentifyPlanClient(FakeSmokeClient):
+            def post_json(self, path, body=None):
+                payload = super().post_json(path, body=body)
+                if path == "/api/v1/metadata/re-scrape/plan":
+                    payload["data"]["dry_run"] = False
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenReidentifyPlanClient):
+            results = self.module.run_checks(self._args())
+
+        plan = next(item for item in results if item.name == "metadata_reidentify_plan")
+        self.assertFalse(plan.ok)
+        self.assertIn("dry_run_not_true", plan.detail)
 
     def test_background_jobs_fails_when_summary_contract_is_broken(self):
         class BrokenJobsClient(FakeSmokeClient):

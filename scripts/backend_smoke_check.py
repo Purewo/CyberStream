@@ -72,6 +72,51 @@ EXPECTED_METADATA_QUALITY_SAMPLE_KEYS = [
     "metadata_actions",
     "matching_issue",
 ]
+EXPECTED_METADATA_REIDENTIFY_ISSUE_CODES = [
+    "fallback_pipeline_match",
+    "poster_missing",
+    "low_confidence_resources",
+]
+EXPECTED_METADATA_REIDENTIFY_PLAN_KEYS = [
+    "dry_run",
+    "plan_mode",
+    "provider_search",
+    "selection",
+    "apply_method",
+    "apply_endpoint",
+    "sync_apply_endpoint",
+    "progress_endpoint_template",
+    "apply_payload",
+    "items",
+    "summary",
+]
+EXPECTED_METADATA_REIDENTIFY_SUMMARY_KEYS = [
+    "total",
+    "planned",
+    "failed",
+    "apply_item_count",
+    "status_counts",
+    "issue_code_counts",
+    "failed_movie_ids",
+]
+EXPECTED_METADATA_REIDENTIFY_ITEM_KEYS = [
+    "movie_id",
+    "title",
+    "status",
+    "dry_run",
+    "plan_mode",
+    "matched_issue_codes",
+    "metadata_state",
+    "metadata_actions",
+    "search_query",
+    "search_title",
+    "search_year",
+    "preview",
+    "diff",
+    "resolution",
+    "explanation",
+    "apply_item",
+]
 EXPECTED_METADATA_WORK_ITEM_KEYS = [
     "id",
     "title",
@@ -163,10 +208,20 @@ class SmokeClient:
         url = f"{self.base_url}{path}"
         if query:
             url = f"{url}?{urllib.parse.urlencode(query)}"
+        return self._request_json("GET", url)
+
+    def post_json(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        data = json.dumps(body or {}).encode("utf-8")
+        return self._request_json("POST", url, data=data)
+
+    def _request_json(self, method: str, url: str, data: bytes | None = None) -> dict[str, Any]:
         headers = {"Accept": "application/json"}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
         if self.api_token:
             headers["Authorization"] = f"Bearer {self.api_token}"
-        request = urllib.request.Request(url, headers=headers)
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = response.read().decode("utf-8")
@@ -175,7 +230,7 @@ class SmokeClient:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"HTTP {exc.code} {url}: {body[:300]}") from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"GET {url} failed: {exc}") from exc
+            raise RuntimeError(f"{method} {url} failed: {exc}") from exc
 
 
 def _response_data(payload: dict[str, Any]) -> dict[str, Any]:
@@ -832,6 +887,143 @@ def _quality_summary_contract_issues(quality: Any) -> list[str]:
     return issues
 
 
+def _metadata_reidentify_plan_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"item_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_METADATA_REIDENTIFY_ITEM_KEYS, prefix))
+    if item.get("dry_run") is not True:
+        issues.append(f"{prefix}_dry_run_not_true")
+    if item.get("plan_mode") != "keyword_preview":
+        issues.append(f"{prefix}_plan_mode={item.get('plan_mode')}")
+    if "matched_issue_codes" in item and not isinstance(item.get("matched_issue_codes"), list):
+        issues.append(f"{prefix}_matched_issue_codes_not_list")
+    for null_field in ("preview", "diff", "resolution", "explanation"):
+        if null_field in item and item.get(null_field) is not None:
+            issues.append(f"{prefix}_{null_field}_not_null")
+
+    issues.extend(
+        _dict_missing_keys(
+            item.get("metadata_state"),
+            EXPECTED_METADATA_STATE_KEYS,
+            f"{prefix}_metadata_state",
+        )
+    )
+    issues.extend(
+        _dict_missing_keys(
+            item.get("metadata_actions"),
+            EXPECTED_METADATA_ACTION_KEYS,
+            f"{prefix}_metadata_actions",
+        )
+    )
+
+    apply_item = item.get("apply_item")
+    if item.get("status") == "planned":
+        if not isinstance(apply_item, dict):
+            issues.append(f"{prefix}_apply_item_not_object")
+        elif apply_item.get("id") != item.get("movie_id"):
+            issues.append(f"{prefix}_apply_item_id_mismatch")
+    return issues
+
+
+def check_metadata_reidentify_plan(client: SmokeClient) -> CheckResult:
+    payload = client.post_json(
+        "/api/v1/metadata/re-scrape/plan",
+        {
+            "issue_codes": EXPECTED_METADATA_REIDENTIFY_ISSUE_CODES,
+            "limit": 1,
+        },
+    )
+    data = _response_data(payload)
+    issues = []
+
+    issues.extend(_dict_missing_keys(data, EXPECTED_METADATA_REIDENTIFY_PLAN_KEYS, "plan"))
+    if data.get("dry_run") is not True:
+        issues.append("dry_run_not_true")
+    if data.get("plan_mode") != "keyword_preview":
+        issues.append(f"plan_mode={data.get('plan_mode')}")
+    if data.get("provider_search") is not False:
+        issues.append(f"provider_search={data.get('provider_search')}")
+    if data.get("apply_method") != "POST":
+        issues.append(f"apply_method={data.get('apply_method')}")
+    if data.get("apply_endpoint") != "/api/v1/metadata/re-scrape/jobs":
+        issues.append(f"apply_endpoint={data.get('apply_endpoint')}")
+    if data.get("sync_apply_endpoint") != "/api/v1/metadata/re-scrape":
+        issues.append(f"sync_apply_endpoint={data.get('sync_apply_endpoint')}")
+    if data.get("progress_endpoint_template") != "/api/v1/jobs/{job_id}":
+        issues.append(f"progress_endpoint_template={data.get('progress_endpoint_template')}")
+
+    selection = data.get("selection") if isinstance(data.get("selection"), dict) else {}
+    selected_issue_codes = selection.get("issue_codes") if isinstance(selection, dict) else None
+    if selected_issue_codes != EXPECTED_METADATA_REIDENTIFY_ISSUE_CODES:
+        issues.append(f"selection_issue_codes={selected_issue_codes}")
+    if selection.get("limit") != 1:
+        issues.append(f"selection_limit={selection.get('limit')}")
+
+    apply_payload = data.get("apply_payload")
+    apply_items = []
+    if not isinstance(apply_payload, dict):
+        issues.append("apply_payload_not_object")
+    else:
+        apply_items = apply_payload.get("items")
+        if not isinstance(apply_items, list):
+            issues.append("apply_payload_items_not_list")
+            apply_items = []
+
+    plan_items = data.get("items")
+    if not isinstance(plan_items, list):
+        issues.append("items_not_list")
+        plan_items = []
+    if len(plan_items) > 1:
+        issues.append(f"too_many_items={len(plan_items)}")
+    for index, item in enumerate(plan_items[:1]):
+        issues.extend(_metadata_reidentify_plan_item_issues(item, index))
+
+    summary = data.get("summary")
+    issues.extend(_dict_missing_keys(summary, EXPECTED_METADATA_REIDENTIFY_SUMMARY_KEYS, "summary"))
+    if isinstance(summary, dict):
+        for key in ("total", "planned", "failed", "apply_item_count"):
+            if key in summary and not _json_int(summary.get(key)):
+                issues.append(f"summary_{key}_not_int")
+        if summary.get("total") != len(plan_items):
+            issues.append(f"summary_total_mismatch={summary.get('total')}/{len(plan_items)}")
+        if summary.get("apply_item_count") != len(apply_items):
+            issues.append(
+                f"summary_apply_item_count_mismatch={summary.get('apply_item_count')}/{len(apply_items)}"
+            )
+        if "failed_movie_ids" in summary and not isinstance(summary.get("failed_movie_ids"), list):
+            issues.append("summary_failed_movie_ids_not_list")
+        if "status_counts" in summary and not isinstance(summary.get("status_counts"), dict):
+            issues.append("summary_status_counts_not_object")
+        if "issue_code_counts" in summary and not isinstance(summary.get("issue_code_counts"), dict):
+            issues.append("summary_issue_code_counts_not_object")
+
+    ok = not issues
+    detail = (
+        f"dry_run={data.get('dry_run')} mode={data.get('plan_mode')} "
+        f"items={len(plan_items)} apply_items={len(apply_items)} "
+        f"total={summary.get('total') if isinstance(summary, dict) else None}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "metadata_reidentify_plan",
+        ok,
+        detail,
+        {
+            "dry_run": data.get("dry_run"),
+            "plan_mode": data.get("plan_mode"),
+            "provider_search": data.get("provider_search"),
+            "item_count": len(plan_items),
+            "apply_item_count": len(apply_items),
+            "summary": summary if isinstance(summary, dict) else None,
+            "issues": issues,
+        },
+    )
+
+
 def check_metadata_work_items_contract(client: SmokeClient) -> CheckResult:
     payload = client.get_json("/api/v1/metadata/work-items", {"page_size": 1})
     data = _response_data(payload)
@@ -1187,6 +1379,10 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec(
             "metadata_work_items_contract",
             lambda: check_metadata_work_items_contract(client),
+        ),
+        CheckSpec(
+            "metadata_reidentify_plan",
+            lambda: check_metadata_reidentify_plan(client),
         ),
         CheckSpec("background_jobs", lambda: check_background_jobs(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
