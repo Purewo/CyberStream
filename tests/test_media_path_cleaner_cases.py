@@ -277,6 +277,56 @@ class MediaPathCleanerCaseTests(unittest.TestCase):
         self.assertEqual("tv", parsed.media_type_hint)
         self.assertEqual("season_folder", parsed.parse_strategy)
 
+    def test_release_site_prefix_removed_from_mixed_season_folder(self):
+        parser = PathMetadataParser()
+        path = (
+            "来自：分享/来自：云添加/"
+            "【高清剧集网发布 www.BPHDTV.com】指环王：力量之戒 第二季"
+            "[杜比视界版本][全8集][简繁英字幕].2024.2160p.AMZN.WEB-DL.H265.DV.DDP5.1.Atmos-ZeroTV/"
+            "The.Lord.of.the.Rings.The.Rings.of.Power.S02E01.2024.2160p.AMZN.WEB-DL.H265.DV.DDP5.1.Atmos-ZeroTV.mkv"
+        )
+
+        cleaned = self.cleaner.parse_path_metadata(path)
+        parsed = parser.parse(path)
+
+        self.assertEqual("指环王：力量之戒", cleaned.title)
+        self.assertEqual(2024, cleaned.year)
+        self.assertEqual(2, cleaned.season)
+        self.assertEqual(1, cleaned.episode)
+        self.assertEqual("mixed_season_folder", cleaned.parse_strategy)
+        self.assertEqual("指环王：力量之戒", parsed.title)
+        self.assertEqual(2024, parsed.year)
+        self.assertEqual(2, parsed.season)
+        self.assertEqual(1, parsed.episode)
+
+    def test_release_group_prefix_removed_from_nested_season_folder(self):
+        path = (
+            "来自：分享/来自：云添加/"
+            "[KMTeams] Legend of LuoXiaohei 1-40+movie (Bilibili 1920x1080 x264 AAC)/"
+            "S1_1-28/[KMTeams] Legend of LuoXiaohei 01 (Bilibili 1280x1024 x264 AAC).mp4"
+        )
+
+        cleaned = self.cleaner.parse_path_metadata(path)
+
+        self.assertEqual("Legend of LuoXiaohei 1 40+movie", cleaned.title)
+        self.assertIsNone(cleaned.year)
+        self.assertEqual(1, cleaned.season)
+        self.assertEqual("nested_season", cleaned.parse_strategy)
+
+    def test_release_site_prefix_removed_from_movie_parent_folder(self):
+        path = (
+            "来自：分享/来自：云添加/"
+            "【更多高清电影访问 www.mkvhome.com】西游[共2部合集][国粤英多音轨+简繁英字幕]."
+            "Journey.to.the.West.2013-2017.BluRay.1080p.2Audio.DTS-HD.MA.7.1.x265.10bit-ALT/"
+            "〔 高清电影下载 www.mkvhome.com 〕.mkv"
+        )
+
+        cleaned = self.cleaner.parse_path_metadata(path)
+
+        self.assertEqual("西游 共2部合集 Journey to the West 2Audio ALT", cleaned.title)
+        self.assertEqual(2017, cleaned.year)
+        self.assertEqual("movie_parent", cleaned.parse_strategy)
+
     def test_movie_title_keeps_dance_and_ignores_truehd_channel(self):
         parser = PathMetadataParser()
         path = (

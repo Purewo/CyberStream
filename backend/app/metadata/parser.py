@@ -117,11 +117,13 @@ class PathMetadataParser:
     def clean_name(self, text):
         if not text:
             return ""
+        text = self.strip_release_prefix_noise(text)
         text = self.re_year.sub('', text)
         text = self.re_s_parenthesized_episode.sub(' ', text)
         text = re.sub(r'(?i)(?:Season|S|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Part|Vol)?', ' ', text)
         text = self.re_noise.sub('', text)
         text = re.sub(r'\[.*?\]', '', text)
+        text = re.sub(r'【.*?】', '', text)
         text = re.sub(r'\(.*?\)', '', text)
         text = re.sub(r'[._\-]+', ' ', text).strip()
         return text
@@ -163,11 +165,20 @@ class PathMetadataParser:
         season = self.parse_number_token(match.group(group_index))
         return season if season and season > 0 else None
 
+    def strip_release_prefix_noise(self, text):
+        text = (text or '').strip()
+        while True:
+            match = re.match(r'^\s*(?:\[[^\]]+\]|【[^】]+】)\s*', text)
+            if not match:
+                return text
+            remainder = text[match.end():].strip()
+            if not remainder:
+                return text
+            text = remainder
+
     def strip_filename_prefix_noise(self, text):
         text = (text or '').rsplit('.', 1)[0].strip()
-        text = re.sub(r'^\[[^\]]+\]\s*', ' ', text).strip()
-        text = re.sub(r'^【[^】]+】\s*', ' ', text).strip()
-        return text
+        return self.strip_release_prefix_noise(text)
 
     def extract_inline_chinese_season_episode(self, filename):
         base_name = self.strip_filename_prefix_noise(filename)
@@ -191,7 +202,7 @@ class PathMetadataParser:
         if inline:
             return inline["title"]
 
-        name = (filename or '').rsplit('.', 1)[0]
+        name = self.strip_filename_prefix_noise(filename)
         numeric_title_match = re.match(
             r'^((?:19|20)\d{2})[\s._-]+((?:19|20)\d{2})(?:$|[\s._-])',
             name,

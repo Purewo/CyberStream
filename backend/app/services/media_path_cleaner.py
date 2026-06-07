@@ -127,11 +127,20 @@ class MediaPathCleaner:
         season = self._parse_number_token(match.group(group_index))
         return season if season and season > 0 else None
 
+    def _strip_release_prefix_noise(self, text):
+        text = (text or '').strip()
+        while True:
+            match = re.match(r'^\s*(?:\[[^\]]+\]|【[^】]+】)\s*', text)
+            if not match:
+                return text
+            remainder = text[match.end():].strip()
+            if not remainder:
+                return text
+            text = remainder
+
     def _strip_filename_prefix_noise(self, text):
         text = (text or '').rsplit('.', 1)[0].strip()
-        text = re.sub(r'^\[[^\]]+\]\s*', ' ', text).strip()
-        text = re.sub(r'^【[^】]+】\s*', ' ', text).strip()
-        return text
+        return self._strip_release_prefix_noise(text)
 
     def _extract_inline_chinese_season_episode(self, filename):
         base_name = self._strip_filename_prefix_noise(filename)
@@ -153,6 +162,7 @@ class MediaPathCleaner:
     def clean_name(self, text, *, preserve_trailing_number=False):
         if not text:
             return ""
+        text = self._strip_release_prefix_noise(text)
         text = self.re_resolution_pair.sub(' ', text)
         text = self.re_audio_channel.sub(' ', text)
         text = self.re_s_parenthesized_episode.sub(' ', text)
@@ -161,6 +171,8 @@ class MediaPathCleaner:
         text = re.sub(r'(?i)(?:Season|S|第)\s*(\d+|[一二三四五六七八九十]+)(?:季|Part|Vol)?', ' ', text)
         text = self.re_noise.sub('', text)
         text = re.sub(r'(?i)\b(?:TRUEHD|DTS(?:-HD)?|HDMA|ATMOS|DV|HDR|REMUX|WEB(?:-DL)?|BLURAY|UHD|IMAX|REPACK|PROPER)\s*\d+\b', ' ', text)
+        text = re.sub(r'\[(?:4K|8K|DIY|BDJ|BDMV|菜单|[^\]]*字幕[^\]]*|[^\]]*音轨[^\]]*|[^\]]*配音[^\]]*|[^\]]*特效[^\]]*|[^\]]*帧率[^\]]*|[^\]]*高码[^\]]*|[^\]]*版本[^\]]*|[^\]]*全\d+集[^\]]*)\]', ' ', text, flags=re.I)
+        text = re.sub(r'【(?:4K|8K|DIY|BDJ|BDMV|菜单|[^】]*字幕[^】]*|[^】]*音轨[^】]*|[^】]*配音[^】]*|[^】]*特效[^】]*|[^】]*帧率[^】]*|[^】]*高码[^】]*|[^】]*版本[^】]*|[^】]*全\d+集[^】]*)】', ' ', text, flags=re.I)
         text = re.sub(r'\(.*?\)', '', text)
         text = re.sub(r'[\[\]【】]', ' ', text)
         text = re.sub(r'[._\-]+', ' ', text).strip()
