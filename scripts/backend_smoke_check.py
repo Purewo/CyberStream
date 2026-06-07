@@ -803,6 +803,41 @@ EXPECTED_STORAGE_BROWSE_KEYS = [
     "parent_path",
     "items",
 ]
+EXPECTED_STORAGE_SOURCE_DETAIL_KEYS = [
+    "id",
+    "name",
+    "type",
+    "display_name",
+    "root_path",
+    "status",
+    "is_supported",
+    "config_valid",
+    "config_error",
+    "capabilities",
+    "config",
+    "actions",
+    "usage",
+    "guards",
+]
+EXPECTED_STORAGE_SOURCE_ACTION_KEYS = [
+    "can_preview",
+    "can_scan",
+    "can_stream",
+    "can_refresh",
+]
+EXPECTED_STORAGE_SOURCE_USAGE_KEYS = [
+    "library_binding_count",
+    "resource_count",
+    "has_resources",
+]
+EXPECTED_STORAGE_SOURCE_GUARD_KEYS = [
+    "can_change_type",
+    "can_delete",
+    "can_delete_directly",
+    "requires_pin_on_delete",
+    "requires_keep_metadata_on_delete",
+    "has_dependents",
+]
 EXPECTED_STORAGE_BROWSE_ITEM_KEYS = [
     "name",
     "path",
@@ -5192,6 +5227,133 @@ def check_storage_sources(client: SmokeClient, min_sources: int) -> CheckResult:
     )
 
 
+def _storage_source_detail_issues(data: Any, expected_source: dict[str, Any]) -> list[str]:
+    if not isinstance(data, dict):
+        return ["storage_source_detail_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_STORAGE_SOURCE_DETAIL_KEYS, "storage_source_detail"))
+    source_id = data.get("id")
+    expected_id = expected_source.get("id") if isinstance(expected_source, dict) else None
+    if "id" in data and not _json_int(source_id):
+        issues.append("storage_source_detail_id_not_int")
+    elif expected_id is not None and source_id != expected_id:
+        issues.append(f"storage_source_detail_id={source_id}/{expected_id}")
+
+    for key in ("name", "type", "display_name", "root_path", "status", "config_error"):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"storage_source_detail_{key}_not_str")
+    for key in ("is_supported", "config_valid"):
+        if key in data and data.get(key) not in (True, False):
+            issues.append(f"storage_source_detail_{key}_not_bool")
+    for key in ("type", "name", "is_supported", "config_valid"):
+        expected_value = expected_source.get(key) if isinstance(expected_source, dict) else None
+        if expected_value is not None and data.get(key) != expected_value:
+            issues.append(f"storage_source_detail_{key}_mismatch={data.get(key)}/{expected_value}")
+
+    for dict_key in ("capabilities", "config", "actions", "usage", "guards"):
+        if dict_key in data and not isinstance(data.get(dict_key), dict):
+            issues.append(f"storage_source_detail_{dict_key}_not_object")
+
+    actions = data.get("actions") if isinstance(data.get("actions"), dict) else {}
+    issues.extend(_dict_missing_keys(actions, EXPECTED_STORAGE_SOURCE_ACTION_KEYS, "storage_source_actions"))
+    if isinstance(actions, dict):
+        for key in EXPECTED_STORAGE_SOURCE_ACTION_KEYS:
+            if key in actions and actions.get(key) not in (True, False):
+                issues.append(f"storage_source_actions_{key}_not_bool")
+
+    capabilities = data.get("capabilities") if isinstance(data.get("capabilities"), dict) else {}
+    if isinstance(capabilities, dict):
+        for key, value in capabilities.items():
+            if not isinstance(key, str):
+                issues.append("storage_source_capabilities_key_not_str")
+            if value not in (True, False):
+                issues.append(f"storage_source_capabilities_{key}_not_bool")
+
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    issues.extend(_dict_missing_keys(usage, EXPECTED_STORAGE_SOURCE_USAGE_KEYS, "storage_source_usage"))
+    if isinstance(usage, dict):
+        for key in ("library_binding_count", "resource_count"):
+            if key in usage and not _json_int(usage.get(key)):
+                issues.append(f"storage_source_usage_{key}_not_int")
+        if "has_resources" in usage and usage.get("has_resources") not in (True, False):
+            issues.append("storage_source_usage_has_resources_not_bool")
+        resource_count = usage.get("resource_count")
+        if _json_int(resource_count) and resource_count > 0 and usage.get("has_resources") is not True:
+            issues.append("storage_source_usage_resource_count_without_has_resources")
+        expected_usage = expected_source.get("usage") if isinstance(expected_source.get("usage"), dict) else {}
+        expected_resource_count = expected_usage.get("resource_count") if isinstance(expected_usage, dict) else None
+        if _json_int(expected_resource_count) and usage.get("resource_count") != expected_resource_count:
+            issues.append(f"storage_source_usage_resource_count_mismatch={usage.get('resource_count')}/{expected_resource_count}")
+
+    guards = data.get("guards") if isinstance(data.get("guards"), dict) else {}
+    issues.extend(_dict_missing_keys(guards, EXPECTED_STORAGE_SOURCE_GUARD_KEYS, "storage_source_guards"))
+    if isinstance(guards, dict):
+        for key in EXPECTED_STORAGE_SOURCE_GUARD_KEYS:
+            if key in guards and guards.get(key) not in (True, False):
+                issues.append(f"storage_source_guards_{key}_not_bool")
+        has_dependents = guards.get("has_dependents")
+        if has_dependents is True:
+            if guards.get("can_change_type") is not False:
+                issues.append("storage_source_guards_dependents_can_change_type")
+            if guards.get("can_delete_directly") is not False:
+                issues.append("storage_source_guards_dependents_can_delete_directly")
+        if usage.get("has_resources") is True and guards.get("requires_keep_metadata_on_delete") is not True:
+            issues.append("storage_source_guards_keep_metadata_not_required")
+    return issues
+
+
+def check_storage_source_detail(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/storage/sources")
+    sources = [item for item in _response_list(payload) if isinstance(item, dict)]
+    if not sources:
+        return _result(
+            "storage_source_detail",
+            True,
+            "skipped no storage sources",
+            {"skipped": True, "source_count": 0},
+        )
+
+    source = sources[0]
+    source_id = source.get("id")
+    if not _json_int(source_id):
+        return _result(
+            "storage_source_detail",
+            False,
+            f"source_id_invalid={source_id}",
+            {"source_count": len(sources), "source_id": source_id},
+        )
+
+    detail_payload = client.get_json(f"/api/v1/storage/sources/{source_id}")
+    data = _response_data(detail_payload)
+    issues = _storage_source_detail_issues(data, source)
+    usage = data.get("usage") if isinstance(data, dict) and isinstance(data.get("usage"), dict) else {}
+    guards = data.get("guards") if isinstance(data, dict) and isinstance(data.get("guards"), dict) else {}
+    actions = data.get("actions") if isinstance(data, dict) and isinstance(data.get("actions"), dict) else {}
+
+    ok = not issues
+    label = _source_label(data) if isinstance(data, dict) else f"{source_id}:unknown"
+    detail = (
+        f"source={label} resources={usage.get('resource_count')} "
+        f"can_stream={actions.get('can_stream')} has_dependents={guards.get('has_dependents')}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "storage_source_detail",
+        ok,
+        detail,
+        {
+            "source_id": source_id,
+            "name": data.get("name") if isinstance(data, dict) else None,
+            "type": data.get("type") if isinstance(data, dict) else None,
+            "resource_count": usage.get("resource_count"),
+            "has_dependents": guards.get("has_dependents"),
+            "issues": issues,
+        },
+    )
+
+
 def _browseable_storage_sources(client: SmokeClient) -> list[dict[str, Any]]:
     payload = client.get_json("/api/v1/storage/sources")
     sources = [item for item in _response_list(payload) if isinstance(item, dict)]
@@ -5706,6 +5868,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("storage_provider_types", lambda: check_storage_provider_types(client)),
         CheckSpec("storage_capabilities", lambda: check_storage_capabilities(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
+        CheckSpec("storage_source_detail", lambda: check_storage_source_detail(client)),
         CheckSpec("storage_browse", lambda: check_storage_browse(client)),
         CheckSpec(
             "metadata_fallback_pipeline_match",

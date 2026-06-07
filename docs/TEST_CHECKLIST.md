@@ -79,6 +79,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK audio_transcode_diagnostics`，说明实时音频转码诊断读取入口可用且不会泄漏为异常状态
 - smoke check 返回 `OK storage_provider_types`，说明存储 provider 类型和挂载表单字段契约可用
 - smoke check 返回 `OK storage_capabilities`，说明存储协议能力矩阵和前端挂载表单基础契约可用
+- smoke check 返回 `OK storage_source_detail`，说明存储源详情、操作能力、使用量和删除保护契约可用
 - smoke check 返回 `OK featured`，说明首页旧置顶/轮播入口仍返回详情影片契约
 - smoke check 返回 `OK homepage_config`，说明首页配置读取契约可用
 - smoke check 返回 `OK homepage`，说明首页 hero 与 sections 聚合契约可用
@@ -286,6 +287,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 - `storage_provider_types` 返回 `OK`，说明存储 provider 类型和挂载表单字段契约可用
 - `storage_capabilities` 返回 `OK`，说明存储协议能力矩阵和前端挂载表单基础契约可用
 - `storage_sources` 返回 `OK`，且至少包含当前挂载点
+- `storage_source_detail` 返回 `OK`，说明已保存挂载点详情、操作能力、使用量和删除保护契约可用
 - `storage_browse` 返回 `OK`，说明已保存挂载点目录选择器浏览契约可用
 - `storage_health` 返回 `OK`，且 `checked>=1`
 - `tmdb_token` 返回 `OK`，且 `ready=True status=ok`
@@ -807,7 +809,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`755 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`756 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

@@ -607,6 +607,54 @@ class FakeSmokeClient:
                     },
                 ],
             }
+        if path == "/api/v1/storage/sources/1":
+            return {
+                "data": {
+                    "id": 1,
+                    "name": "GuangYaPan",
+                    "type": "guangyapan",
+                    "display_name": "GuangYaPan",
+                    "root_path": "GuangYaPan:/",
+                    "status": "unknown",
+                    "is_supported": True,
+                    "config_valid": True,
+                    "config_error": None,
+                    "capabilities": {
+                        "preview": True,
+                        "scan": True,
+                        "stream": True,
+                        "health_check": True,
+                        "managed": True,
+                        "sms_login": True,
+                        "redirect_stream": True,
+                        "refresh": True,
+                    },
+                    "config": {
+                        "auth_state": "ready",
+                        "cloud_root_path": "/",
+                        "phone_number_masked": "+*********2920",
+                    },
+                    "actions": {
+                        "can_preview": True,
+                        "can_scan": True,
+                        "can_stream": True,
+                        "can_refresh": True,
+                    },
+                    "usage": {
+                        "has_resources": True,
+                        "resource_count": 464,
+                        "library_binding_count": 0,
+                    },
+                    "guards": {
+                        "can_change_type": False,
+                        "can_delete": True,
+                        "can_delete_directly": False,
+                        "requires_pin_on_delete": True,
+                        "requires_keep_metadata_on_delete": True,
+                        "has_dependents": True,
+                    },
+                },
+            }
         if path == "/api/v1/storage/sources/1/health":
             return {
                 "data": {
@@ -1883,6 +1931,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "storage_provider_types",
                 "storage_capabilities",
                 "storage_sources",
+                "storage_source_detail",
                 "storage_browse",
                 "metadata_fallback_pipeline_match",
                 "episode_review",
@@ -2853,6 +2902,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         storage = next(item for item in results if item.name == "storage_sources")
         self.assertFalse(storage.ok)
         self.assertIn("sources_below_min=0/1", storage.detail)
+
+    def test_storage_source_detail_fails_when_guards_are_broken(self):
+        class BrokenStorageSourceDetailClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/storage/sources/1":
+                    payload["data"]["guards"]["can_delete_directly"] = True
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenStorageSourceDetailClient):
+            results = self.module.run_checks(self._args())
+
+        detail = next(item for item in results if item.name == "storage_source_detail")
+        self.assertFalse(detail.ok)
+        self.assertIn("storage_source_guards_dependents_can_delete_directly", detail.detail)
 
     def test_storage_capabilities_fail_when_required_provider_is_missing(self):
         class MissingOpenListCapabilitiesClient(FakeSmokeClient):
