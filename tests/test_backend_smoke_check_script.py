@@ -40,6 +40,43 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/openapi/modules":
+            keys = [
+                "docs",
+                "auth-users",
+                "catalog",
+                "libraries",
+                "metadata",
+                "playback",
+                "assets",
+                "aggregator",
+                "storage-system",
+                "governance",
+                "jobs",
+            ]
+            return {
+                "data": {
+                    "openapi_version": "1.21.0-beta",
+                    "full_url": "/api/v1/openapi.json",
+                    "modules": [
+                        {
+                            "key": key,
+                            "available": True,
+                            "content_type": "application/json",
+                            "path_count": 1,
+                            "url": f"/api/v1/openapi/modules/{key}.json",
+                        }
+                        for key in keys
+                    ],
+                },
+            }
+        if path.startswith("/api/v1/openapi/modules/") and path.endswith(".json"):
+            return {
+                "openapi": "3.0.0",
+                "info": {"title": "CyberStream API"},
+                "paths": {"/api/v1/health": {"get": {}}},
+                "components": {"schemas": {}},
+            }
         if path == "/api/v1/scan":
             return {"data": {"status": "idle", "recent_errors": []}}
         if path == "/api/v1/metadata/providers":
@@ -147,6 +184,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             "base_url": "http://example.test",
             "timeout": 1.0,
             "live_check_limit": 500,
+            "openapi_module_json_check": False,
             "max_fallback_items": 0,
             "max_episode_review_items": 0,
             "max_resource_actionable": 0,
@@ -168,6 +206,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             [
                 "health",
                 "openapi_health_contract",
+                "openapi_modules",
                 "scan",
                 "metadata_providers",
                 "storage_sources",
@@ -192,6 +231,47 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         governance = next(item for item in results if item.name == "resource_governance")
         self.assertFalse(governance.ok)
         self.assertIn("live=463/464", governance.detail)
+
+    def test_openapi_modules_fail_when_expected_module_is_missing(self):
+        class MissingAggregatorModuleClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/openapi/modules":
+                    payload["data"]["modules"] = [
+                        item for item in payload["data"]["modules"]
+                        if item["key"] != "aggregator"
+                    ]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", MissingAggregatorModuleClient):
+            results = self.module.run_checks(self._args())
+
+        modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertFalse(modules.ok)
+        self.assertIn("missing=aggregator", modules.detail)
+
+    def test_run_checks_can_fetch_openapi_module_json_when_enabled(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(openapi_module_json_check=True))
+
+        modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertTrue(modules.ok)
+        self.assertEqual(self.module.EXPECTED_OPENAPI_MODULES, modules.data["fetched"])
+        self.assertIn("fetched=11", modules.detail)
+
+    def test_openapi_module_json_check_fails_on_invalid_module_contract(self):
+        class BrokenModuleJsonClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                if path == "/api/v1/openapi/modules/metadata.json":
+                    return {"openapi": "3.0.0", "paths": {}}
+                return super().get_json(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenModuleJsonClient):
+            results = self.module.run_checks(self._args(openapi_module_json_check=True))
+
+        modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertFalse(modules.ok)
+        self.assertIn("metadata:invalid_contract", modules.detail)
 
     def test_metadata_providers_fails_when_required_provider_is_missing(self):
         class MissingBangumiClient(FakeSmokeClient):

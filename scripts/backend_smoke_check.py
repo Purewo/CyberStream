@@ -24,6 +24,19 @@ DEFAULT_SYSTEMD_SERVICES = [
 EXPECTED_METADATA_PROVIDERS = ["nfo", "tmdb", "anilist", "bangumi", "tencent_video", "local"]
 EXPECTED_METADATA_DEFAULT_ORDER = ["nfo", "tmdb", "local"]
 EXPECTED_METADATA_SEARCH_PROVIDERS = ["tmdb", "anilist", "bangumi", "tencent_video"]
+EXPECTED_OPENAPI_MODULES = [
+    "docs",
+    "auth-users",
+    "catalog",
+    "libraries",
+    "metadata",
+    "playback",
+    "assets",
+    "aggregator",
+    "storage-system",
+    "governance",
+    "jobs",
+]
 
 
 @dataclass
@@ -102,6 +115,93 @@ def check_openapi_health_contract(client: SmokeClient) -> CheckResult:
         ok,
         f"operationId={operation_id} public={operation.get('security') == []}",
         {"operation_id": operation_id, "security": operation.get("security")},
+    )
+
+
+def _module_url_path(raw_url: Any) -> str:
+    parsed = urllib.parse.urlparse(str(raw_url or ""))
+    return parsed.path or str(raw_url or "")
+
+
+def check_openapi_modules(client: SmokeClient, fetch_module_json: bool = False) -> CheckResult:
+    payload = client.get_json("/api/v1/openapi/modules")
+    data = _response_data(payload)
+    modules = data.get("modules") if isinstance(data, dict) else []
+    module_map = {
+        item.get("key"): item
+        for item in modules
+        if isinstance(item, dict) and item.get("key")
+    }
+
+    missing = [key for key in EXPECTED_OPENAPI_MODULES if key not in module_map]
+    unavailable = [
+        key for key, item in module_map.items()
+        if key in EXPECTED_OPENAPI_MODULES and item.get("available") is not True
+    ]
+    empty = [
+        key for key, item in module_map.items()
+        if key in EXPECTED_OPENAPI_MODULES and int(item.get("path_count") or 0) <= 0
+    ]
+    bad_urls = [
+        key for key, item in module_map.items()
+        if key in EXPECTED_OPENAPI_MODULES
+        and _module_url_path(item.get("url")) != f"/api/v1/openapi/modules/{key}.json"
+    ]
+    fetched = []
+    fetch_errors = []
+
+    if fetch_module_json:
+        for key in EXPECTED_OPENAPI_MODULES:
+            item = module_map.get(key)
+            if not item:
+                continue
+            path = _module_url_path(item.get("url"))
+            try:
+                module_payload = client.get_json(path)
+            except Exception as exc:  # noqa: BLE001 - report all module fetch failures uniformly.
+                fetch_errors.append(f"{key}:{exc}")
+                continue
+            paths = module_payload.get("paths") if isinstance(module_payload, dict) else {}
+            if module_payload.get("openapi") != "3.0.0" or not isinstance(paths, dict) or not paths:
+                fetch_errors.append(f"{key}:invalid_contract")
+                continue
+            fetched.append(key)
+
+    issues = []
+    if missing:
+        issues.append(f"missing={','.join(missing)}")
+    if unavailable:
+        issues.append(f"unavailable={','.join(unavailable)}")
+    if empty:
+        issues.append(f"empty={','.join(empty)}")
+    if bad_urls:
+        issues.append(f"bad_urls={','.join(bad_urls)}")
+    if fetch_errors:
+        issues.append(f"fetch_errors={'; '.join(fetch_errors)}")
+
+    ok = not issues
+    keys = sorted(module_map)
+    detail = f"modules={len(module_map)} expected={len(EXPECTED_OPENAPI_MODULES)} version={data.get('openapi_version')}"
+    if fetch_module_json:
+        detail = f"{detail} fetched={len(fetched)}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+
+    return _result(
+        "openapi_modules",
+        ok,
+        detail,
+        {
+            "modules": keys,
+            "expected": EXPECTED_OPENAPI_MODULES,
+            "missing": missing,
+            "unavailable": unavailable,
+            "empty": empty,
+            "bad_urls": bad_urls,
+            "fetched": fetched,
+            "fetch_errors": fetch_errors,
+            "openapi_version": data.get("openapi_version"),
+        },
     )
 
 
@@ -428,6 +528,7 @@ def run_checks(args) -> list[CheckResult]:
     checks = [
         CheckSpec("health", lambda: check_health(client)),
         CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
+        CheckSpec("openapi_modules", lambda: check_openapi_modules(client, args.openapi_module_json_check)),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
@@ -463,6 +564,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Backend base URL")
     parser.add_argument("--timeout", type=float, default=30.0, help="HTTP and systemctl timeout in seconds")
     parser.add_argument("--live-check-limit", type=int, default=500, help="Resource live-check limit")
+    parser.add_argument(
+        "--openapi-module-json-check",
+        action="store_true",
+        help="Also fetch every indexed OpenAPI module JSON and validate it is a raw OpenAPI contract.",
+    )
     parser.add_argument("--max-fallback-items", type=int, default=0, help="Maximum fallback metadata work items")
     parser.add_argument("--max-episode-review-items", type=int, default=0, help="Maximum episode review items")
     parser.add_argument("--max-resource-actionable", type=int, default=0, help="Maximum actionable resource issues")

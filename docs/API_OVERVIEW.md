@@ -129,6 +129,7 @@ X-Cyber-API-Token: <token>
 - `metadata`
 - `playback`
 - `assets`
+- `aggregator`
 - `storage-system`
 - `governance`
 - `jobs`

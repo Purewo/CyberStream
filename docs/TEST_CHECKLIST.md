@@ -224,12 +224,14 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 
 ```bash
 ./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
+  --openapi-module-json-check \
   --min-storage-sources 1 \
   --storage-health-check \
   --tmdb-token-check
 ```
 
 预期：
+- `openapi_modules` 返回 `OK`
 - `metadata_providers` 返回 `OK`
 - `storage_sources` 返回 `OK`，且至少包含当前挂载点
 - `storage_health` 返回 `OK`
@@ -721,6 +723,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 - 文档索引（如 README）是否同步更新
 - 文档内容与当前实际行为一致
 - OpenAPI release notes 是否同步标记版本状态
+- 涉及 OpenAPI 或前端契约时，运行 `./scripts/backend_smoke_check.py --base-url http://127.0.0.1:5004 --openapi-module-json-check`
 
 当前主干包含 pytest 自动化测试。后端代码改动至少运行直接相关测试；交付前建议运行：
 
@@ -728,7 +731,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`682 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`692 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
