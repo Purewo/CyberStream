@@ -65,6 +65,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK catalog_movies`，说明主影视列表分页与首条样例关键字段可用
 - smoke check 返回 `OK movie_detail`，说明列表到详情页的只读链路与详情关键字段可用
 - smoke check 返回 `OK movie_resources`，说明详情页资源面板、播放源分组和主资源 ID 可用
+- smoke check 返回 `OK featured`，说明首页旧置顶/轮播入口仍返回详情影片契约
 - smoke check 返回 `OK homepage`，说明首页 hero 与 sections 聚合契约可用
 - smoke check 返回 `OK recommendations`，说明发现页推荐流和推荐理由契约可用
 - smoke check 全部返回 `OK`
@@ -173,6 +174,7 @@ curl -s http://127.0.0.1:5004/api/v1/featured
 预期：
 - 返回数组
 - 即使条目为空也不应 500
+- smoke check 返回 `OK featured`，说明条目仍符合详情影片契约
 
 ### 3.7 总影视库发布状态
 
@@ -775,7 +777,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`734 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`735 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

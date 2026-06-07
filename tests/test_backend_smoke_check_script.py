@@ -599,6 +599,9 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/featured":
+            detail = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
+            return {"data": [detail]}
         if path == "/api/v1/homepage":
             hero = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
             section_item = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)["data"]["items"][0].copy()
@@ -991,6 +994,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "catalog_movies",
                 "movie_detail",
                 "movie_resources",
+                "featured",
                 "homepage",
                 "recommendations",
                 "metadata_work_items_contract",
@@ -1445,6 +1449,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         resources = next(item for item in results if item.name == "movie_resources")
         self.assertFalse(resources.ok)
         self.assertIn("playback_source_0_missing=primary_resource_id", resources.detail)
+
+    def test_featured_fails_when_detail_shape_is_broken(self):
+        class BrokenFeaturedClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/featured":
+                    del payload["data"][0]["backdrop_asset_url"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenFeaturedClient):
+            results = self.module.run_checks(self._args())
+
+        featured = next(item for item in results if item.name == "featured")
+        self.assertFalse(featured.ok)
+        self.assertIn("detail_missing=backdrop_asset_url", featured.detail)
 
     def test_homepage_fails_when_section_shape_is_broken(self):
         class BrokenHomepageClient(FakeSmokeClient):

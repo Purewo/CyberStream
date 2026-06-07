@@ -1955,6 +1955,43 @@ def check_movie_resources(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_featured(client: SmokeClient) -> CheckResult:
+    expected_limit = 5
+    payload = client.get_json("/api/v1/featured")
+    items = _response_list(payload)
+    issues = []
+
+    if len(items) > expected_limit:
+        issues.append(f"too_many_items={len(items)}/{expected_limit}")
+    for index, item in enumerate(items[:1]):
+        if not isinstance(item, dict):
+            issues.append(f"item_{index}_not_object")
+            continue
+        movie_id = item.get("id")
+        expected_id = movie_id if isinstance(movie_id, str) else ""
+        issues.extend(_movie_detail_issues(item, expected_id))
+
+    ok = not issues
+    sample = items[0] if items and isinstance(items[0], dict) else None
+    sample_title = sample.get("title") if sample else None
+    detail = f"items={len(items)} expected_limit={expected_limit}"
+    if sample_title:
+        detail = f"{detail} sample={sample_title}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "featured",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "expected_limit": expected_limit,
+            "sample_title": sample_title,
+            "issues": issues,
+        },
+    )
+
+
 def check_homepage(client: SmokeClient) -> CheckResult:
     payload = client.get_json("/api/v1/homepage")
     data = _response_data(payload)
@@ -2750,6 +2787,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
+        CheckSpec("featured", lambda: check_featured(client)),
         CheckSpec("homepage", lambda: check_homepage(client)),
         CheckSpec("recommendations", lambda: check_recommendations(client)),
         CheckSpec(
