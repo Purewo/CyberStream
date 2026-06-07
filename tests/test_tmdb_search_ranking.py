@@ -174,6 +174,37 @@ class TMDBSearchRankingTests(unittest.TestCase):
         with patch.object(scraper, "_get", side_effect=fake_get):
             self.assertIsNone(scraper.search_movie("Wonder Woman", 1984, media_type_hint="movie"))
 
+    def test_year_hint_beats_exact_title_without_release_year(self):
+        scraper = self.build_scraper()
+
+        def fake_get(url, params=None):
+            return {
+                "results": [
+                    {
+                        "id": 1125037,
+                        "media_type": "movie",
+                        "title": "Birds of Prey",
+                        "original_title": "Birds of Prey",
+                        "release_date": "",
+                        "popularity": 1,
+                    },
+                    {
+                        "id": 495764,
+                        "media_type": "movie",
+                        "title": "Birds of Prey (and the Fantabulous Emancipation of One Harley Quinn)",
+                        "original_title": "Birds of Prey (and the Fantabulous Emancipation of One Harley Quinn)",
+                        "release_date": "2020-02-05",
+                        "popularity": 10,
+                    },
+                ]
+            }
+
+        with patch.object(scraper, "_get", side_effect=fake_get):
+            self.assertEqual(
+                "movie/495764",
+                scraper.search_movie("Birds of Prey", 2020, media_type_hint="movie"),
+            )
+
     def test_tmdb_scraper_uses_dedicated_proxy_config_and_ignores_env_proxy(self):
         scraper = TMDBScraper()
         self.assertFalse(scraper.session.trust_env)

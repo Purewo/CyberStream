@@ -309,6 +309,8 @@ class TMDBScraper:
             score -= min(year_delta, 20) * 60
             if year_delta > 1:
                 score -= 500
+        elif year and result_year is None:
+            score -= 1000
 
         return score
 
