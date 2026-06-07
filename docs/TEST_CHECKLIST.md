@@ -49,7 +49,7 @@ ss -ltnp | grep ':5004 '
 ```bash
 curl -i http://127.0.0.1:5004/
 curl -i http://127.0.0.1:5004/api/v1/health
-./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --min-storage-sources 1
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --expected-version 1.21.0 --min-storage-sources 1
 ```
 
 预期：
@@ -57,6 +57,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - 返回 JSON
 - `data.status = up`
 - `data.database.status = ok`
+- `data.version = 1.21.0`
 - `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
 - smoke check 全部返回 `OK`
 
@@ -66,7 +67,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 curl -i https://cyberstream.gameuniverse.top:40160/
 curl -i https://cyberstream.gameuniverse.top:40160/api/v1/health
 curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
-./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160
+./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160 --expected-version 1.21.0
 ```
 
 预期：
@@ -236,6 +237,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 ```bash
 ./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
   --openapi-module-json-check \
+  --expected-version 1.21.0 \
   --min-storage-sources 1 \
   --storage-health-check \
   --min-storage-health-checks 1 \
@@ -752,7 +754,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`711 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`713 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

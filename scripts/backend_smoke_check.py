@@ -15,6 +15,7 @@ from typing import Any
 
 DEFAULT_BASE_URL = os.environ.get("CYBER_BACKEND_SMOKE_BASE_URL", "http://127.0.0.1:5004")
 DEFAULT_API_TOKEN = os.environ.get("CYBER_BACKEND_SMOKE_API_TOKEN") or os.environ.get("CYBER_API_TOKEN") or ""
+DEFAULT_EXPECTED_VERSION = os.environ.get("CYBER_BACKEND_EXPECTED_VERSION", "")
 DEFAULT_SYSTEMD_SERVICES = [
     "cyberstream-backend",
     "nginx",
@@ -144,7 +145,7 @@ def _result(name: str, ok: bool, detail: str, data: dict[str, Any] | None = None
     return CheckResult(name=name, ok=ok, detail=detail, data=data)
 
 
-def check_health(client: SmokeClient) -> CheckResult:
+def check_health(client: SmokeClient, expected_version: str = "") -> CheckResult:
     root_payload = client.get_json("/")
     api_payload = client.get_json("/api/v1/health")
     root_data = _response_data(root_payload)
@@ -155,6 +156,7 @@ def check_health(client: SmokeClient) -> CheckResult:
     api_status = api_data.get("status")
     root_version = root_data.get("version")
     api_version = api_data.get("version")
+    expected_version = str(expected_version or "").strip()
     root_database_status = root_database.get("status")
     api_database_status = api_database.get("status")
 
@@ -167,6 +169,8 @@ def check_health(client: SmokeClient) -> CheckResult:
         issues.append(f"root_status={root_status}")
     if root_version != api_version:
         issues.append(f"version_mismatch={root_version}/{api_version}")
+    if expected_version and api_version != expected_version:
+        issues.append(f"version_expected={expected_version} actual={api_version}")
     if root_database_status != api_database_status:
         issues.append(f"database_mismatch={root_database_status}/{api_database_status}")
 
@@ -175,6 +179,8 @@ def check_health(client: SmokeClient) -> CheckResult:
         f"status={api_status} version={api_version} database={api_database_status} "
         f"root_status={root_status} root_database={root_database_status}"
     )
+    if expected_version:
+        detail = f"{detail} expected_version={expected_version}"
     if issues:
         detail = f"{detail} issues={'; '.join(issues)}"
     return _result(
@@ -184,6 +190,7 @@ def check_health(client: SmokeClient) -> CheckResult:
         {
             "status": api_status,
             "version": api_version,
+            "expected_version": expected_version or None,
             "database": api_database,
             "root_status": root_status,
             "root_version": root_version,
@@ -823,7 +830,7 @@ def check_systemd_services(services: list[str], timeout: float) -> CheckResult:
 def run_checks(args) -> list[CheckResult]:
     client = SmokeClient(args.base_url, timeout=args.timeout, api_token=args.api_token)
     checks = [
-        CheckSpec("health", lambda: check_health(client)),
+        CheckSpec("health", lambda: check_health(client, getattr(args, "expected_version", ""))),
         CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
         CheckSpec("docs_index", lambda: check_docs_index(client)),
         CheckSpec("openapi_modules", lambda: check_openapi_modules(client, args.openapi_module_json_check)),
@@ -866,6 +873,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run CyberStream backend smoke checks.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Backend base URL")
     parser.add_argument("--timeout", type=float, default=30.0, help="HTTP and systemctl timeout in seconds")
+    parser.add_argument(
+        "--expected-version",
+        default=DEFAULT_EXPECTED_VERSION,
+        help="Expected runtime APP_VERSION; defaults to CYBER_BACKEND_EXPECTED_VERSION when set.",
+    )
     parser.add_argument(
         "--api-token",
         default=DEFAULT_API_TOKEN,

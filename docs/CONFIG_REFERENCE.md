@@ -559,6 +559,16 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 - 媒体流和图片 GET 默认豁免，避免浏览器播放器与外部播放器无法带鉴权头
 - 开启用户管理后，媒体流和图片也会走 Cookie 会话鉴权与用户可见性校验，不再公开豁免
 
+### 6.4 Smoke 检查变量
+
+- `CYBER_BACKEND_SMOKE_API_TOKEN`
+- `CYBER_BACKEND_EXPECTED_VERSION`
+
+说明：
+- 这组变量只供 `scripts/backend_smoke_check.py` 使用，不是后端运行时配置
+- `CYBER_BACKEND_SMOKE_API_TOKEN` 优先于 `CYBER_API_TOKEN`，用于 smoke check 访问受保护管理接口
+- `CYBER_BACKEND_EXPECTED_VERSION` 会作为 `--expected-version` 默认值，用于确认 `/` 与 `/api/v1/health` 返回的运行版本符合当前验收基线
+
 ---
 
 ## 7. 维护建议

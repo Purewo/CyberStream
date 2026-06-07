@@ -51,7 +51,7 @@ cp .env.local.example .env.local
 ```bash
 curl -i http://127.0.0.1:5004/
 curl -i http://127.0.0.1:5004/api/v1/health
-./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --min-storage-sources 1
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --expected-version 1.21.0 --min-storage-sources 1
 ```
 
 预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`；`data.database.status` 应为 `ok`）。
@@ -62,6 +62,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 ```bash
 ./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
   --openapi-module-json-check \
+  --expected-version 1.21.0 \
   --min-storage-sources 1 \
   --storage-health-check \
   --min-storage-health-checks 1 \
@@ -92,7 +93,7 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 ```bash
 curl -i https://cyberstream.gameuniverse.top:40160/
 curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
-./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160
+./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160 --expected-version 1.21.0
 ```
 
 ## 4. 当前已知运行事实

@@ -334,6 +334,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         args = {
             "base_url": "http://example.test",
             "timeout": 1.0,
+            "expected_version": "",
             "api_token": "",
             "live_check_limit": 500,
             "openapi_module_json_check": False,
@@ -457,6 +458,23 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         health = next(item for item in results if item.name == "health")
         self.assertFalse(health.ok)
         self.assertIn("api_database=down", health.detail)
+
+    def test_health_accepts_expected_version_when_it_matches(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(expected_version="1.21.0"))
+
+        health = next(item for item in results if item.name == "health")
+        self.assertTrue(health.ok)
+        self.assertEqual("1.21.0", health.data["expected_version"])
+        self.assertIn("expected_version=1.21.0", health.detail)
+
+    def test_health_fails_when_expected_version_does_not_match(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(expected_version="1.22.0"))
+
+        health = next(item for item in results if item.name == "health")
+        self.assertFalse(health.ok)
+        self.assertIn("version_expected=1.22.0 actual=1.21.0", health.detail)
 
     def test_health_fails_when_root_health_does_not_match_api_health(self):
         class RootMismatchHealthClient(FakeSmokeClient):
