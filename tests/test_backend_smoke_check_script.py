@@ -131,7 +131,10 @@ class FakeSmokeClient:
         if path.startswith("/api/v1/openapi/modules/") and path.endswith(".json"):
             return {
                 "openapi": "3.0.0",
-                "info": {"title": "CyberStream API"},
+                "info": {
+                    "title": "CyberStream API",
+                    "version": "1.21.0-beta",
+                },
                 "paths": {"/api/v1/health": {"get": {}}},
                 "components": {"schemas": {}},
             }
@@ -604,6 +607,24 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         modules = next(item for item in results if item.name == "openapi_modules")
         self.assertFalse(modules.ok)
         self.assertIn("metadata:invalid_contract", modules.detail)
+
+    def test_openapi_module_json_check_fails_on_module_version_mismatch(self):
+        class MismatchedModuleJsonClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/openapi/modules/metadata.json":
+                    payload["info"]["version"] = "1.20.0-beta"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", MismatchedModuleJsonClient):
+            results = self.module.run_checks(self._args(
+                openapi_module_json_check=True,
+                expected_openapi_version="1.21.0-beta",
+            ))
+
+        modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertFalse(modules.ok)
+        self.assertIn("metadata:version_expected=1.21.0-beta actual=1.20.0-beta", modules.detail)
 
     def test_metadata_providers_fails_when_required_provider_is_missing(self):
         class MissingBangumiClient(FakeSmokeClient):

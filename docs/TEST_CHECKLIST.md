@@ -756,7 +756,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`716 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`717 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

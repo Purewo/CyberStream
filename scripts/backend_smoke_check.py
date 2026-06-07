@@ -372,9 +372,18 @@ def check_openapi_modules(
             except Exception as exc:  # noqa: BLE001 - report all module fetch failures uniformly.
                 fetch_errors.append(f"{key}:{exc}")
                 continue
+            info = module_payload.get("info") if isinstance(module_payload, dict) else {}
+            if not isinstance(info, dict):
+                info = {}
+            module_version = info.get("version")
             paths = module_payload.get("paths") if isinstance(module_payload, dict) else {}
             if module_payload.get("openapi") != "3.0.0" or not isinstance(paths, dict) or not paths:
                 fetch_errors.append(f"{key}:invalid_contract")
+                continue
+            if expected_openapi_version and module_version != expected_openapi_version:
+                fetch_errors.append(
+                    f"{key}:version_expected={expected_openapi_version} actual={module_version}"
+                )
                 continue
             fetched.append(key)
 
