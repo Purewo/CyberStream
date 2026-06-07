@@ -66,6 +66,11 @@ def _response_data(payload: dict[str, Any]) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _response_list(payload: dict[str, Any]) -> list[Any]:
+    data = payload.get("data")
+    return data if isinstance(data, list) else []
+
+
 def _pagination_total(data: dict[str, Any]) -> int:
     pagination = data.get("pagination") if isinstance(data, dict) else None
     if isinstance(pagination, dict):
@@ -198,6 +203,139 @@ def check_tmdb_token(client: SmokeClient) -> CheckResult:
     )
 
 
+def _source_label(source: dict[str, Any]) -> str:
+    source_id = source.get("id", "?")
+    source_type = source.get("type") or "unknown"
+    name = source.get("name") or source.get("display_name") or "unnamed"
+    return f"{source_id}:{name}({source_type})"
+
+
+def _source_has_resources(source: dict[str, Any]) -> bool:
+    usage = source.get("usage") if isinstance(source, dict) else {}
+    if not isinstance(usage, dict):
+        return False
+    try:
+        resource_count = int(usage.get("resource_count") or 0)
+    except (TypeError, ValueError):
+        resource_count = 0
+    return bool(usage.get("has_resources")) or resource_count > 0
+
+
+def _source_actions(source: dict[str, Any]) -> dict[str, Any]:
+    actions = source.get("actions") if isinstance(source, dict) else {}
+    return actions if isinstance(actions, dict) else {}
+
+
+def check_storage_sources(client: SmokeClient, min_sources: int) -> CheckResult:
+    payload = client.get_json("/api/v1/storage/sources")
+    sources = [item for item in _response_list(payload) if isinstance(item, dict)]
+    resource_backed = [source for source in sources if _source_has_resources(source)]
+    issues = []
+
+    if len(sources) < min_sources:
+        issues.append(f"sources_below_min={len(sources)}/{min_sources}")
+
+    ready_count = 0
+    for source in sources:
+        label = _source_label(source)
+        if source.get("is_supported") is not True:
+            issues.append(f"{label}:unsupported")
+        if source.get("config_valid") is not True:
+            issues.append(f"{label}:config_invalid")
+
+        actions = _source_actions(source)
+        resource_source = _source_has_resources(source)
+        if resource_source:
+            if actions.get("can_scan") is not True:
+                issues.append(f"{label}:scan_disabled")
+            if actions.get("can_stream") is not True:
+                issues.append(f"{label}:stream_disabled")
+            auth_state = (source.get("config") or {}).get("auth_state") if isinstance(source.get("config"), dict) else None
+            if auth_state and str(auth_state).strip().lower() != "ready":
+                issues.append(f"{label}:auth_state={auth_state}")
+
+        if source.get("is_supported") is True and source.get("config_valid") is True:
+            if not resource_source or (actions.get("can_scan") is True and actions.get("can_stream") is True):
+                ready_count += 1
+
+    ok = not issues
+    detail = f"sources={len(sources)} ready={ready_count} resource_backed={len(resource_backed)}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "storage_sources",
+        ok,
+        detail,
+        {
+            "source_count": len(sources),
+            "ready_count": ready_count,
+            "resource_backed_count": len(resource_backed),
+            "issues": issues,
+            "sources": [
+                {
+                    "id": source.get("id"),
+                    "name": source.get("name"),
+                    "type": source.get("type"),
+                    "config_valid": source.get("config_valid"),
+                    "is_supported": source.get("is_supported"),
+                    "has_resources": _source_has_resources(source),
+                    "actions": _source_actions(source),
+                }
+                for source in sources
+            ],
+        },
+    )
+
+
+def check_storage_health(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/storage/sources")
+    sources = [item for item in _response_list(payload) if isinstance(item, dict)]
+    health_items = []
+    issues = []
+
+    for source in sources:
+        if not _source_has_resources(source):
+            continue
+        capabilities = source.get("capabilities") if isinstance(source.get("capabilities"), dict) else {}
+        if capabilities.get("health_check") is not True:
+            continue
+        source_id = source.get("id")
+        if source_id is None:
+            issues.append(f"{_source_label(source)}:missing_id")
+            continue
+        health_payload = client.get_json(f"/api/v1/storage/sources/{source_id}/health")
+        health_source = _response_data(health_payload)
+        health = health_source.get("health") if isinstance(health_source, dict) else {}
+        if not isinstance(health, dict):
+            health = {}
+        status = health.get("status")
+        reason = health.get("reason")
+        health_items.append({
+            "id": source_id,
+            "name": source.get("name"),
+            "type": source.get("type"),
+            "status": status,
+            "reason": reason,
+        })
+        if status != "online":
+            issues.append(f"{_source_label(source)}:health={status or 'unknown'}:{reason or 'unknown'}")
+
+    ok = not issues
+    detail = f"checked={len(health_items)} online={sum(1 for item in health_items if item.get('status') == 'online')}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "storage_health",
+        ok,
+        detail,
+        {
+            "checked": len(health_items),
+            "items": health_items,
+            "issues": issues,
+        },
+    )
+
+
 def check_work_items(client: SmokeClient, issue_code: str, max_items: int) -> CheckResult:
     payload = client.get_json(
         "/api/v1/metadata/work-items",
@@ -292,6 +430,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
+        CheckSpec("storage_sources", lambda: check_storage_sources(client, args.min_storage_sources)),
         CheckSpec(
             "metadata_fallback_pipeline_match",
             lambda: check_work_items(client, "fallback_pipeline_match", args.max_fallback_items),
@@ -307,6 +446,8 @@ def run_checks(args) -> list[CheckResult]:
         checks.insert(0, CheckSpec("systemd_services", lambda: check_systemd_services(systemd_services, args.timeout)))
     if getattr(args, "tmdb_token_check", False):
         checks.append(CheckSpec("tmdb_token", lambda: check_tmdb_token(client)))
+    if getattr(args, "storage_health_check", False):
+        checks.append(CheckSpec("storage_health", lambda: check_storage_health(client)))
 
     results: list[CheckResult] = []
     for check in checks:
@@ -325,6 +466,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-fallback-items", type=int, default=0, help="Maximum fallback metadata work items")
     parser.add_argument("--max-episode-review-items", type=int, default=0, help="Maximum episode review items")
     parser.add_argument("--max-resource-actionable", type=int, default=0, help="Maximum actionable resource issues")
+    parser.add_argument("--min-storage-sources", type=int, default=0, help="Minimum configured storage sources")
+    parser.add_argument(
+        "--storage-health-check",
+        action="store_true",
+        help="Also run live health checks for resource-backed storage sources.",
+    )
     parser.add_argument(
         "--tmdb-token-check",
         action="store_true",

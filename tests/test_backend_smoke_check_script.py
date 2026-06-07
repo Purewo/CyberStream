@@ -79,6 +79,44 @@ class FakeSmokeClient:
                     "http_status": 200,
                 },
             }
+        if path == "/api/v1/storage/sources":
+            return {
+                "data": [
+                    {
+                        "id": 1,
+                        "name": "GuangYaPan",
+                        "type": "guangyapan",
+                        "is_supported": True,
+                        "config_valid": True,
+                        "config": {"auth_state": "ready"},
+                        "capabilities": {"health_check": True},
+                        "actions": {
+                            "can_preview": True,
+                            "can_scan": True,
+                            "can_stream": True,
+                            "can_refresh": True,
+                        },
+                        "usage": {
+                            "has_resources": True,
+                            "resource_count": 464,
+                            "library_binding_count": 0,
+                        },
+                    },
+                ],
+            }
+        if path == "/api/v1/storage/sources/1/health":
+            return {
+                "data": {
+                    "id": 1,
+                    "name": "GuangYaPan",
+                    "type": "guangyapan",
+                    "health": {
+                        "status": "online",
+                        "reason": "ok",
+                        "message": "GuangYaPan reachable",
+                    },
+                },
+            }
         if path == "/api/v1/metadata/work-items":
             total = 0
             if (query or {}).get("metadata_issue_code") == "fallback_pipeline_match":
@@ -112,6 +150,8 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             "max_fallback_items": 0,
             "max_episode_review_items": 0,
             "max_resource_actionable": 0,
+            "min_storage_sources": 0,
+            "storage_health_check": False,
             "tmdb_token_check": False,
             "systemd": False,
             "systemd_service": None,
@@ -130,6 +170,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "openapi_health_contract",
                 "scan",
                 "metadata_providers",
+                "storage_sources",
                 "metadata_fallback_pipeline_match",
                 "episode_review",
                 "resource_governance",
@@ -169,6 +210,62 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         providers = next(item for item in results if item.name == "metadata_providers")
         self.assertFalse(providers.ok)
         self.assertIn("missing=bangumi", providers.detail)
+
+    def test_storage_sources_fail_when_resource_backed_source_cannot_stream(self):
+        class BrokenStorageSourceClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/storage/sources":
+                    payload["data"][0]["actions"]["can_stream"] = False
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenStorageSourceClient):
+            results = self.module.run_checks(self._args())
+
+        storage = next(item for item in results if item.name == "storage_sources")
+        self.assertFalse(storage.ok)
+        self.assertIn("stream_disabled", storage.detail)
+
+    def test_storage_sources_fail_when_below_minimum_count(self):
+        class EmptyStorageClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                if path == "/api/v1/storage/sources":
+                    return {"data": []}
+                return super().get_json(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", EmptyStorageClient):
+            results = self.module.run_checks(self._args(min_storage_sources=1))
+
+        storage = next(item for item in results if item.name == "storage_sources")
+        self.assertFalse(storage.ok)
+        self.assertIn("sources_below_min=0/1", storage.detail)
+
+    def test_run_checks_can_verify_storage_health_when_enabled(self):
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient):
+            results = self.module.run_checks(self._args(storage_health_check=True))
+
+        health = results[-1]
+        self.assertEqual("storage_health", health.name)
+        self.assertTrue(health.ok)
+        self.assertIn("checked=1", health.detail)
+
+    def test_storage_health_fails_when_resource_backed_source_is_offline(self):
+        class OfflineStorageHealthClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/storage/sources/1/health":
+                    payload["data"]["health"].update({
+                        "status": "offline",
+                        "reason": "auth_failed",
+                    })
+                return payload
+
+        with patch.object(self.module, "SmokeClient", OfflineStorageHealthClient):
+            results = self.module.run_checks(self._args(storage_health_check=True))
+
+        health = next(item for item in results if item.name == "storage_health")
+        self.assertFalse(health.ok)
+        self.assertIn("health=offline:auth_failed", health.detail)
 
     def test_run_checks_can_verify_tmdb_token_when_enabled(self):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):

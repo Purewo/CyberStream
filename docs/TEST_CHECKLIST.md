@@ -49,7 +49,7 @@ ss -ltnp | grep ':5004 '
 ```bash
 curl -i http://127.0.0.1:5004/
 curl -i http://127.0.0.1:5004/api/v1/health
-./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --min-storage-sources 1
 ```
 
 预期：
@@ -223,11 +223,16 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 批量刮削前建议跑完整 scraper readiness smoke check：
 
 ```bash
-./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --tmdb-token-check
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
+  --min-storage-sources 1 \
+  --storage-health-check \
+  --tmdb-token-check
 ```
 
 预期：
 - `metadata_providers` 返回 `OK`
+- `storage_sources` 返回 `OK`，且至少包含当前挂载点
+- `storage_health` 返回 `OK`
 - `tmdb_token` 返回 `OK`，且 `ready=True status=ok`
 
 AniList 动漫候选搜索：
