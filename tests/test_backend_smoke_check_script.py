@@ -39,6 +39,10 @@ class FakeSmokeClient:
             return {"data": {"status": "up", "version": "1.21.0", "database": {"status": "ok", "reason": "ok"}}}
         if path == "/api/v1/openapi.json":
             return {
+                "info": {
+                    "title": "Cyber Media Center API",
+                    "version": "1.21.0-beta",
+                },
                 "paths": {
                     "/api/v1/health": {
                         "get": {
@@ -448,12 +452,16 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):
             results = self.module.run_checks(self._args(expected_openapi_version="1.21.0-beta"))
 
+        health_contract = next(item for item in results if item.name == "openapi_health_contract")
         docs = next(item for item in results if item.name == "docs_index")
         modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertTrue(health_contract.ok)
         self.assertTrue(docs.ok)
         self.assertTrue(modules.ok)
+        self.assertEqual("1.21.0-beta", health_contract.data["expected_openapi_version"])
         self.assertEqual("1.21.0-beta", docs.data["expected_openapi_version"])
         self.assertEqual("1.21.0-beta", modules.data["expected_openapi_version"])
+        self.assertIn("expected_openapi_version=1.21.0-beta", health_contract.detail)
         self.assertIn("expected_openapi_version=1.21.0-beta", docs.detail)
         self.assertIn("expected_openapi_version=1.21.0-beta", modules.detail)
 
@@ -461,10 +469,13 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):
             results = self.module.run_checks(self._args(expected_openapi_version="1.22.0-beta"))
 
+        health_contract = next(item for item in results if item.name == "openapi_health_contract")
         docs = next(item for item in results if item.name == "docs_index")
         modules = next(item for item in results if item.name == "openapi_modules")
+        self.assertFalse(health_contract.ok)
         self.assertFalse(docs.ok)
         self.assertFalse(modules.ok)
+        self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", health_contract.detail)
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", docs.detail)
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", modules.detail)
 

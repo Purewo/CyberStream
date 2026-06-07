@@ -201,17 +201,41 @@ def check_health(client: SmokeClient, expected_version: str = "") -> CheckResult
     )
 
 
-def check_openapi_health_contract(client: SmokeClient) -> CheckResult:
+def check_openapi_health_contract(client: SmokeClient, expected_openapi_version: str = "") -> CheckResult:
     payload = client.get_json("/api/v1/openapi.json")
+    info = payload.get("info") if isinstance(payload, dict) else {}
+    if not isinstance(info, dict):
+        info = {}
+    openapi_version = info.get("version")
+    expected_openapi_version = str(expected_openapi_version or "").strip()
     paths = payload.get("paths") if isinstance(payload, dict) else {}
     operation = ((paths or {}).get("/api/v1/health") or {}).get("get") or {}
     operation_id = operation.get("operationId")
-    ok = operation_id == "apiHealthCheck" and operation.get("security") == []
+    public = operation.get("security") == []
+    issues = []
+    if operation_id != "apiHealthCheck":
+        issues.append(f"operationId={operation_id}")
+    if not public:
+        issues.append("public=false")
+    if expected_openapi_version and openapi_version != expected_openapi_version:
+        issues.append(f"openapi_version_expected={expected_openapi_version} actual={openapi_version}")
+    ok = not issues
+    detail = f"operationId={operation_id} public={public} version={openapi_version}"
+    if expected_openapi_version:
+        detail = f"{detail} expected_openapi_version={expected_openapi_version}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
     return _result(
         "openapi_health_contract",
         ok,
-        f"operationId={operation_id} public={operation.get('security') == []}",
-        {"operation_id": operation_id, "security": operation.get("security")},
+        detail,
+        {
+            "operation_id": operation_id,
+            "security": operation.get("security"),
+            "openapi_version": openapi_version,
+            "expected_openapi_version": expected_openapi_version or None,
+            "issues": issues,
+        },
     )
 
 
@@ -851,7 +875,10 @@ def run_checks(args) -> list[CheckResult]:
     expected_openapi_version = getattr(args, "expected_openapi_version", "")
     checks = [
         CheckSpec("health", lambda: check_health(client, getattr(args, "expected_version", ""))),
-        CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
+        CheckSpec(
+            "openapi_health_contract",
+            lambda: check_openapi_health_contract(client, expected_openapi_version),
+        ),
         CheckSpec("docs_index", lambda: check_docs_index(client, expected_openapi_version)),
         CheckSpec(
             "openapi_modules",
