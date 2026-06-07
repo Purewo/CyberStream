@@ -375,6 +375,22 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/libraries":
+            return {
+                "data": [
+                    {
+                        "id": 1,
+                        "name": "Movies",
+                        "slug": "movies",
+                        "description": "Primary movie library",
+                        "is_enabled": True,
+                        "sort_order": 0,
+                        "settings": {},
+                        "created_at": "2026-06-07T00:00:00",
+                        "updated_at": "2026-06-07T00:00:01",
+                    },
+                ],
+            }
         if path == "/api/v1/movies":
             return {
                 "data": {
@@ -1080,6 +1096,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "scan",
                 "metadata_providers",
                 "metadata_review_workbench",
+                "libraries",
                 "catalog_filters",
                 "catalog_movies",
                 "movie_detail",
@@ -1512,6 +1529,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         filters = next(item for item in results if item.name == "catalog_filters")
         self.assertFalse(filters.ok)
         self.assertIn("genres_0_missing=count", filters.detail)
+
+    def test_libraries_fail_when_virtual_favorites_leaks_into_list(self):
+        class BrokenLibrariesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/libraries":
+                    payload["data"][0]["slug"] = "favorites"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenLibrariesClient):
+            results = self.module.run_checks(self._args())
+
+        libraries = next(item for item in results if item.name == "libraries")
+        self.assertFalse(libraries.ok)
+        self.assertIn("library_0_virtual_favorites_in_list", libraries.detail)
 
     def test_movie_detail_fails_when_detail_shape_is_broken(self):
         class BrokenMovieDetailClient(FakeSmokeClient):

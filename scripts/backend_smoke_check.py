@@ -294,6 +294,17 @@ EXPECTED_CATALOG_FILTER_KEYS = [
     "years",
     "countries",
 ]
+EXPECTED_LIBRARY_KEYS = [
+    "id",
+    "name",
+    "slug",
+    "description",
+    "is_enabled",
+    "sort_order",
+    "settings",
+    "created_at",
+    "updated_at",
+]
 EXPECTED_HOMEPAGE_KEYS = [
     "hero",
     "sections",
@@ -1462,6 +1473,36 @@ def _catalog_filters_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _library_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"library_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_LIBRARY_KEYS, prefix))
+    library_id = item.get("id")
+    if "id" in item and not _json_int(library_id):
+        issues.append(f"{prefix}_id_not_int")
+    for key in ("name", "slug", "description", "created_at", "updated_at"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "slug" in item and item.get("slug") == "favorites":
+        issues.append(f"{prefix}_virtual_favorites_in_list")
+    if "id" in item and item.get("id") == "favorites":
+        issues.append(f"{prefix}_virtual_favorites_id_in_list")
+    if "is_virtual" in item and item.get("is_virtual") is True:
+        issues.append(f"{prefix}_virtual_in_list")
+    if "kind" in item and item.get("kind") == "favorites":
+        issues.append(f"{prefix}_favorites_kind_in_list")
+    if "is_enabled" in item and item.get("is_enabled") not in (True, False):
+        issues.append(f"{prefix}_is_enabled_not_bool")
+    if "sort_order" in item and not _json_int(item.get("sort_order")):
+        issues.append(f"{prefix}_sort_order_not_int")
+    if "settings" in item and not isinstance(item.get("settings"), dict):
+        issues.append(f"{prefix}_settings_not_object")
+    return issues
+
+
 def _homepage_config_section_issues(section: Any, index: int) -> list[str]:
     prefix = f"config_section_{index}"
     if not isinstance(section, dict):
@@ -1936,6 +1977,34 @@ def check_metadata_reidentify_plan(client: SmokeClient) -> CheckResult:
             "item_count": len(plan_items),
             "apply_item_count": len(apply_items),
             "summary": summary if isinstance(summary, dict) else None,
+            "issues": issues,
+        },
+    )
+
+
+def check_libraries(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/libraries")
+    items = _response_list(payload)
+    issues = []
+
+    for index, item in enumerate(items[:3]):
+        issues.extend(_library_item_issues(item, index))
+
+    ok = not issues
+    sample = items[0] if items and isinstance(items[0], dict) else None
+    sample_name = sample.get("name") if sample else None
+    detail = f"items={len(items)}"
+    if sample_name:
+        detail = f"{detail} sample={sample_name}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "libraries",
+        ok,
+        detail,
+        {
+            "item_count": len(items),
+            "sample_name": sample_name,
             "issues": issues,
         },
     )
@@ -3082,6 +3151,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
+        CheckSpec("libraries", lambda: check_libraries(client)),
         CheckSpec("catalog_filters", lambda: check_catalog_filters(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
