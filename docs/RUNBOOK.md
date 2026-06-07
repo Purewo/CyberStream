@@ -55,7 +55,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 ```
 
 预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`；`data.database.status` 应为 `ok`）。
-`backend_smoke_check.py` 会同时检查 `/` 与 `/api/v1/health` 健康入口一致性、OpenAPI 健康入口、文档索引、OpenAPI 模块索引、扫描状态、元数据 provider 注册表、TMDB 配置读取、复核工作台入口契约、其他视频归档队列、目录列表、目录元数据筛选项、metadata issue/source group 筛选与 keyword 搜索、季列表、剧集诊断详情、provider 云转码清晰度入口、外部播放器 manifest/M3U 播放交接、字幕显示设置、音频转码诊断读取、用户成就状态、收藏保险库访问契约、后台任务列表与详情入口、存储源列表/详情与资源型挂载动作、fallback 队列样本契约、pending-review 回填 dry-run、episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
+`backend_smoke_check.py` 会同时检查 `/` 与 `/api/v1/health` 健康入口一致性、OpenAPI 健康入口、文档索引、OpenAPI 模块索引、扫描状态、元数据 provider 注册表、TMDB 配置读取、复核工作台入口契约、其他视频归档队列、目录列表、目录元数据筛选项、metadata issue/source group 筛选与 keyword 搜索、季列表、剧集诊断详情、provider 云转码清晰度入口、`/stream` Range/跳转探测、外部播放器 manifest/M3U 播放交接、字幕显示设置、音频转码诊断读取、用户成就状态、收藏保险库访问契约、后台任务列表与详情入口、存储源列表/详情与资源型挂载动作、fallback 队列样本契约、pending-review 回填 dry-run、episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
 
 刮削或前端联调前建议额外验证 TMDB token 和资源型挂载 live health：
 
@@ -70,7 +70,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
   --tmdb-token-check
 ```
 
-该检查会验证 `GET /api/v1/auth/me` 的启动认证态契约，逐个拉取 `GET /api/v1/openapi/modules/<module_key>.json`，验证元数据概览、TMDB 配置读取、详情页图片缓存状态、播放资源的云转码能力声明和 `streaming-qualities` 清晰度入口、外部播放器 manifest 与 `format=m3u` 文本播放列表、季列表、剧集诊断 dry-run、收藏列表/收藏状态的保险库访问契约、存储 provider 类型、挂载表单字段、已保存挂载点详情和协议能力矩阵，并调用 `GET /api/v1/storage/sources/<id>/health` 和 `GET /api/v1/system/tmdb-config/check`。`--min-storage-health-checks 1` 用于防止实际没有检查到资源型挂载时误判通过；TMDB 配置读取和 token 检查都不返回 token 明文。
+该检查会验证 `GET /api/v1/auth/me` 的启动认证态契约，逐个拉取 `GET /api/v1/openapi/modules/<module_key>.json`，验证元数据概览、TMDB 配置读取、详情页图片缓存状态、播放资源的云转码能力声明和 `streaming-qualities` 清晰度入口、`/stream` 的小 Range 响应或 3xx 跳转、外部播放器 manifest 与 `format=m3u` 文本播放列表、季列表、剧集诊断 dry-run、收藏列表/收藏状态的保险库访问契约、存储 provider 类型、挂载表单字段、已保存挂载点详情和协议能力矩阵，并调用 `GET /api/v1/storage/sources/<id>/health` 和 `GET /api/v1/system/tmdb-config/check`。`--min-storage-health-checks 1` 用于防止实际没有检查到资源型挂载时误判通过；TMDB 配置读取和 token 检查都不返回 token 明文。
 
 如果已设置 `CYBER_API_TOKEN`，管理类接口和 smoke check 需要携带 token。`backend_smoke_check.py` 会自动读取 `CYBER_BACKEND_SMOKE_API_TOKEN` 或 `CYBER_API_TOKEN`，也可以显式传参：
 

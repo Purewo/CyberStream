@@ -1785,6 +1785,22 @@ class FakeSmokeClient:
             }
         raise AssertionError(f"unexpected text path: {path}")
 
+    def get_binary_sample(self, path, query=None, headers=None, max_bytes=1024):
+        if path == "/api/v1/resources/resource-1/stream" and (headers or {}).get("Range") == "bytes=0-0":
+            return {
+                "_http_status": 302,
+                "_headers": {
+                    "Content-Type": "text/html; charset=utf-8",
+                    "Location": "https://cdn.example.test/video.mkv",
+                },
+                "_content_type": "text/html; charset=utf-8",
+                "_content_range": None,
+                "_accept_ranges": None,
+                "_location": "https://cdn.example.test/video.mkv",
+                "byte_count": min(max_bytes, 128),
+            }
+        raise AssertionError(f"unexpected binary path: {path}")
+
     def post_json(self, path, body=None):
         if path == "/api/v1/metadata/re-scrape/plan":
             issue_codes = (body or {}).get("issue_codes") or [
@@ -2068,6 +2084,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "movie_images_status",
                 "movie_resources",
                 "streaming_qualities",
+                "resource_stream_range",
                 "movie_seasons",
                 "movie_episode_diagnostics",
                 "external_playback",
@@ -2176,6 +2193,53 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertEqual("text/plain, */*", request.get_header("Accept"))
         self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
         self.assertIn("format=m3u", request.full_url)
+
+    def test_smoke_client_can_get_binary_sample_with_range(self):
+        class FakeResponse:
+            status = 206
+            headers = {
+                "Content-Type": "video/x-matroska",
+                "Content-Range": "bytes 0-0/10",
+                "Accept-Ranges": "bytes",
+            }
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, max_bytes):
+                self.max_bytes = max_bytes
+                return b"x"
+
+        class FakeOpener:
+            def __init__(self):
+                self.requests = []
+                self.response = FakeResponse()
+
+            def open(self, request, timeout):
+                self.requests.append((request, timeout))
+                return self.response
+
+        opener = FakeOpener()
+        client = self.module.SmokeClient("http://example.test", timeout=2.5, api_token="secret-token")
+        with patch.object(self.module.urllib.request, "build_opener", return_value=opener):
+            payload = client.get_binary_sample(
+                "/api/v1/resources/resource-1/stream",
+                headers={"Range": "bytes=0-0"},
+                max_bytes=1,
+            )
+
+        self.assertEqual(206, payload["_http_status"])
+        self.assertEqual("bytes 0-0/10", payload["_content_range"])
+        self.assertEqual(1, payload["byte_count"])
+        request, timeout = opener.requests[0]
+        self.assertEqual(2.5, timeout)
+        self.assertEqual("*/*", request.get_header("Accept"))
+        self.assertEqual("bytes=0-0", request.get_header("Range"))
+        self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
+        self.assertEqual(1, opener.response.max_bytes)
 
     def test_smoke_client_can_post_json_payload(self):
         class FakeResponse:
@@ -3007,6 +3071,28 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         qualities = next(item for item in results if item.name == "streaming_qualities")
         self.assertFalse(qualities.ok)
         self.assertIn("quality_0_stream_url_invalid", qualities.detail)
+
+    def test_resource_stream_range_fails_when_redirect_location_is_missing(self):
+        class BrokenResourceStreamClient(FakeSmokeClient):
+            def get_binary_sample(self, path, query=None, headers=None, max_bytes=1024):
+                if path == "/api/v1/resources/resource-1/stream":
+                    return {
+                        "_http_status": 302,
+                        "_headers": {"Content-Type": "text/html; charset=utf-8"},
+                        "_content_type": "text/html; charset=utf-8",
+                        "_content_range": None,
+                        "_accept_ranges": None,
+                        "_location": None,
+                        "byte_count": 128,
+                    }
+                return super().get_binary_sample(path, query=query, headers=headers, max_bytes=max_bytes)
+
+        with patch.object(self.module, "SmokeClient", BrokenResourceStreamClient):
+            results = self.module.run_checks(self._args())
+
+        stream = next(item for item in results if item.name == "resource_stream_range")
+        self.assertFalse(stream.ok)
+        self.assertIn("resource_stream_redirect_location_missing", stream.detail)
 
     def test_movie_seasons_fails_when_primary_resource_ids_are_broken(self):
         class BrokenMovieSeasonsClient(FakeSmokeClient):

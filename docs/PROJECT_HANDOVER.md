@@ -12,7 +12,7 @@
 
 - GitHub 仓库已检出到 `/root/CyberStream`
 - Python 3.10 虚拟环境与运行依赖已就绪
-- pytest 全量基线通过：`768 passed, 9 skipped, 16 subtests passed`
+- pytest 全量基线通过：`770 passed, 9 skipped, 16 subtests passed`
 - gunicorn 由 `cyberstream-backend` systemd 服务托管，本地 `5004` 健康检查正常
 - `cyberstream-alist`、`cyberstream-openlist`、`nginx`、`ddns-go` 均已纳入当前维护服务器运行基线
 - GitHub SSH 读取与推送已通过本机代理验证
@@ -70,7 +70,7 @@
 - 逻辑资源库、挂载点绑定、手动 include/exclude 规则
 - 公开影视库过滤、分页、排序、影片级质量标签
 - 资源详情技术信息结构化，覆盖 `UHD Blu-ray Remux`、`HDR10`、`Dolby TrueHD 7.1 Atmos` 等展示字段
-- 播放能力矩阵、PC/外部播放器 handoff manifest/M3U 播放列表、实时音频转码入口、诊断接口和备用播放源分组
+- 播放能力矩阵、`/stream` Range/跳转探测、PC/外部播放器 handoff manifest/M3U 播放列表、实时音频转码入口、诊断接口和备用播放源分组
 - 同目录外挂字幕发现与字幕流入口
 - 在线字幕搜索/下载/绑定和手动上传字幕，当前接入 `subhd` 与 `srtku`
 - 图片按需缓存、状态、来源追踪、预热和单片清理接口，电影列表/详情返回 `poster_asset_url/backdrop_asset_url` 与 `poster_source_info/backdrop_source_info`
@@ -81,7 +81,7 @@
 - 存储源目录预览、已保存来源浏览、扫描与播放链路
 - 观看历史保留，但不再返回 `is_played` 给前端展示“已观看”标签
 - OpenAPI `1.21.0-beta` 与运行时路由对齐
-- 当前自动化测试基线为 `768 passed, 9 skipped, 16 subtests passed`
+- 当前自动化测试基线为 `770 passed, 9 skipped, 16 subtests passed`
 
 当前项目暂按单主干维护，后续小步提交直接进入 `main`。
 

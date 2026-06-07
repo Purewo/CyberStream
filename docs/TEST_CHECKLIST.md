@@ -77,6 +77,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK movie_images_status`，说明详情页 poster/backdrop 图片缓存状态契约可用且不触发远端下载
 - smoke check 返回 `OK movie_resources`，说明详情页资源面板、播放源分组、主资源 ID 和云转码能力声明可用
 - smoke check 返回 `OK streaming_qualities`，说明 provider 云转码清晰度入口可用，或对不支持的资源稳定返回 `40074`
+- smoke check 返回 `OK resource_stream_range`，说明 `/stream` 小 Range 请求能返回 206 或有效 3xx 上游跳转
 - smoke check 返回 `OK movie_seasons`，说明详情页季列表、季级资源计数和剧集诊断 summary 契约可用
 - smoke check 返回 `OK movie_episode_diagnostics`，说明剧集诊断详情 dry-run、summary 和提交 payload 契约可用
 - smoke check 返回 `OK external_playback`，说明 PC/外部播放器播放交接 manifest 和实际 M3U 文本契约可用
@@ -725,10 +726,9 @@ curl -i "http://127.0.0.1:5004/api/v1/resources/<resource_id>/stream"
 curl -i -H 'Range: bytes=0-1023' "http://127.0.0.1:5004/api/v1/resources/<resource_id>/stream"
 ```
 
-预期：
-- 返回 206
-- 存在 `Content-Range`
-- `Content-Type` 与直接请求保持一致
+预期之一：
+- 返回 206，存在 `Content-Range`，`Content-Type` 与直接请求保持一致
+- 或 302 跳转到上游播放地址；不能透传本机、私网、链路本地、保留地址或非 HTTP(S) Location
 
 ### 6.4 前端实际点播验证
 如果有前端页面，应至少实际播放一次，确认：
@@ -820,7 +820,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`768 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`770 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

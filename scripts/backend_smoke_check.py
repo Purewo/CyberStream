@@ -1018,6 +1018,11 @@ class CheckSpec:
     run: Callable[[], CheckResult]
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 class SmokeClient:
     def __init__(self, base_url: str, timeout: float = 30.0, api_token: str | None = None):
         self.base_url = base_url.rstrip("/")
@@ -1041,6 +1046,18 @@ class SmokeClient:
         if query:
             url = f"{url}?{urllib.parse.urlencode(query)}"
         return self._request_text("GET", url)
+
+    def get_binary_sample(
+        self,
+        path: str,
+        query: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        max_bytes: int = 1024,
+    ) -> dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        if query:
+            url = f"{url}?{urllib.parse.urlencode(query)}"
+        return self._request_binary_sample("GET", url, headers=headers, max_bytes=max_bytes)
 
     def post_json(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
@@ -1099,6 +1116,47 @@ class SmokeClient:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"HTTP {exc.code} {url}: {body[:300]}") from exc
         except (urllib.error.URLError, TimeoutError, UnicodeDecodeError) as exc:
+            raise RuntimeError(f"{method} {url} failed: {exc}") from exc
+
+    def _request_binary_sample(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str] | None = None,
+        max_bytes: int = 1024,
+    ) -> dict[str, Any]:
+        request_headers = {"Accept": "*/*"}
+        request_headers.update(headers or {})
+        if self.api_token:
+            request_headers["Authorization"] = f"Bearer {self.api_token}"
+        request = urllib.request.Request(url, headers=request_headers, method=method)
+        opener = urllib.request.build_opener(NoRedirectHandler)
+        try:
+            with opener.open(request, timeout=self.timeout) as response:
+                body = response.read(max(0, max_bytes))
+                response_headers = dict(response.headers.items())
+                return {
+                    "_http_status": response.status,
+                    "_headers": response_headers,
+                    "_content_type": response.headers.get("Content-Type"),
+                    "_content_range": response.headers.get("Content-Range"),
+                    "_accept_ranges": response.headers.get("Accept-Ranges"),
+                    "_location": response.headers.get("Location"),
+                    "byte_count": len(body),
+                }
+        except urllib.error.HTTPError as exc:
+            body = exc.read(max(0, max_bytes))
+            response_headers = dict(exc.headers.items()) if exc.headers else {}
+            return {
+                "_http_status": exc.code,
+                "_headers": response_headers,
+                "_content_type": exc.headers.get("Content-Type") if exc.headers else None,
+                "_content_range": exc.headers.get("Content-Range") if exc.headers else None,
+                "_accept_ranges": exc.headers.get("Accept-Ranges") if exc.headers else None,
+                "_location": exc.headers.get("Location") if exc.headers else None,
+                "byte_count": len(body),
+            }
+        except (urllib.error.URLError, TimeoutError) as exc:
             raise RuntimeError(f"{method} {url} failed: {exc}") from exc
 
 
@@ -2525,6 +2583,47 @@ def _streaming_qualities_payload_issues(data: Any, resource_id: str) -> list[str
             for key in ("code", "message"):
                 if key in warning and not isinstance(warning.get(key), str):
                     issues.append(f"{prefix}_{key}_not_str")
+    return issues
+
+
+def _resource_stream_sample_issues(sample: Any) -> list[str]:
+    if not isinstance(sample, dict):
+        return ["resource_stream_sample_not_object"]
+
+    issues = []
+    status = sample.get("_http_status")
+    byte_count = sample.get("byte_count")
+    if not _json_int(status):
+        issues.append(f"resource_stream_status_not_int={status}")
+        return issues
+    if not _json_int(byte_count):
+        issues.append(f"resource_stream_byte_count_not_int={byte_count}")
+
+    if status in (301, 302, 303, 307, 308):
+        location = sample.get("_location")
+        if not isinstance(location, str) or not location:
+            issues.append("resource_stream_redirect_location_missing")
+        elif not location.startswith(("http://", "https://")):
+            issues.append("resource_stream_redirect_location_invalid")
+        elif "127.0.0.1" in location or "localhost" in location:
+            issues.append("resource_stream_redirect_location_local")
+        return issues
+
+    if status == 206:
+        content_range = sample.get("_content_range")
+        accept_ranges = sample.get("_accept_ranges")
+        content_type = sample.get("_content_type")
+        if not isinstance(content_range, str) or not content_range.startswith("bytes "):
+            issues.append(f"resource_stream_content_range={content_range}")
+        if accept_ranges != "bytes":
+            issues.append(f"resource_stream_accept_ranges={accept_ranges}")
+        if not _json_int(byte_count) or byte_count < 1:
+            issues.append(f"resource_stream_empty_sample={byte_count}")
+        if isinstance(content_type, str) and content_type.startswith("text/html"):
+            issues.append(f"resource_stream_content_type={content_type}")
+        return issues
+
+    issues.append(f"resource_stream_status={status}")
     return issues
 
 
@@ -4988,6 +5087,87 @@ def check_streaming_qualities(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_resource_stream_range(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "resource_stream_range",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "resource_stream_range",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    resources_payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/resources")
+    resources_data = _response_data(resources_payload)
+    resource_items = (
+        resources_data.get("items")
+        if isinstance(resources_data, dict) and isinstance(resources_data.get("items"), list)
+        else []
+    )
+    if not resource_items:
+        return _result(
+            "resource_stream_range",
+            True,
+            f"skipped no resources movie_id={movie_id}",
+            {"skipped": True, "movie_id": movie_id},
+        )
+
+    sample_resource = resource_items[0] if isinstance(resource_items[0], dict) else {}
+    resource_id = sample_resource.get("id")
+    if not isinstance(resource_id, str) or not resource_id:
+        return _result(
+            "resource_stream_range",
+            False,
+            f"resource_id_invalid={resource_id}",
+            {"movie_id": movie_id, "resource_id": resource_id},
+        )
+
+    stream_sample = client.get_binary_sample(
+        f"/api/v1/resources/{urllib.parse.quote(resource_id, safe='')}/stream",
+        headers={"Range": "bytes=0-0"},
+        max_bytes=1024,
+    )
+    issues = _resource_stream_sample_issues(stream_sample)
+    status = stream_sample.get("_http_status") if isinstance(stream_sample, dict) else None
+    byte_count = stream_sample.get("byte_count") if isinstance(stream_sample, dict) else None
+    redirected = status in (301, 302, 303, 307, 308)
+    content_range = stream_sample.get("_content_range") if isinstance(stream_sample, dict) else None
+
+    ok = not issues
+    detail = (
+        f"resource={resource_id} status={status} redirected={redirected} "
+        f"bytes={byte_count} content_range={content_range}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "resource_stream_range",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "resource_id": resource_id,
+            "status": status,
+            "redirected": redirected,
+            "byte_count": byte_count,
+            "content_range": content_range,
+            "issues": issues,
+        },
+    )
+
+
 def check_movie_seasons(client: SmokeClient) -> CheckResult:
     catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
     catalog_data = _response_data(catalog_payload)
@@ -6917,6 +7097,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_images_status", lambda: check_movie_images_status(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
         CheckSpec("streaming_qualities", lambda: check_streaming_qualities(client)),
+        CheckSpec("resource_stream_range", lambda: check_resource_stream_range(client)),
         CheckSpec("movie_seasons", lambda: check_movie_seasons(client)),
         CheckSpec("movie_episode_diagnostics", lambda: check_movie_episode_diagnostics(client)),
         CheckSpec("external_playback", lambda: check_external_playback(client)),
