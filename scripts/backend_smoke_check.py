@@ -127,6 +127,42 @@ EXPECTED_METADATA_REIDENTIFY_SUMMARY_KEYS = [
     "issue_code_counts",
     "failed_movie_ids",
 ]
+EXPECTED_PENDING_REVIEW_BACKFILL_KEYS = [
+    "dry_run",
+    "include_visible",
+    "candidates",
+    "updated",
+    "skipped",
+    "failed",
+    "summary",
+]
+EXPECTED_PENDING_REVIEW_BACKFILL_SUMMARY_KEYS = [
+    "scanned",
+    "candidates",
+    "updated",
+    "skipped",
+    "failed",
+]
+EXPECTED_PENDING_REVIEW_BACKFILL_ITEM_KEYS = [
+    "movie_id",
+    "title",
+    "year",
+    "action",
+    "scraper_source",
+    "metadata_state",
+    "catalog_visibility_before",
+    "catalog_visibility_after",
+]
+EXPECTED_PENDING_REVIEW_BACKFILL_STATE_KEYS = [
+    "source_code",
+    "source_group",
+    "confidence",
+    "is_placeholder",
+    "is_local_only",
+    "issue_codes",
+    "primary_issue_code",
+    "review_priority",
+]
 EXPECTED_METADATA_REIDENTIFY_ITEM_KEYS = [
     "movie_id",
     "title",
@@ -3838,6 +3874,137 @@ def check_metadata_reidentify_plan(client: SmokeClient) -> CheckResult:
     )
 
 
+def _pending_review_backfill_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"candidate_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_PENDING_REVIEW_BACKFILL_ITEM_KEYS, prefix))
+    for key in ("movie_id", "title", "action", "scraper_source"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "year" in item and item.get("year") is not None and not _json_int(item.get("year")):
+        issues.append(f"{prefix}_year_not_int")
+    if item.get("action") != "would_set_pending_review":
+        issues.append(f"{prefix}_action={item.get('action')}")
+
+    metadata_state = item.get("metadata_state")
+    issues.extend(
+        _dict_missing_keys(
+            metadata_state,
+            EXPECTED_PENDING_REVIEW_BACKFILL_STATE_KEYS,
+            f"{prefix}_metadata_state",
+        )
+    )
+    if isinstance(metadata_state, dict):
+        if "issue_codes" in metadata_state and not isinstance(metadata_state.get("issue_codes"), list):
+            issues.append(f"{prefix}_metadata_state_issue_codes_not_list")
+        for key in ("is_placeholder", "is_local_only"):
+            if key in metadata_state and metadata_state.get(key) not in (True, False):
+                issues.append(f"{prefix}_metadata_state_{key}_not_bool")
+
+    issues.extend(
+        _dict_missing_keys(
+            item.get("catalog_visibility_before"),
+            EXPECTED_CATALOG_VISIBILITY_KEYS,
+            f"{prefix}_catalog_visibility_before",
+        )
+    )
+    if item.get("catalog_visibility_after") is not None:
+        issues.append(f"{prefix}_catalog_visibility_after_not_null")
+    return issues
+
+
+def check_pending_review_backfill_dry_run(client: SmokeClient) -> CheckResult:
+    payload = client.post_json(
+        "/api/v1/metadata/pending-review/backfill",
+        {
+            "dry_run": True,
+            "include_visible": False,
+            "limit": 1,
+        },
+    )
+    data = _response_data(payload)
+    issues = []
+
+    issues.extend(_dict_missing_keys(data, EXPECTED_PENDING_REVIEW_BACKFILL_KEYS, "pending_review_backfill"))
+    if data.get("dry_run") is not True:
+        issues.append(f"dry_run={data.get('dry_run')}")
+    if data.get("include_visible") is not False:
+        issues.append(f"include_visible={data.get('include_visible')}")
+
+    candidates = data.get("candidates")
+    updated = data.get("updated")
+    skipped = data.get("skipped")
+    failed = data.get("failed")
+    for key, value in (
+        ("candidates", candidates),
+        ("updated", updated),
+        ("skipped", skipped),
+        ("failed", failed),
+    ):
+        if not isinstance(value, list):
+            issues.append(f"{key}_not_list")
+
+    candidates = candidates if isinstance(candidates, list) else []
+    updated = updated if isinstance(updated, list) else []
+    skipped = skipped if isinstance(skipped, list) else []
+    failed = failed if isinstance(failed, list) else []
+    if updated:
+        issues.append(f"dry_run_updated_not_empty={len(updated)}")
+    if len(candidates) > 1:
+        issues.append(f"too_many_candidates={len(candidates)}")
+    for index, item in enumerate(candidates[:1]):
+        issues.extend(_pending_review_backfill_item_issues(item, index))
+
+    summary = data.get("summary")
+    issues.extend(
+        _dict_missing_keys(
+            summary,
+            EXPECTED_PENDING_REVIEW_BACKFILL_SUMMARY_KEYS,
+            "pending_review_backfill_summary",
+        )
+    )
+    if isinstance(summary, dict):
+        for key in EXPECTED_PENDING_REVIEW_BACKFILL_SUMMARY_KEYS:
+            if key in summary and not _json_int(summary.get(key)):
+                issues.append(f"pending_review_backfill_summary_{key}_not_int")
+        expected_counts = {
+            "candidates": len(candidates),
+            "updated": len(updated),
+            "skipped": len(skipped),
+            "failed": len(failed),
+        }
+        for key, expected_count in expected_counts.items():
+            if summary.get(key) != expected_count:
+                issues.append(f"summary_{key}_mismatch={summary.get(key)}/{expected_count}")
+        if summary.get("updated") != 0:
+            issues.append(f"summary_updated_not_zero={summary.get('updated')}")
+
+    ok = not issues
+    detail = (
+        f"dry_run={data.get('dry_run')} scanned={summary.get('scanned') if isinstance(summary, dict) else None} "
+        f"candidates={len(candidates)} updated={len(updated)} skipped={len(skipped)} failed={len(failed)}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "pending_review_backfill_dry_run",
+        ok,
+        detail,
+        {
+            "dry_run": data.get("dry_run") if isinstance(data, dict) else None,
+            "candidate_count": len(candidates),
+            "updated_count": len(updated),
+            "skipped_count": len(skipped),
+            "failed_count": len(failed),
+            "summary": summary if isinstance(summary, dict) else None,
+            "issues": issues,
+        },
+    )
+
+
 def check_libraries(client: SmokeClient) -> CheckResult:
     payload = client.get_json("/api/v1/libraries")
     items = _response_list(payload)
@@ -5886,6 +6053,10 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec(
             "metadata_reidentify_plan",
             lambda: check_metadata_reidentify_plan(client),
+        ),
+        CheckSpec(
+            "pending_review_backfill_dry_run",
+            lambda: check_pending_review_backfill_dry_run(client),
         ),
         CheckSpec("background_jobs", lambda: check_background_jobs(client)),
         CheckSpec(

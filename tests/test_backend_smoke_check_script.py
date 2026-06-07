@@ -1763,6 +1763,51 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/metadata/pending-review/backfill":
+            dry_run = (body or {}).get("dry_run")
+            include_visible = (body or {}).get("include_visible")
+            return {
+                "data": {
+                    "dry_run": dry_run,
+                    "include_visible": include_visible,
+                    "candidates": [
+                        {
+                            "movie_id": "movie-1",
+                            "title": "Sample Movie",
+                            "year": 2024,
+                            "action": "would_set_pending_review",
+                            "scraper_source": "TMDB_FALLBACK",
+                            "metadata_state": {
+                                "source_code": "TMDB_FALLBACK",
+                                "source_group": "tmdb",
+                                "confidence": 0.45,
+                                "is_placeholder": False,
+                                "is_local_only": False,
+                                "issue_codes": ["fallback_pipeline_match"],
+                                "primary_issue_code": "fallback_pipeline_match",
+                                "review_priority": "medium",
+                            },
+                            "catalog_visibility_before": {
+                                "effective_status": "pending_review",
+                                "status": "auto",
+                                "is_visible": False,
+                                "can_publish": True,
+                            },
+                            "catalog_visibility_after": None,
+                        },
+                    ],
+                    "updated": [],
+                    "skipped": [],
+                    "failed": [],
+                    "summary": {
+                        "scanned": 1,
+                        "candidates": 1,
+                        "updated": 0,
+                        "skipped": 0,
+                        "failed": 0,
+                    },
+                },
+            }
         if path == "/api/v1/resources/governance/plan":
             issue_codes = (body or {}).get("issue_codes") or [
                 "duplicate_playback_resource",
@@ -1926,6 +1971,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "vault_status",
                 "metadata_work_items_contract",
                 "metadata_reidentify_plan",
+                "pending_review_backfill_dry_run",
                 "background_jobs",
                 "background_jobs_prune",
                 "storage_provider_types",
@@ -2886,6 +2932,27 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         plan = next(item for item in results if item.name == "metadata_reidentify_plan")
         self.assertFalse(plan.ok)
         self.assertIn("dry_run_not_true", plan.detail)
+
+    def test_pending_review_backfill_dry_run_fails_when_updates_are_returned(self):
+        class BrokenPendingReviewBackfillClient(FakeSmokeClient):
+            def post_json(self, path, body=None):
+                payload = super().post_json(path, body=body)
+                if path == "/api/v1/metadata/pending-review/backfill":
+                    payload["data"]["updated"] = [
+                        {
+                            "movie_id": "movie-1",
+                            "action": "set_pending_review",
+                        },
+                    ]
+                    payload["data"]["summary"]["updated"] = 1
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenPendingReviewBackfillClient):
+            results = self.module.run_checks(self._args())
+
+        backfill = next(item for item in results if item.name == "pending_review_backfill_dry_run")
+        self.assertFalse(backfill.ok)
+        self.assertIn("dry_run_updated_not_empty=1", backfill.detail)
 
     def test_episode_review_fails_when_queue_sample_shape_is_broken(self):
         class BrokenEpisodeReviewClient(FakeSmokeClient):
