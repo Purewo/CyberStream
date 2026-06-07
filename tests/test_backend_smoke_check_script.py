@@ -341,6 +341,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             "max_episode_review_items": 0,
             "max_resource_actionable": 0,
             "min_storage_sources": 0,
+            "min_storage_health_checks": 0,
             "storage_health_check": False,
             "tmdb_token_check": False,
             "systemd": False,
@@ -610,12 +611,33 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
 
     def test_run_checks_can_verify_storage_health_when_enabled(self):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):
-            results = self.module.run_checks(self._args(storage_health_check=True))
+            results = self.module.run_checks(self._args(
+                storage_health_check=True,
+                min_storage_health_checks=1,
+            ))
 
         health = results[-1]
         self.assertEqual("storage_health", health.name)
         self.assertTrue(health.ok)
         self.assertIn("checked=1", health.detail)
+
+    def test_storage_health_fails_when_checked_sources_are_below_minimum(self):
+        class NoHealthCapabilityStorageClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/storage/sources":
+                    payload["data"][0]["capabilities"]["health_check"] = False
+                return payload
+
+        with patch.object(self.module, "SmokeClient", NoHealthCapabilityStorageClient):
+            results = self.module.run_checks(self._args(
+                storage_health_check=True,
+                min_storage_health_checks=1,
+            ))
+
+        health = next(item for item in results if item.name == "storage_health")
+        self.assertFalse(health.ok)
+        self.assertIn("checked_below_min=0/1", health.detail)
 
     def test_storage_health_fails_when_resource_backed_source_is_offline(self):
         class OfflineStorageHealthClient(FakeSmokeClient):

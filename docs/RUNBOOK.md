@@ -64,10 +64,11 @@ curl -i http://127.0.0.1:5004/api/v1/health
   --openapi-module-json-check \
   --min-storage-sources 1 \
   --storage-health-check \
+  --min-storage-health-checks 1 \
   --tmdb-token-check
 ```
 
-该检查会逐个拉取 `GET /api/v1/openapi/modules/<module_key>.json`，并调用 `GET /api/v1/storage/sources/<id>/health` 和 `GET /api/v1/system/tmdb-config/check`。TMDB 检查不返回 token 明文。
+该检查会逐个拉取 `GET /api/v1/openapi/modules/<module_key>.json`，并调用 `GET /api/v1/storage/sources/<id>/health` 和 `GET /api/v1/system/tmdb-config/check`。`--min-storage-health-checks 1` 用于防止实际没有检查到资源型挂载时误判通过；TMDB 检查不返回 token 明文。
 
 如果已设置 `CYBER_API_TOKEN`，管理类接口和 smoke check 需要携带 token。`backend_smoke_check.py` 会自动读取 `CYBER_BACKEND_SMOKE_API_TOKEN` 或 `CYBER_API_TOKEN`，也可以显式传参：
 

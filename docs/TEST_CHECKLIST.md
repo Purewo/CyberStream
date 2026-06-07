@@ -238,6 +238,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
   --openapi-module-json-check \
   --min-storage-sources 1 \
   --storage-health-check \
+  --min-storage-health-checks 1 \
   --tmdb-token-check
 ```
 
@@ -246,7 +247,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 - `openapi_modules` 返回 `OK`
 - `metadata_providers` 返回 `OK`
 - `storage_sources` 返回 `OK`，且至少包含当前挂载点
-- `storage_health` 返回 `OK`
+- `storage_health` 返回 `OK`，且 `checked>=1`
 - `tmdb_token` 返回 `OK`，且 `ready=True status=ok`
 
 AniList 动漫候选搜索：
@@ -751,7 +752,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`710 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`711 passed, 9 skipped, 16 subtests passed`。
 
 ---
 

@@ -681,7 +681,7 @@ def check_storage_sources(client: SmokeClient, min_sources: int) -> CheckResult:
     )
 
 
-def check_storage_health(client: SmokeClient) -> CheckResult:
+def check_storage_health(client: SmokeClient, min_checked: int = 0) -> CheckResult:
     payload = client.get_json("/api/v1/storage/sources")
     sources = [item for item in _response_list(payload) if isinstance(item, dict)]
     health_items = []
@@ -716,6 +716,9 @@ def check_storage_health(client: SmokeClient) -> CheckResult:
 
     ok = not issues
     detail = f"checked={len(health_items)} online={sum(1 for item in health_items if item.get('status') == 'online')}"
+    if len(health_items) < min_checked:
+        issues.append(f"checked_below_min={len(health_items)}/{min_checked}")
+        ok = False
     if issues:
         detail = f"{detail} issues={'; '.join(issues)}"
     return _result(
@@ -845,7 +848,10 @@ def run_checks(args) -> list[CheckResult]:
     if getattr(args, "tmdb_token_check", False):
         checks.append(CheckSpec("tmdb_token", lambda: check_tmdb_token(client)))
     if getattr(args, "storage_health_check", False):
-        checks.append(CheckSpec("storage_health", lambda: check_storage_health(client)))
+        checks.append(CheckSpec(
+            "storage_health",
+            lambda: check_storage_health(client, getattr(args, "min_storage_health_checks", 0)),
+        ))
 
     results: list[CheckResult] = []
     for check in checks:
@@ -882,6 +888,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--storage-health-check",
         action="store_true",
         help="Also run live health checks for resource-backed storage sources.",
+    )
+    parser.add_argument(
+        "--min-storage-health-checks",
+        type=int,
+        default=0,
+        help="Minimum resource-backed storage health checks required when --storage-health-check is set.",
     )
     parser.add_argument(
         "--tmdb-token-check",
