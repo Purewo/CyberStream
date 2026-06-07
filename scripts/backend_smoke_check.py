@@ -881,6 +881,20 @@ EXPECTED_STORAGE_BROWSE_ITEM_KEYS = [
     "size",
 ]
 EXPECTED_JOB_STATUSES = ["queued", "running", "succeeded", "failed"]
+EXPECTED_BACKGROUND_JOB_KEYS = [
+    "id",
+    "type",
+    "title",
+    "status",
+    "created_at",
+    "started_at",
+    "finished_at",
+    "request",
+    "progress",
+    "result",
+    "error",
+    "persisted",
+]
 EXPECTED_JOB_PRUNE_KEYS = [
     "dry_run",
     "retention_days",
@@ -5013,22 +5027,7 @@ def check_background_jobs(client: SmokeClient) -> CheckResult:
         issues.append(f"too_many_items={len(items)}")
 
     for index, item in enumerate(items):
-        if not isinstance(item, dict):
-            issues.append(f"item_{index}_not_object")
-            continue
-        missing = [
-            key for key in ("id", "type", "status", "created_at", "progress")
-            if key not in item
-        ]
-        if missing:
-            issues.append(f"item_{index}_missing={','.join(missing)}")
-        status = item.get("status")
-        if status not in EXPECTED_JOB_STATUSES:
-            issues.append(f"item_{index}_status={status}")
-        if "progress" in item and not isinstance(item.get("progress"), dict):
-            issues.append(f"item_{index}_progress_not_object")
-        if "persisted" in item and item.get("persisted") not in (True, False):
-            issues.append(f"item_{index}_persisted_not_bool")
+        issues.extend(_background_job_item_issues(item, f"item_{index}"))
 
     ok = not issues
     latest = items[0] if items and isinstance(items[0], dict) else {}
@@ -5053,6 +5052,94 @@ def check_background_jobs(client: SmokeClient) -> CheckResult:
                 "status": latest.get("status"),
                 "persisted": latest.get("persisted"),
             } if latest else None,
+        },
+    )
+
+
+def _background_job_item_issues(item: Any, prefix: str) -> list[str]:
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_BACKGROUND_JOB_KEYS, prefix))
+    for key in ("id", "type", "title", "status", "created_at", "started_at", "finished_at"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "id" in item and isinstance(item.get("id"), str) and not item.get("id"):
+        issues.append(f"{prefix}_id_empty")
+    status = item.get("status")
+    if status not in EXPECTED_JOB_STATUSES:
+        issues.append(f"{prefix}_status={status}")
+    for dict_key in ("request", "progress"):
+        if dict_key in item and not isinstance(item.get(dict_key), dict):
+            issues.append(f"{prefix}_{dict_key}_not_object")
+    for nullable_dict_key in ("result", "error"):
+        if (
+            nullable_dict_key in item
+            and item.get(nullable_dict_key) is not None
+            and not isinstance(item.get(nullable_dict_key), dict)
+        ):
+            issues.append(f"{prefix}_{nullable_dict_key}_not_object")
+    if "persisted" in item and item.get("persisted") not in (True, False):
+        issues.append(f"{prefix}_persisted_not_bool")
+    progress = item.get("progress")
+    if isinstance(progress, dict):
+        for key in ("current", "total"):
+            if key in progress and not _json_int(progress.get(key)):
+                issues.append(f"{prefix}_progress_{key}_not_int")
+        if "message" in progress and progress.get("message") is not None and not isinstance(progress.get("message"), str):
+            issues.append(f"{prefix}_progress_message_not_str")
+    return issues
+
+
+def check_background_job_detail(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/jobs", {"limit": 1})
+    data = _response_data(payload)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list) or not items:
+        return _result(
+            "background_job_detail",
+            True,
+            "skipped no background jobs",
+            {"skipped": True, "item_count": 0},
+        )
+
+    latest = items[0]
+    latest_id = latest.get("id") if isinstance(latest, dict) else None
+    if not isinstance(latest_id, str) or not latest_id:
+        return _result(
+            "background_job_detail",
+            False,
+            f"job_id_invalid={latest_id}",
+            {"job_id": latest_id},
+        )
+
+    detail_payload = client.get_json(f"/api/v1/jobs/{latest_id}")
+    detail = _response_data(detail_payload)
+    issues = _background_job_item_issues(detail, "job")
+    if isinstance(detail, dict):
+        if detail.get("id") != latest_id:
+            issues.append(f"job_id_mismatch={detail.get('id')}/{latest_id}")
+        for key in ("type", "status"):
+            if isinstance(latest, dict) and latest.get(key) is not None and detail.get(key) != latest.get(key):
+                issues.append(f"job_{key}_mismatch={detail.get(key)}/{latest.get(key)}")
+
+    ok = not issues
+    detail_text = (
+        f"id={latest_id} type={detail.get('type') if isinstance(detail, dict) else None} "
+        f"status={detail.get('status') if isinstance(detail, dict) else None}"
+    )
+    if issues:
+        detail_text = f"{detail_text} issues={'; '.join(issues)}"
+    return _result(
+        "background_job_detail",
+        ok,
+        detail_text,
+        {
+            "job_id": latest_id,
+            "type": detail.get("type") if isinstance(detail, dict) else None,
+            "status": detail.get("status") if isinstance(detail, dict) else None,
+            "issues": issues,
         },
     )
 
@@ -6059,6 +6146,7 @@ def run_checks(args) -> list[CheckResult]:
             lambda: check_pending_review_backfill_dry_run(client),
         ),
         CheckSpec("background_jobs", lambda: check_background_jobs(client)),
+        CheckSpec("background_job_detail", lambda: check_background_job_detail(client)),
         CheckSpec(
             "background_jobs_prune",
             lambda: check_background_jobs_prune(client),

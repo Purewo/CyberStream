@@ -1655,6 +1655,23 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/jobs/job-1":
+            return {
+                "data": {
+                    "id": "job-1",
+                    "type": "metadata_re_scrape",
+                    "title": "Metadata re-scrape",
+                    "status": "succeeded",
+                    "created_at": "2026-06-07T00:00:00",
+                    "started_at": "2026-06-07T00:00:01",
+                    "finished_at": "2026-06-07T00:00:02",
+                    "request": {},
+                    "progress": {"current": 1, "total": 1, "message": "done"},
+                    "result": {"summary": {"total": 1}},
+                    "error": None,
+                    "persisted": True,
+                },
+            }
         if path == "/api/v1/resources/governance-summary":
             return {
                 "data": {
@@ -1973,6 +1990,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_reidentify_plan",
                 "pending_review_backfill_dry_run",
                 "background_jobs",
+                "background_job_detail",
                 "background_jobs_prune",
                 "storage_provider_types",
                 "storage_capabilities",
@@ -3049,6 +3067,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         jobs = next(item for item in results if item.name == "background_jobs")
         self.assertFalse(jobs.ok)
         self.assertIn("count_mismatch=2/1", jobs.detail)
+
+    def test_background_job_detail_fails_when_progress_contract_is_broken(self):
+        class BrokenJobDetailClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/jobs/job-1":
+                    payload["data"]["progress"] = "done"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenJobDetailClient):
+            results = self.module.run_checks(self._args())
+
+        detail = next(item for item in results if item.name == "background_job_detail")
+        self.assertFalse(detail.ok)
+        self.assertIn("job_progress_not_object", detail.detail)
 
     def test_background_jobs_prune_fails_when_dry_run_would_remove_jobs(self):
         class BrokenJobsPruneClient(FakeSmokeClient):
