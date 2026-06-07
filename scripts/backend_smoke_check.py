@@ -377,8 +377,16 @@ def check_openapi_modules(
                 info = {}
             module_version = info.get("version")
             paths = module_payload.get("paths") if isinstance(module_payload, dict) else {}
-            if module_payload.get("openapi") != "3.0.0" or not isinstance(paths, dict) or not paths:
-                fetch_errors.append(f"{key}:invalid_contract")
+            components = module_payload.get("components") if isinstance(module_payload, dict) else {}
+            contract_errors = []
+            if module_payload.get("openapi") != "3.0.0":
+                contract_errors.append(f"openapi={module_payload.get('openapi')}")
+            if not isinstance(paths, dict) or not paths:
+                contract_errors.append("paths_invalid")
+            if not isinstance(components, dict):
+                contract_errors.append("components_invalid")
+            if contract_errors:
+                fetch_errors.append(f"{key}:invalid_contract:{','.join(contract_errors)}")
                 continue
             if expected_openapi_version and module_version != expected_openapi_version:
                 fetch_errors.append(

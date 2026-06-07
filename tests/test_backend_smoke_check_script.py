@@ -598,7 +598,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         class BrokenModuleJsonClient(FakeSmokeClient):
             def get_json(self, path, query=None):
                 if path == "/api/v1/openapi/modules/metadata.json":
-                    return {"openapi": "3.0.0", "paths": {}}
+                    return {"openapi": "3.0.0", "paths": {}, "components": []}
                 return super().get_json(path, query=query)
 
         with patch.object(self.module, "SmokeClient", BrokenModuleJsonClient):
@@ -606,7 +606,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
 
         modules = next(item for item in results if item.name == "openapi_modules")
         self.assertFalse(modules.ok)
-        self.assertIn("metadata:invalid_contract", modules.detail)
+        self.assertIn("metadata:invalid_contract:paths_invalid,components_invalid", modules.detail)
 
     def test_openapi_module_json_check_fails_on_module_version_mismatch(self):
         class MismatchedModuleJsonClient(FakeSmokeClient):
