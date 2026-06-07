@@ -72,6 +72,12 @@ DOCUMENTS = {
         "format": "markdown",
         "content_type": "text/markdown; charset=utf-8",
     },
+    "terminology": {
+        "title": "Terminology",
+        "path": "docs/TERMINOLOGY.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
     "frontend-review-workbench": {
         "title": "Frontend Review Workbench Integration",
         "path": "docs/FRONTEND_REVIEW_WORKBENCH_INTEGRATION.md",

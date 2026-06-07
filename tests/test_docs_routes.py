@@ -45,6 +45,7 @@ class DocumentationRoutesTests(unittest.TestCase):
         keys = {item["key"] for item in data["documents"]}
         self.assertIn("release-notes", keys)
         self.assertIn("api-overview", keys)
+        self.assertIn("terminology", keys)
         self.assertIn("frontend-review-workbench", keys)
         self.assertIn("frontend-managed-guangyapan", keys)
         self.assertIn("frontend-managed-tianyicloud", keys)
@@ -144,6 +145,18 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("text/markdown", response.mimetype)
         self.assertIn("storage/managed/guangyapan/sms/start", response.get_data(as_text=True))
+
+    def test_terminology_document_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/terminology")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        body = response.get_data(as_text=True)
+        self.assertIn("# CyberStream 术语表", body)
+        self.assertIn("挂载点", body)
+        self.assertIn("专辑", body)
 
     def test_managed_tianyicloud_frontend_guide_is_served_raw(self):
         client = self._create_client()

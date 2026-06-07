@@ -48,6 +48,50 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/docs":
+            keys = [
+                "release-notes",
+                "api-overview",
+                "terminology",
+                "frontend-review-workbench",
+                "frontend-user-management",
+                "frontend-audio-transcode",
+                "frontend-managed-guangyapan",
+                "frontend-managed-tianyicloud",
+                "experimental-tianyicloud-pc-qr",
+                "frontend-managed-115cloud",
+                "frontend-managed-aliyundrive",
+                "frontend-managed-baidunetdisk",
+                "frontend-managed-123pan",
+                "frontend-managed-quark-uc",
+                "storage-config-flow",
+                "runbook",
+                "test-checklist",
+            ]
+            return {
+                "data": {
+                    "version": "1.21.0",
+                    "openapi_version": "1.21.0-beta",
+                    "openapi": {
+                        "available": True,
+                        "content_type": "application/json",
+                        "url": "/api/v1/openapi.json",
+                        "docs_url": "/api/v1/docs/openapi.json",
+                        "modules_url": "/api/v1/openapi/modules",
+                    },
+                    "documents": [
+                        {
+                            "key": key,
+                            "title": key,
+                            "available": True,
+                            "format": "markdown",
+                            "content_type": "text/markdown; charset=utf-8",
+                            "url": f"/api/v1/docs/{key}",
+                        }
+                        for key in keys
+                    ],
+                },
+            }
         if path == "/api/v1/openapi/modules":
             keys = [
                 "docs",
@@ -215,6 +259,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             [
                 "health",
                 "openapi_health_contract",
+                "docs_index",
                 "openapi_modules",
                 "scan",
                 "metadata_providers",
@@ -261,6 +306,39 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertEqual(2.5, timeout)
         self.assertEqual("application/json", request.get_header("Accept"))
         self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
+
+    def test_docs_index_fails_when_expected_document_is_missing(self):
+        class MissingTerminologyDocClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/docs":
+                    payload["data"]["documents"] = [
+                        item for item in payload["data"]["documents"]
+                        if item["key"] != "terminology"
+                    ]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", MissingTerminologyDocClient):
+            results = self.module.run_checks(self._args())
+
+        docs = next(item for item in results if item.name == "docs_index")
+        self.assertFalse(docs.ok)
+        self.assertIn("missing=terminology", docs.detail)
+
+    def test_docs_index_fails_when_openapi_links_are_invalid(self):
+        class BrokenDocsOpenApiClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/docs":
+                    payload["data"]["openapi"]["modules_url"] = "/broken"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenDocsOpenApiClient):
+            results = self.module.run_checks(self._args())
+
+        docs = next(item for item in results if item.name == "docs_index")
+        self.assertFalse(docs.ok)
+        self.assertIn("openapi_links_invalid", docs.detail)
 
     def test_resource_governance_fails_when_live_paths_are_invalid(self):
         class BrokenResourceClient(FakeSmokeClient):

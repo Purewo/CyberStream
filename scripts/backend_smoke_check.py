@@ -38,6 +38,25 @@ EXPECTED_OPENAPI_MODULES = [
     "governance",
     "jobs",
 ]
+EXPECTED_DOC_KEYS = [
+    "release-notes",
+    "api-overview",
+    "terminology",
+    "frontend-review-workbench",
+    "frontend-user-management",
+    "frontend-audio-transcode",
+    "frontend-managed-guangyapan",
+    "frontend-managed-tianyicloud",
+    "experimental-tianyicloud-pc-qr",
+    "frontend-managed-115cloud",
+    "frontend-managed-aliyundrive",
+    "frontend-managed-baidunetdisk",
+    "frontend-managed-123pan",
+    "frontend-managed-quark-uc",
+    "storage-config-flow",
+    "runbook",
+    "test-checklist",
+]
 
 
 @dataclass
@@ -120,6 +139,73 @@ def check_openapi_health_contract(client: SmokeClient) -> CheckResult:
         ok,
         f"operationId={operation_id} public={operation.get('security') == []}",
         {"operation_id": operation_id, "security": operation.get("security")},
+    )
+
+
+def check_docs_index(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/docs")
+    data = _response_data(payload)
+    openapi = data.get("openapi") if isinstance(data, dict) else {}
+    if not isinstance(openapi, dict):
+        openapi = {}
+    documents = data.get("documents") if isinstance(data, dict) else []
+    doc_map = {
+        item.get("key"): item
+        for item in documents
+        if isinstance(item, dict) and item.get("key")
+    }
+
+    missing = [key for key in EXPECTED_DOC_KEYS if key not in doc_map]
+    unavailable = [
+        key for key, item in doc_map.items()
+        if key in EXPECTED_DOC_KEYS and item.get("available") is not True
+    ]
+    bad_urls = [
+        key for key, item in doc_map.items()
+        if key in EXPECTED_DOC_KEYS and _module_url_path(item.get("url")) != f"/api/v1/docs/{key}"
+    ]
+    non_markdown = [
+        key for key, item in doc_map.items()
+        if key in EXPECTED_DOC_KEYS and not str(item.get("content_type") or "").startswith("text/markdown")
+    ]
+
+    openapi_ok = (
+        openapi.get("available") is True
+        and _module_url_path(openapi.get("url")) == "/api/v1/openapi.json"
+        and _module_url_path(openapi.get("docs_url")) == "/api/v1/docs/openapi.json"
+        and _module_url_path(openapi.get("modules_url")) == "/api/v1/openapi/modules"
+    )
+
+    issues = []
+    if not openapi_ok:
+        issues.append("openapi_links_invalid")
+    if missing:
+        issues.append(f"missing={','.join(missing)}")
+    if unavailable:
+        issues.append(f"unavailable={','.join(unavailable)}")
+    if bad_urls:
+        issues.append(f"bad_urls={','.join(bad_urls)}")
+    if non_markdown:
+        issues.append(f"non_markdown={','.join(non_markdown)}")
+
+    ok = not issues
+    detail = f"documents={len(doc_map)} expected={len(EXPECTED_DOC_KEYS)} version={data.get('openapi_version')}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "docs_index",
+        ok,
+        detail,
+        {
+            "documents": sorted(doc_map),
+            "expected": EXPECTED_DOC_KEYS,
+            "missing": missing,
+            "unavailable": unavailable,
+            "bad_urls": bad_urls,
+            "non_markdown": non_markdown,
+            "openapi_ok": openapi_ok,
+            "openapi_version": data.get("openapi_version"),
+        },
     )
 
 
@@ -533,6 +619,7 @@ def run_checks(args) -> list[CheckResult]:
     checks = [
         CheckSpec("health", lambda: check_health(client)),
         CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
+        CheckSpec("docs_index", lambda: check_docs_index(client)),
         CheckSpec("openapi_modules", lambda: check_openapi_modules(client, args.openapi_module_json_check)),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),

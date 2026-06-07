@@ -231,6 +231,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 ```
 
 预期：
+- `docs_index` 返回 `OK`
 - `openapi_modules` 返回 `OK`
 - `metadata_providers` 返回 `OK`
 - `storage_sources` 返回 `OK`，且至少包含当前挂载点
@@ -735,7 +736,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`694 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`697 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
