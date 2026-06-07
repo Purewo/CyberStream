@@ -289,6 +289,52 @@ EXPECTED_MOVIE_PLAYBACK_SOURCE_KEYS = [
     "source_summary",
     "user_data",
 ]
+EXPECTED_EXTERNAL_PLAYBACK_KEYS = [
+    "resource_id",
+    "movie_id",
+    "title",
+    "filename",
+    "resource_info",
+    "stream",
+    "subtitles",
+    "handoff",
+    "player_profiles",
+    "warnings",
+]
+EXPECTED_EXTERNAL_PLAYBACK_STREAM_KEYS = [
+    "url",
+    "mime_type",
+    "storage_type",
+    "default_mode",
+    "playback_modes",
+    "range_supported",
+    "url_type",
+    "requires_local_backend",
+    "requires_user_agent_rewrite",
+    "reason",
+]
+EXPECTED_EXTERNAL_PLAYBACK_SUBTITLES_KEYS = [
+    "supported",
+    "default_subtitle_id",
+    "default_url",
+    "items",
+]
+EXPECTED_EXTERNAL_PLAYBACK_HANDOFF_KEYS = [
+    "supported",
+    "method",
+    "manifest_url",
+    "playlist_url",
+    "playlist_format",
+    "playlist_mime_type",
+    "reason",
+]
+EXPECTED_EXTERNAL_PLAYER_PROFILE_KEYS = [
+    "key",
+    "name",
+    "platforms",
+    "handoff_methods",
+    "recommended",
+]
 EXPECTED_CATALOG_FILTER_KEYS = [
     "genres",
     "years",
@@ -1555,6 +1601,124 @@ def _movie_resources_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _external_player_profile_issues(item: Any, index: int) -> list[str]:
+    prefix = f"player_profile_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_EXTERNAL_PLAYER_PROFILE_KEYS, prefix))
+    for key in ("key", "name"):
+        if key in item and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in ("platforms", "handoff_methods"):
+        if key in item and not isinstance(item.get(key), list):
+            issues.append(f"{prefix}_{key}_not_list")
+        elif isinstance(item.get(key), list) and not all(isinstance(value, str) for value in item.get(key)):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "recommended" in item and item.get("recommended") not in (True, False):
+        issues.append(f"{prefix}_recommended_not_bool")
+    return issues
+
+
+def _external_playback_manifest_issues(data: Any, expected_resource_id: str = "") -> list[str]:
+    if not isinstance(data, dict):
+        return ["external_playback_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_EXTERNAL_PLAYBACK_KEYS, "external_playback"))
+    resource_id = data.get("resource_id")
+    if "resource_id" in data and not isinstance(resource_id, str):
+        issues.append("external_playback_resource_id_not_str")
+    elif expected_resource_id and resource_id != expected_resource_id:
+        issues.append(f"external_playback_resource_id={resource_id}")
+    for key in ("movie_id", "title", "filename"):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"external_playback_{key}_not_str")
+
+    resource_info = data.get("resource_info")
+    issues.extend(_dict_missing_keys(resource_info, EXPECTED_MOVIE_RESOURCE_INFO_KEYS, "external_resource_info"))
+    if isinstance(resource_info, dict):
+        for key in EXPECTED_MOVIE_RESOURCE_INFO_KEYS:
+            if key in resource_info and not isinstance(resource_info.get(key), dict):
+                issues.append(f"external_resource_info_{key}_not_object")
+
+    stream = data.get("stream")
+    issues.extend(_dict_missing_keys(stream, EXPECTED_EXTERNAL_PLAYBACK_STREAM_KEYS, "external_stream"))
+    if isinstance(stream, dict):
+        for key in ("url", "mime_type", "storage_type", "default_mode", "url_type", "reason"):
+            if key in stream and stream.get(key) is not None and not isinstance(stream.get(key), str):
+                issues.append(f"external_stream_{key}_not_str")
+        for key in ("range_supported", "requires_local_backend", "requires_user_agent_rewrite"):
+            if key in stream and stream.get(key) not in (True, False):
+                issues.append(f"external_stream_{key}_not_bool")
+        if "playback_modes" in stream and not isinstance(stream.get("playback_modes"), list):
+            issues.append("external_stream_playback_modes_not_list")
+        elif isinstance(stream.get("playback_modes"), list) and not all(
+            isinstance(mode, str) for mode in stream.get("playback_modes")
+        ):
+            issues.append("external_stream_playback_modes_not_str")
+        stream_url = stream.get("url")
+        if resource_id and isinstance(stream_url, str) and f"/api/v1/resources/{resource_id}/stream" not in stream_url:
+            issues.append("external_stream_url_invalid")
+
+    subtitles = data.get("subtitles")
+    issues.extend(_dict_missing_keys(subtitles, EXPECTED_EXTERNAL_PLAYBACK_SUBTITLES_KEYS, "external_subtitles"))
+    if isinstance(subtitles, dict):
+        if "supported" in subtitles and subtitles.get("supported") not in (True, False):
+            issues.append("external_subtitles_supported_not_bool")
+        for key in ("default_subtitle_id", "default_url"):
+            if key in subtitles and subtitles.get(key) is not None and not isinstance(subtitles.get(key), str):
+                issues.append(f"external_subtitles_{key}_not_str")
+        if "items" in subtitles and not isinstance(subtitles.get("items"), list):
+            issues.append("external_subtitles_items_not_list")
+
+    handoff = data.get("handoff")
+    issues.extend(_dict_missing_keys(handoff, EXPECTED_EXTERNAL_PLAYBACK_HANDOFF_KEYS, "external_handoff"))
+    if isinstance(handoff, dict):
+        if "supported" in handoff and handoff.get("supported") not in (True, False):
+            issues.append("external_handoff_supported_not_bool")
+        for key in ("method", "manifest_url", "playlist_url", "playlist_format", "playlist_mime_type", "reason"):
+            if key in handoff and handoff.get(key) is not None and not isinstance(handoff.get(key), str):
+                issues.append(f"external_handoff_{key}_not_str")
+        if handoff.get("method") != "http_stream":
+            issues.append(f"external_handoff_method={handoff.get('method')}")
+        if handoff.get("playlist_format") != "m3u":
+            issues.append(f"external_handoff_playlist_format={handoff.get('playlist_format')}")
+        if handoff.get("playlist_mime_type") != "audio/x-mpegurl":
+            issues.append(f"external_handoff_playlist_mime_type={handoff.get('playlist_mime_type')}")
+        manifest_url = handoff.get("manifest_url")
+        playlist_url = handoff.get("playlist_url")
+        if resource_id and isinstance(manifest_url, str) and f"/api/v1/resources/{resource_id}/external-playback" not in manifest_url:
+            issues.append("external_handoff_manifest_url_invalid")
+        if resource_id and isinstance(playlist_url, str):
+            expected_path = f"/api/v1/resources/{resource_id}/external-playback"
+            if expected_path not in playlist_url or "format=m3u" not in playlist_url:
+                issues.append("external_handoff_playlist_url_invalid")
+        if handoff.get("supported") is True and isinstance(stream, dict) and not stream.get("url"):
+            issues.append("external_handoff_supported_without_stream_url")
+        if handoff.get("supported") is False and not handoff.get("reason"):
+            issues.append("external_handoff_unsupported_without_reason")
+
+    profiles = data.get("player_profiles")
+    if not isinstance(profiles, list):
+        issues.append("external_player_profiles_not_list")
+        profiles = []
+    elif not profiles:
+        issues.append("external_player_profiles_empty")
+    else:
+        for index, item in enumerate(profiles[:4]):
+            issues.extend(_external_player_profile_issues(item, index))
+        profile_keys = {item.get("key") for item in profiles if isinstance(item, dict)}
+        if "vlc" not in profile_keys:
+            issues.append("external_player_profiles_missing_vlc")
+
+    warnings = data.get("warnings")
+    if "warnings" in data and not isinstance(warnings, list):
+        issues.append("external_warnings_not_list")
+    return issues
+
+
 def _catalog_filter_option_issues(item: Any, index: int, kind: str) -> list[str]:
     prefix = f"{kind}_{index}"
     if not isinstance(item, dict):
@@ -2661,6 +2825,84 @@ def check_movie_resources(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_external_playback(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "external_playback",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "external_playback",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    resources_payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/resources")
+    resources_data = _response_data(resources_payload)
+    resource_items = (
+        resources_data.get("items")
+        if isinstance(resources_data, dict) and isinstance(resources_data.get("items"), list)
+        else []
+    )
+    if not resource_items:
+        return _result(
+            "external_playback",
+            True,
+            f"skipped no resources movie_id={movie_id}",
+            {"skipped": True, "movie_id": movie_id},
+        )
+
+    sample_resource = resource_items[0] if isinstance(resource_items[0], dict) else {}
+    resource_id = sample_resource.get("id")
+    if not isinstance(resource_id, str) or not resource_id:
+        return _result(
+            "external_playback",
+            False,
+            f"resource_id_invalid={resource_id}",
+            {"movie_id": movie_id, "resource_id": resource_id},
+        )
+
+    payload = client.get_json(f"/api/v1/resources/{urllib.parse.quote(resource_id, safe='')}/external-playback")
+    data = _response_data(payload)
+    issues = _external_playback_manifest_issues(data, expected_resource_id=resource_id)
+
+    handoff = data.get("handoff") if isinstance(data, dict) and isinstance(data.get("handoff"), dict) else {}
+    stream = data.get("stream") if isinstance(data, dict) and isinstance(data.get("stream"), dict) else {}
+    subtitles = data.get("subtitles") if isinstance(data, dict) and isinstance(data.get("subtitles"), dict) else {}
+    profiles = data.get("player_profiles") if isinstance(data, dict) and isinstance(data.get("player_profiles"), list) else []
+
+    ok = not issues
+    detail = (
+        f"resource={resource_id} supported={handoff.get('supported')} "
+        f"stream={bool(stream.get('url'))} subtitles={len(subtitles.get('items') or [])} "
+        f"profiles={len(profiles)}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "external_playback",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "resource_id": resource_id,
+            "supported": handoff.get("supported"),
+            "profile_count": len(profiles),
+            "issues": issues,
+        },
+    )
+
+
 def check_featured(client: SmokeClient) -> CheckResult:
     expected_limit = 5
     payload = client.get_json("/api/v1/featured")
@@ -3673,6 +3915,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
+        CheckSpec("external_playback", lambda: check_external_playback(client)),
         CheckSpec("featured", lambda: check_featured(client)),
         CheckSpec("homepage_config", lambda: check_homepage_config(client)),
         CheckSpec("homepage", lambda: check_homepage(client)),

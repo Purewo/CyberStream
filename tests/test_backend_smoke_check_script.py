@@ -822,6 +822,70 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/resources/resource-1/external-playback":
+            return {
+                "data": {
+                    "resource_id": "resource-1",
+                    "movie_id": "movie-1",
+                    "title": "Sample.Movie.2024.1080p.mkv",
+                    "filename": "Sample.Movie.2024.1080p.mkv",
+                    "resource_info": {
+                        "file": {
+                            "filename": "Sample.Movie.2024.1080p.mkv",
+                            "relative_path": "movies/Sample.Movie.2024.1080p.mkv",
+                            "size_bytes": 123456,
+                        },
+                        "display": {
+                            "title": "Sample.Movie.2024.1080p.mkv",
+                            "label": "Movie - 1080P",
+                        },
+                        "technical": {
+                            "video_resolution_label": "1080P",
+                            "video_resolution_bucket": "1080p",
+                            "video_codec_label": "H.264",
+                            "audio_summary_label": "AAC",
+                            "extra_tags": [],
+                        },
+                    },
+                    "stream": {
+                        "url": "http://example.test/api/v1/resources/resource-1/stream",
+                        "mime_type": "video/x-matroska",
+                        "storage_type": "guangyapan",
+                        "default_mode": "redirect",
+                        "playback_modes": ["redirect"],
+                        "range_supported": True,
+                        "url_type": "http_stream",
+                        "requires_local_backend": False,
+                        "requires_user_agent_rewrite": False,
+                        "reason": None,
+                    },
+                    "subtitles": {
+                        "supported": False,
+                        "default_subtitle_id": None,
+                        "default_url": None,
+                        "items": [],
+                    },
+                    "handoff": {
+                        "supported": True,
+                        "method": "http_stream",
+                        "manifest_url": "http://example.test/api/v1/resources/resource-1/external-playback",
+                        "playlist_url": "http://example.test/api/v1/resources/resource-1/external-playback?format=m3u",
+                        "playlist_format": "m3u",
+                        "playlist_mime_type": "audio/x-mpegurl",
+                        "reason": None,
+                    },
+                    "player_profiles": [
+                        {
+                            "key": "vlc",
+                            "name": "VLC",
+                            "platforms": ["windows", "macos", "linux"],
+                            "handoff_methods": ["open_url", "m3u"],
+                            "recommended": True,
+                        },
+                    ],
+                    "warnings": [],
+                },
+            }
         if path == "/api/v1/featured":
             detail = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
             return {"data": [detail]}
@@ -1322,6 +1386,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "catalog_movies",
                 "movie_detail",
                 "movie_resources",
+                "external_playback",
                 "featured",
                 "homepage_config",
                 "homepage",
@@ -1781,6 +1846,23 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         other_videos = next(item for item in results if item.name == "other_videos")
         self.assertFalse(other_videos.ok)
         self.assertIn("other_video_0_action_create_manual_movie_resource_id_missing", other_videos.detail)
+
+    def test_external_playback_fails_when_playlist_url_is_not_m3u(self):
+        class BrokenExternalPlaybackClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/resources/resource-1/external-playback":
+                    payload["data"]["handoff"]["playlist_url"] = (
+                        "http://example.test/api/v1/resources/resource-1/external-playback"
+                    )
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenExternalPlaybackClient):
+            results = self.module.run_checks(self._args())
+
+        external_playback = next(item for item in results if item.name == "external_playback")
+        self.assertFalse(external_playback.ok)
+        self.assertIn("external_handoff_playlist_url_invalid", external_playback.detail)
 
     def test_libraries_fail_when_virtual_favorites_leaks_into_list(self):
         class BrokenLibrariesClient(FakeSmokeClient):
