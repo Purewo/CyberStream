@@ -442,6 +442,162 @@ class FakeSmokeClient:
                     },
                 ],
             }
+        if path == "/api/v1/other-videos":
+            resource_id = "resource-other-1"
+            movie_id = "movie-other-1"
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "resource_id": resource_id,
+                            "movie_id": movie_id,
+                            "movie_title": "Raw Sample",
+                            "movie_original_title": "Raw Sample",
+                            "movie_year": None,
+                            "movie_manual_content": {
+                                "is_manual": False,
+                                "media_type": None,
+                            },
+                            "resource_info": {
+                                "file": {
+                                    "filename": "Raw.Sample.2026.mp4",
+                                    "relative_path": "other/Raw.Sample.2026.mp4",
+                                    "size_bytes": 234567,
+                                },
+                                "display": {
+                                    "title": "Raw.Sample.2026.mp4",
+                                    "label": "Other video",
+                                    "season": None,
+                                    "episode": None,
+                                },
+                                "technical": {
+                                    "video_resolution_bucket": "1080p",
+                                },
+                            },
+                            "playback": {
+                                "stream_url": f"/api/v1/resources/{resource_id}/stream",
+                                "web_player": {
+                                    "supported": True,
+                                    "url": f"/api/v1/resources/{resource_id}/stream",
+                                },
+                                "external_player": {
+                                    "supported": True,
+                                    "url": f"/api/v1/resources/{resource_id}/stream",
+                                },
+                                "subtitles": {
+                                    "items": [],
+                                    "settings": {},
+                                },
+                            },
+                            "metadata": {
+                                "trace": {},
+                                "analysis": {
+                                    "path_cleaning": {
+                                        "title_hint": "Raw Sample",
+                                    },
+                                },
+                                "edit_context": {},
+                            },
+                            "catalog_visibility": {
+                                "effective_status": "hidden",
+                                "status": "hidden",
+                                "is_visible": False,
+                                "can_publish": True,
+                            },
+                            "metadata_state": {
+                                "source_group": "local",
+                                "source_code": "LOCAL_FALLBACK",
+                                "source_label": "Local Fallback",
+                                "issue_codes": ["local_placeholder"],
+                                "needs_attention": True,
+                                "review_priority": "high",
+                                "recommended_action": "match_metadata",
+                            },
+                            "metadata_issues": [
+                                {
+                                    "code": "local_placeholder",
+                                    "severity": "warning",
+                                },
+                            ],
+                            "metadata_actions": {
+                                "can_manual_match": True,
+                                "can_refresh": False,
+                                "can_re_scrape": True,
+                                "primary_action": "match_metadata",
+                            },
+                            "metadata_match_context": {
+                                "suggested_query": "Raw Sample",
+                                "suggested_year": None,
+                                "suggested_media_type_hint": "movie",
+                                "source_media_type_hint": None,
+                                "media_type_options": ["movie", "tv"],
+                                "title_hint_source": "path_cleaning",
+                            },
+                            "recommended_resolution": "match_metadata",
+                            "actions": {
+                                "create_manual_movie": {
+                                    "method": "POST",
+                                    "endpoint": "/api/v1/movies/manual",
+                                    "body": {
+                                        "title": "Raw Sample",
+                                        "media_type": "movie",
+                                        "resource_ids": [resource_id],
+                                    },
+                                },
+                                "match_metadata": {
+                                    "search": {
+                                        "method": "GET",
+                                        "endpoint": f"/api/v1/movies/{movie_id}/metadata/search",
+                                        "params": {
+                                            "query": "Raw Sample",
+                                            "media_type_hint": "movie",
+                                        },
+                                    },
+                                    "preview": {
+                                        "method": "POST",
+                                        "endpoint": f"/api/v1/movies/{movie_id}/metadata/match",
+                                        "body_template": {
+                                            "candidate_id": "<candidate_id>",
+                                            "provider": "<provider>",
+                                            "media_type_hint": "movie",
+                                        },
+                                    },
+                                    "apply": {
+                                        "method": "POST",
+                                        "endpoint": f"/api/v1/movies/{movie_id}/metadata/match",
+                                        "body_template": {
+                                            "candidate_id": "<candidate_id>",
+                                            "provider": "<provider>",
+                                            "media_type_hint": "movie",
+                                            "apply": True,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    ],
+                    "pagination": {
+                        "current_page": 1,
+                        "page_size": 1,
+                        "total_items": 1,
+                        "total_pages": 1,
+                    },
+                    "summary": {
+                        "total_items": 1,
+                        "manual_movie_count": 0,
+                    },
+                    "actions": {
+                        "create_manual_movie": {
+                            "method": "POST",
+                            "endpoint": "/api/v1/movies/manual",
+                        },
+                        "attach_resources": {
+                            "method": "POST",
+                            "endpoint": "/api/v1/movies/{movie_id}/resources/attach",
+                        },
+                    },
+                },
+            }
         if path == "/api/v1/movies":
             return {
                 "data": {
@@ -1161,6 +1317,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "metadata_providers",
                 "metadata_review_workbench",
                 "libraries",
+                "other_videos",
                 "catalog_filters",
                 "catalog_movies",
                 "movie_detail",
@@ -1609,6 +1766,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         update = next(item for item in results if item.name == "update_check")
         self.assertFalse(update.ok)
         self.assertIn("update_download_0_cdn_not_true", update.detail)
+
+    def test_other_videos_fails_when_manual_action_drops_resource_id(self):
+        class BrokenOtherVideosClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/other-videos":
+                    payload["data"]["items"][0]["actions"]["create_manual_movie"]["body"]["resource_ids"] = []
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenOtherVideosClient):
+            results = self.module.run_checks(self._args())
+
+        other_videos = next(item for item in results if item.name == "other_videos")
+        self.assertFalse(other_videos.ok)
+        self.assertIn("other_video_0_action_create_manual_movie_resource_id_missing", other_videos.detail)
 
     def test_libraries_fail_when_virtual_favorites_leaks_into_list(self):
         class BrokenLibrariesClient(FakeSmokeClient):

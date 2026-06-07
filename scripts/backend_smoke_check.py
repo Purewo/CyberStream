@@ -342,6 +342,42 @@ EXPECTED_SYSTEM_UPDATE_DOWNLOAD_KEYS = [
     "url",
     "cdn",
 ]
+EXPECTED_OTHER_VIDEOS_KEYS = [
+    "items",
+    "pagination",
+    "summary",
+    "actions",
+]
+EXPECTED_OTHER_VIDEOS_SUMMARY_KEYS = [
+    "total_items",
+    "manual_movie_count",
+]
+EXPECTED_OTHER_VIDEO_ITEM_KEYS = [
+    "resource_id",
+    "movie_id",
+    "movie_title",
+    "movie_original_title",
+    "movie_year",
+    "movie_manual_content",
+    "resource_info",
+    "playback",
+    "metadata",
+    "catalog_visibility",
+    "metadata_state",
+    "metadata_issues",
+    "metadata_actions",
+    "metadata_match_context",
+    "recommended_resolution",
+    "actions",
+]
+EXPECTED_OTHER_VIDEO_MATCH_CONTEXT_KEYS = [
+    "suggested_query",
+    "suggested_year",
+    "suggested_media_type_hint",
+    "source_media_type_hint",
+    "media_type_options",
+    "title_hint_source",
+]
 EXPECTED_HOMEPAGE_KEYS = [
     "hero",
     "sections",
@@ -1699,6 +1735,187 @@ def _system_update_check_issues(data: Any, expected_backend_version: str = "") -
     return issues
 
 
+def _endpoint_action_issues(action: Any, prefix: str, method: str, endpoint: str | None = None) -> list[str]:
+    if not isinstance(action, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    if action.get("method") != method:
+        issues.append(f"{prefix}_method={action.get('method')}")
+    if "endpoint" not in action:
+        issues.append(f"{prefix}_missing=endpoint")
+    elif not isinstance(action.get("endpoint"), str):
+        issues.append(f"{prefix}_endpoint_not_str")
+    elif endpoint is not None and action.get("endpoint") != endpoint:
+        issues.append(f"{prefix}_endpoint={action.get('endpoint')}")
+    return issues
+
+
+def _other_video_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"other_video_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_OTHER_VIDEO_ITEM_KEYS, prefix))
+
+    if "resource_id" in item and not isinstance(item.get("resource_id"), str):
+        issues.append(f"{prefix}_resource_id_not_str")
+    if "movie_id" in item and item.get("movie_id") is not None and not isinstance(item.get("movie_id"), str):
+        issues.append(f"{prefix}_movie_id_not_str")
+    for key in ("movie_title", "movie_original_title", "recommended_resolution"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "movie_year" in item and item.get("movie_year") is not None and not _json_int(item.get("movie_year")):
+        issues.append(f"{prefix}_movie_year_not_int")
+
+    for dict_key in (
+        "movie_manual_content",
+        "resource_info",
+        "playback",
+        "metadata",
+        "catalog_visibility",
+        "metadata_state",
+        "metadata_actions",
+        "metadata_match_context",
+        "actions",
+    ):
+        if dict_key in item and item.get(dict_key) is not None and not isinstance(item.get(dict_key), dict):
+            issues.append(f"{prefix}_{dict_key}_not_object")
+    if "metadata_issues" in item and not isinstance(item.get("metadata_issues"), list):
+        issues.append(f"{prefix}_metadata_issues_not_list")
+
+    resource_info = item.get("resource_info")
+    issues.extend(_dict_missing_keys(resource_info, EXPECTED_MOVIE_RESOURCE_INFO_KEYS, f"{prefix}_resource_info"))
+    if isinstance(resource_info, dict):
+        for key in EXPECTED_MOVIE_RESOURCE_INFO_KEYS:
+            if key in resource_info and not isinstance(resource_info.get(key), dict):
+                issues.append(f"{prefix}_resource_info_{key}_not_object")
+
+    playback = item.get("playback")
+    issues.extend(_dict_missing_keys(playback, EXPECTED_MOVIE_RESOURCE_PLAYBACK_KEYS, f"{prefix}_playback"))
+    if isinstance(playback, dict):
+        for key in ("web_player", "external_player", "subtitles"):
+            if key in playback and not isinstance(playback.get(key), dict):
+                issues.append(f"{prefix}_playback_{key}_not_object")
+
+    match_context = item.get("metadata_match_context")
+    issues.extend(_dict_missing_keys(match_context, EXPECTED_OTHER_VIDEO_MATCH_CONTEXT_KEYS, f"{prefix}_match_context"))
+    if isinstance(match_context, dict):
+        for key in ("suggested_query", "suggested_media_type_hint", "source_media_type_hint", "title_hint_source"):
+            if key in match_context and match_context.get(key) is not None and not isinstance(match_context.get(key), str):
+                issues.append(f"{prefix}_match_context_{key}_not_str")
+        if "suggested_year" in match_context and match_context.get("suggested_year") is not None:
+            if not _json_int(match_context.get("suggested_year")):
+                issues.append(f"{prefix}_match_context_suggested_year_not_int")
+        media_type_options = match_context.get("media_type_options")
+        if not isinstance(media_type_options, list):
+            issues.append(f"{prefix}_match_context_media_type_options_not_list")
+        elif not all(isinstance(option, str) for option in media_type_options):
+            issues.append(f"{prefix}_match_context_media_type_options_not_str")
+        elif not {"movie", "tv"}.issubset(set(media_type_options)):
+            issues.append(f"{prefix}_match_context_media_type_options={media_type_options}")
+
+    actions = item.get("actions")
+    if isinstance(actions, dict):
+        create_action = actions.get("create_manual_movie")
+        issues.extend(_endpoint_action_issues(
+            create_action,
+            f"{prefix}_action_create_manual_movie",
+            "POST",
+            "/api/v1/movies/manual",
+        ))
+        create_body = create_action.get("body") if isinstance(create_action, dict) else None
+        if not isinstance(create_body, dict):
+            issues.append(f"{prefix}_action_create_manual_movie_body_not_object")
+        elif "resource_ids" not in create_body:
+            issues.append(f"{prefix}_action_create_manual_movie_body_missing=resource_ids")
+        elif not isinstance(create_body.get("resource_ids"), list):
+            issues.append(f"{prefix}_action_create_manual_movie_resource_ids_not_list")
+        elif item.get("resource_id") not in create_body.get("resource_ids"):
+            issues.append(f"{prefix}_action_create_manual_movie_resource_id_missing")
+
+        match_actions = actions.get("match_metadata")
+        if item.get("movie_id") is not None:
+            if not isinstance(match_actions, dict):
+                issues.append(f"{prefix}_action_match_metadata_not_object")
+            else:
+                movie_endpoint_prefix = f"/api/v1/movies/{item.get('movie_id')}/metadata"
+                issues.extend(_endpoint_action_issues(
+                    match_actions.get("search"),
+                    f"{prefix}_action_match_metadata_search",
+                    "GET",
+                    f"{movie_endpoint_prefix}/search",
+                ))
+                for action_key in ("preview", "apply"):
+                    action = match_actions.get(action_key)
+                    issues.extend(_endpoint_action_issues(
+                        action,
+                        f"{prefix}_action_match_metadata_{action_key}",
+                        "POST",
+                        f"{movie_endpoint_prefix}/match",
+                    ))
+                    body_template = action.get("body_template") if isinstance(action, dict) else None
+                    if not isinstance(body_template, dict):
+                        issues.append(f"{prefix}_action_match_metadata_{action_key}_body_template_not_object")
+                apply_template = match_actions.get("apply", {}).get("body_template") if isinstance(match_actions.get("apply"), dict) else {}
+                if isinstance(apply_template, dict) and apply_template.get("apply") is not True:
+                    issues.append(f"{prefix}_action_match_metadata_apply_missing_apply_true")
+    return issues
+
+
+def _other_videos_payload_issues(data: Any, expected_page_size: int = 1) -> list[str]:
+    if not isinstance(data, dict):
+        return ["other_videos_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_OTHER_VIDEOS_KEYS, "other_videos"))
+
+    items = data.get("items")
+    if not isinstance(items, list):
+        issues.append("other_videos_items_not_list")
+        items = []
+    for index, item in enumerate(items[:1]):
+        issues.extend(_other_video_item_issues(item, index))
+
+    pagination = data.get("pagination")
+    issues.extend(_pagination_contract_issues(pagination, expected_page_size=expected_page_size))
+    if isinstance(pagination, dict):
+        total_items = pagination.get("total_items")
+        if _json_int(total_items) and total_items > 0 and not items:
+            issues.append("other_videos_items_empty_with_total")
+        if _json_int(total_items) and "summary" in data and isinstance(data.get("summary"), dict):
+            if data["summary"].get("total_items") != total_items:
+                issues.append(f"other_videos_summary_total_mismatch={data['summary'].get('total_items')}/{total_items}")
+
+    summary = data.get("summary")
+    issues.extend(_dict_missing_keys(summary, EXPECTED_OTHER_VIDEOS_SUMMARY_KEYS, "other_videos_summary"))
+    if isinstance(summary, dict):
+        for key in EXPECTED_OTHER_VIDEOS_SUMMARY_KEYS:
+            if key in summary and not _json_int(summary.get(key)):
+                issues.append(f"other_videos_summary_{key}_not_int")
+        if _json_int(summary.get("manual_movie_count")) and summary.get("manual_movie_count") < 0:
+            issues.append("other_videos_summary_manual_movie_count_negative")
+
+    actions = data.get("actions")
+    if not isinstance(actions, dict):
+        issues.append("other_videos_actions_not_object")
+    else:
+        issues.extend(_endpoint_action_issues(
+            actions.get("create_manual_movie"),
+            "other_videos_action_create_manual_movie",
+            "POST",
+            "/api/v1/movies/manual",
+        ))
+        issues.extend(_endpoint_action_issues(
+            actions.get("attach_resources"),
+            "other_videos_action_attach_resources",
+            "POST",
+            "/api/v1/movies/{movie_id}/resources/attach",
+        ))
+    return issues
+
+
 def _homepage_config_section_issues(section: Any, index: int) -> list[str]:
     prefix = f"config_section_{index}"
     if not isinstance(section, dict):
@@ -2238,6 +2455,41 @@ def check_libraries(client: SmokeClient) -> CheckResult:
         {
             "item_count": len(items),
             "sample_name": sample_name,
+            "issues": issues,
+        },
+    )
+
+
+def check_other_videos(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/other-videos", {"page": 1, "page_size": 1})
+    data = _response_data(payload)
+    issues = _other_videos_payload_issues(data, expected_page_size=1)
+
+    items = data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else []
+    summary = data.get("summary") if isinstance(data, dict) and isinstance(data.get("summary"), dict) else {}
+    total_items = summary.get("total_items") if isinstance(summary, dict) else None
+    sample = items[0] if items and isinstance(items[0], dict) else None
+    sample_title = sample.get("movie_title") if sample else None
+    sample_resource_id = sample.get("resource_id") if sample else None
+
+    ok = not issues
+    detail = (
+        f"total={total_items} items={len(items)} "
+        f"manual={summary.get('manual_movie_count') if isinstance(summary, dict) else None}"
+    )
+    if sample_title or sample_resource_id:
+        detail = f"{detail} sample={sample_title or sample_resource_id}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "other_videos",
+        ok,
+        detail,
+        {
+            "total": total_items,
+            "item_count": len(items),
+            "manual_movie_count": summary.get("manual_movie_count") if isinstance(summary, dict) else None,
+            "sample_resource_id": sample_resource_id,
             "issues": issues,
         },
     )
@@ -3416,6 +3668,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
         CheckSpec("libraries", lambda: check_libraries(client)),
+        CheckSpec("other_videos", lambda: check_other_videos(client)),
         CheckSpec("catalog_filters", lambda: check_catalog_filters(client)),
         CheckSpec("catalog_movies", lambda: check_catalog_movies(client)),
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
