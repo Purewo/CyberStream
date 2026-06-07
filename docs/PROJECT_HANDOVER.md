@@ -132,6 +132,7 @@
 
 当前已补齐的基础维护文档：
 
+- `AGENTS.md`
 - `README.md`
 - `docs/PROJECT_HANDOVER.md`
 - `docs/ARCHITECTURE.md`

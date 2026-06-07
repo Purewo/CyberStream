@@ -340,6 +340,7 @@ curl -s "http://127.0.0.1:5004/api/v1/movies/<id>/metadata/search?query=诛仙3&
 
 ## 6. 推荐联动文档
 
+- Agent 项目记忆：`AGENTS.md`
 - 配置说明：`docs/CONFIG_REFERENCE.md`
 - 测试清单：`docs/TEST_CHECKLIST.md`
 - 版本规范：`docs/VERSIONING.md`

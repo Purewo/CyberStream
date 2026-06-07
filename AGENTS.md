@@ -19,6 +19,30 @@ Use short, imperative commit subjects consistent with the existing history, such
 Do not hardcode new secrets in code or docs. Prefer environment variables for deployment-specific values such as `TMDB_TOKEN`, storage credentials, and path overrides. If you change `APP_VERSION`, also update the related references called out in `docs/VERSIONING.md`.
 
 ## Project Runtime Memory
-Keep CyberStream-specific operational facts in this repository, not in global agent memory, unless explicitly requested. Current host notes: use explicit proxy `127.0.0.1:7890` for GitHub/overseas access; public backend HTTPS is `https://cyberstream.gameuniverse.top:40160/`; nginx terminates TLS on port `40160` and proxies to `127.0.0.1:5004`; backend stays online in dev mode via `cyberstream-backend.service`; AList/OpenList/DDNS-GO run locally; do not print secrets from `/etc/cyberstream/`, `/var/lib/ddns-go/`, or `.env.local`. Frontend work is owned separately; avoid touching `frontend/` unless the user explicitly redirects.
+Keep CyberStream-specific operational facts in this repository, not in global agent memory, unless explicitly requested. Treat this file plus `docs/PROJECT_HANDOVER.md`, `docs/RUNBOOK.md`, and `docs/TEST_CHECKLIST.md` as the project-scoped memory entry points.
+
+Current host notes:
+- Use explicit proxy `127.0.0.1:7890` for GitHub/overseas access.
+- Public backend HTTPS is `https://cyberstream.gameuniverse.top:40160/`.
+- nginx terminates TLS on port `40160` and proxies to `127.0.0.1:5004`.
+- IPv4 NAT public ports are limited to `40160-40169`; keep backend HTTPS on `40160` unless the user reallocates ports.
+- Runtime services expected online for integration work: `cyberstream-backend`, `nginx`, `cyberstream-alist`, `cyberstream-openlist`, and `ddns-go`.
+- AList is local-only at `127.0.0.1:5244`; OpenList is local-only at `127.0.0.1:5245`.
+- Current app version is `1.21.0`; run smoke checks with `--expected-version 1.21.0`.
+- Full pytest baseline as of 2026-06-07 is `713 passed, 9 skipped, 16 subtests passed`.
+
+Before scraping or frontend integration, run:
+
+```bash
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
+  --openapi-module-json-check \
+  --expected-version 1.21.0 \
+  --min-storage-sources 1 \
+  --storage-health-check \
+  --min-storage-health-checks 1 \
+  --tmdb-token-check
+```
+
+Do not print secrets from `/etc/cyberstream/`, `/var/lib/ddns-go/`, `/etc/mihomo/`, `/etc/nginx/`, or `.env.local`. Frontend work is owned separately; avoid touching `frontend/` unless the user explicitly redirects.
 
 Fallback review status as of 2026-06-07: 30 manually checked `fallback_pipeline_match` items were published through `/api/v1/metadata/pending-review/publish`; 37 remain pending because they are local placeholders, missing posters, low confidence, episode/season diagnostics, or visible mismatches such as same-title wrong-year TMDB matches. Do not bulk-publish the remaining fallback queue without re-scrape/manual matching first.

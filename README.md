@@ -191,6 +191,7 @@ npm run lint         # 仅类型检查（无 ESLint）
 
 | 主题 | 路径 |
 |---|---|
+| Agent 项目记忆 | [AGENTS.md](AGENTS.md) |
 | 项目移交 | [docs/PROJECT_HANDOVER.md](docs/PROJECT_HANDOVER.md) |
 | 项目进度 | [docs/PROJECT_PROGRESS.md](docs/PROJECT_PROGRESS.md) |
 | **PC 客户端目标 (v1)** | [docs/PC_CLIENT_GOAL.md](docs/PC_CLIENT_GOAL.md) |
