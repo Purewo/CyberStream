@@ -320,6 +320,10 @@ EXPECTED_MOVIE_RESOURCES_KEYS = [
     "groups",
     "summary",
 ]
+EXPECTED_MOVIE_SEASONS_KEYS = [
+    "items",
+    "summary",
+]
 EXPECTED_MOVIE_RESOURCES_GROUP_KEYS = [
     "standalone",
     "seasons",
@@ -372,6 +376,49 @@ EXPECTED_MOVIE_EPISODE_DIAGNOSTICS_SEASON_KEYS = [
     "affected_resource_ids",
     "affected_resources",
     "suggestions",
+]
+EXPECTED_MOVIE_SEASON_ITEM_KEYS = [
+    "season",
+    "title",
+    "display_title",
+    "overview",
+    "air_date",
+    "poster_url",
+    "poster_source",
+    "resource_ids",
+    "primary_resource_ids",
+    "playback_source_count",
+    "alternate_resource_count",
+    "edited_items_count",
+    "episode_count",
+    "tmdb_episode_count",
+    "expected_episode_count",
+    "aired_episode_count",
+    "has_distinct_poster",
+    "has_manual_metadata",
+    "has_metadata",
+    "metadata_edited_at",
+    "episode_diagnostics",
+    "sort",
+    "user_data",
+]
+EXPECTED_SEASON_EPISODE_DIAGNOSTICS_KEYS = [
+    "status",
+    "coverage_status",
+    "issue_codes",
+    "available_episode_count",
+    "available_episode_numbers",
+    "missing_episode_numbers",
+    "duplicate_episode_numbers",
+    "duplicate_episode_resources",
+    "alternate_episode_numbers",
+    "alternate_episode_resources",
+    "unnumbered_resource_ids",
+    "completion_ratio",
+    "expected_episode_count",
+    "expected_source",
+    "first_episode",
+    "last_episode",
 ]
 EXPECTED_MOVIE_RESOURCE_ITEM_KEYS = [
     "id",
@@ -2222,6 +2269,130 @@ def _movie_resources_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _season_episode_diagnostics_issues(data: Any, prefix: str) -> list[str]:
+    if not isinstance(data, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_SEASON_EPISODE_DIAGNOSTICS_KEYS, prefix))
+    for key in ("status", "coverage_status", "expected_source"):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in ("available_episode_count", "expected_episode_count", "first_episode", "last_episode"):
+        if key in data and data.get(key) is not None and not _json_int(data.get(key)):
+            issues.append(f"{prefix}_{key}_not_int")
+    if "completion_ratio" in data and data.get("completion_ratio") is not None:
+        if not isinstance(data.get("completion_ratio"), (int, float)) or isinstance(data.get("completion_ratio"), bool):
+            issues.append(f"{prefix}_completion_ratio_not_number")
+    for key in (
+        "issue_codes",
+        "available_episode_numbers",
+        "missing_episode_numbers",
+        "duplicate_episode_numbers",
+        "duplicate_episode_resources",
+        "alternate_episode_numbers",
+        "alternate_episode_resources",
+        "unnumbered_resource_ids",
+    ):
+        if key in data and not isinstance(data.get(key), list):
+            issues.append(f"{prefix}_{key}_not_list")
+    return issues
+
+
+def _movie_season_item_issues(item: Any, index: int) -> list[str]:
+    prefix = f"season_{index}"
+    if not isinstance(item, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(item, EXPECTED_MOVIE_SEASON_ITEM_KEYS, prefix))
+    if "season" in item and not _json_int(item.get("season")):
+        issues.append(f"{prefix}_season_not_int")
+    for key in ("title", "display_title", "overview", "air_date", "poster_url", "poster_source", "metadata_edited_at"):
+        if key in item and item.get(key) is not None and not isinstance(item.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    for key in ("resource_ids", "primary_resource_ids"):
+        values = item.get(key)
+        if key in item and not isinstance(values, list):
+            issues.append(f"{prefix}_{key}_not_list")
+        elif isinstance(values, list) and not all(isinstance(value, str) for value in values):
+            issues.append(f"{prefix}_{key}_not_str")
+    resource_ids = item.get("resource_ids") if isinstance(item.get("resource_ids"), list) else []
+    primary_resource_ids = item.get("primary_resource_ids") if isinstance(item.get("primary_resource_ids"), list) else []
+    unknown_primary_ids = [
+        resource_id
+        for resource_id in primary_resource_ids
+        if isinstance(resource_id, str) and resource_id not in resource_ids
+    ]
+    if unknown_primary_ids:
+        issues.append(f"{prefix}_primary_resource_ids_unknown={','.join(unknown_primary_ids[:3])}")
+    for key in ("playback_source_count", "alternate_resource_count", "edited_items_count", "episode_count"):
+        if key in item and not _json_int(item.get(key)):
+            issues.append(f"{prefix}_{key}_not_int")
+    for key in ("tmdb_episode_count", "expected_episode_count", "aired_episode_count"):
+        if key in item and item.get(key) is not None and not _json_int(item.get(key)):
+            issues.append(f"{prefix}_{key}_not_int")
+    for key in ("has_distinct_poster", "has_manual_metadata", "has_metadata"):
+        if key in item and item.get(key) not in (True, False):
+            issues.append(f"{prefix}_{key}_not_bool")
+    if "playback_source_count" in item and _json_int(item.get("playback_source_count")):
+        if item.get("playback_source_count") != len(primary_resource_ids):
+            issues.append(f"{prefix}_playback_source_count_mismatch={item.get('playback_source_count')}/{len(primary_resource_ids)}")
+    sort = item.get("sort")
+    if "sort" in item:
+        if not isinstance(sort, dict):
+            issues.append(f"{prefix}_sort_not_object")
+        else:
+            if "season" in sort and not _json_int(sort.get("season")):
+                issues.append(f"{prefix}_sort_season_not_int")
+            if "first_episode" in sort and sort.get("first_episode") is not None and not _json_int(sort.get("first_episode")):
+                issues.append(f"{prefix}_sort_first_episode_not_int")
+    issues.extend(_season_episode_diagnostics_issues(item.get("episode_diagnostics"), f"{prefix}_episode_diagnostics"))
+    if "user_data" in item and item.get("user_data") is not None and not isinstance(item.get("user_data"), dict):
+        issues.append(f"{prefix}_user_data_not_object")
+    return issues
+
+
+def _movie_seasons_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["movie_seasons_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_MOVIE_SEASONS_KEYS, "movie_seasons"))
+    items = data.get("items")
+    if not isinstance(items, list):
+        issues.append("movie_seasons_items_not_list")
+        items = []
+    for index, item in enumerate(items[:1]):
+        issues.extend(_movie_season_item_issues(item, index))
+
+    summary = data.get("summary")
+    issues.extend(_dict_missing_keys(summary, EXPECTED_MOVIE_RESOURCES_SUMMARY_KEYS, "season_summary"))
+    if isinstance(summary, dict):
+        for key in (
+            "total_items",
+            "hydrated_item_count",
+            "playback_source_count",
+            "hydrated_playback_source_count",
+            "duplicate_group_count",
+            "alternate_resource_count",
+            "season_count",
+            "standalone_count",
+            "edited_items_count",
+            "season_metadata_count",
+        ):
+            if key in summary and not _json_int(summary.get(key)):
+                issues.append(f"season_summary_{key}_not_int")
+        for key in ("has_placeholder_metadata", "is_local_only_metadata", "needs_attention"):
+            if key in summary and summary.get(key) not in (True, False):
+                issues.append(f"season_summary_{key}_not_bool")
+        if "episode_diagnostics" in summary and not isinstance(summary.get("episode_diagnostics"), dict):
+            issues.append("season_summary_episode_diagnostics_not_object")
+        if "season_count" in summary and summary.get("season_count") != len(items):
+            issues.append(f"season_summary_season_count_mismatch={summary.get('season_count')}/{len(items)}")
+    return issues
+
+
 def _movie_episode_diagnostics_season_issues(item: Any, index: int) -> list[str]:
     prefix = f"episode_diagnostics_season_{index}"
     if not isinstance(item, dict):
@@ -3637,6 +3808,60 @@ def check_movie_resources(client: SmokeClient) -> CheckResult:
             "item_count": len(items),
             "total": summary.get("total_items"),
             "playback_source_count": len(playback_sources),
+            "issues": issues,
+        },
+    )
+
+
+def check_movie_seasons(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "movie_seasons",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "movie_seasons",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/seasons")
+    data = _response_data(payload)
+    issues = _movie_seasons_payload_issues(data)
+    items = data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else []
+    summary = data.get("summary") if isinstance(data, dict) and isinstance(data.get("summary"), dict) else {}
+    episode_diagnostics = (
+        summary.get("episode_diagnostics")
+        if isinstance(summary.get("episode_diagnostics"), dict)
+        else {}
+    )
+
+    ok = not issues
+    detail = (
+        f"id={movie_id} seasons={len(items)} summary_seasons={summary.get('season_count')} "
+        f"episode_status={episode_diagnostics.get('status')}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "movie_seasons",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "season_count": len(items),
+            "summary_season_count": summary.get("season_count"),
+            "episode_status": episode_diagnostics.get("status"),
             "issues": issues,
         },
     )
@@ -5137,6 +5362,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_images_status", lambda: check_movie_images_status(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
+        CheckSpec("movie_seasons", lambda: check_movie_seasons(client)),
         CheckSpec("movie_episode_diagnostics", lambda: check_movie_episode_diagnostics(client)),
         CheckSpec("external_playback", lambda: check_external_playback(client)),
         CheckSpec("subtitle_settings", lambda: check_subtitle_settings(client)),

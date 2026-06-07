@@ -1120,6 +1120,84 @@ class FakeSmokeClient:
                     },
                 },
             }
+        if path == "/api/v1/movies/movie-1/seasons":
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "season": 1,
+                            "title": "Season 1",
+                            "display_title": "Season 1",
+                            "overview": "The first season.",
+                            "air_date": "2026-01-01",
+                            "poster_url": "https://example.test/season.jpg",
+                            "poster_source": "season",
+                            "resource_ids": ["resource-1"],
+                            "primary_resource_ids": ["resource-1"],
+                            "playback_source_count": 1,
+                            "alternate_resource_count": 0,
+                            "edited_items_count": 1,
+                            "episode_count": 1,
+                            "tmdb_episode_count": 1,
+                            "expected_episode_count": 1,
+                            "aired_episode_count": None,
+                            "has_distinct_poster": True,
+                            "has_manual_metadata": True,
+                            "has_metadata": True,
+                            "metadata_edited_at": None,
+                            "episode_diagnostics": {
+                                "status": "ok",
+                                "coverage_status": "complete",
+                                "issue_codes": [],
+                                "available_episode_count": 1,
+                                "available_episode_numbers": [1],
+                                "missing_episode_numbers": [],
+                                "duplicate_episode_numbers": [],
+                                "duplicate_episode_resources": [],
+                                "alternate_episode_numbers": [],
+                                "alternate_episode_resources": [],
+                                "unnumbered_resource_ids": [],
+                                "completion_ratio": 1.0,
+                                "expected_episode_count": 1,
+                                "expected_source": "metadata",
+                                "first_episode": 1,
+                                "last_episode": 1,
+                            },
+                            "sort": {
+                                "season": 1,
+                                "first_episode": 1,
+                            },
+                            "user_data": None,
+                        },
+                    ],
+                    "summary": {
+                        "total_items": 1,
+                        "hydrated_item_count": 1,
+                        "selected_season": None,
+                        "playback_source_count": 1,
+                        "hydrated_playback_source_count": 1,
+                        "duplicate_group_count": 0,
+                        "alternate_resource_count": 0,
+                        "season_count": 1,
+                        "standalone_count": 0,
+                        "edited_items_count": 1,
+                        "season_metadata_count": 1,
+                        "episode_diagnostics": {
+                            "status": "ok",
+                            "coverage_status": "complete",
+                            "issue_count": 0,
+                            "issue_code_counts": {},
+                            "season_count": 1,
+                            "seasons_needing_attention": [],
+                        },
+                        "metadata_source_group": "tmdb",
+                        "has_placeholder_metadata": False,
+                        "is_local_only_metadata": False,
+                        "needs_attention": False,
+                        "review_priority": "low",
+                    },
+                },
+            }
         if path == "/api/v1/movies/movie-1/episode-diagnostics":
             suggestion = {
                 "type": "update_resource_episode",
@@ -1765,6 +1843,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "movie_detail",
                 "movie_images_status",
                 "movie_resources",
+                "movie_seasons",
                 "movie_episode_diagnostics",
                 "external_playback",
                 "subtitle_settings",
@@ -2385,6 +2464,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         resources = next(item for item in results if item.name == "movie_resources")
         self.assertFalse(resources.ok)
         self.assertIn("resource_0_playback_cloud_transcode_reason_not_str", resources.detail)
+
+    def test_movie_seasons_fails_when_primary_resource_ids_are_broken(self):
+        class BrokenMovieSeasonsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/movies/movie-1/seasons":
+                    payload["data"]["items"][0]["primary_resource_ids"] = ["missing-resource"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenMovieSeasonsClient):
+            results = self.module.run_checks(self._args())
+
+        seasons = next(item for item in results if item.name == "movie_seasons")
+        self.assertFalse(seasons.ok)
+        self.assertIn("season_0_primary_resource_ids_unknown=missing-resource", seasons.detail)
 
     def test_movie_episode_diagnostics_fails_when_summary_shape_is_broken(self):
         class BrokenMovieEpisodeDiagnosticsClient(FakeSmokeClient):
