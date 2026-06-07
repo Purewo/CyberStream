@@ -335,6 +335,27 @@ EXPECTED_EXTERNAL_PLAYER_PROFILE_KEYS = [
     "handoff_methods",
     "recommended",
 ]
+EXPECTED_SUBTITLE_SETTINGS_KEYS = [
+    "resource_id",
+    "settings",
+    "customized",
+    "source",
+    "updated_at",
+]
+EXPECTED_SUBTITLE_DISPLAY_SETTING_KEYS = [
+    "zhSize",
+    "zhColor",
+    "enSize",
+    "enColor",
+    "gap",
+    "offset",
+]
+SUBTITLE_NUMERIC_RANGES = {
+    "zhSize": (8, 96),
+    "enSize": (8, 96),
+    "gap": (0, 120),
+    "offset": (-500, 500),
+}
 EXPECTED_CATALOG_FILTER_KEYS = [
     "genres",
     "years",
@@ -1719,6 +1740,52 @@ def _external_playback_manifest_issues(data: Any, expected_resource_id: str = ""
     return issues
 
 
+def _subtitle_settings_payload_issues(data: Any, expected_resource_id: str = "") -> list[str]:
+    if not isinstance(data, dict):
+        return ["subtitle_settings_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_SUBTITLE_SETTINGS_KEYS, "subtitle_settings"))
+    resource_id = data.get("resource_id")
+    if "resource_id" in data and not isinstance(resource_id, str):
+        issues.append("subtitle_settings_resource_id_not_str")
+    elif expected_resource_id and resource_id != expected_resource_id:
+        issues.append(f"subtitle_settings_resource_id={resource_id}")
+
+    if "customized" in data and data.get("customized") not in (True, False):
+        issues.append("subtitle_settings_customized_not_bool")
+    if "source" in data and data.get("source") not in {"default", "resource", "user"}:
+        issues.append(f"subtitle_settings_source={data.get('source')}")
+    if "updated_at" in data and data.get("updated_at") is not None and not isinstance(data.get("updated_at"), str):
+        issues.append("subtitle_settings_updated_at_not_str")
+    if data.get("customized") is False and data.get("source") != "default":
+        issues.append(f"subtitle_settings_default_source={data.get('source')}")
+    if data.get("customized") is True and data.get("source") == "default":
+        issues.append("subtitle_settings_customized_default_source")
+
+    settings = data.get("settings")
+    issues.extend(_dict_missing_keys(settings, EXPECTED_SUBTITLE_DISPLAY_SETTING_KEYS, "subtitle_display"))
+    if isinstance(settings, dict):
+        for key, (minimum, maximum) in SUBTITLE_NUMERIC_RANGES.items():
+            value = settings.get(key)
+            if key in settings and not _json_int(value):
+                issues.append(f"subtitle_display_{key}_not_int")
+            elif key in settings and (value < minimum or value > maximum):
+                issues.append(f"subtitle_display_{key}_out_of_range={value}")
+        for key in ("zhColor", "enColor"):
+            value = settings.get(key)
+            if key in settings and not isinstance(value, str):
+                issues.append(f"subtitle_display_{key}_not_str")
+            elif key in settings:
+                raw = value.strip()
+                hex_digits = raw[1:] if raw.startswith("#") else ""
+                if len(hex_digits) not in {3, 6, 8} or not all(
+                    char in "0123456789abcdefABCDEF" for char in hex_digits
+                ):
+                    issues.append(f"subtitle_display_{key}_invalid")
+    return issues
+
+
 def _catalog_filter_option_issues(item: Any, index: int, kind: str) -> list[str]:
     prefix = f"{kind}_{index}"
     if not isinstance(item, dict):
@@ -2903,6 +2970,81 @@ def check_external_playback(client: SmokeClient) -> CheckResult:
     )
 
 
+def check_subtitle_settings(client: SmokeClient) -> CheckResult:
+    catalog_payload = client.get_json("/api/v1/movies", {"page": 1, "page_size": 1})
+    catalog_data = _response_data(catalog_payload)
+    catalog_items = catalog_data.get("items") if isinstance(catalog_data, dict) else None
+    if not isinstance(catalog_items, list) or not catalog_items:
+        return _result(
+            "subtitle_settings",
+            True,
+            "skipped no catalog movies",
+            {"skipped": True, "catalog_item_count": 0},
+        )
+
+    catalog_sample = catalog_items[0]
+    movie_id = catalog_sample.get("id") if isinstance(catalog_sample, dict) else None
+    if not isinstance(movie_id, str) or not movie_id:
+        return _result(
+            "subtitle_settings",
+            False,
+            f"catalog_sample_id_invalid={movie_id}",
+            {"catalog_item_count": len(catalog_items), "movie_id": movie_id},
+        )
+
+    resources_payload = client.get_json(f"/api/v1/movies/{urllib.parse.quote(movie_id, safe='')}/resources")
+    resources_data = _response_data(resources_payload)
+    resource_items = (
+        resources_data.get("items")
+        if isinstance(resources_data, dict) and isinstance(resources_data.get("items"), list)
+        else []
+    )
+    if not resource_items:
+        return _result(
+            "subtitle_settings",
+            True,
+            f"skipped no resources movie_id={movie_id}",
+            {"skipped": True, "movie_id": movie_id},
+        )
+
+    sample_resource = resource_items[0] if isinstance(resource_items[0], dict) else {}
+    resource_id = sample_resource.get("id")
+    if not isinstance(resource_id, str) or not resource_id:
+        return _result(
+            "subtitle_settings",
+            False,
+            f"resource_id_invalid={resource_id}",
+            {"movie_id": movie_id, "resource_id": resource_id},
+        )
+
+    payload = client.get_json(f"/api/v1/resources/{urllib.parse.quote(resource_id, safe='')}/subtitle-settings")
+    data = _response_data(payload)
+    issues = _subtitle_settings_payload_issues(data, expected_resource_id=resource_id)
+    settings = data.get("settings") if isinstance(data, dict) and isinstance(data.get("settings"), dict) else {}
+
+    ok = not issues
+    detail = (
+        f"resource={resource_id} source={data.get('source') if isinstance(data, dict) else None} "
+        f"customized={data.get('customized') if isinstance(data, dict) else None} "
+        f"zhSize={settings.get('zhSize')} enSize={settings.get('enSize')} "
+        f"offset={settings.get('offset')}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "subtitle_settings",
+        ok,
+        detail,
+        {
+            "movie_id": movie_id,
+            "resource_id": resource_id,
+            "source": data.get("source") if isinstance(data, dict) else None,
+            "customized": data.get("customized") if isinstance(data, dict) else None,
+            "issues": issues,
+        },
+    )
+
+
 def check_featured(client: SmokeClient) -> CheckResult:
     expected_limit = 5
     payload = client.get_json("/api/v1/featured")
@@ -3916,6 +4058,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
         CheckSpec("external_playback", lambda: check_external_playback(client)),
+        CheckSpec("subtitle_settings", lambda: check_subtitle_settings(client)),
         CheckSpec("featured", lambda: check_featured(client)),
         CheckSpec("homepage_config", lambda: check_homepage_config(client)),
         CheckSpec("homepage", lambda: check_homepage(client)),

@@ -886,6 +886,23 @@ class FakeSmokeClient:
                     "warnings": [],
                 },
             }
+        if path == "/api/v1/resources/resource-1/subtitle-settings":
+            return {
+                "data": {
+                    "resource_id": "resource-1",
+                    "settings": {
+                        "zhSize": 28,
+                        "zhColor": "#FFFFFF",
+                        "enSize": 22,
+                        "enColor": "#FFFFFF",
+                        "gap": 6,
+                        "offset": 72,
+                    },
+                    "customized": False,
+                    "source": "default",
+                    "updated_at": None,
+                },
+            }
         if path == "/api/v1/featured":
             detail = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
             return {"data": [detail]}
@@ -1387,6 +1404,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "movie_detail",
                 "movie_resources",
                 "external_playback",
+                "subtitle_settings",
                 "featured",
                 "homepage_config",
                 "homepage",
@@ -1863,6 +1881,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         external_playback = next(item for item in results if item.name == "external_playback")
         self.assertFalse(external_playback.ok)
         self.assertIn("external_handoff_playlist_url_invalid", external_playback.detail)
+
+    def test_subtitle_settings_fail_when_color_is_invalid(self):
+        class BrokenSubtitleSettingsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/resources/resource-1/subtitle-settings":
+                    payload["data"]["settings"]["zhColor"] = "white"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenSubtitleSettingsClient):
+            results = self.module.run_checks(self._args())
+
+        subtitle_settings = next(item for item in results if item.name == "subtitle_settings")
+        self.assertFalse(subtitle_settings.ok)
+        self.assertIn("subtitle_display_zhColor_invalid", subtitle_settings.detail)
 
     def test_libraries_fail_when_virtual_favorites_leaks_into_list(self):
         class BrokenLibrariesClient(FakeSmokeClient):
