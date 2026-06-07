@@ -37,6 +37,24 @@ class FakeSmokeClient:
     def get_json(self, path, query=None):
         if path in {"/", "/api/v1/health"}:
             return {"data": {"status": "up", "version": "1.21.0", "database": {"status": "ok", "reason": "ok"}}}
+        if path == "/api/v1/auth/me":
+            return {
+                "data": {
+                    "user_management_enabled": False,
+                    "authenticated": False,
+                    "role": None,
+                    "auth_via": None,
+                    "user": None,
+                    "permissions": {
+                        "admin": False,
+                        "read_catalog": False,
+                        "manage_catalog": False,
+                        "manage_users": False,
+                        "personal_history": False,
+                        "personal_subtitle_settings": False,
+                    },
+                },
+            }
         if path == "/api/v1/system/update-check":
             current_version = (query or {}).get("current_version") or "1.21.0"
             current_release = (query or {}).get("current_release") or f"{current_version}-pc.0"
@@ -1563,6 +1581,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertEqual(
             [
                 "health",
+                "auth_me",
                 "openapi_health_contract",
                 "docs_index",
                 "update_check",
@@ -2057,6 +2076,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         external_playback = next(item for item in results if item.name == "external_playback")
         self.assertFalse(external_playback.ok)
         self.assertIn("external_handoff_playlist_url_invalid", external_playback.detail)
+
+    def test_auth_me_fails_when_unauthenticated_permissions_are_enabled(self):
+        class BrokenAuthMeClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/auth/me":
+                    payload["data"]["permissions"]["read_catalog"] = True
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenAuthMeClient):
+            results = self.module.run_checks(self._args())
+
+        auth_me = next(item for item in results if item.name == "auth_me")
+        self.assertFalse(auth_me.ok)
+        self.assertIn("unauth_permissions_enabled=read_catalog", auth_me.detail)
 
     def test_subtitle_settings_fail_when_color_is_invalid(self):
         class BrokenSubtitleSettingsClient(FakeSmokeClient):

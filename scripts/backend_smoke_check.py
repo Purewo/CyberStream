@@ -647,6 +647,23 @@ EXPECTED_DOC_KEYS = [
     "runbook",
     "test-checklist",
 ]
+EXPECTED_AUTH_ME_KEYS = [
+    "user_management_enabled",
+    "authenticated",
+    "role",
+    "auth_via",
+    "user",
+    "permissions",
+]
+EXPECTED_AUTH_PERMISSION_KEYS = [
+    "admin",
+    "read_catalog",
+    "manage_catalog",
+    "manage_users",
+    "personal_history",
+    "personal_subtitle_settings",
+]
+EXPECTED_AUTH_ROLES = {"admin", "user"}
 
 
 @dataclass
@@ -773,6 +790,77 @@ def check_health(client: SmokeClient, expected_version: str = "") -> CheckResult
             "root_status": root_status,
             "root_version": root_version,
             "root_database": root_database,
+            "issues": issues,
+        },
+    )
+
+
+def check_auth_me(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/auth/me")
+    data = _response_data(payload)
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_AUTH_ME_KEYS, "auth_me"))
+
+    authenticated = data.get("authenticated") if isinstance(data, dict) else None
+    user_management_enabled = data.get("user_management_enabled") if isinstance(data, dict) else None
+    role = data.get("role") if isinstance(data, dict) else None
+    auth_via = data.get("auth_via") if isinstance(data, dict) else None
+    user = data.get("user") if isinstance(data, dict) else None
+
+    if authenticated not in (True, False):
+        issues.append("auth_me_authenticated_not_bool")
+    if user_management_enabled not in (True, False):
+        issues.append("auth_me_user_management_enabled_not_bool")
+    if role is not None and not isinstance(role, str):
+        issues.append("auth_me_role_not_str_or_null")
+    if isinstance(role, str) and role not in EXPECTED_AUTH_ROLES:
+        issues.append(f"auth_me_role={role}")
+    if auth_via is not None and not isinstance(auth_via, str):
+        issues.append("auth_me_auth_via_not_str_or_null")
+    if user is not None and not isinstance(user, dict):
+        issues.append("auth_me_user_not_object_or_null")
+
+    permissions = data.get("permissions") if isinstance(data, dict) else None
+    issues.extend(_dict_missing_keys(permissions, EXPECTED_AUTH_PERMISSION_KEYS, "auth_permissions"))
+    if isinstance(permissions, dict):
+        for key in EXPECTED_AUTH_PERMISSION_KEYS:
+            if key in permissions and permissions.get(key) not in (True, False):
+                issues.append(f"auth_permission_{key}_not_bool")
+
+        if authenticated is False:
+            enabled_permissions = [key for key in EXPECTED_AUTH_PERMISSION_KEYS if permissions.get(key) is True]
+            if enabled_permissions:
+                issues.append(f"unauth_permissions_enabled={','.join(enabled_permissions)}")
+
+    if authenticated is False:
+        if role is not None:
+            issues.append(f"unauth_role={role}")
+        if auth_via is not None:
+            issues.append(f"unauth_auth_via={auth_via}")
+        if user is not None:
+            issues.append("unauth_user_present")
+    elif authenticated is True:
+        if not isinstance(role, str) or role not in EXPECTED_AUTH_ROLES:
+            issues.append(f"authenticated_role={role}")
+        if user_management_enabled is True and not isinstance(user, dict):
+            issues.append("authenticated_user_missing")
+
+    ok = not issues
+    detail = (
+        f"authenticated={authenticated} role={role} auth_via={auth_via} "
+        f"user_management_enabled={user_management_enabled}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "auth_me",
+        ok,
+        detail,
+        {
+            "authenticated": authenticated,
+            "role": role,
+            "auth_via": auth_via,
+            "user_management_enabled": user_management_enabled,
             "issues": issues,
         },
     )
@@ -4416,6 +4504,7 @@ def run_checks(args) -> list[CheckResult]:
     expected_openapi_version = getattr(args, "expected_openapi_version", "")
     checks = [
         CheckSpec("health", lambda: check_health(client, expected_version)),
+        CheckSpec("auth_me", lambda: check_auth_me(client)),
         CheckSpec(
             "openapi_health_contract",
             lambda: check_openapi_health_contract(client, expected_openapi_version),
