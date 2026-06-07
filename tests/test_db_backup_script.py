@@ -74,8 +74,11 @@ class DbBackupScriptTests(unittest.TestCase):
             with redirect_stdout(output):
                 backup_path = self.module._backup(self._db_path(), self._backup_dir())
 
-        integrity_check.assert_called_once_with(backup_path)
+        temp_backup_path = self.module._backup_temp_path(backup_path)
+        integrity_check.assert_called_once_with(temp_backup_path)
         self.assertEqual(f"{backup_path}\n", output.getvalue())
+        self.assertTrue(backup_path.exists())
+        self.assertFalse(temp_backup_path.exists())
 
     def test_backup_rejects_generated_copy_when_integrity_check_fails(self):
         self._write_value("before")
@@ -89,6 +92,7 @@ class DbBackupScriptTests(unittest.TestCase):
         self.assertIn("integrity check failed", str(context.exception))
         self.assertEqual("", output.getvalue())
         self.assertEqual([], list(self._backup_dir().glob("*.db")))
+        self.assertEqual([], list(self._backup_dir().glob("*.tmp")))
 
     def test_verify_accepts_current_database_and_backup_file(self):
         self._write_value("before")

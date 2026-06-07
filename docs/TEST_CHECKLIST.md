@@ -88,7 +88,7 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 预期：
 - 当前数据库 integrity check 返回 `ok`
 - `backups/` 下生成新的 `cyber_library.<timestamp>.db`
-- `backup` 在输出路径前已自动校验新备份文件
+- `backup` 先写入临时文件，校验通过后才发布正式 `.db`
 - 自动校验失败时，未确认的备份副本不会留在 `backups/`
 - 新备份文件 integrity check 返回 `ok`
 - `list` 能看到最新备份文件

@@ -22,6 +22,10 @@ def _resolve(path_value):
     return Path(path_value).expanduser().resolve()
 
 
+def _backup_temp_path(target: Path):
+    return target.with_name(f".{target.name}.tmp")
+
+
 def _integrity_check(db_path: Path):
     if not db_path.exists():
         raise SystemExit(f"database not found: {db_path}")
@@ -54,10 +58,11 @@ def _backup(db_path: Path, backup_dir: Path):
         counter += 1
 
     backup_verified = False
+    temp_target = _backup_temp_path(target)
     try:
         source = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
-            destination = sqlite3.connect(target)
+            destination = sqlite3.connect(temp_target)
             try:
                 source.backup(destination)
             finally:
@@ -65,16 +70,17 @@ def _backup(db_path: Path, backup_dir: Path):
         finally:
             source.close()
 
-        _integrity_check(target)
+        _integrity_check(temp_target)
+        temp_target.replace(target)
         backup_verified = True
     finally:
         if not backup_verified:
             try:
-                target.unlink()
+                temp_target.unlink()
             except FileNotFoundError:
                 pass
             except OSError as exc:
-                print(f"warning: failed to remove incomplete backup {target}: {exc}", file=sys.stderr)
+                print(f"warning: failed to remove incomplete backup {temp_target}: {exc}", file=sys.stderr)
 
     print(target)
     return target
