@@ -209,10 +209,17 @@ def check_openapi_health_contract(client: SmokeClient, expected_openapi_version:
     openapi_version = info.get("version")
     expected_openapi_version = str(expected_openapi_version or "").strip()
     paths = payload.get("paths") if isinstance(payload, dict) else {}
+    components = payload.get("components") if isinstance(payload, dict) else {}
     operation = ((paths or {}).get("/api/v1/health") or {}).get("get") or {}
     operation_id = operation.get("operationId")
     public = operation.get("security") == []
     issues = []
+    if payload.get("openapi") != "3.0.0":
+        issues.append(f"openapi={payload.get('openapi')}")
+    if not isinstance(paths, dict) or not paths:
+        issues.append("paths_invalid")
+    if not isinstance(components, dict):
+        issues.append("components_invalid")
     if operation_id != "apiHealthCheck":
         issues.append(f"operationId={operation_id}")
     if not public:
@@ -232,8 +239,11 @@ def check_openapi_health_contract(client: SmokeClient, expected_openapi_version:
         {
             "operation_id": operation_id,
             "security": operation.get("security"),
+            "openapi": payload.get("openapi"),
             "openapi_version": openapi_version,
             "expected_openapi_version": expected_openapi_version or None,
+            "path_count": len(paths) if isinstance(paths, dict) else 0,
+            "components_present": isinstance(components, dict),
             "issues": issues,
         },
     )

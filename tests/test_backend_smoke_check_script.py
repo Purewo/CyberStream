@@ -39,6 +39,7 @@ class FakeSmokeClient:
             return {"data": {"status": "up", "version": "1.21.0", "database": {"status": "ok", "reason": "ok"}}}
         if path == "/api/v1/openapi.json":
             return {
+                "openapi": "3.0.0",
                 "info": {
                     "title": "Cyber Media Center API",
                     "version": "1.21.0-beta",
@@ -51,6 +52,7 @@ class FakeSmokeClient:
                         },
                     },
                 },
+                "components": {"schemas": {}},
             }
         if path == "/api/v1/docs":
             keys = [
@@ -478,6 +480,26 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", health_contract.detail)
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", docs.detail)
         self.assertIn("openapi_version_expected=1.22.0-beta actual=1.21.0-beta", modules.detail)
+
+    def test_openapi_health_contract_fails_when_main_document_is_not_openapi(self):
+        class BrokenOpenApiDocumentClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                if path == "/api/v1/openapi.json":
+                    return {
+                        "info": {"version": "1.21.0-beta"},
+                        "paths": {},
+                        "components": [],
+                    }
+                return super().get_json(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenOpenApiDocumentClient):
+            results = self.module.run_checks(self._args())
+
+        contract = next(item for item in results if item.name == "openapi_health_contract")
+        self.assertFalse(contract.ok)
+        self.assertIn("openapi=None", contract.detail)
+        self.assertIn("paths_invalid", contract.detail)
+        self.assertIn("components_invalid", contract.detail)
 
     def test_health_fails_when_database_is_not_ok(self):
         class DegradedHealthClient(FakeSmokeClient):
