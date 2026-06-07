@@ -69,7 +69,15 @@ curl -i http://127.0.0.1:5004/api/v1/health
 
 该检查会逐个拉取 `GET /api/v1/openapi/modules/<module_key>.json`，并调用 `GET /api/v1/storage/sources/<id>/health` 和 `GET /api/v1/system/tmdb-config/check`。TMDB 检查不返回 token 明文。
 
-如果已设置 `CYBER_API_TOKEN`，管理类接口需要携带 token：
+如果已设置 `CYBER_API_TOKEN`，管理类接口和 smoke check 需要携带 token。`backend_smoke_check.py` 会自动读取 `CYBER_BACKEND_SMOKE_API_TOKEN` 或 `CYBER_API_TOKEN`，也可以显式传参：
+
+```bash
+./scripts/backend_smoke_check.py --base-url http://127.0.0.1:5004 \
+  --api-token "$CYBER_API_TOKEN" \
+  --min-storage-sources 1
+```
+
+手工 curl 示例：
 
 ```bash
 curl -i http://127.0.0.1:5004/api/v1/storage/sources \

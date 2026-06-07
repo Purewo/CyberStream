@@ -22,9 +22,17 @@ def _load_script_module():
 
 
 class FakeSmokeClient:
-    def __init__(self, base_url, timeout=10.0):
+    last_init = None
+
+    def __init__(self, base_url, timeout=10.0, api_token=None):
         self.base_url = base_url
         self.timeout = timeout
+        self.api_token = api_token
+        type(self).last_init = {
+            "base_url": base_url,
+            "timeout": timeout,
+            "api_token": api_token,
+        }
 
     def get_json(self, path, query=None):
         if path == "/api/v1/health":
@@ -183,6 +191,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         args = {
             "base_url": "http://example.test",
             "timeout": 1.0,
+            "api_token": "",
             "live_check_limit": 500,
             "openapi_module_json_check": False,
             "max_fallback_items": 0,
@@ -216,6 +225,42 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             ],
             [item.name for item in results],
         )
+
+    def test_run_checks_passes_api_token_to_smoke_client(self):
+        class TokenAwareClient(FakeSmokeClient):
+            last_init = None
+
+        with patch.object(self.module, "SmokeClient", TokenAwareClient):
+            self.module.run_checks(self._args(api_token="secret-token"))
+
+        self.assertEqual("secret-token", TokenAwareClient.last_init["api_token"])
+
+    def test_smoke_client_sends_bearer_authorization_header(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"data":{"ok":true}}'
+
+        requests = []
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        client = self.module.SmokeClient("http://example.test", timeout=2.5, api_token="secret-token")
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=fake_urlopen):
+            payload = client.get_json("/api/v1/storage/sources")
+
+        self.assertEqual({"data": {"ok": True}}, payload)
+        request, timeout = requests[0]
+        self.assertEqual(2.5, timeout)
+        self.assertEqual("application/json", request.get_header("Accept"))
+        self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
 
     def test_resource_governance_fails_when_live_paths_are_invalid(self):
         class BrokenResourceClient(FakeSmokeClient):

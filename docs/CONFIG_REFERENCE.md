@@ -297,6 +297,8 @@ X-Cyber-API-Token: <token>
 
 未设置 `CYBER_API_TOKEN` 时，鉴权不会启用，以保持本地开发和当前前端兼容。
 
+`scripts/backend_smoke_check.py` 支持通过 `--api-token` 为管理类探测接口携带该 token；未显式传参时会读取 `CYBER_BACKEND_SMOKE_API_TOKEN`，再回退读取 `CYBER_API_TOKEN`。
+
 #### `CYBER_AUTH_ENABLED`
 API token 鉴权总开关。默认随 `CYBER_API_TOKEN` 是否存在自动启用；如果需要临时关闭，可显式设置为 `false`。关闭后，即使环境中仍保留 `CYBER_API_TOKEN`，该 token 也不能在用户管理模式下作为管理员后门。
 

@@ -14,6 +14,7 @@ from typing import Any
 
 
 DEFAULT_BASE_URL = os.environ.get("CYBER_BACKEND_SMOKE_BASE_URL", "http://127.0.0.1:5004")
+DEFAULT_API_TOKEN = os.environ.get("CYBER_BACKEND_SMOKE_API_TOKEN") or os.environ.get("CYBER_API_TOKEN") or ""
 DEFAULT_SYSTEMD_SERVICES = [
     "cyberstream-backend",
     "nginx",
@@ -54,15 +55,19 @@ class CheckSpec:
 
 
 class SmokeClient:
-    def __init__(self, base_url: str, timeout: float = 30.0):
+    def __init__(self, base_url: str, timeout: float = 30.0, api_token: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.api_token = (api_token or "").strip()
 
     def get_json(self, path: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         if query:
             url = f"{url}?{urllib.parse.urlencode(query)}"
-        request = urllib.request.Request(url, headers={"Accept": "application/json"})
+        headers = {"Accept": "application/json"}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+        request = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = response.read().decode("utf-8")
@@ -524,7 +529,7 @@ def check_systemd_services(services: list[str], timeout: float) -> CheckResult:
 
 
 def run_checks(args) -> list[CheckResult]:
-    client = SmokeClient(args.base_url, timeout=args.timeout)
+    client = SmokeClient(args.base_url, timeout=args.timeout, api_token=args.api_token)
     checks = [
         CheckSpec("health", lambda: check_health(client)),
         CheckSpec("openapi_health_contract", lambda: check_openapi_health_contract(client)),
@@ -563,6 +568,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run CyberStream backend smoke checks.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Backend base URL")
     parser.add_argument("--timeout", type=float, default=30.0, help="HTTP and systemctl timeout in seconds")
+    parser.add_argument(
+        "--api-token",
+        default=DEFAULT_API_TOKEN,
+        help=(
+            "Optional CyberStream API token for protected management endpoints. "
+            "Defaults to CYBER_BACKEND_SMOKE_API_TOKEN or CYBER_API_TOKEN."
+        ),
+    )
     parser.add_argument("--live-check-limit", type=int, default=500, help="Resource live-check limit")
     parser.add_argument(
         "--openapi-module-json-check",

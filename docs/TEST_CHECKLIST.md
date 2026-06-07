@@ -470,12 +470,16 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
   -H "Authorization: Bearer $CYBER_API_TOKEN"
 curl -i http://127.0.0.1:5004/api/v1/storage/sources \
   -H "X-Cyber-API-Token: $CYBER_API_TOKEN"
+./scripts/backend_smoke_check.py --base-url http://127.0.0.1:5004 \
+  --api-token "$CYBER_API_TOKEN" \
+  --min-storage-sources 1
 ```
 
 预期：
 - 不带 token 返回 401
 - 错误 token 返回 403
 - Bearer token 和 `X-Cyber-API-Token` 均可访问管理类 API
+- 带 `--api-token` 的 smoke check 全部返回 `OK`
 - `/`、`/resources/<id>/stream`、影片 poster/backdrop 图片 GET 默认仍可公开读取
 
 ### 3.14 用户管理回归
@@ -731,7 +735,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`692 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`694 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
