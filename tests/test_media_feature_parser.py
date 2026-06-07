@@ -74,9 +74,17 @@ class MediaFeatureParserTests(unittest.TestCase):
             "〔 高清电影下载 www.mkvhome.com 〕.mkv",
             636976,
         ))
+        self.assertTrue(ResourceValidator.is_probable_promotional_video(
+            "【更多高清剧集下载请访问 www.BPHDTV.com】【更多剧集打包下载请访问 www.BPHDTV.com】.mkv",
+            636976,
+        ))
         self.assertFalse(ResourceValidator.is_probable_promotional_video(
             "落凡尘.Into.The.Mortal.World.2024.2160p.HQ.WEB-DL.DTS5.1.H264.60fps.2Audio-ParkHD.mkv",
             24732970473,
+        ))
+        self.assertFalse(ResourceValidator.is_probable_promotional_video(
+            "The.Lord.of.the.Rings.The.Rings.of.Power.S02E08.2024.2160p.AMZN.WEB-DL.H265-ZeroTV.mkv",
+            10834279322,
         ))
         self.assertFalse(ResourceValidator.is_probable_promotional_video(
             "Kung.Fu.Panda.3.2016.1080p.BluRay.REMUX.AVC.DTS-HD.MA.7.1-RARBG.mkv",

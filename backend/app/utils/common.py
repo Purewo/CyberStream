@@ -212,8 +212,13 @@ class ResourceValidator:
     PROMOTIONAL_VIDEO_MARKERS = (
         '更多无水印',
         '更多高清电影访问',
+        '更多电视剧集下载',
+        '更多高清剧集下载',
+        '更多剧集打包下载',
         '高清电影下载',
         'BBQDDQ.COM',
+        'BPHDTV.COM',
+        'PTHDTV.COM',
         'MKVHOME.COM',
         'RARBG.COM',
     )
