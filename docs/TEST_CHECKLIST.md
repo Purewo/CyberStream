@@ -48,12 +48,15 @@ ss -ltnp | grep ':5004 '
 
 ```bash
 curl -i http://127.0.0.1:5004/
+curl -i http://127.0.0.1:5004/api/v1/health
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004
 ```
 
 预期：
 - HTTP 200
 - 返回 JSON
 - `data.status = up`
+- smoke check 全部返回 `OK`
 
 ### 2.4 公网健康检查
 

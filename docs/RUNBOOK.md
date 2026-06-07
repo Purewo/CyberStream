@@ -51,11 +51,11 @@ cp .env.local.example .env.local
 ```bash
 curl -i http://127.0.0.1:5004/
 curl -i http://127.0.0.1:5004/api/v1/health
-./scripts/backend_smoke_check.py --base-url http://127.0.0.1:5004
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004
 ```
 
 预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`）。
-`backend_smoke_check.py` 会同时检查健康接口、OpenAPI 健康入口、扫描状态、fallback/episode 队列和资源治理 live check。
+`backend_smoke_check.py` 会同时检查健康接口、OpenAPI 健康入口、扫描状态、fallback/episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
 
 如果已设置 `CYBER_API_TOKEN`，管理类接口需要携带 token：
 

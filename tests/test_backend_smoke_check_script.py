@@ -75,6 +75,8 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             "max_fallback_items": 0,
             "max_episode_review_items": 0,
             "max_resource_actionable": 0,
+            "systemd": False,
+            "systemd_service": None,
         }
         args.update(overrides)
         return Namespace(**args)
@@ -110,6 +112,43 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         governance = next(item for item in results if item.name == "resource_governance")
         self.assertFalse(governance.ok)
         self.assertIn("live=463/464", governance.detail)
+
+    def test_systemd_check_reports_all_services_active(self):
+        completed = self.module.subprocess.CompletedProcess(
+            args=["systemctl", "is-active"],
+            returncode=0,
+            stdout="active\nactive\n",
+            stderr="",
+        )
+
+        with patch.object(self.module.subprocess, "run", return_value=completed):
+            result = self.module.check_systemd_services(["backend", "nginx"], timeout=1.0)
+
+        self.assertTrue(result.ok)
+        self.assertEqual({"backend": "active", "nginx": "active"}, result.data["services"])
+
+    def test_run_checks_includes_systemd_failures_when_enabled(self):
+        completed = self.module.subprocess.CompletedProcess(
+            args=["systemctl", "is-active"],
+            returncode=3,
+            stdout="active\ninactive\n",
+            stderr="",
+        )
+
+        with patch.object(self.module, "SmokeClient", FakeSmokeClient), patch.object(
+            self.module.subprocess,
+            "run",
+            return_value=completed,
+        ):
+            results = self.module.run_checks(self._args(
+                systemd=True,
+                systemd_service=["backend", "openlist"],
+            ))
+
+        systemd = results[0]
+        self.assertEqual("systemd_services", systemd.name)
+        self.assertFalse(systemd.ok)
+        self.assertEqual("inactive", systemd.data["services"]["openlist"])
 
 
 if __name__ == "__main__":

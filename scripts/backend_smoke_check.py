@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,6 +13,13 @@ from typing import Any
 
 
 DEFAULT_BASE_URL = os.environ.get("CYBER_BACKEND_SMOKE_BASE_URL", "http://127.0.0.1:5004")
+DEFAULT_SYSTEMD_SERVICES = [
+    "cyberstream-backend",
+    "nginx",
+    "cyberstream-alist",
+    "cyberstream-openlist",
+    "ddns-go",
+]
 
 
 @dataclass
@@ -149,6 +156,39 @@ def check_resource_governance(client: SmokeClient, live_check_limit: int, max_ac
     )
 
 
+def check_systemd_services(services: list[str], timeout: float) -> CheckResult:
+    if not services:
+        return _result("systemd_services", True, "no services configured", {"services": {}})
+
+    command = ["systemctl", "is-active", *services]
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("systemctl not found") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"systemctl timed out after {timeout:g}s") from exc
+
+    statuses = [line.strip() for line in completed.stdout.splitlines()]
+    service_statuses = {
+        service: statuses[index] if index < len(statuses) and statuses[index] else "unknown"
+        for index, service in enumerate(services)
+    }
+    inactive = {
+        service: status
+        for service, status in service_statuses.items()
+        if status != "active"
+    }
+    ok = completed.returncode == 0 and not inactive
+    detail = ", ".join(f"{service}={status}" for service, status in service_statuses.items())
+    return _result("systemd_services", ok, detail, {"services": service_statuses})
+
+
 def run_checks(args) -> list[CheckResult]:
     client = SmokeClient(args.base_url, timeout=args.timeout)
     checks = [
@@ -159,6 +199,9 @@ def run_checks(args) -> list[CheckResult]:
         lambda: check_episode_review(client, args.max_episode_review_items),
         lambda: check_resource_governance(client, args.live_check_limit, args.max_resource_actionable),
     ]
+    if args.systemd:
+        systemd_services = args.systemd_service or list(DEFAULT_SYSTEMD_SERVICES)
+        checks.insert(0, lambda: check_systemd_services(systemd_services, args.timeout))
 
     results: list[CheckResult] = []
     for check in checks:
@@ -178,6 +221,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-fallback-items", type=int, default=0, help="Maximum fallback metadata work items")
     parser.add_argument("--max-episode-review-items", type=int, default=0, help="Maximum episode review items")
     parser.add_argument("--max-resource-actionable", type=int, default=0, help="Maximum actionable resource issues")
+    parser.add_argument("--systemd", action="store_true", help="Also check local systemd service states")
+    parser.add_argument(
+        "--systemd-service",
+        action="append",
+        default=None,
+        help="Systemd service to check when --systemd is set; may be repeated",
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON report")
     return parser
 
