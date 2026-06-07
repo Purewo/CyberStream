@@ -207,6 +207,14 @@ class FakeSmokeClient:
                 "paths": {"/api/v1/health": {"get": {}}},
                 "components": {"schemas": {}},
             }
+        if path == "/api/v1/aggregator/sources":
+            return {
+                "data": {
+                    "sources": ["bt7274", "btbtla", "rarbt", "yinfans", "renrenys", "hdzu", "4kzhinan"],
+                    "priority": ["bt7274", "rarbt", "btbtla", "yinfans", "renrenys", "hdzu", "4kzhinan"],
+                    "default": "rarbt",
+                },
+            }
         if path == "/api/v1/scan":
             return {"data": {"status": "idle", "recent_errors": []}}
         if path == "/api/v1/metadata/providers":
@@ -2067,6 +2075,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "docs_index",
                 "update_check",
                 "openapi_modules",
+                "aggregator_sources",
                 "scan",
                 "metadata_providers",
                 "tmdb_config",
@@ -2508,6 +2517,21 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         modules = next(item for item in results if item.name == "openapi_modules")
         self.assertFalse(modules.ok)
         self.assertIn("metadata:version_expected=1.21.0-beta actual=1.20.0-beta", modules.detail)
+
+    def test_aggregator_sources_fail_when_default_is_unknown(self):
+        class BrokenAggregatorSourcesClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/aggregator/sources":
+                    payload["data"]["default"] = "missing-source"
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenAggregatorSourcesClient):
+            results = self.module.run_checks(self._args())
+
+        sources = next(item for item in results if item.name == "aggregator_sources")
+        self.assertFalse(sources.ok)
+        self.assertIn("aggregator_default_unknown=missing-source", sources.detail)
 
     def test_metadata_providers_fails_when_required_provider_is_missing(self):
         class MissingBangumiClient(FakeSmokeClient):

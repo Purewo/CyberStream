@@ -879,6 +879,11 @@ EXPECTED_CATALOG_VISIBILITY_KEYS = [
     "is_visible",
     "can_publish",
 ]
+EXPECTED_AGGREGATOR_SOURCES_KEYS = [
+    "sources",
+    "priority",
+    "default",
+]
 EXPECTED_STORAGE_BROWSE_KEYS = [
     "source",
     "current_path",
@@ -6169,6 +6174,74 @@ def check_background_jobs_prune(client: SmokeClient) -> CheckResult:
     )
 
 
+def _string_list_issues(items: Any, prefix: str) -> tuple[list[str], list[str]]:
+    if not isinstance(items, list):
+        return [], [f"{prefix}_not_list"]
+
+    values = []
+    issues = []
+    seen = set()
+    for index, item in enumerate(items):
+        if not isinstance(item, str):
+            issues.append(f"{prefix}_{index}_not_str")
+            continue
+        value = item.strip()
+        if not value:
+            issues.append(f"{prefix}_{index}_empty")
+            continue
+        if value in seen:
+            issues.append(f"{prefix}_{index}_duplicate={value}")
+        seen.add(value)
+        values.append(value)
+    return values, issues
+
+
+def check_aggregator_sources(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/aggregator/sources")
+    data = _response_data(payload)
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_AGGREGATOR_SOURCES_KEYS, "aggregator_sources"))
+
+    sources, source_issues = _string_list_issues(data.get("sources"), "aggregator_sources")
+    priority, priority_issues = _string_list_issues(data.get("priority"), "aggregator_priority")
+    issues.extend(source_issues)
+    issues.extend(priority_issues)
+
+    source_set = set(sources)
+    if not sources:
+        issues.append("aggregator_sources_empty")
+
+    default = data.get("default")
+    if not isinstance(default, str) or not default.strip():
+        issues.append("aggregator_default_invalid")
+    elif default not in source_set:
+        issues.append(f"aggregator_default_unknown={default}")
+
+    unknown_priority = sorted({item for item in priority if item not in source_set})
+    if unknown_priority:
+        issues.append(f"aggregator_priority_unknown={','.join(unknown_priority)}")
+
+    missing_priority = sorted(source_set - set(priority))
+    if missing_priority:
+        issues.append(f"aggregator_priority_missing={','.join(missing_priority)}")
+
+    ok = not issues
+    detail = f"sources={len(sources)} priority={len(priority)} default={default}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "aggregator_sources",
+        ok,
+        detail,
+        {
+            "sources": sources,
+            "priority": priority,
+            "default": default,
+            "issues": issues,
+        },
+    )
+
+
 def _source_label(source: dict[str, Any]) -> str:
     source_id = source.get("id", "?")
     source_type = source.get("type") or "unknown"
@@ -7080,6 +7153,7 @@ def run_checks(args) -> list[CheckResult]:
             "openapi_modules",
             lambda: check_openapi_modules(client, args.openapi_module_json_check, expected_openapi_version),
         ),
+        CheckSpec("aggregator_sources", lambda: check_aggregator_sources(client)),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
         CheckSpec("tmdb_config", lambda: check_tmdb_config(client)),
