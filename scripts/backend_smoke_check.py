@@ -310,6 +310,22 @@ EXPECTED_HOMEPAGE_SECTION_KEYS = [
     "limit",
     "items",
 ]
+EXPECTED_HOMEPAGE_CONFIG_KEYS = [
+    "hero_movie_id",
+    "sections",
+    "created_at",
+    "updated_at",
+]
+EXPECTED_HOMEPAGE_CONFIG_SECTION_KEYS = [
+    "key",
+    "title",
+    "genre",
+    "mode",
+    "limit",
+    "movie_ids",
+    "enabled",
+    "sort_order",
+]
 EXPECTED_RECOMMENDATION_KEYS = [
     "primary_reason",
     "rank",
@@ -1429,6 +1445,60 @@ def _catalog_filters_payload_issues(data: Any) -> list[str]:
     return issues
 
 
+def _homepage_config_section_issues(section: Any, index: int) -> list[str]:
+    prefix = f"config_section_{index}"
+    if not isinstance(section, dict):
+        return [f"{prefix}_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(section, EXPECTED_HOMEPAGE_CONFIG_SECTION_KEYS, prefix))
+    for key in ("key", "title", "genre", "mode"):
+        if key in section and not isinstance(section.get(key), str):
+            issues.append(f"{prefix}_{key}_not_str")
+    if "mode" in section and section.get("mode") not in {"custom", "latest"}:
+        issues.append(f"{prefix}_mode={section.get('mode')}")
+    if "limit" in section:
+        limit = section.get("limit")
+        if not _json_int(limit):
+            issues.append(f"{prefix}_limit_not_int")
+        elif limit < 1 or limit > 20:
+            issues.append(f"{prefix}_limit_out_of_range={limit}")
+    movie_ids = section.get("movie_ids")
+    if "movie_ids" in section and not isinstance(movie_ids, list):
+        issues.append(f"{prefix}_movie_ids_not_list")
+    elif isinstance(movie_ids, list):
+        invalid_movie_ids = [value for value in movie_ids if not isinstance(value, str) or not value]
+        if invalid_movie_ids:
+            issues.append(f"{prefix}_movie_ids_invalid")
+    if "enabled" in section and section.get("enabled") not in (True, False):
+        issues.append(f"{prefix}_enabled_not_bool")
+    if "sort_order" in section and not _json_int(section.get("sort_order")):
+        issues.append(f"{prefix}_sort_order_not_int")
+    return issues
+
+
+def _homepage_config_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["homepage_config_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_HOMEPAGE_CONFIG_KEYS, "homepage_config"))
+    hero_movie_id = data.get("hero_movie_id")
+    if "hero_movie_id" in data and hero_movie_id is not None and not isinstance(hero_movie_id, str):
+        issues.append("homepage_config_hero_movie_id_not_str")
+    for key in ("created_at", "updated_at"):
+        if key in data and data.get(key) is not None and not isinstance(data.get(key), str):
+            issues.append(f"homepage_config_{key}_not_str")
+
+    sections = data.get("sections")
+    if not isinstance(sections, list):
+        issues.append("homepage_config_sections_not_list")
+    else:
+        for index, section in enumerate(sections[:10]):
+            issues.extend(_homepage_config_section_issues(section, index))
+    return issues
+
+
 def _homepage_section_issues(
     section: Any,
     index: int,
@@ -2022,6 +2092,36 @@ def check_homepage(client: SmokeClient) -> CheckResult:
             "hero_title": hero_title,
             "section_count": len(sections),
             "section_item_count": section_item_count,
+            "issues": issues,
+        },
+    )
+
+
+def check_homepage_config(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/homepage/config")
+    data = _response_data(payload)
+    issues = _homepage_config_issues(data)
+
+    sections = data.get("sections") if isinstance(data, dict) and isinstance(data.get("sections"), list) else []
+    enabled_count = sum(
+        1
+        for section in sections
+        if isinstance(section, dict) and section.get("enabled") is True
+    )
+    hero_movie_id = data.get("hero_movie_id") if isinstance(data, dict) else None
+
+    ok = not issues
+    detail = f"sections={len(sections)} enabled={enabled_count} hero_movie_id={hero_movie_id}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "homepage_config",
+        ok,
+        detail,
+        {
+            "section_count": len(sections),
+            "enabled_count": enabled_count,
+            "hero_movie_id": hero_movie_id,
             "issues": issues,
         },
     )
@@ -2857,6 +2957,7 @@ def run_checks(args) -> list[CheckResult]:
         CheckSpec("movie_detail", lambda: check_movie_detail(client)),
         CheckSpec("movie_resources", lambda: check_movie_resources(client)),
         CheckSpec("featured", lambda: check_featured(client)),
+        CheckSpec("homepage_config", lambda: check_homepage_config(client)),
         CheckSpec("homepage", lambda: check_homepage(client)),
         CheckSpec("recommendations", lambda: check_recommendations(client)),
         CheckSpec("movie_context_recommendations", lambda: check_movie_context_recommendations(client)),
