@@ -91,6 +91,20 @@ class MediaFeatureParserTests(unittest.TestCase):
             24944881664,
         ))
 
+    def test_video_ignore_markers_use_token_boundaries(self):
+        self.assertTrue(ResourceValidator.is_valid_video(
+            "Monarch.Legacy.of.Monsters.S02E04.Trespass.2160p.WEB-DL.mkv",
+        ))
+        self.assertTrue(ResourceValidator.is_valid_video(
+            "Classic.Movie.2024.1080p.WEB-DL.mkv",
+        ))
+        self.assertFalse(ResourceValidator.is_valid_video(
+            "Movie.Name.Sample.1080p.WEB-DL.mkv",
+        ))
+        self.assertFalse(ResourceValidator.is_valid_video(
+            "Movie.Name-Trailer.1080p.WEB-DL.mkv",
+        ))
+
     def test_ignores_bluray_extras_folders(self):
         self.assertTrue(ResourceValidator.is_ignored_folder("Special Features"))
         self.assertTrue(ResourceValidator.is_ignored_folder("Deleted Scenes"))

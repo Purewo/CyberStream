@@ -666,6 +666,29 @@ def _resource_parent_path(resource):
     return _normalize_sync_relative_path(posixpath.dirname(path))
 
 
+def _sync_root_child(directory, root):
+    directory = _normalize_sync_relative_path(directory)
+    root = _normalize_sync_relative_path(root)
+    if not root:
+        return directory.split('/', 1)[0] if directory else ''
+    if directory == root:
+        return ''
+    prefix = f"{root}/"
+    if not directory.startswith(prefix):
+        return directory.split('/', 1)[0] if directory else ''
+    return directory[len(prefix):].split('/', 1)[0]
+
+
+def _looks_like_season_sync_child(name):
+    normalized = _normalize_sync_relative_path(name).lower()
+    compact = re.sub(r'[\s._-]+', '', normalized)
+    if re.match(r'^s\d+', compact):
+        return True
+    if re.match(r'^season\d+', compact):
+        return True
+    return bool(re.match(r'^第\d+(季|部)$', compact))
+
+
 def _unique_preserving_order(values):
     items = []
     seen = set()
@@ -696,6 +719,13 @@ def _infer_movie_sync_roots(resources, *, allow_source_root=False):
         common_root = ''
 
     if common_root:
+        child_dirs = [
+            _sync_root_child(directory, common_root)
+            for directory in directories
+            if directory != common_root
+        ]
+        if child_dirs and not all(_looks_like_season_sync_child(child) for child in child_dirs):
+            return directories
         return [common_root]
     if allow_source_root:
         return ['']

@@ -243,7 +243,13 @@ class ResourceValidator:
     def is_valid_video(filename):
         u_name = filename.upper()
         if not u_name.endswith(config.VIDEO_EXTENSIONS): return False
-        if any(k in u_name for k in config.IGNORE_FILES): return False
+        stem = u_name.rsplit('.', 1)[0]
+        for marker in config.IGNORE_FILES:
+            marker = str(marker or '').strip().upper()
+            if not marker:
+                continue
+            if re.search(rf'(^|[^A-Z0-9]){re.escape(marker)}([^A-Z0-9]|$)', stem):
+                return False
         return True
 
     @staticmethod

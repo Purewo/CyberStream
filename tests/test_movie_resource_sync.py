@@ -147,6 +147,51 @@ class MovieResourceSyncTests(unittest.TestCase):
         self.assertEqual(["disk-a/Split Series", "disk-b/Split Series"], called_roots)
         provider_factory_mock.assert_not_called()
 
+    def test_sync_keeps_sibling_release_directories_separate(self):
+        release_movie = Movie(tmdb_id="tv/400", title="Release Series", scraper_source="TMDB")
+        db.session.add(release_movie)
+        db.session.flush()
+        db.session.add_all([
+            MediaResource(
+                movie_id=release_movie.id,
+                source_id=self.source.id,
+                path="share/cloud/Release.Series.S01.2160p/Release.Series.S01E01.mkv",
+                filename="Release.Series.S01E01.mkv",
+                season=1,
+                episode=1,
+            ),
+            MediaResource(
+                movie_id=release_movie.id,
+                source_id=self.source.id,
+                path="share/cloud/Release.Series.S02.2160p/Release.Series.S02E01.mkv",
+                filename="Release.Series.S02E01.mkv",
+                season=2,
+                episode=1,
+            ),
+        ])
+        db.session.commit()
+
+        provider = MagicMock()
+        with patch("backend.app.api.library_routes.threading.Thread", _ImmediateThread), \
+             patch("backend.app.api.library_routes.scanner_engine") as scanner_mock, \
+             patch("backend.app.api.library_routes.provider_factory.get_provider", return_value=provider):
+            scanner_mock.try_start_scan.return_value = True
+            response = self.client.post(f"/api/v1/movies/{release_movie.id}/resources/sync")
+
+        payload = response.get_json()
+        target = payload["data"]["targets"][0]
+        expected_roots = [
+            "share/cloud/Release.Series.S01.2160p",
+            "share/cloud/Release.Series.S02.2160p",
+        ]
+        refreshed_roots = [call.args[0] for call in provider.refresh_directory.call_args_list]
+        scanned_roots = [call.kwargs["root_path"] for call in scanner_mock.scan_source.call_args_list]
+
+        self.assertEqual(202, response.status_code)
+        self.assertEqual(expected_roots, target["root_paths"])
+        self.assertEqual(expected_roots, refreshed_roots)
+        self.assertEqual(expected_roots, scanned_roots)
+
     def test_sync_returns_validation_error_for_movie_without_resources(self):
         empty_movie = Movie(tmdb_id="movie/300", title="No Resources", scraper_source="TMDB")
         db.session.add(empty_movie)
