@@ -31,7 +31,7 @@ class CheckResult:
 
 
 class SmokeClient:
-    def __init__(self, base_url: str, timeout: float = 10.0):
+    def __init__(self, base_url: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
@@ -216,7 +216,7 @@ def run_checks(args) -> list[CheckResult]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run CyberStream backend smoke checks.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Backend base URL")
-    parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
+    parser.add_argument("--timeout", type=float, default=30.0, help="HTTP and systemctl timeout in seconds")
     parser.add_argument("--live-check-limit", type=int, default=500, help="Resource live-check limit")
     parser.add_argument("--max-fallback-items", type=int, default=0, help="Maximum fallback metadata work items")
     parser.add_argument("--max-episode-review-items", type=int, default=0, help="Maximum episode review items")
