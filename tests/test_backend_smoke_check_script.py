@@ -2335,6 +2335,132 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertFalse(work_items.ok)
         self.assertIn("item_0_missing=metadata_state", work_items.detail)
 
+    def test_fallback_work_items_contract_accepts_valid_sample(self):
+        class FallbackWorkItemsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                if (
+                    path == "/api/v1/metadata/work-items"
+                    and (query or {}).get("metadata_issue_code") == "fallback_pipeline_match"
+                ):
+                    return {
+                        "data": {
+                            "items": [
+                                {
+                                    "id": "movie-fallback-1",
+                                    "title": "Fallback Match",
+                                    "scraper_source": "TMDB_FALLBACK",
+                                    "metadata_state": {
+                                        "source_group": "tmdb",
+                                        "source_code": "TMDB_FALLBACK",
+                                        "source_label": "TMDB fallback",
+                                        "issue_codes": ["fallback_pipeline_match"],
+                                        "needs_attention": True,
+                                        "review_priority": "medium",
+                                        "recommended_action": "bulk_reidentify",
+                                    },
+                                    "metadata_actions": {
+                                        "can_manual_match": True,
+                                        "can_refresh": True,
+                                        "can_re_scrape": True,
+                                        "primary_action": "bulk_reidentify",
+                                    },
+                                    "metadata_diagnostics": {
+                                        "resource_count": 1,
+                                    },
+                                    "metadata_issues": [
+                                        {"code": "fallback_pipeline_match"},
+                                    ],
+                                    "catalog_visibility": {
+                                        "effective_status": "pending_review",
+                                        "status": "auto",
+                                        "is_visible": False,
+                                        "can_publish": True,
+                                    },
+                                    "manual_content": {
+                                        "is_manual": False,
+                                    },
+                                },
+                            ],
+                            "pagination": {
+                                "current_page": 1,
+                                "page_size": 20,
+                                "total_items": 1,
+                                "total_pages": 1,
+                            },
+                        },
+                    }
+                return super().get_json(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", FallbackWorkItemsClient):
+            results = self.module.run_checks(self._args(max_fallback_items=1))
+
+        fallback = next(
+            item for item in results
+            if item.name == "metadata_fallback_pipeline_match"
+        )
+        self.assertTrue(fallback.ok)
+        self.assertIn("items=1", fallback.detail)
+
+    def test_fallback_work_items_contract_fails_when_sample_shape_is_broken(self):
+        class BrokenFallbackWorkItemsClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                if (
+                    path == "/api/v1/metadata/work-items"
+                    and (query or {}).get("metadata_issue_code") == "fallback_pipeline_match"
+                ):
+                    return {
+                        "data": {
+                            "items": [
+                                {
+                                    "id": "movie-fallback-1",
+                                    "title": "Fallback Match",
+                                    "scraper_source": "TMDB_FALLBACK",
+                                    "metadata_state": {
+                                        "source_group": "tmdb",
+                                        "source_code": "TMDB_FALLBACK",
+                                        "source_label": "TMDB fallback",
+                                        "issue_codes": ["fallback_pipeline_match"],
+                                        "needs_attention": True,
+                                        "review_priority": "medium",
+                                        "recommended_action": "bulk_reidentify",
+                                    },
+                                    "metadata_diagnostics": {
+                                        "resource_count": 1,
+                                    },
+                                    "metadata_issues": [
+                                        {"code": "fallback_pipeline_match"},
+                                    ],
+                                    "catalog_visibility": {
+                                        "effective_status": "pending_review",
+                                        "status": "auto",
+                                        "is_visible": False,
+                                        "can_publish": True,
+                                    },
+                                    "manual_content": {
+                                        "is_manual": False,
+                                    },
+                                },
+                            ],
+                            "pagination": {
+                                "current_page": 1,
+                                "page_size": 20,
+                                "total_items": 1,
+                                "total_pages": 1,
+                            },
+                        },
+                    }
+                return super().get_json(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenFallbackWorkItemsClient):
+            results = self.module.run_checks(self._args(max_fallback_items=1))
+
+        fallback = next(
+            item for item in results
+            if item.name == "metadata_fallback_pipeline_match"
+        )
+        self.assertFalse(fallback.ok)
+        self.assertIn("item_0_missing=metadata_actions", fallback.detail)
+
     def test_catalog_movies_fails_when_sample_shape_is_broken(self):
         class BrokenCatalogMoviesClient(FakeSmokeClient):
             def get_json(self, path, query=None):

@@ -55,7 +55,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 ```
 
 预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`；`data.database.status` 应为 `ok`）。
-`backend_smoke_check.py` 会同时检查 `/` 与 `/api/v1/health` 健康入口一致性、OpenAPI 健康入口、文档索引、OpenAPI 模块索引、扫描状态、元数据 provider 注册表、TMDB 配置读取、复核工作台入口契约、其他视频归档队列、季列表、剧集诊断详情、外部播放器播放交接、字幕显示设置、音频转码诊断读取、收藏保险库访问契约、后台任务列表入口、存储源列表/详情与资源型挂载动作、fallback/episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
+`backend_smoke_check.py` 会同时检查 `/` 与 `/api/v1/health` 健康入口一致性、OpenAPI 健康入口、文档索引、OpenAPI 模块索引、扫描状态、元数据 provider 注册表、TMDB 配置读取、复核工作台入口契约、其他视频归档队列、季列表、剧集诊断详情、外部播放器播放交接、字幕显示设置、音频转码诊断读取、收藏保险库访问契约、后台任务列表入口、存储源列表/详情与资源型挂载动作、fallback 队列样本契约、episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
 
 刮削或前端联调前建议额外验证 TMDB token 和资源型挂载 live health：
 

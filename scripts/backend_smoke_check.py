@@ -5498,14 +5498,41 @@ def check_work_items(client: SmokeClient, issue_code: str, max_items: int) -> Ch
         {"metadata_issue_code": issue_code, "page_size": 20},
     )
     data = _response_data(payload)
-    total = _pagination_total(data)
-    titles = [item.get("title") for item in data.get("items") or [] if isinstance(item, dict)]
-    ok = total <= max_items
+    issues = []
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        items = []
+    if len(items) > 20:
+        issues.append(f"too_many_items={len(items)}")
+
+    pagination = data.get("pagination") if isinstance(data, dict) else None
+    issues.extend(_pagination_contract_issues(pagination, expected_page_size=20))
+    total = pagination.get("total_items") if isinstance(pagination, dict) and _json_int(pagination.get("total_items")) else 0
+    if total > 0 and not items:
+        issues.append("items_empty_with_total")
+
+    for index, item in enumerate(items[:1]):
+        issues.extend(_work_item_contract_issues(item, index))
+        metadata_state = item.get("metadata_state") if isinstance(item, dict) else None
+        issue_codes = metadata_state.get("issue_codes") if isinstance(metadata_state, dict) else None
+        if isinstance(issue_codes, list) and issue_code not in issue_codes:
+            issues.append(f"item_{index}_missing_issue_code={issue_code}")
+
+    if total > max_items:
+        issues.append(f"total_above_max={total}/{max_items}")
+
+    titles = [item.get("title") for item in items if isinstance(item, dict)]
+    ok = not issues
+    detail = f"total={total} max={max_items} items={len(items)}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
     return _result(
         f"metadata_{issue_code}",
         ok,
-        f"total={total} max={max_items}",
-        {"total": total, "sample_titles": titles[:10]},
+        detail,
+        {"total": total, "sample_titles": titles[:10], "issues": issues},
     )
 
 
