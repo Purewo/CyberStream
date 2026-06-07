@@ -216,7 +216,7 @@ class FakeSmokeClient:
                 "data": {
                     "totals": {
                         "movie_count": 359,
-                        "issue_movie_count": 0,
+                        "issue_movie_count": 1,
                         "bulk_reidentify_movie_count": 0,
                         "episode_review_movie_count": 0,
                     },
@@ -234,7 +234,42 @@ class FakeSmokeClient:
                             "enabled": False,
                         },
                     ],
-                    "issues": [],
+                    "issues": [
+                        {
+                            "code": "nfo_candidates_available",
+                            "label": "NFO Candidates Available",
+                            "movie_count": 1,
+                            "affected_count": 1,
+                            "samples": [
+                                {
+                                    "movie_id": "movie-1",
+                                    "title": "Sample Movie",
+                                    "scraper_source": "TMDB",
+                                    "metadata_state": {
+                                        "source_group": "tmdb",
+                                        "source_code": "TMDB",
+                                        "source_label": "TMDB",
+                                        "issue_codes": ["nfo_candidates_available"],
+                                        "needs_attention": False,
+                                        "review_priority": "low",
+                                        "recommended_action": "refresh_metadata",
+                                    },
+                                    "metadata_actions": {
+                                        "can_manual_match": True,
+                                        "can_refresh": True,
+                                        "can_re_scrape": True,
+                                        "primary_action": "refresh_metadata",
+                                    },
+                                    "matching_issue": {
+                                        "code": "nfo_candidates_available",
+                                        "count": 1,
+                                        "label": "NFO Candidates Available",
+                                        "severity": "low",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
                 },
             }
         if path == "/api/v1/system/tmdb-config/check":
@@ -747,6 +782,24 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         workbench = next(item for item in results if item.name == "metadata_review_workbench")
         self.assertFalse(workbench.ok)
         self.assertIn("missing_buckets=episode_review", workbench.detail)
+
+    def test_metadata_review_workbench_fails_when_quality_sample_shape_is_broken(self):
+        class BrokenQualitySummaryClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/metadata/quality-summary":
+                    del payload["data"]["issues"][0]["samples"][0]["metadata_actions"]
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenQualitySummaryClient):
+            results = self.module.run_checks(self._args())
+
+        workbench = next(
+            item for item in results
+            if item.name == "metadata_review_workbench"
+        )
+        self.assertFalse(workbench.ok)
+        self.assertIn("quality_issue_0_sample_0_missing=metadata_actions", workbench.detail)
 
     def test_metadata_work_items_contract_fails_when_sample_shape_is_broken(self):
         class BrokenWorkItemsClient(FakeSmokeClient):

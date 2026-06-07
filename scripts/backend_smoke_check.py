@@ -51,6 +51,27 @@ EXPECTED_METADATA_QUALITY_TOTALS = [
     "bulk_reidentify_movie_count",
     "episode_review_movie_count",
 ]
+EXPECTED_METADATA_QUALITY_ACTION_KEYS = [
+    "id",
+    "endpoint",
+    "method",
+    "enabled",
+]
+EXPECTED_METADATA_QUALITY_ISSUE_KEYS = [
+    "code",
+    "label",
+    "movie_count",
+    "affected_count",
+    "samples",
+]
+EXPECTED_METADATA_QUALITY_SAMPLE_KEYS = [
+    "movie_id",
+    "title",
+    "scraper_source",
+    "metadata_state",
+    "metadata_actions",
+    "matching_issue",
+]
 EXPECTED_METADATA_WORK_ITEM_KEYS = [
     "id",
     "title",
@@ -629,6 +650,7 @@ def check_metadata_review_workbench(client: SmokeClient) -> CheckResult:
         action_id for action_id in EXPECTED_METADATA_QUALITY_ACTIONS if action_id not in quality_actions
     ]
     missing_quality_totals = [key for key in EXPECTED_METADATA_QUALITY_TOTALS if key not in totals]
+    quality_contract_issues = _quality_summary_contract_issues(quality)
 
     issues = []
     if missing_buckets:
@@ -641,6 +663,7 @@ def check_metadata_review_workbench(client: SmokeClient) -> CheckResult:
         issues.append(f"missing_quality_actions={','.join(missing_quality_actions)}")
     if missing_quality_totals:
         issues.append(f"missing_quality_totals={','.join(missing_quality_totals)}")
+    issues.extend(quality_contract_issues)
 
     ok = not issues
     detail = (
@@ -664,6 +687,7 @@ def check_metadata_review_workbench(client: SmokeClient) -> CheckResult:
             "missing_actions": missing_actions,
             "missing_quality_actions": missing_quality_actions,
             "missing_quality_totals": missing_quality_totals,
+            "quality_contract_issues": quality_contract_issues,
             "movie_count": totals.get("movie_count"),
             "issue_movie_count": totals.get("issue_movie_count"),
         },
@@ -735,6 +759,76 @@ def _work_item_contract_issues(item: Any, index: int) -> list[str]:
         issues.append(f"{prefix}_metadata_diagnostics_not_object")
     if "manual_content" in item and not isinstance(item.get("manual_content"), dict):
         issues.append(f"{prefix}_manual_content_not_object")
+    return issues
+
+
+def _quality_summary_contract_issues(quality: Any) -> list[str]:
+    if not isinstance(quality, dict):
+        return ["quality_not_object"]
+
+    issues = []
+    actions = quality.get("actions")
+    if not isinstance(actions, list):
+        issues.append("quality_actions_not_list")
+    else:
+        for index, action in enumerate(actions):
+            prefix = f"quality_action_{index}"
+            issues.extend(
+                _dict_missing_keys(action, EXPECTED_METADATA_QUALITY_ACTION_KEYS, prefix)
+            )
+            if not isinstance(action, dict):
+                continue
+            if "enabled" in action and action.get("enabled") not in (True, False):
+                issues.append(f"{prefix}_enabled_not_bool")
+            if "method" in action and not isinstance(action.get("method"), str):
+                issues.append(f"{prefix}_method_not_str")
+            if "endpoint" in action and not isinstance(action.get("endpoint"), str):
+                issues.append(f"{prefix}_endpoint_not_str")
+
+    issue_items = quality.get("issues")
+    if not isinstance(issue_items, list):
+        issues.append("quality_issues_not_list")
+    else:
+        for index, issue in enumerate(issue_items):
+            prefix = f"quality_issue_{index}"
+            issues.extend(_dict_missing_keys(issue, EXPECTED_METADATA_QUALITY_ISSUE_KEYS, prefix))
+            if not isinstance(issue, dict):
+                continue
+            for key in ("movie_count", "affected_count"):
+                if key in issue and not _json_int(issue.get(key)):
+                    issues.append(f"{prefix}_{key}_not_int")
+
+            samples = issue.get("samples")
+            if not isinstance(samples, list):
+                if "samples" in issue:
+                    issues.append(f"{prefix}_samples_not_list")
+                continue
+            for sample_index, sample in enumerate(samples[:1]):
+                sample_prefix = f"{prefix}_sample_{sample_index}"
+                issues.extend(
+                    _dict_missing_keys(sample, EXPECTED_METADATA_QUALITY_SAMPLE_KEYS, sample_prefix)
+                )
+                if not isinstance(sample, dict):
+                    continue
+                issues.extend(
+                    _dict_missing_keys(
+                        sample.get("metadata_state"),
+                        EXPECTED_METADATA_STATE_KEYS,
+                        f"{sample_prefix}_metadata_state",
+                    )
+                )
+                issues.extend(
+                    _dict_missing_keys(
+                        sample.get("metadata_actions"),
+                        EXPECTED_METADATA_ACTION_KEYS,
+                        f"{sample_prefix}_metadata_actions",
+                    )
+                )
+                matching_issue = sample.get("matching_issue")
+                if not isinstance(matching_issue, dict):
+                    issues.append(f"{sample_prefix}_matching_issue_not_object")
+                elif "code" not in matching_issue:
+                    issues.append(f"{sample_prefix}_matching_issue_missing=code")
     return issues
 
 
