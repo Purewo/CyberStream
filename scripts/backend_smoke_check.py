@@ -27,6 +27,12 @@ DEFAULT_SYSTEMD_SERVICES = [
 EXPECTED_METADATA_PROVIDERS = ["nfo", "tmdb", "anilist", "bangumi", "tencent_video", "local"]
 EXPECTED_METADATA_DEFAULT_ORDER = ["nfo", "tmdb", "local"]
 EXPECTED_METADATA_SEARCH_PROVIDERS = ["tmdb", "anilist", "bangumi", "tencent_video"]
+EXPECTED_TMDB_CONFIG_KEYS = [
+    "token_set",
+    "proxy_enabled",
+    "proxy_url",
+    "proxy_url_redacted",
+]
 EXPECTED_METADATA_OVERVIEW_KEYS = [
     "totals",
     "source_groups",
@@ -1461,6 +1467,56 @@ def check_metadata_providers(client: SmokeClient) -> CheckResult:
             "search_missing": search_missing,
             "tencent_video_manual_only": tencent_manual_only,
             "anilist_opt_in": anilist_opt_in,
+        },
+    )
+
+
+def _tmdb_config_payload_issues(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return ["tmdb_config_not_object"]
+
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_TMDB_CONFIG_KEYS, "tmdb_config"))
+    for key in ("token_set", "proxy_enabled", "proxy_url_redacted"):
+        if key in data and data.get(key) not in (True, False):
+            issues.append(f"tmdb_config_{key}_not_bool")
+    proxy_url = data.get("proxy_url")
+    if "proxy_url" in data and proxy_url is not None and not isinstance(proxy_url, str):
+        issues.append("tmdb_config_proxy_url_not_str")
+    if isinstance(proxy_url, str):
+        if any(secret_hint in proxy_url.lower() for secret_hint in ("tmdb_token", "bearer ", "authorization")):
+            issues.append("tmdb_config_proxy_url_secret_hint")
+        if "@" in proxy_url and data.get("proxy_url_redacted") is not True:
+            issues.append("tmdb_config_proxy_url_unredacted_credentials")
+    return issues
+
+
+def check_tmdb_config(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/system/tmdb-config")
+    data = _response_data(payload)
+    issues = _tmdb_config_payload_issues(data)
+    token_set = data.get("token_set") if isinstance(data, dict) else None
+    proxy_enabled = data.get("proxy_enabled") if isinstance(data, dict) else None
+    proxy_url = data.get("proxy_url") if isinstance(data, dict) else None
+    proxy_url_redacted = data.get("proxy_url_redacted") if isinstance(data, dict) else None
+
+    ok = not issues
+    detail = (
+        f"token_set={token_set} proxy_enabled={proxy_enabled} "
+        f"proxy_configured={bool(proxy_url)} redacted={proxy_url_redacted}"
+    )
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "tmdb_config",
+        ok,
+        detail,
+        {
+            "token_set": token_set,
+            "proxy_enabled": proxy_enabled,
+            "proxy_configured": bool(proxy_url),
+            "proxy_url_redacted": proxy_url_redacted,
+            "issues": issues,
         },
     )
 
@@ -5611,6 +5667,7 @@ def run_checks(args) -> list[CheckResult]:
         ),
         CheckSpec("scan", lambda: check_scan(client)),
         CheckSpec("metadata_providers", lambda: check_metadata_providers(client)),
+        CheckSpec("tmdb_config", lambda: check_tmdb_config(client)),
         CheckSpec("metadata_overview", lambda: check_metadata_overview(client)),
         CheckSpec("metadata_review_workbench", lambda: check_metadata_review_workbench(client)),
         CheckSpec("libraries", lambda: check_libraries(client)),

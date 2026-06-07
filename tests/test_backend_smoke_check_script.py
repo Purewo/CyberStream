@@ -396,6 +396,15 @@ class FakeSmokeClient:
                     ],
                 },
             }
+        if path == "/api/v1/system/tmdb-config":
+            return {
+                "data": {
+                    "token_set": True,
+                    "proxy_enabled": True,
+                    "proxy_url": "http://127.0.0.1:7890",
+                    "proxy_url_redacted": False,
+                },
+            }
         if path == "/api/v1/system/tmdb-config/check":
             return {
                 "data": {
@@ -1844,6 +1853,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "openapi_modules",
                 "scan",
                 "metadata_providers",
+                "tmdb_config",
                 "metadata_overview",
                 "metadata_review_workbench",
                 "libraries",
@@ -2955,6 +2965,22 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertEqual("tmdb_token", tmdb.name)
         self.assertTrue(tmdb.ok)
         self.assertIn("status=ok", tmdb.detail)
+
+    def test_tmdb_config_fails_when_proxy_credentials_are_not_marked_redacted(self):
+        class BrokenTmdbConfigClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/system/tmdb-config":
+                    payload["data"]["proxy_url"] = "http://user:pass@127.0.0.1:7890"
+                    payload["data"]["proxy_url_redacted"] = False
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenTmdbConfigClient):
+            results = self.module.run_checks(self._args())
+
+        tmdb = next(item for item in results if item.name == "tmdb_config")
+        self.assertFalse(tmdb.ok)
+        self.assertIn("tmdb_config_proxy_url_unredacted_credentials", tmdb.detail)
 
     def test_tmdb_token_check_fails_when_token_is_not_ready(self):
         class InvalidTmdbClient(FakeSmokeClient):

@@ -63,6 +63,7 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
 - smoke check 返回 `OK auth_me`，说明前端启动认证态探测和未登录权限契约可用
 - smoke check 返回 `OK update_check`，说明官方客户端公开更新检查契约可用
+- smoke check 返回 `OK tmdb_config`，说明 TMDB token/proxy 配置读取契约可用且不会泄漏 token 明文
 - smoke check 返回 `OK metadata_overview`，说明元数据刮削/审核工作台顶部统计契约可用
 - smoke check 返回 `OK libraries`，说明普通资源库列表契约可用且不混入收藏虚拟库
 - smoke check 返回 `OK other_videos`，说明其他视频归档队列、分页、summary 和手工归档动作契约可用
@@ -281,6 +282,7 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 - `openapi_modules` 返回 `OK`
 - `auth_me` 返回 `OK`，说明前端启动认证态探测和未登录权限契约可用
 - `metadata_providers` 返回 `OK`
+- `tmdb_config` 返回 `OK`，说明 TMDB token/proxy 配置读取契约可用且不会泄漏 token 明文
 - `storage_provider_types` 返回 `OK`，说明存储 provider 类型和挂载表单字段契约可用
 - `storage_capabilities` 返回 `OK`，说明存储协议能力矩阵和前端挂载表单基础契约可用
 - `storage_sources` 返回 `OK`，且至少包含当前挂载点
@@ -805,7 +807,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`754 passed, 9 skipped, 16 subtests passed`。
+2026-06-07 维护基线：`755 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
