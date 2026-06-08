@@ -1779,6 +1779,14 @@ class FakeSmokeClient:
         return self.get_json(path, query=query)
 
     def get_text(self, path, query=None):
+        if path.startswith("/api/v1/docs/") and query is None:
+            key = path.rsplit("/", 1)[-1]
+            return {
+                "_http_status": 200,
+                "_content_type": "text/markdown; charset=utf-8",
+                "_content_disposition": None,
+                "text": f"# {key}\n\nDocumentation body.\n",
+            }
         if path == "/api/v1/resources/resource-1/external-playback" and (query or {}).get("format") == "m3u":
             return {
                 "_http_status": 200,
@@ -2073,6 +2081,7 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "auth_me",
                 "openapi_health_contract",
                 "docs_index",
+                "docs_content",
                 "update_check",
                 "openapi_modules",
                 "aggregator_sources",
@@ -2312,6 +2321,25 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         docs = next(item for item in results if item.name == "docs_index")
         self.assertFalse(docs.ok)
         self.assertIn("openapi_links_invalid", docs.detail)
+
+    def test_docs_content_fails_when_markdown_body_is_invalid(self):
+        class BrokenDocsContentClient(FakeSmokeClient):
+            def get_text(self, path, query=None):
+                if path == "/api/v1/docs/api-overview":
+                    return {
+                        "_http_status": 200,
+                        "_content_type": "text/markdown; charset=utf-8",
+                        "_content_disposition": None,
+                        "text": "API Overview without heading",
+                    }
+                return super().get_text(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", BrokenDocsContentClient):
+            results = self.module.run_checks(self._args())
+
+        docs = next(item for item in results if item.name == "docs_content")
+        self.assertFalse(docs.ok)
+        self.assertIn("api-overview_missing_markdown_heading", docs.detail)
 
     def test_openapi_index_checks_accept_expected_openapi_version_when_it_matches(self):
         with patch.object(self.module, "SmokeClient", FakeSmokeClient):

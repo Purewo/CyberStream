@@ -1453,6 +1453,59 @@ def check_docs_index(
     )
 
 
+def check_docs_content(client: SmokeClient) -> CheckResult:
+    payload = client.get_json("/api/v1/docs")
+    data = _response_data(payload)
+    documents = data.get("documents") if isinstance(data, dict) else []
+    doc_map = {
+        item.get("key"): item
+        for item in documents
+        if isinstance(item, dict) and item.get("key")
+    }
+
+    issues = []
+    checked = []
+    for key in EXPECTED_DOC_KEYS:
+        item = doc_map.get(key)
+        if not isinstance(item, dict):
+            issues.append(f"{key}_missing_from_index")
+            continue
+        path = _module_url_path(item.get("url"))
+        if path != f"/api/v1/docs/{key}":
+            issues.append(f"{key}_url_invalid={path}")
+            continue
+
+        doc_payload = client.get_text(path)
+        status = doc_payload.get("_http_status")
+        content_type = str(doc_payload.get("_content_type") or "")
+        text = doc_payload.get("text")
+        checked.append(key)
+
+        if status != 200:
+            issues.append(f"{key}_http_status={status}")
+        if not content_type.startswith("text/markdown"):
+            issues.append(f"{key}_content_type={content_type}")
+        if not isinstance(text, str) or not text.strip():
+            issues.append(f"{key}_empty")
+        elif not text.lstrip().startswith("#"):
+            issues.append(f"{key}_missing_markdown_heading")
+
+    ok = not issues
+    detail = f"checked={len(checked)} expected={len(EXPECTED_DOC_KEYS)}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "docs_content",
+        ok,
+        detail,
+        {
+            "checked": checked,
+            "expected": EXPECTED_DOC_KEYS,
+            "issues": issues,
+        },
+    )
+
+
 def check_update_check(client: SmokeClient, expected_version: str = "") -> CheckResult:
     current_version = expected_version or "1.21.0"
     current_release = f"{current_version}-pc.0"
@@ -7148,6 +7201,7 @@ def run_checks(args) -> list[CheckResult]:
             "docs_index",
             lambda: check_docs_index(client, expected_version, expected_openapi_version),
         ),
+        CheckSpec("docs_content", lambda: check_docs_content(client)),
         CheckSpec("update_check", lambda: check_update_check(client, expected_version)),
         CheckSpec(
             "openapi_modules",
