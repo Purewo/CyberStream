@@ -17,12 +17,12 @@ from .base import (
 
 class RarbtSource(BaseSource):
     name = "rarbt"
-    base_url = "https://www.rarbt.lol"
+    base_url = "https://www.rarbt.us"
     priority = 1
 
     @property
     def session(self):
-        """rarbt.lol 直连会被远端 RST（需经系统代理才稳定可达）。覆盖基类的
+        """rarbt.us 直连会被远端 RST（需经系统代理才稳定可达）。覆盖基类的
         trust_env=False：启用 trust_env 并显式读系统代理，让请求走本机代理
         （如 127.0.0.1:10808）。用户没配代理时 getproxies() 返回空，等价直连，
         不影响无代理环境。set_proxy() 显式传值时仍优先生效。"""
