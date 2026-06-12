@@ -19,7 +19,7 @@ Use short, imperative commit subjects consistent with the existing history, such
 Do not hardcode new secrets in code or docs. Prefer environment variables for deployment-specific values such as `TMDB_TOKEN`, storage credentials, and path overrides. If you change `APP_VERSION`, also update the related references called out in `docs/VERSIONING.md`.
 
 ## Project Runtime Memory
-Keep CyberStream-specific operational facts in this repository, not in global agent memory, unless explicitly requested. Treat this file plus `docs/PROJECT_HANDOVER.md`, `docs/RUNBOOK.md`, and `docs/TEST_CHECKLIST.md` as the project-scoped memory entry points.
+Keep CyberStream-specific operational facts in this repository, not in global agent memory, unless explicitly requested. Treat this file plus `docs/PROJECT_HANDOVER.md`, `docs/RUNBOOK.md`, `docs/TEST_CHECKLIST.md`, and `docs/PILOT_HARDENING_BACKLOG.md` as the project-scoped memory entry points.
 
 Current host notes:
 - Use explicit proxy `127.0.0.1:7890` for GitHub/overseas access.
@@ -30,6 +30,7 @@ Current host notes:
 - AList is local-only at `127.0.0.1:5244`; OpenList is local-only at `127.0.0.1:5245`.
 - Current app version is `1.21.0`; current OpenAPI version is `1.21.0-beta`; run smoke checks with `--expected-version 1.21.0 --expected-openapi-version 1.21.0-beta`.
 - Full pytest baseline as of 2026-06-07 is `770 passed, 9 skipped, 16 subtests passed`.
+- The hosted pilot uses forced user login. Existing personal data belongs to the `pureworld` administrator account. Do not store or repeat account passwords in repository files.
 
 Before scraping or frontend integration, run:
 

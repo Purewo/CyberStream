@@ -33,6 +33,7 @@
 - 托管光鸭 AList 仅本机监听：`127.0.0.1:5244`
 - 托管 OpenList 仅本机监听：`127.0.0.1:5245`
 - 当前统一版本：`1.21.0`（以 `backend/config.py` 的 `APP_VERSION` 为单一版本源）
+- 当前公网托管试点已启用强制账号登录，`pureworld` 是现有数据归属管理员账号；不要在仓库或文档中记录账号密码明文。
 
 ## 4. 已知风险
 
@@ -49,7 +50,10 @@
 
 维护时不得把真实 token、密码或部署专用路径写入代码、文档或 `.env.local.example`。
 
-### 4.3 历史版本管理曾不一致
+### 4.3 托管试点加固清单
+公网托管试点已经先启用账号登录和个人数据隔离。CORS 白名单、定时异机备份、外部播放器短期签名凭证、nginx 速率限制、后台任务中断恢复等后续安全与运维事项记录在 `docs/PILOT_HARDENING_BACKLOG.md`。
+
+### 4.4 历史版本管理曾不一致
 该问题已完成收口，当前根路由健康检查返回版本与 `backend/config.py` 中的 `APP_VERSION` 保持一致，当前为 `1.21.0`。
 
 ## 5. 维护原则
@@ -141,6 +145,7 @@
 - `docs/CONFIG_REFERENCE.md`
 - `docs/TEST_CHECKLIST.md`
 - `docs/VERSIONING.md`
+- `docs/PILOT_HARDENING_BACKLOG.md`
 - `docs/STORAGE_CONFIG_FLOW.md`
 - `docs/MAINTENANCE_TODO.md`
 
