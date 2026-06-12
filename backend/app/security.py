@@ -51,6 +51,7 @@ NORMAL_USER_GET_PATTERNS = (
     re.compile(rf"^/api/v1/movies/{UUID_PATTERN}/seasons$"),
     re.compile(rf"^/api/v1/movies/{UUID_PATTERN}/images/(?:poster|backdrop)$"),
     re.compile(r"^/api/v1/libraries$"),
+    re.compile(r"^/api/v1/libraries/favorites(?:$|/(?:movies|featured|recommendations|filters))"),
     re.compile(r"^/api/v1/libraries/\d+$"),
     re.compile(r"^/api/v1/libraries/\d+/(?:movies|featured|recommendations|filters)$"),
     re.compile(r"^/api/v1/user/profile$"),
@@ -61,7 +62,8 @@ NORMAL_USER_GET_PATTERNS = (
     re.compile(r"^/api/v1/user/vault/status$"),
     re.compile(
         rf"^/api/v1/resources/{UUID_PATTERN}/"
-        r"(?:stream|streaming-qualities|stream-transcoded|external-playback|audio-transcode|subtitle-settings)$"
+        r"(?:stream|streaming-qualities|stream-transcoded|external-playback|audio-transcode|"
+        r"audio-transcode/diagnostics|subtitle-settings)$"
     ),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/search$"),
 )
@@ -88,7 +90,7 @@ RESOURCE_PATH_PATTERNS = (
     re.compile(
         rf"^/api/v1/resources/(?P<id>{UUID_PATTERN})/"
         r"(?:stream|streaming-qualities|stream-transcoded|external-playback|audio-transcode|"
-        r"subtitle-settings|subtitles/online/(?:search|download))$"
+        r"audio-transcode/diagnostics|subtitle-settings|subtitles/online/(?:search|download))$"
     ),
 )
 

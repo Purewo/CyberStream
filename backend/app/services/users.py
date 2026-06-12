@@ -42,6 +42,24 @@ def normalize_role(value):
     return role
 
 
+def normalize_bool(value, *, default=False, field_name="value"):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return default
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    raise UserValidationError(f"{field_name} must be boolean", code=40094)
+
+
 def _password_matches(password_hash, password):
     if not password_hash:
         return False

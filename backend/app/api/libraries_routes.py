@@ -69,10 +69,20 @@ def _empty_movie_list_payload(page, page_size):
 
 
 def _normalize_root_path(root_path):
+    if root_path is not None and not isinstance(root_path, str):
+        raise ValueError("Invalid field type: root_path should be string")
     root_path = (root_path or '/').strip()
     if not root_path or root_path == '/':
         return '/'
     return root_path.strip('/')
+
+
+def _normalize_request_text(value, *, field_name, default=None, strip=True):
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid field type: {field_name} should be string")
+    return value.strip() if strip else value
 
 
 def _build_binding_path_filter(binding):
@@ -105,6 +115,24 @@ def _normalize_request_bool(value, *, default=False, field_name="refresh"):
         if normalized in {"0", "false", "no", "off"}:
             return False
     raise ValueError(f"Invalid field type: {field_name} should be boolean")
+
+
+def _normalize_request_int(value, *, default=0, field_name="value"):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid field type: {field_name} should be integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return default
+        try:
+            return int(normalized)
+        except ValueError:
+            pass
+    raise ValueError(f"Invalid field type: {field_name} should be integer")
 
 
 def _source_refresh_supported(source):
@@ -320,12 +348,22 @@ def create_library():
     if not payload:
         return api_error(code=40000, msg='No input data')
 
-    name = (payload.get('name') or '').strip()
-    slug = (payload.get('slug') or '').strip()
     allowed = {'name', 'slug', 'description', 'is_enabled', 'sort_order', 'settings'}
     unknown = sorted([key for key in payload.keys() if key not in allowed])
     if unknown:
         return api_error(code=40004, msg=f"Unsupported fields: {', '.join(unknown)}")
+
+    try:
+        name = _normalize_request_text(payload.get('name'), field_name='name', default='')
+        slug = _normalize_request_text(payload.get('slug'), field_name='slug', default='')
+        description = _normalize_request_text(
+            payload.get('description'),
+            field_name='description',
+            default=None,
+            strip=False,
+        )
+    except ValueError as e:
+        return api_error(code=40018, msg=str(e))
 
     if not name or not slug:
         return api_error(code=40001, msg='Missing required fields: name, slug')
@@ -333,13 +371,23 @@ def create_library():
     if Library.query.filter((Library.name == name) | (Library.slug == slug)).first():
         return api_error(code=40003, msg='Library name or slug already exists')
 
+    try:
+        is_enabled = _normalize_request_bool(payload.get('is_enabled'), default=True, field_name='is_enabled')
+        sort_order = _normalize_request_int(payload.get('sort_order'), default=0, field_name='sort_order')
+    except ValueError as e:
+        return api_error(code=40018, msg=str(e))
+
+    settings = payload.get('settings')
+    if settings is not None and not isinstance(settings, dict):
+        return api_error(code=40009, msg='Invalid field type: settings should be object')
+
     library = Library(
         name=name,
         slug=slug,
-        description=payload.get('description'),
-        is_enabled=payload.get('is_enabled', True),
-        sort_order=payload.get('sort_order', 0),
-        settings=payload.get('settings') or {},
+        description=description,
+        is_enabled=is_enabled,
+        sort_order=sort_order,
+        settings=settings or {},
     )
     db.session.add(library)
     db.session.commit()
@@ -381,7 +429,7 @@ def update_library(id):
 
     try:
         if 'name' in payload:
-            name = (payload.get('name') or '').strip()
+            name = _normalize_request_text(payload.get('name'), field_name='name', default='')
             if not name:
                 return api_error(code=40005, msg='Invalid field value: name cannot be empty')
             existing = Library.query.filter(Library.name == name, Library.id != id).first()
@@ -390,7 +438,7 @@ def update_library(id):
             library.name = name
 
         if 'slug' in payload:
-            slug = (payload.get('slug') or '').strip()
+            slug = _normalize_request_text(payload.get('slug'), field_name='slug', default='')
             if not slug:
                 return api_error(code=40007, msg='Invalid field value: slug cannot be empty')
             existing = Library.query.filter(Library.slug == slug, Library.id != id).first()
@@ -399,11 +447,16 @@ def update_library(id):
             library.slug = slug
 
         if 'description' in payload:
-            library.description = payload.get('description')
+            library.description = _normalize_request_text(
+                payload.get('description'),
+                field_name='description',
+                default=None,
+                strip=False,
+            )
         if 'is_enabled' in payload:
-            library.is_enabled = bool(payload.get('is_enabled'))
+            library.is_enabled = _normalize_request_bool(payload.get('is_enabled'), default=bool(library.is_enabled), field_name='is_enabled')
         if 'sort_order' in payload:
-            library.sort_order = int(payload.get('sort_order') or 0)
+            library.sort_order = _normalize_request_int(payload.get('sort_order'), default=0, field_name='sort_order')
         if 'settings' in payload:
             settings = payload.get('settings')
             if settings is not None and not isinstance(settings, dict):
@@ -413,6 +466,9 @@ def update_library(id):
         db.session.commit()
         clear_user_access_cache()
         return api_response(data=library.to_dict(), msg='Library updated')
+    except ValueError as e:
+        db.session.rollback()
+        return api_error(code=40018, msg=str(e))
     except Exception as e:
         db.session.rollback()
         logger.exception('Update library failed id=%s error=%s', id, e)
@@ -456,20 +512,29 @@ def bind_library_source(id):
     if not payload:
         return api_error(code=40000, msg='No input data')
 
-    source_id = payload.get('source_id')
-    if not source_id:
+    try:
+        source_id = _normalize_request_int(payload.get('source_id'), default=None, field_name='source_id')
+    except ValueError as e:
+        return api_error(code=40018, msg=str(e))
+    if source_id is None:
         return api_error(code=40001, msg='Missing required field: source_id')
 
     source = db.session.get(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg='Source not found', http_status=404)
 
-    root_path = _normalize_root_path(payload.get('root_path'))
     try:
+        root_path = _normalize_root_path(payload.get('root_path'))
+        content_type = _normalize_request_text(payload.get('content_type'), field_name='content_type', default=None)
+        scrape_enabled = _normalize_request_bool(payload.get('scrape_enabled'), default=True, field_name='scrape_enabled')
+        scan_order = _normalize_request_int(payload.get('scan_order'), default=0, field_name='scan_order')
+        is_enabled = _normalize_request_bool(payload.get('is_enabled'), default=True, field_name='is_enabled')
         scraper_policy = normalize_scraper_policy_payload(
             raw_policy=payload.get('scraper_policy'),
             provider_order=payload.get('provider_order') or payload.get('providers'),
         )
+    except ValueError as e:
+        return api_error(code=40018, msg=str(e))
     except ScraperPolicyError as e:
         return api_error(code=e.code, msg=e.msg)
 
@@ -481,11 +546,11 @@ def bind_library_source(id):
         library_id=id,
         source_id=source_id,
         root_path=root_path,
-        content_type=payload.get('content_type'),
-        scrape_enabled=payload.get('scrape_enabled', True),
+        content_type=content_type,
+        scrape_enabled=scrape_enabled,
         scraper_policy=scraper_policy,
-        scan_order=payload.get('scan_order', 0),
-        is_enabled=payload.get('is_enabled', True),
+        scan_order=scan_order,
+        is_enabled=is_enabled,
     )
     db.session.add(binding)
     db.session.commit()
@@ -512,22 +577,25 @@ def update_library_source(id, binding_id):
         if 'root_path' in payload:
             binding.root_path = _normalize_root_path(payload.get('root_path'))
         if 'content_type' in payload:
-            binding.content_type = payload.get('content_type')
+            binding.content_type = _normalize_request_text(payload.get('content_type'), field_name='content_type', default=None)
         if 'scrape_enabled' in payload:
-            binding.scrape_enabled = bool(payload.get('scrape_enabled'))
+            binding.scrape_enabled = _normalize_request_bool(payload.get('scrape_enabled'), default=bool(binding.scrape_enabled), field_name='scrape_enabled')
         if 'scraper_policy' in payload or 'provider_order' in payload or 'providers' in payload:
             binding.scraper_policy = normalize_scraper_policy_payload(
                 raw_policy=payload.get('scraper_policy'),
                 provider_order=payload.get('provider_order') or payload.get('providers'),
             )
         if 'scan_order' in payload:
-            binding.scan_order = int(payload.get('scan_order') or 0)
+            binding.scan_order = _normalize_request_int(payload.get('scan_order'), default=0, field_name='scan_order')
         if 'is_enabled' in payload:
-            binding.is_enabled = bool(payload.get('is_enabled'))
+            binding.is_enabled = _normalize_request_bool(payload.get('is_enabled'), default=bool(binding.is_enabled), field_name='is_enabled')
 
         db.session.commit()
         clear_user_access_cache()
         return api_response(data=binding.to_dict(), msg='Library source updated')
+    except ValueError as e:
+        db.session.rollback()
+        return api_error(code=40018, msg=str(e))
     except ScraperPolicyError as e:
         db.session.rollback()
         return api_error(code=e.code, msg=e.msg)

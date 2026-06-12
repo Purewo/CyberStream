@@ -110,6 +110,80 @@ class LibraryMovieMembershipTests(unittest.TestCase):
         self.assertEqual(400, update_response.status_code)
         self.assertIn("library_type", update_response.get_json()["msg"])
 
+    def test_library_routes_normalize_string_booleans_and_integer_fields(self):
+        create_response = self.client.post(
+            "/api/v1/libraries",
+            json={
+                "name": "布尔库",
+                "slug": "bool-library",
+                "is_enabled": "false",
+                "sort_order": "7",
+            },
+        )
+        self.assertEqual(201, create_response.status_code)
+        created_library = create_response.get_json()["data"]
+        self.assertFalse(created_library["is_enabled"])
+        self.assertEqual(7, created_library["sort_order"])
+
+        update_response = self.client.patch(
+            f"/api/v1/libraries/{self.library.id}",
+            json={"is_enabled": "false", "sort_order": "9"},
+        )
+        self.assertEqual(200, update_response.status_code)
+        updated_library = update_response.get_json()["data"]
+        self.assertFalse(updated_library["is_enabled"])
+        self.assertEqual(9, updated_library["sort_order"])
+
+        binding = LibrarySource.query.filter_by(library_id=self.library.id, source_id=self.source_a.id).first()
+        source_response = self.client.patch(
+            f"/api/v1/libraries/{self.library.id}/sources/{binding.id}",
+            json={"scrape_enabled": "false", "is_enabled": "0", "scan_order": "4"},
+        )
+        self.assertEqual(200, source_response.status_code)
+        updated_binding = source_response.get_json()["data"]
+        self.assertFalse(updated_binding["scrape_enabled"])
+        self.assertFalse(updated_binding["is_enabled"])
+        self.assertEqual(4, updated_binding["scan_order"])
+
+    def test_library_routes_reject_invalid_boolean_and_integer_fields(self):
+        invalid_library_name = self.client.post(
+            "/api/v1/libraries",
+            json={"name": {"unexpected": True}, "slug": "invalid-name"},
+        )
+        invalid_library_bool = self.client.patch(
+            f"/api/v1/libraries/{self.library.id}",
+            json={"is_enabled": "not-a-bool"},
+        )
+        invalid_library_order = self.client.patch(
+            f"/api/v1/libraries/{self.library.id}",
+            json={"sort_order": "not-an-int"},
+        )
+        binding = LibrarySource.query.filter_by(library_id=self.library.id, source_id=self.source_a.id).first()
+        invalid_source_bool = self.client.patch(
+            f"/api/v1/libraries/{self.library.id}/sources/{binding.id}",
+            json={"scrape_enabled": "not-a-bool"},
+        )
+        invalid_source_order = self.client.patch(
+            f"/api/v1/libraries/{self.library.id}/sources/{binding.id}",
+            json={"scan_order": "not-an-int"},
+        )
+        invalid_source_root = self.client.post(
+            f"/api/v1/libraries/{self.library.id}/sources",
+            json={"source_id": self.source_a.id, "root_path": {"unexpected": True}},
+        )
+        invalid_source_content_type = self.client.patch(
+            f"/api/v1/libraries/{self.library.id}/sources/{binding.id}",
+            json={"content_type": {"unexpected": True}},
+        )
+
+        self.assertEqual(400, invalid_library_name.status_code)
+        self.assertEqual(400, invalid_library_bool.status_code)
+        self.assertEqual(400, invalid_library_order.status_code)
+        self.assertEqual(400, invalid_source_bool.status_code)
+        self.assertEqual(400, invalid_source_order.status_code)
+        self.assertEqual(400, invalid_source_root.status_code)
+        self.assertEqual(400, invalid_source_content_type.status_code)
+
     def test_library_content_includes_multiple_bound_sources(self):
         movie_a = self._movie("Auto A")
         movie_b = self._movie("Auto B")

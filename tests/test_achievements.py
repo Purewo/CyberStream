@@ -221,6 +221,42 @@ class AchievementUserIsolationTests(unittest.TestCase):
         self.assertIsNotNone(state["unlocked_at"])
         self.assertEqual(1, state["progress"])
 
+    def test_collector_is_calculated_for_normal_user_vault_scope(self):
+        alice = User.query.filter_by(username="alice").first()
+        bob = User.query.filter_by(username="bob").first()
+        self._login("alice")
+        for index in range(50):
+            movie = Movie(
+                tmdb_id=f"movie/alice-favorite-{index}",
+                title=f"Alice Favorite {index}",
+                scraper_source="TMDB",
+            )
+            db.session.add(movie)
+            db.session.flush()
+            db.session.add(UserFavorite(scope_key=f"user:{alice.id}", user_id=alice.id, movie_id=movie.id))
+        for index in range(49):
+            movie = Movie(
+                tmdb_id=f"movie/bob-favorite-{index}",
+                title=f"Bob Favorite {index}",
+                scraper_source="TMDB",
+            )
+            db.session.add(movie)
+            db.session.flush()
+            db.session.add(UserFavorite(scope_key=f"user:{bob.id}", user_id=bob.id, movie_id=movie.id))
+        db.session.commit()
+
+        state = self._achievement_state("collector")
+
+        self.assertIsNotNone(state["unlocked_at"])
+        self.assertEqual(1, state["progress"])
+        self.client.post("/api/v1/auth/logout")
+
+        self._login("bob")
+        bob_state = self._achievement_state("collector")
+
+        self.assertIsNone(bob_state["unlocked_at"])
+        self.assertEqual(0.98, bob_state["progress"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -98,6 +98,23 @@ class CatalogVisibilityTests(unittest.TestCase):
         self.assertEqual("pending_review", visibility["reason"])
         self.assertNotIn(movie.id, self._list_movie_ids())
 
+    def test_catalog_visibility_force_field_is_strict_boolean(self):
+        movie = self._movie("Strict Force")
+
+        accepted_response = self.client.patch(
+            f"/api/v1/movies/{movie.id}/catalog-visibility",
+            json={"status": "hidden", "force": "false"},
+        )
+        invalid_response = self.client.patch(
+            f"/api/v1/movies/{movie.id}/catalog-visibility",
+            json={"status": "auto", "force": "not-a-bool"},
+        )
+
+        self.assertEqual(200, accepted_response.status_code)
+        self.assertEqual(400, invalid_response.status_code)
+        db.session.refresh(movie)
+        self.assertEqual(Movie.CATALOG_VISIBILITY_HIDDEN, movie.catalog_visibility_status)
+
     def test_legacy_catalog_visibility_patch_cannot_publish(self):
         movie = self._movie("Raw", scraper_source="LOCAL_FALLBACK", cover="")
 

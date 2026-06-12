@@ -250,6 +250,60 @@ class UserManagementTests(unittest.TestCase):
         self.assertEqual(User.ROLE_ADMIN, admin.role)
         self.assertTrue(admin.is_enabled)
 
+    def test_admin_user_enabled_field_accepts_string_false(self):
+        app = self.create_enabled_app()
+        admin_client = app.test_client()
+        viewer_client = app.test_client()
+        self._user("admin", role=User.ROLE_ADMIN)
+        viewer = self._user("viewer")
+
+        self._login(admin_client, "admin")
+        create_response = admin_client.post("/api/v1/admin/users", json={
+            "username": "disabled-viewer",
+            "password": "password-123",
+            "role": "user",
+            "is_enabled": "false",
+        })
+        update_response = admin_client.patch(
+            f"/api/v1/admin/users/{viewer.id}",
+            json={"is_enabled": "false"},
+        )
+
+        self.assertEqual(201, create_response.status_code)
+        self.assertFalse(create_response.get_json()["data"]["is_enabled"])
+        self.assertEqual(200, update_response.status_code)
+        self.assertFalse(update_response.get_json()["data"]["is_enabled"])
+        self.assertEqual(401, viewer_client.post("/api/v1/auth/login", json={
+            "username": "disabled-viewer",
+            "password": "password-123",
+        }).status_code)
+        self.assertEqual(401, viewer_client.post("/api/v1/auth/login", json={
+            "username": "viewer",
+            "password": "password-123",
+        }).status_code)
+
+    def test_admin_user_enabled_field_rejects_invalid_bool(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        self._user("admin", role=User.ROLE_ADMIN)
+        viewer = self._user("viewer")
+
+        self._login(client, "admin")
+        create_response = client.post("/api/v1/admin/users", json={
+            "username": "bad-bool",
+            "password": "password-123",
+            "is_enabled": "not-a-bool",
+        })
+        update_response = client.patch(
+            f"/api/v1/admin/users/{viewer.id}",
+            json={"is_enabled": "not-a-bool"},
+        )
+
+        self.assertEqual(400, create_response.status_code)
+        self.assertEqual(40094, create_response.get_json()["code"])
+        self.assertEqual(400, update_response.status_code)
+        self.assertEqual(40094, update_response.get_json()["code"])
+
     def test_admin_password_reset_invalidates_existing_user_session(self):
         app = self.create_enabled_app()
         admin_client = app.test_client()
@@ -452,10 +506,18 @@ class UserManagementTests(unittest.TestCase):
             f"/api/v1/resources/{allowed_resource.id}/subtitles/online/download",
             json={},
         )
+        allowed_audio_diagnostics = client.get(
+            f"/api/v1/resources/{allowed_resource.id}/audio-transcode/diagnostics"
+        )
+        allowed_audio_stop = client.delete(
+            f"/api/v1/resources/{allowed_resource.id}/audio-transcode?session_id=test-session"
+        )
 
         self.assertEqual(400, allowed_qualities.status_code)
         self.assertEqual(400, allowed_transcoded.status_code)
         self.assertEqual(400, allowed_subtitle_download.status_code)
+        self.assertEqual(200, allowed_audio_diagnostics.status_code)
+        self.assertEqual(200, allowed_audio_stop.status_code)
         self.assertEqual(
             403,
             client.get(
@@ -473,6 +535,18 @@ class UserManagementTests(unittest.TestCase):
             client.post(
                 f"/api/v1/resources/{denied_resource.id}/subtitles/online/download",
                 json={},
+            ).status_code,
+        )
+        self.assertEqual(
+            403,
+            client.get(
+                f"/api/v1/resources/{denied_resource.id}/audio-transcode/diagnostics"
+            ).status_code,
+        )
+        self.assertEqual(
+            403,
+            client.delete(
+                f"/api/v1/resources/{denied_resource.id}/audio-transcode?session_id=test-session"
             ).status_code,
         )
 

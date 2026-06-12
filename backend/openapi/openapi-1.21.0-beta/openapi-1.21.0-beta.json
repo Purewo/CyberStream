@@ -6175,7 +6175,7 @@
       },
       "post": {
         "summary": "🔵 [新增] 收藏影视",
-        "description": "默认单用户模式或已登录管理员在保险库 PIN 解锁后可用。幂等收藏指定影视。收藏不会让 favorites 出现在 GET /api/v1/libraries 中；保险库只通过专用入口和 /api/v1/libraries/favorites* 访问。",
+        "description": "默认单用户模式或已登录用户在自己的保险库 PIN 解锁后可用。幂等收藏指定影视。收藏不会让 favorites 出现在 GET /api/v1/libraries 中；保险库只通过专用入口和 /api/v1/libraries/favorites* 访问。",
         "operationId": "addUserFavorite",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -6216,7 +6216,7 @@
       },
       "delete": {
         "summary": "🔵 [新增] 移除收藏",
-        "description": "默认单用户模式或已登录管理员在保险库 PIN 解锁后可用。幂等移除指定影视收藏。移除最后一条收藏后 /api/v1/libraries/favorites* 返回 404。",
+        "description": "默认单用户模式或已登录用户在自己的保险库 PIN 解锁后可用。幂等移除指定影视收藏。移除最后一条收藏后 /api/v1/libraries/favorites* 返回 404。",
         "operationId": "deleteUserFavorite",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -21126,7 +21126,7 @@
             "description": "修改已有 PIN 时必填。"
           }
         },
-        "description": "首次设置传 pin 或 new_pin；修改已有 PIN 时传 current_pin + new_pin。开启用户系统后，PIN 不能与当前管理员登录密码相同。"
+        "description": "首次设置传 pin 或 new_pin；修改已有 PIN 时传 current_pin + new_pin。开启用户系统后，PIN 不能与当前登录用户密码相同。"
       },
       "VaultPasswordResponse": {
         "allOf": [

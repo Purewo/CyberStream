@@ -14,6 +14,7 @@ from backend.app.services.users import (
     bump_user_session_version,
     ensure_user_keeps_admin_access,
     normalize_library_rules_payload,
+    normalize_bool,
     normalize_password,
     normalize_role,
     normalize_username,
@@ -236,6 +237,7 @@ def create_user():
         username = normalize_username(payload.get("username"))
         password = normalize_password(payload.get("password"))
         role = normalize_role(payload.get("role", User.ROLE_USER))
+        is_enabled = normalize_bool(payload.get("is_enabled"), default=True, field_name="is_enabled")
     except UserValidationError as e:
         return api_error(code=e.code, msg=e.message, http_status=e.http_status)
 
@@ -252,7 +254,7 @@ def create_user():
         username=username,
         display_name=str(payload.get("display_name") or username).strip() or username,
         role=role,
-        is_enabled=bool(payload.get("is_enabled", True)),
+        is_enabled=is_enabled,
     )
     set_user_password(user, password)
     db.session.add(user)
@@ -308,7 +310,7 @@ def update_user(user_id):
         if "role" in payload:
             next_role = normalize_role(payload.get("role"))
         if "is_enabled" in payload:
-            next_enabled = bool(payload.get("is_enabled"))
+            next_enabled = normalize_bool(payload.get("is_enabled"), default=bool(user.is_enabled), field_name="is_enabled")
         ensure_user_keeps_admin_access(user, target_role=next_role, target_enabled=next_enabled)
         role_changed = next_role != user.role
         enabled_changed = next_enabled != bool(user.is_enabled)

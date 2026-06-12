@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource, Movie, UserAchievement, UserFavorite
-from backend.app.security import get_current_user, is_user_management_enabled
 from backend.app.services.user_access import current_user_id_for_personal_data
 
 
@@ -114,14 +113,8 @@ def _build_server_metrics():
         for history, _resource, _movie in histories
         if history.device_id and history.device_id.strip() and _has_started(history)
     }
-    scope_key, user_id = _scope_context()
-    current_user = get_current_user()
-    if not is_user_management_enabled():
-        favorites_count = UserFavorite.query.filter_by(scope_key=scope_key).count()
-    elif current_user and current_user.is_admin() and current_user.id == user_id:
-        favorites_count = UserFavorite.query.filter_by(scope_key=scope_key).count()
-    else:
-        favorites_count = 0
+    scope_key, _user_id = _scope_context()
+    favorites_count = UserFavorite.query.filter_by(scope_key=scope_key).count()
     high_quality_ids = set()
     dolby_vision_ids = set()
     dolby_atmos_ids = set()

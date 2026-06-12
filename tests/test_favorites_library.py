@@ -344,6 +344,38 @@ class FavoritesUserIsolationTests(unittest.TestCase):
             f"user:{admin.id}": admin.id,
         }, secrets)
 
+    def test_normal_user_can_browse_own_favorites_virtual_library(self):
+        movie = self._movie()
+
+        self._login("alice")
+        self.assertEqual(
+            200,
+            self.client.post("/api/v1/user/vault/password", json={"pin": "654321"}).status_code,
+        )
+        self.assertEqual(
+            200,
+            self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code,
+        )
+
+        library = self.client.get("/api/v1/libraries/favorites")
+        movies = self.client.get("/api/v1/libraries/favorites/movies")
+        featured = self.client.get("/api/v1/libraries/favorites/featured")
+        recommendations = self.client.get("/api/v1/libraries/favorites/recommendations")
+        filters = self.client.get("/api/v1/libraries/favorites/filters")
+
+        self.assertEqual(200, library.status_code)
+        self.assertEqual("favorites", library.get_json()["data"]["id"])
+        self.assertEqual(200, movies.status_code)
+        self.assertEqual([movie.id], [item["id"] for item in movies.get_json()["data"]["items"]])
+        self.assertEqual(200, featured.status_code)
+        self.assertEqual(200, recommendations.status_code)
+        self.assertEqual(200, filters.status_code)
+
+        self.client.post("/api/v1/auth/logout")
+        self._login("bob")
+        self.assertEqual(200, self.client.get("/api/v1/user/vault/status").status_code)
+        self.assertEqual(403, self.client.get("/api/v1/libraries/favorites").status_code)
+
 
 if __name__ == "__main__":
     unittest.main()

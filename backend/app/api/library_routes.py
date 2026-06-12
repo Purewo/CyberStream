@@ -600,7 +600,7 @@ def _normalize_catalog_visibility_payload(payload):
         raise MetadataValidationError(code=40031, msg="Invalid field type: note should be string")
 
     note = raw_note.strip() if isinstance(raw_note, str) else None
-    force = bool(payload.get('force', False))
+    force = _normalize_boolean_payload_field(payload, 'force', default=False)
     return status, note, force
 
 
