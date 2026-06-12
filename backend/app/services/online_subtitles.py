@@ -139,7 +139,7 @@ def _normalize_provider_list(raw):
 
 
 def _config_float(name, default):
-    value = current_app.config.get(name, default) if has_app_context() else getattr(config, name, default)
+    value = _config_value(name, default)
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -147,11 +147,36 @@ def _config_float(name, default):
 
 
 def _config_int(name, default):
-    value = current_app.config.get(name, default) if has_app_context() else getattr(config, name, default)
+    value = _config_value(name, default)
     try:
         return int(value)
     except (TypeError, ValueError):
         return int(default)
+
+
+def _config_value(name, default=None):
+    return current_app.config.get(name, default) if has_app_context() else getattr(config, name, default)
+
+
+def _configure_provider_session(session):
+    proxies = _config_value("ONLINE_SUBTITLE_PROXIES", None)
+    if not session or not proxies:
+        return session
+
+    session_proxies = getattr(session, "proxies", None)
+    if isinstance(session_proxies, dict):
+        session_proxies.update(proxies)
+    else:
+        try:
+            session.proxies = dict(proxies)
+        except Exception:
+            return session
+
+    try:
+        session.trust_env = False
+    except Exception:
+        pass
+    return session
 
 
 def _subtitle_size_limit(config_name, default):
@@ -689,7 +714,7 @@ def _normalize_srtku_item(item, film_title=None):
 def _search_subhd(query, limit):
     module = _load_skill_module("subhd_core")
     session = _cap_session_timeout(
-        module.make_session(),
+        _configure_provider_session(module.make_session()),
         _config_float("ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS", 8.0),
     )
     rows = module.search_subtitle(query, session=session)
@@ -708,7 +733,7 @@ def _search_srtku(query, limit):
     timeout_seconds = _config_float("ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS", 5.0)
     deadline = time.monotonic() + timeout_seconds if timeout_seconds > 0 else None
     session = _cap_session_timeout(
-        module.make_session(),
+        _configure_provider_session(module.make_session()),
         timeout_seconds,
         deadline=deadline,
     )
@@ -1384,7 +1409,7 @@ def normalize_downloaded_subtitle_file(resource, provider_id, source_key, filena
 
 def _download_subhd(resource, source_key):
     module = _load_skill_module("subhd_core")
-    session = module.make_session()
+    session = _configure_provider_session(module.make_session())
     try:
         result = _call_provider_function(
             module.download_subtitle,
@@ -1424,7 +1449,7 @@ def _download_subhd(resource, source_key):
 
 def _download_srtku(resource, source_key, download_index=0):
     module = _load_skill_module("srtku_core")
-    session = module.make_session()
+    session = _configure_provider_session(module.make_session())
     detail_url = f"{module.BASE}/detail/{source_key}"
     try:
         links = module.get_download_links(detail_url, session=session)

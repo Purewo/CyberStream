@@ -373,6 +373,12 @@ SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源
 #### `CYBER_ONLINE_SUBTITLE_SRTKU_SEARCH_TIMEOUT_SECONDS`
 SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用源；如果网络侧访问 `srtku.com` 不稳定，后端会在超时后返回 `providers.errors`，其中 `reason=timeout`，避免前端把慢源超时误判成整体故障。
 
+#### `CYBER_ONLINE_SUBTITLE_PROXY_ENABLED`
+在线字幕 provider 是否使用代理，默认 `false`。国内服务器访问 SubHD/SrtKu 不稳定时可开启；开启后搜索与下载都会走同一组代理，并关闭 `requests` 环境代理读取。
+
+#### `CYBER_ONLINE_SUBTITLE_PROXY_URL`
+在线字幕 provider 代理地址。未带 scheme 时按 HTTP 代理处理，例如 `127.0.0.1:7890` 会规范化为 `http://127.0.0.1:7890`。
+
 #### `CYBER_ONLINE_SUBTITLE_DOWNLOAD_MAX_BYTES`
 在线字幕来源单次原始下载允许读取的最大字节数，默认 `20971520`（20MB）。SubHD 和 SrtKu 都会在下载阶段按此限制流式读取，超过限制返回 `413`；显式设置为 `0` 可关闭限制。
 

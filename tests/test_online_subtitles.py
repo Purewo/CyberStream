@@ -316,6 +316,20 @@ class OnlineSubtitleRouteTests(unittest.TestCase):
         self.assertIn('collect_all("cv2")', spec)
         self.assertNotIn('    "ddddocr",', spec)
 
+    def test_online_provider_session_applies_configured_proxy(self):
+        session = types.SimpleNamespace(proxies={}, trust_env=True)
+        self.app.config["ONLINE_SUBTITLE_PROXIES"] = {
+            "http": "http://127.0.0.1:7890",
+            "https": "http://127.0.0.1:7890",
+        }
+
+        configured = online_subtitles._configure_provider_session(session)
+
+        self.assertIs(configured, session)
+        self.assertEqual("http://127.0.0.1:7890", session.proxies["http"])
+        self.assertEqual("http://127.0.0.1:7890", session.proxies["https"])
+        self.assertFalse(session.trust_env)
+
     def test_online_search_uses_subhd_and_srtku_but_ignores_opensubtitles(self):
         resource = self._resource()
 
