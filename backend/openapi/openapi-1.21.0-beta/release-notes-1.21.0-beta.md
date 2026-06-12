@@ -9,6 +9,17 @@
 - 登录失败限流新增 `CYBER_LOGIN_RATE_LIMIT_MAX_BUCKETS`，默认最多保留 `10000` 个 `IP:username` 尝试桶，防止公开登录接口被大量唯一用户名撑爆进程内记录。
 - 登录失败限流现在只读取 Flask/ProxyFix 处理后的 `request.remote_addr`，不再直接信任任意 `X-Forwarded-For` 头。
 - 托管试点前端契约已更新：`/api/v1/auth/me` 是启动探测入口，Cookie 会话请求必须带 `credentials: include`，受保护接口返回 `401` 时前端应重新确认登录态。
+- `AuthStatus.permissions` 现在显式暴露 `personal_favorites` 与 `personal_vault`，普通账号可在自己的可见影片范围内使用收藏和收藏保险库。
+- 普通账号现在可以访问可见资源的云端转码清晰度、云端转码播放和在线字幕下载；未授权资源仍返回 `403`。
+- 非对象 JSON 请求体不再让登录、历史、字幕等接口落入 `500`，会按缺字段或非法凭据返回稳定 `4xx`。
+
+## 运维 smoke check
+
+- `scripts/backend_smoke_check.py` 支持 `--login-username` / `--login-password`，也可读取 `CYBER_BACKEND_SMOKE_USERNAME` / `CYBER_BACKEND_SMOKE_PASSWORD`；强制用户登录且 API token 后门关闭时，会先登录再用 Cookie 检查受保护接口。
+
+## 官方客户端更新检查
+
+- 没有正式 update manifest 或没有可用 CDN 下载项时，`update_available` 不再返回 `true`，避免客户端出现“提示可更新但没有下载按钮”的坏状态；响应仍保留 `warnings` 说明 manifest/download 缺失。
 
 ## 外部资源聚合搜索
 

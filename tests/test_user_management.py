@@ -108,6 +108,15 @@ class UserManagementTests(unittest.TestCase):
         self.assertEqual("admin", data["role"])
         self.assertEqual("owner", me_response.get_json()["data"]["user"]["username"])
 
+    def test_login_rejects_non_object_json_without_server_error(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+
+        response = client.post("/api/v1/auth/login", json=["unexpected"])
+
+        self.assertEqual(401, response.status_code)
+        self.assertEqual(40110, response.get_json()["code"])
+
     def test_normal_user_is_read_only_and_admin_can_manage(self):
         app = self.create_enabled_app()
         client = app.test_client()
@@ -404,6 +413,141 @@ class UserManagementTests(unittest.TestCase):
         self.assertEqual(403, client.get(f"/api/v1/movies/{denied_movie.id}").status_code)
         self.assertEqual(403, client.get(f"/api/v1/resources/{denied_resource.id}/stream").status_code)
         self.assertNotEqual(denied_library.id, allowed_library.id)
+
+    def test_normal_user_can_use_visible_resource_playback_helpers(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        user = self._user("viewer")
+        source = StorageSource(name="Local", type="local", config={"root_path": "/media"})
+        db.session.add(source)
+        db.session.commit()
+        allowed_library = self._library("Allowed", source, "allowed")
+        _denied_library = self._library("Denied", source, "denied")
+        _allowed_movie, allowed_resource = self._movie_with_resource(
+            "Allowed Movie",
+            source,
+            "allowed/a.mkv",
+        )
+        _denied_movie, denied_resource = self._movie_with_resource(
+            "Denied Movie",
+            source,
+            "denied/b.mkv",
+        )
+        db.session.add(UserLibraryRule(
+            user_id=user.id,
+            library_id=allowed_library.id,
+            mode=UserLibraryRule.MODE_ALLOW,
+        ))
+        db.session.commit()
+
+        self._login(client, "viewer")
+
+        allowed_qualities = client.get(
+            f"/api/v1/resources/{allowed_resource.id}/streaming-qualities"
+        )
+        allowed_transcoded = client.get(
+            f"/api/v1/resources/{allowed_resource.id}/stream-transcoded"
+        )
+        allowed_subtitle_download = client.post(
+            f"/api/v1/resources/{allowed_resource.id}/subtitles/online/download",
+            json={},
+        )
+
+        self.assertEqual(400, allowed_qualities.status_code)
+        self.assertEqual(400, allowed_transcoded.status_code)
+        self.assertEqual(400, allowed_subtitle_download.status_code)
+        self.assertEqual(
+            403,
+            client.get(
+                f"/api/v1/resources/{denied_resource.id}/streaming-qualities"
+            ).status_code,
+        )
+        self.assertEqual(
+            403,
+            client.get(
+                f"/api/v1/resources/{denied_resource.id}/stream-transcoded"
+            ).status_code,
+        )
+        self.assertEqual(
+            403,
+            client.post(
+                f"/api/v1/resources/{denied_resource.id}/subtitles/online/download",
+                json={},
+            ).status_code,
+        )
+
+    def test_normal_user_cannot_modify_shared_resource_subtitles(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        self._user("viewer")
+        source = StorageSource(name="Local", type="local", config={"root_path": "/media"})
+        db.session.add(source)
+        db.session.commit()
+        _movie, resource = self._movie_with_resource("Shared", source, "shared.mkv")
+
+        self._login(client, "viewer")
+
+        self.assertEqual(
+            403,
+            client.post(
+                f"/api/v1/resources/{resource.id}/subtitles/online/bind",
+                json={},
+            ).status_code,
+        )
+        self.assertEqual(
+            403,
+            client.post(
+                f"/api/v1/resources/{resource.id}/subtitles/upload",
+                data={},
+            ).status_code,
+        )
+
+    def test_normal_user_can_manage_own_favorites_and_vault_for_visible_movies(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        user = self._user("viewer")
+        source = StorageSource(name="Local", type="local", config={"root_path": "/media"})
+        db.session.add(source)
+        db.session.commit()
+        allowed_library = self._library("Allowed", source, "allowed")
+        _denied_library = self._library("Denied", source, "denied")
+        allowed_movie, _allowed_resource = self._movie_with_resource(
+            "Allowed Movie",
+            source,
+            "allowed/a.mkv",
+        )
+        denied_movie, _denied_resource = self._movie_with_resource(
+            "Denied Movie",
+            source,
+            "denied/b.mkv",
+        )
+        db.session.add(UserLibraryRule(
+            user_id=user.id,
+            library_id=allowed_library.id,
+            mode=UserLibraryRule.MODE_ALLOW,
+        ))
+        db.session.commit()
+
+        self._login(client, "viewer")
+
+        self.assertEqual(200, client.get("/api/v1/user/vault/status").status_code)
+        self.assertEqual(
+            200,
+            client.post("/api/v1/user/vault/password", json={"pin": "654321"}).status_code,
+        )
+        self.assertEqual(
+            200,
+            client.post(f"/api/v1/user/favorites/{allowed_movie.id}").status_code,
+        )
+        self.assertEqual(
+            200,
+            client.get(f"/api/v1/user/favorites/{allowed_movie.id}").status_code,
+        )
+        self.assertEqual(200, client.get("/api/v1/user/favorites").status_code)
+        self.assertEqual(
+            403,
+            client.post(f"/api/v1/user/favorites/{denied_movie.id}").status_code,
+        )
 
     def test_history_is_isolated_by_user(self):
         app = self.create_enabled_app()

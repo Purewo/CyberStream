@@ -10,7 +10,13 @@ from uuid import uuid4
 from flask import Blueprint, current_app, redirect, request, send_file
 from sqlalchemy.exc import IntegrityError
 
-from backend.app.api.helpers import build_pagination_meta, get_history_map, get_movie_user_history, get_resource_history_map
+from backend.app.api.helpers import (
+    build_pagination_meta,
+    get_history_map,
+    get_json_object_payload,
+    get_movie_user_history,
+    get_resource_history_map,
+)
 from backend.app.api.library_helpers import (
     attach_recommendation_payload,
     build_library_movie_id_context,
@@ -3896,7 +3902,7 @@ def _apply_season_metadata_update(season_metadata, normalized_payload):
 
 def _get_json_payload():
     """统一读取 JSON 请求体；空 body 时返回空字典。"""
-    return request.get_json(silent=True) or {}
+    return get_json_object_payload()
 
 
 def _serialize_review_resource(resource):

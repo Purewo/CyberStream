@@ -4,7 +4,7 @@ from collections import Counter
 
 from flask import Blueprint, current_app, request
 
-from backend.app.api.helpers import build_pagination_meta, get_history_map
+from backend.app.api.helpers import build_pagination_meta, get_history_map, get_json_object_payload
 from backend.app.api.library_helpers import (
     apply_movie_filters,
     apply_public_movie_visibility_filter,
@@ -46,7 +46,7 @@ LIBRARY_MOVIE_MEMBERSHIP_MODES = {'include', 'exclude'}
 
 
 def _get_json_payload():
-    return request.get_json(silent=True) or {}
+    return get_json_object_payload()
 
 
 def _normalize_page_args():

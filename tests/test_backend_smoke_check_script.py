@@ -28,10 +28,40 @@ class FakeSmokeClient:
         self.base_url = base_url
         self.timeout = timeout
         self.api_token = api_token
+        self.cookie_header = ""
+        self.login_calls = []
         type(self).last_init = {
             "base_url": base_url,
             "timeout": timeout,
             "api_token": api_token,
+        }
+
+    def login(self, username, password):
+        self.login_calls.append((username, password))
+        self.cookie_header = "cyberstream_session=session-cookie"
+        return {
+            "data": {
+                "user_management_enabled": True,
+                "authenticated": True,
+                "role": "admin",
+                "auth_via": "session",
+                "user": {
+                    "id": 1,
+                    "username": username,
+                    "role": "admin",
+                    "is_enabled": True,
+                },
+                "permissions": {
+                    "admin": True,
+                    "read_catalog": True,
+                        "manage_catalog": True,
+                        "manage_users": True,
+                        "personal_history": True,
+                        "personal_favorites": True,
+                        "personal_vault": True,
+                        "personal_subtitle_settings": True,
+                    },
+                },
         }
 
     def get_json(self, path, query=None):
@@ -51,6 +81,8 @@ class FakeSmokeClient:
                         "manage_catalog": False,
                         "manage_users": False,
                         "personal_history": False,
+                        "personal_favorites": False,
+                        "personal_vault": False,
                         "personal_subtitle_settings": False,
                     },
                 },
@@ -2055,6 +2087,8 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
             "expected_version": "",
             "expected_openapi_version": "",
             "api_token": "",
+            "login_username": "",
+            "login_password": "",
             "live_check_limit": 500,
             "openapi_module_json_check": False,
             "max_fallback_items": 0,
@@ -2145,6 +2179,32 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
 
         self.assertEqual("secret-token", TokenAwareClient.last_init["api_token"])
 
+    def test_run_checks_logs_in_when_session_credentials_are_configured(self):
+        class LoginAwareClient(FakeSmokeClient):
+            instance = None
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                type(self).instance = self
+
+            def get_json(self, path, query=None):
+                if path == "/api/v1/auth/me" and self.cookie_header:
+                    return self.login_calls and self.login(*self.login_calls[-1])
+                return super().get_json(path, query=query)
+
+        with patch.object(self.module, "SmokeClient", LoginAwareClient):
+            results = self.module.run_checks(self._args(
+                login_username="owner",
+                login_password="secret-password",
+            ))
+
+        self.assertEqual(
+            ("owner", "secret-password"),
+            LoginAwareClient.instance.login_calls[0],
+        )
+        self.assertEqual("auth_login", results[1].name)
+        self.assertTrue(results[1].ok)
+
     def test_smoke_client_sends_bearer_authorization_header(self):
         class FakeResponse:
             def __enter__(self):
@@ -2171,6 +2231,49 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         self.assertEqual(2.5, timeout)
         self.assertEqual("application/json", request.get_header("Accept"))
         self.assertEqual("Bearer secret-token", request.get_header("Authorization"))
+
+    def test_smoke_client_login_stores_session_cookie_for_later_requests(self):
+        class FakeHeaders:
+            def get_all(self, key):
+                if key == "Set-Cookie":
+                    return ["cyberstream_session=abc123; HttpOnly; Secure; Path=/"]
+                return []
+
+        class FakeResponse:
+            headers = FakeHeaders()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return (
+                    b'{"data":{"user_management_enabled":true,"authenticated":true,'
+                    b'"role":"admin","auth_via":"session","user":{"id":1},'
+                    b'"permissions":{"admin":true,"read_catalog":true,'
+                    b'"manage_catalog":true,"manage_users":true,'
+                    b'"personal_history":true,"personal_favorites":true,'
+                    b'"personal_vault":true,"personal_subtitle_settings":true}}}'
+                )
+
+        requests = []
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        client = self.module.SmokeClient("http://example.test", timeout=2.5)
+        with patch.object(self.module.urllib.request, "urlopen", side_effect=fake_urlopen):
+            client.login("owner", "secret-password")
+            client.get_json("/api/v1/storage/sources")
+
+        self.assertEqual("cyberstream_session=abc123", client.cookie_header)
+        self.assertEqual(
+            "cyberstream_session=abc123",
+            requests[1][0].get_header("Cookie"),
+        )
 
     def test_smoke_client_can_get_text_payload(self):
         class FakeHeaders:
@@ -2884,6 +2987,23 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         update = next(item for item in results if item.name == "update_check")
         self.assertFalse(update.ok)
         self.assertIn("update_download_0_cdn_not_true", update.detail)
+
+    def test_update_check_fails_when_update_has_no_selected_download(self):
+        class BrokenUpdateCheckClient(FakeSmokeClient):
+            def get_json(self, path, query=None):
+                payload = super().get_json(path, query=query)
+                if path == "/api/v1/system/update-check":
+                    payload["data"]["update_available"] = True
+                    payload["data"]["downloads"] = []
+                    payload["data"]["selected_download"] = None
+                return payload
+
+        with patch.object(self.module, "SmokeClient", BrokenUpdateCheckClient):
+            results = self.module.run_checks(self._args(expected_version="1.21.0"))
+
+        update = next(item for item in results if item.name == "update_check")
+        self.assertFalse(update.ok)
+        self.assertIn("update_available_without_selected_download", update.detail)
 
     def test_other_videos_fails_when_manual_action_drops_resource_id(self):
         class BrokenOtherVideosClient(FakeSmokeClient):

@@ -56,7 +56,13 @@ NORMAL_USER_GET_PATTERNS = (
     re.compile(r"^/api/v1/user/profile$"),
     re.compile(r"^/api/v1/user/history$"),
     re.compile(r"^/api/v1/user/achievements$"),
-    re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/(?:stream|external-playback|audio-transcode|subtitle-settings)$"),
+    re.compile(r"^/api/v1/user/favorites$"),
+    re.compile(rf"^/api/v1/user/favorites/{UUID_PATTERN}$"),
+    re.compile(r"^/api/v1/user/vault/status$"),
+    re.compile(
+        rf"^/api/v1/resources/{UUID_PATTERN}/"
+        r"(?:stream|streaming-qualities|stream-transcoded|external-playback|audio-transcode|subtitle-settings)$"
+    ),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/search$"),
 )
 
@@ -66,16 +72,24 @@ NORMAL_USER_WRITE_PATTERNS = (
     re.compile(r"^/api/v1/user/history$"),
     re.compile(rf"^/api/v1/user/history/{UUID_PATTERN}$"),
     re.compile(r"^/api/v1/user/achievements/unlock$"),
+    re.compile(rf"^/api/v1/user/favorites/{UUID_PATTERN}$"),
+    re.compile(r"^/api/v1/user/vault/(?:password|unlock|lock)$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitle-settings$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/audio-transcode$"),
+    re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/download$"),
 )
 
 MOVIE_PATH_PATTERNS = (
     re.compile(rf"^/api/v1/movies/(?P<id>{UUID_PATTERN})(?:$|/(?:recommendations|resources|seasons|images/(?:poster|backdrop)))"),
+    re.compile(rf"^/api/v1/user/favorites/(?P<id>{UUID_PATTERN})$"),
 )
 
 RESOURCE_PATH_PATTERNS = (
-    re.compile(rf"^/api/v1/resources/(?P<id>{UUID_PATTERN})/(?:stream|external-playback|audio-transcode|subtitle-settings|subtitles/online/search)$"),
+    re.compile(
+        rf"^/api/v1/resources/(?P<id>{UUID_PATTERN})/"
+        r"(?:stream|streaming-qualities|stream-transcoded|external-playback|audio-transcode|"
+        r"subtitle-settings|subtitles/online/(?:search|download))$"
+    ),
 )
 
 LIBRARY_PATH_PATTERNS = (

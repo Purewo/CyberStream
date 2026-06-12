@@ -19763,7 +19763,43 @@
             "$ref": "#/components/schemas/User"
           },
           "permissions": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "admin",
+              "read_catalog",
+              "manage_catalog",
+              "manage_users",
+              "personal_history",
+              "personal_favorites",
+              "personal_vault",
+              "personal_subtitle_settings"
+            ],
+            "properties": {
+              "admin": {
+                "type": "boolean"
+              },
+              "read_catalog": {
+                "type": "boolean"
+              },
+              "manage_catalog": {
+                "type": "boolean"
+              },
+              "manage_users": {
+                "type": "boolean"
+              },
+              "personal_history": {
+                "type": "boolean"
+              },
+              "personal_favorites": {
+                "type": "boolean"
+              },
+              "personal_vault": {
+                "type": "boolean"
+              },
+              "personal_subtitle_settings": {
+                "type": "boolean"
+              }
+            }
           }
         }
       },

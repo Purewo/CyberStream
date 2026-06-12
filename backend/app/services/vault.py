@@ -28,20 +28,20 @@ class VaultAccessError(ValueError):
         self.http_status = http_status
 
 
-def _current_admin_context():
+def _current_vault_context():
     if not is_user_management_enabled():
         return "default", None
 
     user = get_current_user()
-    if not user or not user.is_admin() or not user.is_enabled:
+    if not user or not user.is_enabled:
         return None
     return f"user:{user.id}", user
 
 
-def _require_admin_context():
-    context = _current_admin_context()
+def _require_vault_context():
+    context = _current_vault_context()
     if not context:
-        raise VaultAccessError(40340, "Vault is available only to the default administrator or an authenticated administrator")
+        raise VaultAccessError(40340, "Vault requires an authenticated enabled user")
     return context
 
 
@@ -107,7 +107,7 @@ def _unlocked_with_secret(secret, scope_key, now):
 
 
 def build_vault_status():
-    scope_key, _actor = _require_admin_context()
+    scope_key, _actor = _require_vault_context()
     now = datetime.utcnow()
     secret = _secret_for_scope(scope_key)
     if secret and _refresh_lock_state(secret, now, commit=True):
@@ -127,7 +127,7 @@ def build_vault_status():
 
 
 def is_vault_unlocked():
-    context = _current_admin_context()
+    context = _current_vault_context()
     if not context:
         return False
     scope_key, _actor = context
@@ -137,7 +137,7 @@ def is_vault_unlocked():
 
 
 def require_vault_unlocked():
-    scope_key, _actor = _require_admin_context()
+    scope_key, _actor = _require_vault_context()
     now = datetime.utcnow()
     secret = _secret_for_scope(scope_key)
     if not secret:
@@ -150,7 +150,7 @@ def require_vault_unlocked():
 
 
 def verify_vault_pin(payload, audit_action="vault.pin.verify"):
-    scope_key, actor = _require_admin_context()
+    scope_key, actor = _require_vault_context()
     now = datetime.utcnow()
     secret = _secret_for_scope(scope_key)
     if not secret:
@@ -202,7 +202,7 @@ def _consume_pin_change(secret, now, actor):
 
 
 def set_vault_pin(payload):
-    scope_key, actor = _require_admin_context()
+    scope_key, actor = _require_vault_context()
     now = datetime.utcnow()
     new_pin = _validate_pin(payload.get("new_pin", payload.get("pin")))
     if actor and verify_user_password(actor, new_pin):
@@ -258,7 +258,7 @@ def set_vault_pin(payload):
 
 
 def unlock_vault(payload):
-    scope_key, actor = _require_admin_context()
+    scope_key, actor = _require_vault_context()
     now = datetime.utcnow()
     secret = _secret_for_scope(scope_key)
     if not secret:
@@ -284,7 +284,7 @@ def unlock_vault(payload):
 
 
 def lock_vault():
-    scope_key, actor = _require_admin_context()
+    scope_key, actor = _require_vault_context()
     _clear_unlock_session()
     record_audit("vault.lock", target_type="vault", target_id=scope_key, actor=actor, commit=True)
     return build_vault_status()

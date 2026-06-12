@@ -105,7 +105,11 @@ curl -i http://127.0.0.1:5004/api/v1/health
 curl -i https://cyberstream.gameuniverse.top:40160/
 curl -i https://cyberstream.gameuniverse.top:40160/api/v1/health
 curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
-./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160 --expected-version 1.21.0 --expected-openapi-version 1.21.0-beta
+CYBER_BACKEND_SMOKE_USERNAME=<username> \
+CYBER_BACKEND_SMOKE_PASSWORD=<password> \
+./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160 \
+  --expected-version 1.21.0 \
+  --expected-openapi-version 1.21.0-beta
 ```
 
 预期：

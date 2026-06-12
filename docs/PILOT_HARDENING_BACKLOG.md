@@ -15,6 +15,7 @@
 ### P0
 
 - 将 CORS 从任意来源改成官方 Web 域名和受控 PC 客户端来源白名单。
+- 确认官方 Web、PC WebView 和本地联调的实际 Origin 后，同步收紧 CORS 白名单；如必须跨站发送 Cookie，再把 `CYBER_SESSION_COOKIE_SAMESITE` 与 Origin 白名单一起调整，不能只单独放开 Cookie。
 - 在创建首批普通用户时显式配置 library allow 规则，避免默认继承全部公开影视库。
 
 ### P1
@@ -39,4 +40,3 @@
 - 普通账号不能访问未授权 library 中的影片和资源直链。
 - `CYBER_SESSION_COOKIE_SECURE=true`，登录 Cookie 仅通过 HTTPS 发送。
 - 执行数据库备份并通过 `PRAGMA integrity_check`。
-

@@ -133,11 +133,15 @@ class SystemUpdateCheckTests(unittest.TestCase):
     def test_update_check_falls_back_to_source_version_without_downloads(self):
         client = self._create_client(UPDATE_MANIFEST_PATH="/tmp/cyberstream-missing-update-manifest.json")
 
-        data = client.get("/api/v1/system/update-check").get_json()["data"]
+        data = client.get(
+            "/api/v1/system/update-check?current_version=1.21.0&current_release=1.21.0-pc.0"
+        ).get_json()["data"]
 
         self.assertEqual("source_tree", data["source"])
         self.assertEqual("1.21.1", data["latest"]["version"])
+        self.assertFalse(data["update_available"])
         self.assertEqual([], data["downloads"])
+        self.assertIsNone(data["selected_download"])
         self.assertIn("update_manifest_missing", data["warnings"])
         self.assertIn("update_downloads_missing", data["warnings"])
 

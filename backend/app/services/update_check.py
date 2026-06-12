@@ -333,6 +333,8 @@ def get_update_check_payload(
         warnings.append("update_downloads_missing")
 
     selected_download = _select_download(downloads, variant)
+    raw_update_available = _update_available(current_version, current_release, latest)
+    update_available = raw_update_available and bool(selected_download)
     return {
         "product": str((selected_source or {}).get("product") or DEFAULT_PRODUCT),
         "channel": channel,
@@ -345,7 +347,7 @@ def get_update_check_payload(
             "backend_version": str(_config_value("APP_VERSION", config.APP_VERSION) or "unknown"),
         },
         "latest": latest,
-        "update_available": _update_available(current_version, current_release, latest),
+        "update_available": update_available,
         "downloads": downloads,
         "selected_download": selected_download,
         "cdn": {

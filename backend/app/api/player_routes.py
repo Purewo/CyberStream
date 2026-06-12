@@ -2,6 +2,7 @@ import logging
 from urllib.parse import quote
 from flask import Blueprint, Response, current_app, redirect, request, send_file, stream_with_context
 
+from backend.app.api.helpers import get_json_object_payload
 from backend.app.extensions import db
 from backend.app.models import MediaResource
 from backend.app.providers.factory import provider_factory
@@ -120,7 +121,7 @@ def update_resource_subtitle_settings(id):
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_object_payload()
     try:
         data = save_resource_subtitle_settings(resource, payload)
         return api_response(data=data, msg="resource subtitle settings updated")
@@ -433,7 +434,7 @@ def download_resource_online_subtitle(id):
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_object_payload()
     candidate_id = payload.get("candidate_id") if isinstance(payload, dict) else None
     download_index = payload.get("download_index", 0) if isinstance(payload, dict) else 0
     if not candidate_id:
@@ -471,7 +472,7 @@ def bind_resource_online_subtitle(id):
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_object_payload()
     candidate_id = payload.get("candidate_id") if isinstance(payload, dict) else None
     download_index = payload.get("download_index", 0) if isinstance(payload, dict) else 0
     confirm = payload.get("confirm") if isinstance(payload, dict) else False

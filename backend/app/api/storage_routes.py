@@ -3,6 +3,7 @@ import threading
 
 from flask import Blueprint, Response, current_app, request
 
+from backend.app.api.helpers import get_json_object_payload
 from backend.app.db.database import scanner_adapter
 from backend.app.extensions import db
 from backend.app.models import StorageSource
@@ -116,7 +117,7 @@ def _normalize_storage_config(storage_type, config):
 
 def _get_json_payload():
     """统一读取 JSON 请求体；空 body 时返回空字典。"""
-    return request.get_json(silent=True) or {}
+    return get_json_object_payload()
 
 
 def _managed_alist_error_response(error):

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from flask import Blueprint, current_app, request
 
-from backend.app.api.helpers import build_history_item, build_pagination_meta
+from backend.app.api.helpers import build_history_item, build_pagination_meta, get_json_object_payload
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource, Movie
 from backend.app.services.achievements import (
@@ -42,7 +42,7 @@ history_bp = Blueprint('history', __name__, url_prefix='/api/v1')
 
 
 def _get_json_payload():
-    return request.get_json(silent=True) or {}
+    return get_json_object_payload()
 
 
 def _normalize_page_args():

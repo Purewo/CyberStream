@@ -1,6 +1,13 @@
+from flask import request
+
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource
 from backend.app.services.user_access import can_current_user_access_movie_id, current_user_id_for_personal_data
+
+
+def get_json_object_payload():
+    payload = request.get_json(silent=True)
+    return payload if isinstance(payload, dict) else {}
 
 
 def _history_ordering():

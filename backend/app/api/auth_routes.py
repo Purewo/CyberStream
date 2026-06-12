@@ -2,6 +2,7 @@ from datetime import datetime
 
 from flask import Blueprint, g, request, session
 
+from backend.app.api.helpers import get_json_object_payload
 from backend.app.extensions import db
 from backend.app.models import AuditLog, User
 from backend.app.security import get_current_auth_role, get_current_user, is_user_management_enabled
@@ -27,7 +28,7 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1')
 
 
 def _json_payload():
-    return request.get_json(silent=True) or {}
+    return get_json_object_payload()
 
 
 def _set_login_session(user):
@@ -53,6 +54,8 @@ def _auth_summary(user=None):
             "manage_catalog": role == User.ROLE_ADMIN,
             "manage_users": role == User.ROLE_ADMIN,
             "personal_history": authenticated,
+            "personal_favorites": authenticated,
+            "personal_vault": authenticated,
             "personal_subtitle_settings": authenticated,
         },
     }

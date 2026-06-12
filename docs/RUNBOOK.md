@@ -80,6 +80,21 @@ curl -i http://127.0.0.1:5004/api/v1/health
   --min-storage-sources 1
 ```
 
+公网托管试点已关闭 API token 后门时，smoke check 可以使用网页登录会话。账号密码只通过环境变量或命令行临时传入，不写入仓库：
+
+```bash
+CYBER_BACKEND_SMOKE_USERNAME=<username> \
+CYBER_BACKEND_SMOKE_PASSWORD=<password> \
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
+  --openapi-module-json-check \
+  --expected-version 1.21.0 \
+  --expected-openapi-version 1.21.0-beta \
+  --min-storage-sources 1 \
+  --storage-health-check \
+  --min-storage-health-checks 1 \
+  --tmdb-token-check
+```
+
 手工 curl 示例：
 
 ```bash

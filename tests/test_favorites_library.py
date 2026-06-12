@@ -306,10 +306,11 @@ class FavoritesUserIsolationTests(unittest.TestCase):
         db.session.commit()
         return movie
 
-    def test_vault_is_visible_only_to_admin_session(self):
+    def test_vault_and_favorites_are_isolated_between_user_sessions(self):
         movie = self._movie()
 
-        self._user("admin", role=User.ROLE_ADMIN)
+        admin = self._user("admin", role=User.ROLE_ADMIN)
+        alice = User.query.filter_by(username="alice").one()
         self._login("admin")
         self.assertEqual(200, self.client.post("/api/v1/user/vault/password", json={"pin": "123456"}).status_code)
         self.assertEqual(200, self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code)
@@ -321,13 +322,27 @@ class FavoritesUserIsolationTests(unittest.TestCase):
         self.client.post("/api/v1/auth/logout")
 
         self._login("alice")
+        alice_status = self.client.get("/api/v1/user/vault/status")
         self.assertEqual([], [
             item["id"]
             for item in self.client.get("/api/v1/libraries").get_json()["data"]
             if item["id"] == "favorites"
         ])
+        self.assertEqual(200, alice_status.status_code)
+        self.assertFalse(alice_status.get_json()["data"]["configured"])
         self.assertEqual(403, self.client.get("/api/v1/user/favorites").status_code)
         self.assertEqual(403, self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code)
+        self.assertEqual(200, self.client.post("/api/v1/user/vault/password", json={"pin": "654321"}).status_code)
+        self.assertEqual(200, self.client.post(f"/api/v1/user/favorites/{movie.id}").status_code)
+        self.assertEqual([movie.id], self.client.get("/api/v1/user/favorites").get_json()["data"]["movie_ids"])
+        secrets = {
+            row.scope_key: row.user_id
+            for row in UserVaultSecret.query.order_by(UserVaultSecret.scope_key.asc()).all()
+        }
+        self.assertEqual({
+            f"user:{alice.id}": alice.id,
+            f"user:{admin.id}": admin.id,
+        }, secrets)
 
 
 if __name__ == "__main__":

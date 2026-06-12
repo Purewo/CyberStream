@@ -91,6 +91,12 @@ class HistoryRoutesTests(unittest.TestCase):
         self.assertEqual(1000, item["duration"])
         self.assertNotIn("is_played", item)
 
+    def test_report_history_rejects_non_object_json_without_server_error(self):
+        response = self.client.post("/api/v1/user/history", json=["unexpected"])
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(40000, response.get_json()["code"])
+
     @patch("backend.app.api.history_routes.record_audio_transcode_history_heartbeat")
     def test_report_progress_notifies_audio_transcode_watchdog(self, record_heartbeat):
         _, resource = self._movie_with_resource()

@@ -65,6 +65,8 @@ export type AuthStatus = {
     manage_catalog: boolean;
     manage_users: boolean;
     personal_history: boolean;
+    personal_favorites: boolean;
+    personal_vault: boolean;
     personal_subtitle_settings: boolean;
   };
 };

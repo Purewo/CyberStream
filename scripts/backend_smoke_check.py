@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from http.cookies import SimpleCookie
 import json
 import os
 import subprocess
@@ -15,6 +16,8 @@ from typing import Any
 
 DEFAULT_BASE_URL = os.environ.get("CYBER_BACKEND_SMOKE_BASE_URL", "http://127.0.0.1:5004")
 DEFAULT_API_TOKEN = os.environ.get("CYBER_BACKEND_SMOKE_API_TOKEN") or os.environ.get("CYBER_API_TOKEN") or ""
+DEFAULT_LOGIN_USERNAME = os.environ.get("CYBER_BACKEND_SMOKE_USERNAME", "")
+DEFAULT_LOGIN_PASSWORD = os.environ.get("CYBER_BACKEND_SMOKE_PASSWORD", "")
 DEFAULT_EXPECTED_VERSION = os.environ.get("CYBER_BACKEND_EXPECTED_VERSION", "")
 DEFAULT_EXPECTED_OPENAPI_VERSION = os.environ.get("CYBER_BACKEND_EXPECTED_OPENAPI_VERSION", "")
 DEFAULT_SYSTEMD_SERVICES = [
@@ -1004,6 +1007,8 @@ EXPECTED_AUTH_PERMISSION_KEYS = [
     "manage_catalog",
     "manage_users",
     "personal_history",
+    "personal_favorites",
+    "personal_vault",
     "personal_subtitle_settings",
 ]
 EXPECTED_AUTH_ROLES = {"admin", "user"}
@@ -1033,6 +1038,56 @@ class SmokeClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.api_token = (api_token or "").strip()
+        self.cookie_header = ""
+
+    def _apply_auth_headers(self, headers: dict[str, str]) -> None:
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+        if self.cookie_header:
+            headers["Cookie"] = self.cookie_header
+
+    def _store_response_cookies(self, response) -> None:
+        headers = getattr(response, "headers", None)
+        if not headers:
+            return
+        set_cookie_values = []
+        if hasattr(headers, "get_all"):
+            set_cookie_values = list(headers.get_all("Set-Cookie") or [])
+        elif hasattr(headers, "get"):
+            value = headers.get("Set-Cookie")
+            if value:
+                set_cookie_values = [value]
+        if not set_cookie_values:
+            return
+
+        cookie = SimpleCookie()
+        for value in set_cookie_values:
+            cookie.load(value)
+        self.cookie_header = "; ".join(
+            f"{key}={morsel.value}"
+            for key, morsel in cookie.items()
+        )
+
+    def login(self, username: str, password: str) -> dict[str, Any]:
+        url = f"{self.base_url}/api/v1/auth/login"
+        payload = json.dumps({"username": username, "password": password}).encode("utf-8")
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+        request = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                self._store_response_cookies(response)
+                body = response.read().decode("utf-8")
+                return json.loads(body)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP {exc.code} {url}: {body[:300]}") from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"POST {url} failed: {exc}") from exc
 
     def get_json(self, path: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
@@ -1079,8 +1134,7 @@ class SmokeClient:
         headers = {"Accept": "application/json"}
         if data is not None:
             headers["Content-Type"] = "application/json"
-        if self.api_token:
-            headers["Authorization"] = f"Bearer {self.api_token}"
+        self._apply_auth_headers(headers)
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -1105,8 +1159,7 @@ class SmokeClient:
 
     def _request_text(self, method: str, url: str) -> dict[str, Any]:
         headers = {"Accept": "text/plain, */*"}
-        if self.api_token:
-            headers["Authorization"] = f"Bearer {self.api_token}"
+        self._apply_auth_headers(headers)
         request = urllib.request.Request(url, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -1132,8 +1185,7 @@ class SmokeClient:
     ) -> dict[str, Any]:
         request_headers = {"Accept": "*/*"}
         request_headers.update(headers or {})
-        if self.api_token:
-            request_headers["Authorization"] = f"Bearer {self.api_token}"
+        self._apply_auth_headers(request_headers)
         request = urllib.request.Request(url, headers=request_headers, method=method)
         opener = urllib.request.build_opener(NoRedirectHandler)
         try:
@@ -1311,6 +1363,50 @@ def check_auth_me(client: SmokeClient) -> CheckResult:
             "role": role,
             "auth_via": auth_via,
             "user_management_enabled": user_management_enabled,
+            "issues": issues,
+        },
+    )
+
+
+def check_auth_login(client: SmokeClient, username: str, password: str) -> CheckResult:
+    if not username or not password:
+        return _result(
+            "auth_login",
+            False,
+            "login username and password are required",
+        )
+
+    payload = client.login(username, password)
+    data = _response_data(payload)
+    issues = []
+    issues.extend(_dict_missing_keys(data, EXPECTED_AUTH_ME_KEYS, "auth_login"))
+
+    authenticated = data.get("authenticated") if isinstance(data, dict) else None
+    role = data.get("role") if isinstance(data, dict) else None
+    auth_via = data.get("auth_via") if isinstance(data, dict) else None
+    user = data.get("user") if isinstance(data, dict) else None
+    if authenticated is not True:
+        issues.append(f"authenticated={authenticated}")
+    if role not in EXPECTED_AUTH_ROLES:
+        issues.append(f"role={role}")
+    if auth_via not in {"session", "api_token"}:
+        issues.append(f"auth_via={auth_via}")
+    if not isinstance(user, dict):
+        issues.append("user_missing")
+    if not client.cookie_header and auth_via == "session":
+        issues.append("session_cookie_missing")
+
+    detail = f"authenticated={authenticated} role={role} auth_via={auth_via}"
+    if issues:
+        detail = f"{detail} issues={'; '.join(issues)}"
+    return _result(
+        "auth_login",
+        not issues,
+        detail,
+        {
+            "authenticated": authenticated,
+            "role": role,
+            "auth_via": auth_via,
             "issues": issues,
         },
     )
@@ -3453,6 +3549,8 @@ def _system_update_check_issues(data: Any, expected_backend_version: str = "") -
         }
         if selected_url not in download_urls:
             issues.append("update_selected_download_not_in_downloads")
+    elif data.get("update_available") is True:
+        issues.append("update_available_without_selected_download")
 
     warnings = data.get("warnings")
     if not isinstance(warnings, list):
@@ -7190,6 +7288,8 @@ def run_checks(args) -> list[CheckResult]:
     client = SmokeClient(args.base_url, timeout=args.timeout, api_token=args.api_token)
     expected_version = getattr(args, "expected_version", "")
     expected_openapi_version = getattr(args, "expected_openapi_version", "")
+    login_username = str(getattr(args, "login_username", "") or "").strip()
+    login_password = str(getattr(args, "login_password", "") or "")
     checks = [
         CheckSpec("health", lambda: check_health(client, expected_version)),
         CheckSpec("auth_me", lambda: check_auth_me(client)),
@@ -7277,6 +7377,14 @@ def run_checks(args) -> list[CheckResult]:
             lambda: check_resource_governance_plan(client),
         ),
     ]
+    if login_username or login_password:
+        checks.insert(
+            1,
+            CheckSpec(
+                "auth_login",
+                lambda: check_auth_login(client, login_username, login_password),
+            ),
+        )
     if args.systemd:
         systemd_services = args.systemd_service or list(DEFAULT_SYSTEMD_SERVICES)
         checks.insert(0, CheckSpec("systemd_services", lambda: check_systemd_services(systemd_services, args.timeout)))
@@ -7321,6 +7429,16 @@ def build_parser() -> argparse.ArgumentParser:
             "Optional CyberStream API token for protected management endpoints. "
             "Defaults to CYBER_BACKEND_SMOKE_API_TOKEN or CYBER_API_TOKEN."
         ),
+    )
+    parser.add_argument(
+        "--login-username",
+        default=DEFAULT_LOGIN_USERNAME,
+        help="Optional session login username; defaults to CYBER_BACKEND_SMOKE_USERNAME.",
+    )
+    parser.add_argument(
+        "--login-password",
+        default=DEFAULT_LOGIN_PASSWORD,
+        help="Optional session login password; defaults to CYBER_BACKEND_SMOKE_PASSWORD.",
     )
     parser.add_argument("--live-check-limit", type=int, default=500, help="Resource live-check limit")
     parser.add_argument(

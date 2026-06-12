@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request
 from sqlalchemy.exc import IntegrityError
 
-from backend.app.api.helpers import get_history_map
+from backend.app.api.helpers import get_history_map, get_json_object_payload
 from backend.app.api.library_helpers import apply_movie_filters, apply_public_movie_visibility_filter
 from backend.app.extensions import db
 from backend.app.models import HomepageSetting, Movie
@@ -38,7 +38,7 @@ def _default_sections():
 
 
 def _get_json_payload():
-    return request.get_json(silent=True) or {}
+    return get_json_object_payload()
 
 
 def _get_or_create_homepage_setting():
