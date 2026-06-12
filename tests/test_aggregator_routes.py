@@ -19,6 +19,7 @@ from backend.app.services.aggregator import SourceBusyError
 from backend.app.services.aggregator import film_resource_core
 from backend.app.services.aggregator import sources as sources_module
 from backend.app.services.aggregator.sources.bt7274 import BT7274Source
+from backend.app.services.aggregator.sources.rarbt import RarbtSource
 
 
 class AggregatorRoutesTests(unittest.TestCase):
@@ -71,6 +72,20 @@ class AggregatorRoutesTests(unittest.TestCase):
         self.assertEqual(payload["data"]["source"], "rarbt")
         m.assert_called_once_with("foo", page=1, source="rarbt", proxy=None)
 
+    def test_search_rarbt_passes_config_proxy(self):
+        self.app.config["AGGREGATOR_RARBT_PROXY"] = "http://127.0.0.1:7890"
+        with mock.patch(
+            "backend.app.api.aggregator_routes.search_film",
+            return_value=[],
+        ) as m:
+            response = self.client.get(
+                "/api/v1/aggregator/search?keyword=foo&source=rarbt"
+            )
+        self.assertEqual(response.status_code, 200)
+        m.assert_called_once_with(
+            "foo", page=1, source="rarbt", proxy="http://127.0.0.1:7890"
+        )
+
     def test_search_btbtla_passes_config_proxy(self):
         with mock.patch(
             "backend.app.api.aggregator_routes.search_film",
@@ -82,6 +97,21 @@ class AggregatorRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         m.assert_called_once_with(
             "foo", page=1, source="btbtla", proxy="http://127.0.0.1:10808"
+        )
+
+    def test_search_btbtla_falls_back_to_shared_proxy(self):
+        self.app.config["AGGREGATOR_BTBTLA_PROXY"] = None
+        self.app.config["AGGREGATOR_PROXY_URL"] = "http://127.0.0.1:7890"
+        with mock.patch(
+            "backend.app.api.aggregator_routes.search_film",
+            return_value=[],
+        ) as m:
+            response = self.client.get(
+                "/api/v1/aggregator/search?keyword=foo&source=btbtla"
+            )
+        self.assertEqual(response.status_code, 200)
+        m.assert_called_once_with(
+            "foo", page=1, source="btbtla", proxy="http://127.0.0.1:7890"
         )
 
     def test_search_unknown_source_returns_error_envelope(self):
@@ -175,7 +205,7 @@ class AggregatorRoutesTests(unittest.TestCase):
                 query_string={"link": "/thread-123.html", "source": "rarbt"},
             )
         self.assertEqual(response.status_code, 200)
-        m.assert_called_once_with("https://www.rarbt.lol/thread-123.html")
+        m.assert_called_once_with("http://www.rarbt.us/thread-123.html")
 
     def test_detail_rejects_cross_source_link_before_fetch(self):
         with mock.patch(
@@ -233,6 +263,16 @@ class AggregatorRoutesTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         m.assert_called_once_with("1295644")
+
+    def test_rarbt_explicit_proxy_disables_environment_proxy_lookup(self):
+        source = RarbtSource()
+        source.set_proxy("http://127.0.0.1:7890")
+
+        session = source.session
+
+        self.assertFalse(session.trust_env)
+        self.assertEqual("http://127.0.0.1:7890", session.proxies["http"])
+        self.assertEqual("http://127.0.0.1:7890", session.proxies["https"])
 
     # --- magnet ---
     def test_magnet_requires_link(self):

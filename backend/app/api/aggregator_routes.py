@@ -6,7 +6,7 @@
 约束（与抓取层反爬规则一致）：
 - 每个请求只打一个 source，绝不在这里循环遍历所有源。rarbt 等有验证码 +
   频率限制，逐源由前端用户手动触发。
-- btbtla 走本机代理（地址在 config.AGGREGATOR_BTBTLA_PROXY），其他源直连。
+- btbtla/rarbt 可走本机代理（优先单源配置，回退统一聚合代理），其他源直连。
 
 注意：抓取是同步阻塞 I/O，每个请求会占用一个 Web 工作线程最多 ~12s
 (sources/base.py 的 TIMEOUT)，rarbt 的 ddddocr 验证码路径可能更久。实验室
@@ -55,9 +55,19 @@ def _request_page():
 
 
 def _proxy_for(source: str):
-    """btbtla 需要本机代理，其他源直连。"""
+    """返回需要代理的聚合源代理地址。"""
     if source == 'btbtla':
-        return current_app.config.get('AGGREGATOR_BTBTLA_PROXY')
+        return (
+            current_app.config.get('AGGREGATOR_BTBTLA_PROXY')
+            or current_app.config.get('AGGREGATOR_PROXY_URL')
+            or None
+        )
+    if source == 'rarbt':
+        return (
+            current_app.config.get('AGGREGATOR_RARBT_PROXY')
+            or current_app.config.get('AGGREGATOR_PROXY_URL')
+            or None
+        )
     return None
 
 

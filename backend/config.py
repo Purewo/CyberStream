@@ -140,10 +140,16 @@ TENCENT_VIDEO_USER_AGENT = _env(
 
 # --- 聚合搜索（外部影视资源站）---
 # 抓取逻辑在 backend/app/services/aggregator/。每个请求只打一个 source，
-# 不并发遍历所有源（契合各站点反爬限制）。btbtla 站点需经本机代理访问，
-# 其余源直连。
+# 不并发遍历所有源（契合各站点反爬限制）。部分站点在国内服务器上需经
+# 本机代理访问，可用 CYBER_AGGREGATOR_PROXY_URL 统一配置。
 AGGREGATOR_DEFAULT_SOURCE = _env('CYBER_AGGREGATOR_DEFAULT_SOURCE', 'rarbt')
-AGGREGATOR_BTBTLA_PROXY = _env('CYBER_AGGREGATOR_BTBTLA_PROXY', 'http://127.0.0.1:10808')
+AGGREGATOR_PROXY_URL = _normalize_proxy_url(_env('CYBER_AGGREGATOR_PROXY_URL', ''))
+AGGREGATOR_BTBTLA_PROXY = _normalize_proxy_url(
+    _env('CYBER_AGGREGATOR_BTBTLA_PROXY', AGGREGATOR_PROXY_URL or 'http://127.0.0.1:10808')
+)
+AGGREGATOR_RARBT_PROXY = _normalize_proxy_url(
+    _env('CYBER_AGGREGATOR_RARBT_PROXY', AGGREGATOR_PROXY_URL or '')
+)
 
 # --- 缓存目录 ---
 # 冻结模式下落 LOCALAPPDATA/CyberStream/cache（DATA_DIR 已经是它）；

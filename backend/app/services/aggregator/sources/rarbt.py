@@ -17,25 +17,29 @@ from .base import (
 
 class RarbtSource(BaseSource):
     name = "rarbt"
-    base_url = "https://www.rarbt.us"
+    base_url = "http://www.rarbt.us"
     priority = 1
 
     @property
     def session(self):
-        """rarbt.us 直连会被远端 RST（需经系统代理才稳定可达）。覆盖基类的
-        trust_env=False：启用 trust_env 并显式读系统代理，让请求走本机代理
-        （如 127.0.0.1:10808）。用户没配代理时 getproxies() 返回空，等价直连，
-        不影响无代理环境。set_proxy() 显式传值时仍优先生效。"""
+        """rarbt 在部分网络下需代理；显式代理优先，未配置时兼容系统代理。"""
         created = self._session is None
         s = super().session  # 触发懒加载
         if created:
-            s.trust_env = True
-            if not self._proxy:
+            if self._proxy:
+                s.trust_env = False
+            else:
+                s.trust_env = True
                 import urllib.request
                 sys_proxies = urllib.request.getproxies()
                 if sys_proxies:
                     s.proxies = sys_proxies
         return s
+
+    def set_proxy(self, proxy: str | None) -> None:
+        super().set_proxy(proxy)
+        if self._session is not None and proxy:
+            self._session.trust_env = False
 
     def headers(self, referer: str | None = None) -> dict[str, str]:
         ref = referer or self.base_url + "/"

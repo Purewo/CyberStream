@@ -365,7 +365,21 @@ OpenList `AliyundriveOpen` 使用在线刷新接口时的地址，默认 `https:
 #### `CYBER_MANAGED_OPENLIST_BAIDUNETDISK_RENEW_API_URL`
 OpenList `BaiduNetdisk` 使用的刷新接口地址，默认 `https://api.oplist.org/baiduyun/renewapi`。后端会把实际使用的 `client_id/client_secret` 和 token 写入 localhost OpenList 挂载，不会返回给前端。
 
-### 2.14 在线字幕配置
+### 2.14 聚合搜索配置
+
+#### `CYBER_AGGREGATOR_DEFAULT_SOURCE`
+外部影视资源站默认搜索源，默认 `rarbt`。
+
+#### `CYBER_AGGREGATOR_PROXY_URL`
+聚合搜索统一代理地址。国内服务器访问 `btbtla`、`rarbt` 不稳定时可设置，例如 `http://127.0.0.1:7890`；单源代理未设置时会回退到该值。
+
+#### `CYBER_AGGREGATOR_BTBTLA_PROXY`
+`btbtla` 单源代理地址。留空时回退到 `CYBER_AGGREGATOR_PROXY_URL`；未配置统一代理时保留历史默认 `http://127.0.0.1:10808`。
+
+#### `CYBER_AGGREGATOR_RARBT_PROXY`
+`rarbt` 单源代理地址。留空时回退到 `CYBER_AGGREGATOR_PROXY_URL`；未配置代理时会尝试系统代理或直连。
+
+### 2.15 在线字幕配置
 
 #### `CYBER_ONLINE_SUBTITLE_SEARCH_TIMEOUT_SECONDS`
 SubHD 搜索请求超时上限，默认 `8` 秒。SubHD 是默认在线字幕源。
@@ -400,7 +414,7 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 #### `CYBER_SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES`
 字幕转 WebVTT 的输入大小限制，默认 `0`（不限制）；可按部署内存预算设置正整数。
 
-### 2.15 用户管理配置
+### 2.16 用户管理配置
 
 #### `CYBER_USER_MANAGEMENT_ENABLED`
 用户管理总开关，默认 `false`。关闭时不改变现有业务行为；开启后网页端通过 Cookie 会话登录；当 `CYBER_AUTH_ENABLED=true` 且已配置 `CYBER_API_TOKEN` 时，该 token 保留为管理员后门。
@@ -420,7 +434,7 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 #### `CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` / `CYBER_LOGIN_RATE_LIMIT_WINDOW_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_LOCK_SECONDS` / `CYBER_LOGIN_RATE_LIMIT_MAX_BUCKETS`
 登录限流参数，默认 5 分钟内失败 `5` 次后锁定 `900` 秒。限流按 `request.remote_addr` + 用户名在当前后端进程内记录；如需使用反代透传的真实客户端 IP，应通过 `CYBER_TRUST_PROXY_HEADERS` / `ProxyFix` 配置可信代理层，而不是直接信任任意 `X-Forwarded-For`。限流最多保留 `10000` 个唯一尝试桶，超过后优先淘汰最旧且未锁定的记录。
 
-### 2.15 维护任务持久化配置
+### 2.17 维护任务持久化配置
 
 #### `CYBER_MAINTENANCE_JOB_RESULT_ITEM_LIMIT`
 维护任务写入 `maintenance_jobs` 时，`result.items` 最多保留的条数，默认 `20`。内存中的刚执行结果仍保持完整；持久化结果会附加 `result_truncated`、`result_item_count` 和 `persisted_item_limit`。
