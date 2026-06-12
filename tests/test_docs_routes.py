@@ -47,6 +47,7 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertIn("api-overview", keys)
         self.assertIn("terminology", keys)
         self.assertIn("frontend-review-workbench", keys)
+        self.assertIn("frontend-user-management", keys)
         self.assertIn("frontend-managed-guangyapan", keys)
         self.assertIn("frontend-managed-tianyicloud", keys)
         self.assertIn("experimental-tianyicloud-pc-qr", keys)
@@ -145,6 +146,18 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("text/markdown", response.mimetype)
         self.assertIn("storage/managed/guangyapan/sms/start", response.get_data(as_text=True))
+
+    def test_user_management_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-user-management")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        text = response.get_data(as_text=True)
+        self.assertIn("GET /api/v1/auth/me", text)
+        self.assertIn("credentials: \"include\"", text)
+        self.assertIn("401", text)
 
     def test_terminology_document_is_served_raw(self):
         client = self._create_client()

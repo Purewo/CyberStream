@@ -8,6 +8,7 @@
 - 显式设置 `CYBER_AUTH_ENABLED=false` 后，即使环境中仍保留旧 token，也不能通过 Bearer 或 `X-Cyber-API-Token` 获得管理员权限；Cookie 会话登录不受影响。
 - 登录失败限流新增 `CYBER_LOGIN_RATE_LIMIT_MAX_BUCKETS`，默认最多保留 `10000` 个 `IP:username` 尝试桶，防止公开登录接口被大量唯一用户名撑爆进程内记录。
 - 登录失败限流现在只读取 Flask/ProxyFix 处理后的 `request.remote_addr`，不再直接信任任意 `X-Forwarded-For` 头。
+- 托管试点前端契约已更新：`/api/v1/auth/me` 是启动探测入口，Cookie 会话请求必须带 `credentials: include`，受保护接口返回 `401` 时前端应重新确认登录态。
 
 ## 外部资源聚合搜索
 

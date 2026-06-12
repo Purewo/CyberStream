@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Cyber Media Center API (赛博影视)",
-    "description": "## 专业发烧级影视中心后端接口文档\n\n此文档定义了 Cyber Media 的核心 API 交互规范。旨在取代 Plex/Emby，提供高性能、低延迟的媒体管理与流媒体服务。\n\n### 🔗 API 生命周期说明 (x-lifecycle-status)\n我们在每个接口中定义了开发状态，请前端同学注意：\n\n1.  🔴 **pending** (未开发): 接口仅有定义，后端尚未实现，调用会返回 501。\n2.  🟠 **implemented_unverified** (已开发未验证): 代码已合并，但未经完整测试，可能存在 Bug。\n3.  ❌ **failed_verification** (验证失败): 测试发现严重问题，暂时禁止使用。\n4.  ⚠️ **passed_imperfect** (验证通过但格式不规范): 功能可用，但返回字段可能不全或命名不符合规范，后续会变动。\n5.  ✅ **stable** (验证通过): 接口稳定，可放心集成。\n\n### 🛡️ 鉴权说明\n默认用户管理关闭时沿用 `CYBER_API_TOKEN` Bearer 鉴权。开启 `CYBER_USER_MANAGEMENT_ENABLED` 后，网页端通过 HttpOnly Cookie 会话访问；仅当 `CYBER_AUTH_ENABLED=true` 时，`CYBER_API_TOKEN` 可作为管理员后门。",
+    "description": "## 专业发烧级影视中心后端接口文档\n\n此文档定义了 Cyber Media 的核心 API 交互规范。旨在取代 Plex/Emby，提供高性能、低延迟的媒体管理与流媒体服务。\n\n### 🔗 API 生命周期说明 (x-lifecycle-status)\n我们在每个接口中定义了开发状态，请前端同学注意：\n\n1.  🔴 **pending** (未开发): 接口仅有定义，后端尚未实现，调用会返回 501。\n2.  🟠 **implemented_unverified** (已开发未验证): 代码已合并，但未经完整测试，可能存在 Bug。\n3.  ❌ **failed_verification** (验证失败): 测试发现严重问题，暂时禁止使用。\n4.  ⚠️ **passed_imperfect** (验证通过但格式不规范): 功能可用，但返回字段可能不全或命名不符合规范，后续会变动。\n5.  ✅ **stable** (验证通过): 接口稳定，可放心集成。\n\n### 🛡️ 鉴权说明\n默认用户管理关闭时沿用 `CYBER_API_TOKEN` Bearer 鉴权。开启 `CYBER_USER_MANAGEMENT_ENABLED` 后，网页端通过 HttpOnly Cookie 会话访问，前端所有 fetch 请求都应带 `credentials: include`；受保护接口返回 401 时应回到 `/api/v1/auth/me` 重新确认登录态。仅当 `CYBER_AUTH_ENABLED=true` 时，`CYBER_API_TOKEN` 可作为管理员后门。",
     "version": "1.21.0-beta",
     "contact": {
       "name": "Cyber Media Core Team",
@@ -6485,6 +6485,7 @@
     "/api/v1/auth/login": {
       "post": {
         "summary": "用户登录",
+        "description": "用户管理开启后用于建立网页会话。成功响应会写入 cyberstream_session HttpOnly Cookie；前端不要保存密码或 token，后续请求必须带 credentials: include。",
         "operationId": "authLogin",
         "tags": [
           "Auth"
@@ -6520,6 +6521,7 @@
     "/api/v1/auth/logout": {
       "post": {
         "summary": "用户退出登录",
+        "description": "清除当前浏览器会话 Cookie。前端调用成功后应清空本地登录状态；如果会话已失效，也可以直接回到未登录态。",
         "operationId": "authLogout",
         "tags": [
           "Auth"
@@ -6542,6 +6544,7 @@
     "/api/v1/auth/me": {
       "get": {
         "summary": "当前登录状态",
+        "description": "公开探测接口。无论用户管理是否开启都返回 200；前端启动、刷新、登录后和 401 后都应调用该接口确认 user_management_enabled、authenticated 与 permissions。",
         "operationId": "authMe",
         "tags": [
           "Auth"
@@ -9289,7 +9292,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "cyberstream_session",
-        "description": "用户管理开启后由 /api/v1/auth/login 写入的 HttpOnly 会话 Cookie。"
+        "description": "用户管理开启后由 /api/v1/auth/login 写入的 HttpOnly 会话 Cookie。公网 HTTPS 部署会使用 Secure Cookie；浏览器前端必须通过 credentials: include 发送。"
       }
     },
     "schemas": {

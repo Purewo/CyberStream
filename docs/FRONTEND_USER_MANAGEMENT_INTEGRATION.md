@@ -1,6 +1,13 @@
-# 前端用户管理平滑接入方案
+# 前端用户管理接入方案
 
-当前用户管理后端已经可用，但默认关闭。前端接入必须保持被动探测，不要在用户系统关闭时改变现有页面行为。
+当前公网托管试点已经开启强制账号登录：
+
+- 后端基地址：`https://cyberstream.gameuniverse.top:40160`
+- 运行状态：`CYBER_USER_MANAGEMENT_ENABLED=true`
+- 匿名访问影视列表、存储管理、播放流等受保护接口会返回 `401`
+- 登录态由后端写入 `HttpOnly` Cookie，前端不能读取 Cookie，也不要保存密码或自定义 token
+
+自托管和本地开发环境仍可能关闭用户管理。前端必须通过 `GET /api/v1/auth/me` 被动探测，不要把某个部署形态硬编码到页面逻辑里。
 
 ## 启动探测
 
@@ -14,9 +21,18 @@ GET /api/v1/auth/me
 
 判定逻辑：
 
-- `user_management_enabled === false`：进入旧模式，不显示登录页，不拦截旧页面。
-- `user_management_enabled === true && authenticated === false`：进入登录页。
-- `user_management_enabled === true && authenticated === true`：进入用户态，按 `permissions` 控制管理入口显示。
+- `user_management_enabled === false`：进入旧模式，不显示登录页，不拦截旧页面
+- `user_management_enabled === true && authenticated === false`：进入登录页
+- `user_management_enabled === true && authenticated === true`：进入用户态，按 `permissions` 控制管理入口显示
+
+## 请求约定
+
+- 所有请求都带 `credentials: "include"`，包括 `GET /api/v1/auth/me`、登录、登出、目录、播放和管理接口。
+- 登录成功后以后端返回的 `AuthStatus` 为准，不要从 Cookie 里解析用户信息。
+- 任意受保护接口返回 `401` 时，清空前端内存中的登录状态并重新请求 `/api/v1/auth/me`；确认未登录后展示登录页。
+- `POST /api/v1/auth/logout` 成功或返回 `401` 后，都清空前端登录状态。
+- 不要在前端代码、配置、文档或日志里写死任何测试账号密码；账号由服务端运维侧发放。
+- 普通用户只展示 `permissions` 允许的页面。管理员入口至少需要检查 `permissions.admin`、`permissions.manage_users`、`permissions.manage_catalog`。
 
 ## 最小 API 客户端草案
 
@@ -121,6 +137,16 @@ export function updatePassword(currentPassword: string, newPassword: string) {
    - `GET /api/v1/admin/audit-logs`
 
 资源库规则保存后，建议立即请求 `visibility-preview`，用 `visible_library_ids`、`visible_movie_count` 和 `sample_movies` 做管理员页面的结果预览。
+
+## 托管试点回归点
+
+- 未登录访问 `GET /api/v1/movies` 应进入登录态处理，不展示空片库。
+- 未登录访问 `GET /api/v1/storage/sources`、扫描、元数据和资源治理入口应被拦截。
+- 未登录访问资源播放、字幕或外部播放器入口应按 `401` 处理，不重试死循环。
+- 管理员登录后能看到全部影视库和管理入口。
+- 普通用户登录后只看到后端授权的影视库，且直连播放也不能越权。
+- 刷新页面后通过 `/auth/me` 恢复登录态，不要求用户重新输入密码。
+- 管理员重置密码、禁用用户或修改角色后，目标用户旧页面的下一次请求应回到登录态。
 
 ## 回归重点
 
