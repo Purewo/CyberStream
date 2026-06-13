@@ -168,10 +168,13 @@ CYBER_SESSION_SECRET=<long-random-secret>
 CYBER_BOOTSTRAP_ADMIN_USERNAME=<admin>
 CYBER_BOOTSTRAP_ADMIN_PASSWORD=<password>
 CYBER_SESSION_COOKIE_SECURE=true
+CYBER_SESSION_COOKIE_SAMESITE=None
+CYBER_CORS_ORIGINS=http://localhost:3000,https://cyberstream.gameuniverse.top:40160
+CYBER_CORS_SUPPORTS_CREDENTIALS=true
 CYBER_LOGIN_RATE_LIMIT_ENABLED=true
 ```
 
-重启后用 `POST /api/v1/auth/login` 登录。普通用户可见范围由管理员在 `/api/v1/admin/users/<id>/library-rules` 配置；默认可见全部公开影视。管理员操作、登录失败和限流事件可通过 `GET /api/v1/admin/audit-logs` 查询。
+重启后用 `POST /api/v1/auth/login` 登录。跨域前端必须在登录和后续 API 请求中都设置 `credentials: "include"`；否则登录响应虽然返回 `authenticated=true`，浏览器仍不会保存或发送 HttpOnly session Cookie。普通用户可见范围由管理员在 `/api/v1/admin/users/<id>/library-rules` 配置；默认可见全部公开影视。管理员操作、登录失败和限流事件可通过 `GET /api/v1/admin/audit-logs` 查询。
 
 ### 4.3 启用托管光鸭云盘
 

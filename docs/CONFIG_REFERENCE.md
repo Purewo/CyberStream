@@ -425,8 +425,20 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 #### `CYBER_BOOTSTRAP_ADMIN_USERNAME` / `CYBER_BOOTSTRAP_ADMIN_PASSWORD`
 初始管理员账号。用户管理开启且两者均设置时，启动阶段会幂等创建或更新该管理员。
 
-#### `CYBER_SESSION_COOKIE_SECURE` / `CYBER_SESSION_DAYS`
-控制会话 cookie 是否只允许 HTTPS 发送，以及会话有效天数。公网 HTTPS 部署建议设置 `CYBER_SESSION_COOKIE_SECURE=true`。
+#### `CYBER_SESSION_COOKIE_SECURE` / `CYBER_SESSION_COOKIE_SAMESITE` / `CYBER_SESSION_DAYS`
+控制会话 cookie 是否只允许 HTTPS 发送、SameSite 策略，以及会话有效天数。公网 HTTPS 部署建议设置 `CYBER_SESSION_COOKIE_SECURE=true`。
+
+当前端和后端不是同站点时，例如本地前端 `http://localhost:3000` 调用公网后端 `https://cyberstream.gameuniverse.top:40160`，浏览器只有在 `CYBER_SESSION_COOKIE_SAMESITE=None` 且 `CYBER_SESSION_COOKIE_SECURE=true` 时才会在后续接口请求中发送登录 Cookie。
+
+#### `CYBER_CORS_ORIGINS` / `CYBER_CORS_SUPPORTS_CREDENTIALS`
+CORS 允许来源和是否允许携带 Cookie。`CYBER_CORS_ORIGINS` 默认 `*`，可用逗号分隔多个 Origin；托管用户系统开启后应设置为官方 Web、受控 PC 客户端和明确的本地联调 Origin，例如：
+
+```bash
+CYBER_CORS_ORIGINS=http://localhost:3000,https://cyberstream.gameuniverse.top:40160
+CYBER_CORS_SUPPORTS_CREDENTIALS=true
+```
+
+不要在 `CYBER_CORS_SUPPORTS_CREDENTIALS=true` 且 `CYBER_SESSION_COOKIE_SAMESITE=None` 的托管环境中继续允许任意 Origin。
 
 #### `CYBER_LOGIN_RATE_LIMIT_ENABLED`
 登录失败限流开关，默认 `true`。只在用户管理登录接口中使用。

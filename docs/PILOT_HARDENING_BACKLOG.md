@@ -9,13 +9,13 @@
 - 播放历史、收藏、成就、个人字幕设置和收藏保险库按账号隔离。
 - 影视目录、资源索引和存储挂载仍由管理员统一维护；普通账号通过 library allow/deny 规则获得可见范围。
 - 密码只以哈希形式保存在数据库，不在仓库、文档或 systemd 配置中保存明文。
+- 当前本地联调前端与公网后端跨站访问，运行环境使用 `CYBER_SESSION_COOKIE_SAMESITE=None`、`CYBER_SESSION_COOKIE_SECURE=true`、`CYBER_CORS_SUPPORTS_CREDENTIALS=true`，并通过 `CYBER_CORS_ORIGINS` 限定允许 Origin。
 
 ## 试点后补齐
 
 ### P0
 
-- 将 CORS 从任意来源改成官方 Web 域名和受控 PC 客户端来源白名单。
-- 确认官方 Web、PC WebView 和本地联调的实际 Origin 后，同步收紧 CORS 白名单；如必须跨站发送 Cookie，再把 `CYBER_SESSION_COOKIE_SAMESITE` 与 Origin 白名单一起调整，不能只单独放开 Cookie。
+- 确认官方 Web 和 PC WebView 的最终实际 Origin，补充到 `CYBER_CORS_ORIGINS`，并移除不再使用的本地联调 Origin。
 - 在创建首批普通用户时显式配置 library allow 规则，避免默认继承全部公开影视库。
 
 ### P1

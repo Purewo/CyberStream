@@ -28,6 +28,7 @@ GET /api/v1/auth/me
 ## 请求约定
 
 - 所有请求都带 `credentials: "include"`，包括 `GET /api/v1/auth/me`、登录、登出、目录、播放和管理接口。
+- 本地前端 `http://localhost:3000` 调用公网 HTTPS 后端属于跨站请求；如果缺少 `credentials: "include"`，登录接口仍可能返回 `authenticated=true`，但浏览器不会保存或回传后端写入的 HttpOnly Cookie，后续受保护接口会继续 `401`。
 - 登录成功后以后端返回的 `AuthStatus` 为准，不要从 Cookie 里解析用户信息。
 - 任意受保护接口返回 `401` 时，清空前端内存中的登录状态并重新请求 `/api/v1/auth/me`；确认未登录后展示登录页。
 - `POST /api/v1/auth/logout` 成功或返回 `401` 后，都清空前端登录状态。

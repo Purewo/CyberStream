@@ -36,6 +36,18 @@ def _env_float(key, default):
         return default
 
 
+def _env_csv(key, default="*"):
+    value = _env(key, default)
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    items = [item.strip() for item in str(value or "").split(",") if item.strip()]
+    if not items:
+        return default
+    if len(items) == 1:
+        return items[0]
+    return items
+
+
 def _normalize_proxy_url(value):
     raw = str(value or "").strip()
     if not raw:
@@ -287,6 +299,7 @@ PERMANENT_SESSION_LIFETIME = timedelta(days=SESSION_DAYS)
 BOOTSTRAP_ADMIN_USERNAME = _env('CYBER_BOOTSTRAP_ADMIN_USERNAME', '')
 BOOTSTRAP_ADMIN_PASSWORD = _env('CYBER_BOOTSTRAP_ADMIN_PASSWORD', '')
 BOOTSTRAP_ADMIN_DISPLAY_NAME = _env('CYBER_BOOTSTRAP_ADMIN_DISPLAY_NAME', 'Administrator')
+CORS_ORIGINS = _env_csv('CYBER_CORS_ORIGINS', '*')
 CORS_SUPPORTS_CREDENTIALS = _env_bool('CYBER_CORS_SUPPORTS_CREDENTIALS', USER_MANAGEMENT_ENABLED)
 LOGIN_RATE_LIMIT_ENABLED = _env_bool('CYBER_LOGIN_RATE_LIMIT_ENABLED', True)
 LOGIN_RATE_LIMIT_MAX_ATTEMPTS = _env_int('CYBER_LOGIN_RATE_LIMIT_MAX_ATTEMPTS', 5)

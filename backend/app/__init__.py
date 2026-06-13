@@ -46,10 +46,10 @@ def create_app(config_overrides=None):
     app.config["SESSION_COOKIE_SAMESITE"] = app.config.get("SESSION_COOKIE_SAMESITE", "Lax")
     app.config["PERMANENT_SESSION_LIFETIME"] = app.config.get("PERMANENT_SESSION_LIFETIME")
 
-    # 显式配置 CORS：允许所有来源、所有路由、自动处理 Content-Type 和 Authorization
+    # 显式配置 CORS：默认兼容开发环境；托管模式应通过 CYBER_CORS_ORIGINS 收紧来源白名单。
     CORS(
         app,
-        resources={r"/*": {"origins": "*"}},
+        resources={r"/*": {"origins": app.config.get("CORS_ORIGINS", "*")}},
         supports_credentials=bool(app.config.get("CORS_SUPPORTS_CREDENTIALS", False)),
     )
 

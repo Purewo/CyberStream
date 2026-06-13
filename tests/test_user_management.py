@@ -117,6 +117,37 @@ class UserManagementTests(unittest.TestCase):
         self.assertEqual(401, response.status_code)
         self.assertEqual(40110, response.get_json()["code"])
 
+    def test_cross_site_session_cookie_and_cors_allowlist(self):
+        app = self.create_enabled_app(
+            CORS_ORIGINS=["http://localhost:3000"],
+            CORS_SUPPORTS_CREDENTIALS=True,
+            SESSION_COOKIE_SAMESITE="None",
+            SESSION_COOKIE_SECURE=True,
+        )
+        client = app.test_client()
+        self._user("viewer")
+
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "viewer", "password": "password-123"},
+            headers={"Origin": "http://localhost:3000"},
+        )
+        blocked_preflight = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+        set_cookie = login_response.headers.get("Set-Cookie", "")
+        self.assertEqual(200, login_response.status_code)
+        self.assertEqual("http://localhost:3000", login_response.headers.get("Access-Control-Allow-Origin"))
+        self.assertEqual("true", login_response.headers.get("Access-Control-Allow-Credentials"))
+        self.assertIn("SameSite=None", set_cookie)
+        self.assertIn("Secure", set_cookie)
+        self.assertIsNone(blocked_preflight.headers.get("Access-Control-Allow-Origin"))
+
     def test_normal_user_is_read_only_and_admin_can_manage(self):
         app = self.create_enabled_app()
         client = app.test_client()
