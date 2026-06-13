@@ -16,6 +16,7 @@ export const homeService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/homepage/config`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });

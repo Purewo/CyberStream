@@ -467,8 +467,8 @@ export interface UserSettings {
 /** 个人偏好（本地）。和服务端 HomepageConfig 是两件事——前者是"我打开应用想直接看到啥"，
  *  后者是"首页 hero + 分类区块全用户共享配置"。 */
 export interface HomepageUserPrefs {
-  /** 启动后默认打开的视图。`library:<id>` 表示直接进某个具体片库。 */
-  defaultLanding?: 'home' | 'library' | `library:${number}`;
+  /** 启动后默认打开的视图。`library:<id>` 表示直接进某个具体片库；`libraries` 是专辑列表外页。 */
+  defaultLanding?: 'home' | 'library' | 'libraries' | `library:${number}`;
   /** 进 library 视图时的初始筛选。 */
   libraryDefaults?: {
     type?: string;       // genre 名（"全部类型"含义见 Library.tsx）

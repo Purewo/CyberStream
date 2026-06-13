@@ -26,6 +26,7 @@ export const libraryService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/libraries/${id}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
@@ -38,7 +39,8 @@ export const libraryService = {
   deleteLibrary: async (id: number): Promise<boolean> => {
     try {
       const res = await fetch(`${getApiBase()}/v1/libraries/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
       return res.ok;
     } catch {
@@ -55,6 +57,7 @@ export const libraryService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/sources`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_id: sourceId, root_path: rootPath })
       });
@@ -67,7 +70,8 @@ export const libraryService = {
   unbindLibrarySource: async (libraryId: number, bindingId: number): Promise<boolean> => {
     try {
       const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/sources/${bindingId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
       return res.ok;
     } catch {
@@ -149,6 +153,7 @@ export const libraryService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/movie-memberships`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode, movie_ids: movieIds, sort_order: sortOrder })
       });
@@ -162,6 +167,7 @@ export const libraryService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/libraries/${libraryId}/movie-memberships/delete`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ movie_ids: movieIds })
       });

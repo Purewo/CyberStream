@@ -24,7 +24,7 @@ export const storageService = {
 
   getSourceBrowse: async (id: number, browsePath: string = '/'): Promise<{ items: import('../types/index').FileItem[] | null, error?: string }> => {
     try {
-      const res = await fetch(`${getApiBase()}/v1/storage/sources/${id}/browse?path=${encodeURIComponent(browsePath)}&dirs_only=true`);
+      const res = await fetch(`${getApiBase()}/v1/storage/sources/${id}/browse?path=${encodeURIComponent(browsePath)}&dirs_only=true`, { credentials: 'include' });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.code === 200) {
         return { items: data.data?.items || [] };
@@ -59,6 +59,7 @@ export const storageService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/storage/sources`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, type, config })
       });
@@ -72,6 +73,7 @@ export const storageService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/storage/sources/${id}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, type, config })
       });
@@ -110,6 +112,7 @@ export const storageService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/storage/preview`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, config, target_path: targetPath })
       });

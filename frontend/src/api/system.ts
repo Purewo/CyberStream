@@ -30,6 +30,25 @@ export interface TmdbConfigPatch {
   proxy_url?: string | null;
 }
 
+/**
+ * GET /v1/system/tmdb-config/check 的返回形状——主动调 TMDB 认证接口做活性预检。
+ * ready=true 才说明 token 有效、可以刮削；否则看 status 区分原因。
+ * 后端不回 token 明文。
+ */
+export interface TmdbCheck {
+  ready: boolean;
+  status: 'ok' | 'missing_token' | 'invalid_token' | 'proxy_error' | 'network_error' | string;
+  message: string;
+  token_set: boolean;
+  token_valid: boolean;
+  proxy_enabled: boolean;
+  proxy_configured: boolean;
+  http_status: number | null;
+  elapsed_ms: number | null;
+  tmdb_status_code: number | null;
+  tmdb_status_message: string;
+}
+
 /** 更新检查请求参数 —— 详见后端 GET /v1/system/update-check 文档。 */
 export interface UpdateCheckParams {
   /** 客户端主版本号，如 "1.21.1"。 */
@@ -121,6 +140,7 @@ export const systemService = {
       
       const res = await fetch(`${getApiBase()}/v1/scan`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
@@ -198,5 +218,11 @@ export const systemService = {
     });
     if (res.ok) return { ok: true, data: res.data };
     return { ok: false, msg: res.msg || `HTTP ${res.status}` };
+  },
+
+  // 主动验活：调 TMDB 认证接口确认当前 token 是否真的能用。批量刮削前先查
+  // ready，避免无效 token/代理挂掉一整批。后端不回 token 明文。
+  checkTmdbConfig: async (): Promise<TmdbCheck | null> => {
+    return await fetchApi<TmdbCheck>('/v1/system/tmdb-config/check');
   }
 };

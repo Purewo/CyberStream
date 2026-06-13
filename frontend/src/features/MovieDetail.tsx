@@ -198,35 +198,31 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
     } 
   };
 
-  // 初次进入：并行拉详情、推荐、首季资源（target_season 优先；否则不传 season —— 后端会回 hydrated_items 第一季）
+  // 初次进入：三个请求各自独立 fire——detail 和推荐回来快了就立刻渲染，不被
+  // resources 拖累；resources 才决定播放按钮可点（loading 只追它）。
   useEffect(() => {
     let cancelled = false;
-    const loadData = async () => {
-      setLoading(true);
+    setLoading(true);
 
-      const initialSeason = movie.target_season ?? undefined;
-      const [detail, resData, recs] = await Promise.all([
-        movieService.getDetail(movie.id),
-        movieService.getResources(movie.id, initialSeason),
-        movieService.getContextRecommendations(String(movie.id), 8, movie.type === 'tv' || movie.type === 'series' || !!movie.season ? 'tv' : 'movie')
-      ]);
+    const initialSeason = movie.target_season ?? undefined;
 
+    movieService.getDetail(movie.id).then(detail => {
+      if (cancelled || !detail) return;
+      setFullMovieData({
+        ...detail,
+        title: movie.title || detail.title,
+        cover_url: movie.cover_url || detail.cover_url,
+        poster_url: movie.poster_url || detail.poster_url,
+        desc: detail.desc || movie.desc,
+        overview: detail.overview || movie.overview,
+        target_season: movie.target_season
+      });
+    });
+
+    movieService.getResources(movie.id, initialSeason).then(resData => {
       if (cancelled) return;
-
-      if (detail) {
-        setFullMovieData({
-          ...detail,
-          title: movie.title || detail.title,
-          cover_url: movie.cover_url || detail.cover_url,
-          poster_url: movie.poster_url || detail.poster_url,
-          desc: detail.desc || movie.desc,
-          overview: detail.overview || movie.overview,
-          target_season: movie.target_season
-        });
-      }
       if (resData) {
         setResourceGroups(resData);
-        // 标记已加载：standalone 永远跟着每次响应回来；当前 hydrate 季是 initialSeason 或后端默认季
         loadedSeasonsRef.current.add(null);
         const hydratedSeason = (resData as any).summary?.selected_season;
         if (typeof hydratedSeason === 'number') {
@@ -234,27 +230,27 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
         } else if (initialSeason !== undefined) {
           loadedSeasonsRef.current.add(initialSeason);
         } else if (resData.groups?.seasons && resData.groups.seasons.length > 0) {
-          // 不带 season 请求 + 后端没回 selected_season（旧行为）→ 全量已 hydrate
           resData.groups.seasons.forEach(s => loadedSeasonsRef.current.add(s.season));
         }
 
         if (movie.target_season !== undefined && movie.target_season !== null) {
           setActiveSeason(movie.target_season);
         } else if (resData.groups?.seasons && resData.groups.seasons.length > 0) {
-          // 选第一个有内容的季作为默认。按季 hydrate 时其他季的 resource_ids 在拍扁前长度 > 0，
-          // 这里继续选第一个，让用户看到的就是后端 hydrate 的那一季。
           const firstHydrated = resData.groups.seasons.find(s => (s.resource_ids?.length || 0) > 0);
           setActiveSeason((firstHydrated || resData.groups.seasons[0]).season);
         }
       }
-      if (recs) {
-        setRecommendations(recs);
-      }
-
       setLoading(false);
-    };
+    });
 
-    loadData();
+    movieService.getContextRecommendations(
+      String(movie.id), 8,
+      movie.type === 'tv' || movie.type === 'series' || !!movie.season ? 'tv' : 'movie'
+    ).then(recs => {
+      if (cancelled || !recs) return;
+      setRecommendations(recs);
+    });
+
     return () => { cancelled = true; };
   }, [movie.id]);
 

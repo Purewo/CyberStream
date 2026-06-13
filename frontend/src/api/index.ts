@@ -6,3 +6,4 @@ export * from './resource';
 export * from './user';
 export * from './storage';
 export * from './system';
+export * from './auth';

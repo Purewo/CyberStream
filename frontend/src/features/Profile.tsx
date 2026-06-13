@@ -24,6 +24,7 @@ import { Movie, UserSettings, Achievement, AchievementSummary, HomepageUserPrefs
 import { THEMES, API_BASE, FILTERS } from "../constants";
 import { formatBytes, toast } from "../utils";
 import { platform } from "../platform";
+import { authService, AuthStatus } from "../api/auth";
 
 import { ReviewWorkbench } from "./ReviewWorkbench";
 import { ScanSourceModal } from "./ScanSourceModal";
@@ -98,6 +99,8 @@ import {
   MonitorPlay,
   Volume2,
   Laptop,
+  LogOut,
+  KeyRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -377,6 +380,9 @@ const TmdbSettingsCard: React.FC = () => {
   const [proxyUrl, setProxyUrl] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  // TMDB 活性预检结果（null=没测过）
+  const [checkResult, setCheckResult] = useState<import("../api/system").TmdbCheck | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -458,6 +464,27 @@ const TmdbSettingsCard: React.FC = () => {
       toast.error("清除失败");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // 主动验活：调后端 /tmdb-config/check，确认当前 token 是否真能连上 TMDB。
+  // 检测的是后端已保存的配置，不含输入框里未保存的新 token——所以未保存时先提示。
+  const handleCheck = async () => {
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const { systemService } = await import("../api");
+      const res = await systemService.checkTmdbConfig();
+      if (!res) {
+        toast.error("检测失败：无法连接后端");
+        return;
+      }
+      setCheckResult(res);
+    } catch (e) {
+      console.error(e);
+      toast.error("检测失败");
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -564,6 +591,46 @@ const TmdbSettingsCard: React.FC = () => {
       >
         {saving ? "保存中…" : "保存"}
       </button>
+
+      {/* 检测连接：验证后端已保存的 token 是否真能连上 TMDB。验的是已保存配置，
+          输入框里未保存的新 token 不算，所以先保存再检测才准。 */}
+      <button
+        type="button"
+        onClick={handleCheck}
+        disabled={!loaded || checking || saving}
+        className="w-full mt-2 px-4 py-2 text-sm font-bold border border-white/20 text-gray-300 hover:border-primary hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+      >
+        {checking ? "检测中…" : "检测连接"}
+      </button>
+      {tokenInput.trim() && (
+        <p className="text-[11px] text-amber-400/80 font-['Rajdhani'] mt-1.5">
+          检测的是已保存的 token，先点「保存」再检测才反映新输入的值。
+        </p>
+      )}
+
+      {checkResult && (
+        <div
+          className="mt-3 p-3 rounded border text-xs font-['Rajdhani'] leading-relaxed"
+          style={{
+            borderColor: checkResult.ready ? 'rgba(0,243,255,0.4)' : 'rgba(239,68,68,0.5)',
+            backgroundColor: checkResult.ready ? 'rgba(0,243,255,0.06)' : 'rgba(239,68,68,0.08)',
+            color: checkResult.ready ? 'var(--color-primary)' : '#fca5a5',
+          }}
+        >
+          <div className="font-bold tracking-wider mb-1">
+            {checkResult.ready ? '● TMDB 连接正常' : '● TMDB 不可用'}
+            <span className="ml-2 opacity-60 font-mono text-[10px]">{checkResult.status}</span>
+          </div>
+          <div className="opacity-90 text-gray-300">{checkResult.message}</div>
+          {(checkResult.elapsed_ms != null || checkResult.tmdb_status_code != null) && (
+            <div className="opacity-60 text-gray-400 mt-1 font-mono text-[10px]">
+              {checkResult.elapsed_ms != null && `耗时 ${checkResult.elapsed_ms}ms`}
+              {checkResult.tmdb_status_code != null && `  TMDB HTTP ${checkResult.tmdb_status_code}`}
+              {checkResult.proxy_enabled && `  代理${checkResult.proxy_configured ? '已配置' : '开启但未配置'}`}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -1308,7 +1375,7 @@ const PersonalPreferencesCard: React.FC<{
             value={landingValue}
             onChange={(e) => {
               const v = e.target.value;
-              if (v === 'home' || v === 'library') {
+              if (v === 'home' || v === 'library' || v === 'libraries') {
                 update({ defaultLanding: v });
               } else if (v.startsWith('library:')) {
                 update({ defaultLanding: v as `library:${number}` });
@@ -1317,6 +1384,7 @@ const PersonalPreferencesCard: React.FC<{
             className="bg-black/40 border border-white/10 px-2 py-1.5 text-white outline-none"
           >
             <option value="home">首页</option>
+            <option value="libraries">专辑</option>
             <option value="library">片库（全部）</option>
             {libraries.map((lib) => (
               <option key={lib.id} value={`library:${lib.id}`}>
@@ -1383,7 +1451,124 @@ interface ProfilePageProps {
   vaultState?: import('../api/user').VaultAccessState | null;
   onRefreshVaultStatus?: () => Promise<import('../api/user').VaultAccessState | null>;
   onRefreshFavorites?: () => Promise<void>;
+  // 退出登录后由父级 App 重置 authStatus，让登录门重新弹出。
+  onLoggedOut?: () => void;
+  // 当前登录态——账号管理 tab 用来展示用户名、角色等。
+  authStatus?: AuthStatus | null;
 }
+
+const AccountSettings: React.FC<{
+  authStatus: AuthStatus | null;
+  onLoggedOut?: () => void;
+}> = ({ authStatus, onLoggedOut }) => {
+  const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const user = authStatus?.user || null;
+  const enabled = !!authStatus?.user_management_enabled;
+  const authed = !!authStatus?.authenticated;
+
+  const handleLogout = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await authService.logout();
+      toast.success("已退出登录");
+      onLoggedOut?.();
+    } finally {
+      setSubmitting(false);
+      setConfirming(false);
+    }
+  };
+
+  const roleLabel = user?.role === 'admin' ? '管理员' : (user?.role === 'user' ? '普通用户' : '—');
+  const authViaLabel = authStatus?.auth_via === 'session'
+    ? '会话 Cookie'
+    : authStatus?.auth_via === 'api_token'
+      ? '令牌'
+      : '—';
+
+  return (
+    <div className="space-y-6 animate-in slide-in-from-right-4 fade-in duration-300">
+      <div className="bg-[#0a0a12]/80 border border-white/10 p-6 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-red-500/40 pointer-events-none"></div>
+        <h3 className="text-lg font-['Orbitron'] font-bold text-white flex items-center gap-2">
+          <KeyRound size={18} /> 账号信息
+        </h3>
+        <p className="text-xs text-gray-500 leading-relaxed mt-1">
+          公网部署强制账号登录后，这里显示当前登录态。账号由节点管理员开通，不开放自助注册。
+        </p>
+
+        {!enabled ? (
+          <div className="mt-5 px-4 py-3 bg-black/40 border border-white/10 rounded-md text-sm text-gray-400">
+            当前部署未启用用户管理，所有访问按本地匿名模式处理。
+          </div>
+        ) : !authed ? (
+          <div className="mt-5 px-4 py-3 bg-black/40 border border-white/10 rounded-md text-sm text-gray-400">
+            当前未登录。
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="bg-black/40 border border-white/10 rounded-md px-4 py-3">
+              <div className="text-[10px] tracking-[0.3em] text-gray-500 font-['Orbitron']">用户名</div>
+              <div className="text-white mt-1 font-mono">{user?.username || '—'}</div>
+            </div>
+            <div className="bg-black/40 border border-white/10 rounded-md px-4 py-3">
+              <div className="text-[10px] tracking-[0.3em] text-gray-500 font-['Orbitron']">显示名</div>
+              <div className="text-white mt-1">{user?.display_name || '—'}</div>
+            </div>
+            <div className="bg-black/40 border border-white/10 rounded-md px-4 py-3">
+              <div className="text-[10px] tracking-[0.3em] text-gray-500 font-['Orbitron']">角色</div>
+              <div className="text-white mt-1">{roleLabel}</div>
+            </div>
+            <div className="bg-black/40 border border-white/10 rounded-md px-4 py-3">
+              <div className="text-[10px] tracking-[0.3em] text-gray-500 font-['Orbitron']">认证方式</div>
+              <div className="text-white mt-1">{authViaLabel}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-[#0a0a12]/80 border border-white/10 p-6 relative overflow-hidden">
+        <h3 className="text-lg font-['Orbitron'] font-bold text-white flex items-center gap-2">
+          <LogOut size={18} /> 退出登录
+        </h3>
+        <p className="text-xs text-gray-500 leading-relaxed mt-1">
+          清除本机会话 Cookie 并回到登录页。其它设备的登录态不会受影响。
+        </p>
+
+        {!confirming ? (
+          <button
+            onClick={() => setConfirming(true)}
+            disabled={!authed}
+            className="group relative mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-md border border-red-500/40 text-red-400 bg-red-500/5 hover:bg-red-500/15 hover:border-red-500 hover:text-red-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm font-['Orbitron'] tracking-widest"
+          >
+            <LogOut size={16} />
+            退出登录
+          </button>
+        ) : (
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <span className="text-sm text-red-300">确认退出？</span>
+            <button
+              onClick={handleLogout}
+              disabled={submitting}
+              className="px-4 py-2 rounded-md border border-red-500 bg-red-500/15 text-red-200 hover:bg-red-500/25 transition-all text-sm font-['Orbitron'] tracking-widest disabled:opacity-50"
+            >
+              {submitting ? '正在退出…' : '确认退出'}
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={submitting}
+              className="px-4 py-2 rounded-md border border-white/15 text-gray-300 hover:bg-white/5 transition-all text-sm font-['Orbitron'] tracking-widest disabled:opacity-50"
+            >
+              取消
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const AddSourceButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
   const [hover, setHover] = useState(false);
@@ -1424,6 +1609,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   vaultState = null,
   onRefreshVaultStatus = async () => null,
   onRefreshFavorites = async () => {},
+  onLoggedOut,
+  authStatus = null,
 }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -2373,6 +2560,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <ReviewWorkbench onMovieSelect={onMovieSelect} onEditMetadata={onEditMetadata} />
           </div>
         );
+      case "ACCOUNT":
+        return (
+          <AccountSettings
+            authStatus={authStatus}
+            onLoggedOut={onLoggedOut}
+          />
+        );
       case "VAULT":
         return (
           <VaultPanel
@@ -3039,6 +3233,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           {[
             { id: "APPEARANCE", icon: <Palette size={18} />, label: "主页设置" },
             { id: "IDENTITY", icon: <User size={18} />, label: "身份信息" },
+            { id: "ACCOUNT", icon: <KeyRound size={18} />, label: "账号管理" },
             { id: "VAULT", icon: <Shield size={18} />, label: "数据保险库" },
             { id: "MEDALS", icon: <Trophy size={18} />, label: "成就奖章" },
             {

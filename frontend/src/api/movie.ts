@@ -154,6 +154,7 @@ export const movieService = {
       }
       const res = await fetch(`${getApiBase()}/v1/resources/${resourceId}/subtitles/online/download`, {
         method: "POST",
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
@@ -195,6 +196,7 @@ export const movieService = {
     // For file upload, we need to omit the Content-Type header so the browser sets the boundary correctly
     const res = await fetch(`${getApiBase()}/v1/resources/${resourceId}/subtitles/upload`, {
       method: "POST",
+      credentials: 'include',
       body: formData,
     });
     
@@ -260,6 +262,7 @@ export const movieService = {
     
     const res = await fetch(`${getApiBase()}/v1/movies/${queryId}/catalog-visibility`, {
       method: 'PATCH',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
@@ -406,7 +409,7 @@ export const movieService = {
   delete: async (id: string | number): Promise<boolean> => {
     try {
       const queryId = movieService.getRealId(id);
-      const res = await fetch(`${getApiBase()}/v1/movies/${queryId}`, { method: 'DELETE' });
+      const res = await fetch(`${getApiBase()}/v1/movies/${queryId}`, { method: 'DELETE', credentials: 'include' });
       return res.ok;
     } catch {
       return false;

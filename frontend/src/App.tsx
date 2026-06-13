@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Navbar, { Footer } from './components/layout/Navbar';
 import { Home, Library, Leaderboard, HistoryPage, SearchResults, ReviewWorkbench } from './features/Views';
 import { ProfilePage } from './features/Profile';
@@ -13,6 +13,8 @@ import { ScanProgressBar } from './components/ui/ScanProgressBar';
 import { BackgroundJobProgressBar } from './components/ui/BackgroundJobProgressBar';
 import { Toaster } from './components/ui/Toaster';
 import { movieService, libraryService, userService, resourceService } from './api';
+import { authService, AuthStatus } from './api/auth';
+import { Login } from './features/Login';
 import { getDeviceId } from './api/core';
 import { getPublicUrlBase, writeClipboard, platform, getApiBase } from './platform';
 import { launchNativePlayer, needsUserAgentRewrite, pickUserAgentForRewrite } from './platform/nativePlayer';
@@ -24,9 +26,41 @@ import { useUserData } from './hooks/useUserData';
 import { useAppRouting } from './hooks/useAppRouting';
 import { TMDBMatchModal } from './features/TMDBMatchModal';
 
-const App = () => { 
+const App = () => {
   const { settings, setSettings, themeName, setThemeName, currentTheme } = useThemeSettings();
   useGlobalHotkeys();
+
+  // 鉴权门：null=未探测，true=可进入主体，false=要求登录。
+  // 启动时被动探测 /auth/me；user_management_enabled=false 直接放行（旧模式）。
+  // 调试旁路：URL 带 ?force_login=1 时直接渲染登录页（视觉验收用，不参与生产逻辑）。
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const forceLogin = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('force_login') === '1';
+  const requireLogin = forceLogin || (!!authStatus && authStatus.user_management_enabled && !authStatus.authenticated);
+
+  useEffect(() => {
+    let cancelled = false;
+    authService.getStatus().then(s => {
+      if (cancelled) return;
+      // 后端不可达时 s=null：先按"用户管理未启用"放行，避免登录页阻塞所有自托管/本地开发环境。
+      // 真有后端要求会在受保护接口 401 时再回弹。
+      if (!s) {
+        setAuthStatus({
+          user_management_enabled: false,
+          authenticated: false,
+          role: null,
+          auth_via: null,
+          user: null,
+          permissions: { admin: false, read_catalog: false, manage_catalog: false, manage_users: false, personal_history: false, personal_subtitle_settings: false },
+        });
+      } else {
+        setAuthStatus(s);
+      }
+      setAuthReady(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const {
     favorites, handleToggleFavorite, refreshFavorites,
     history, setHistory, handleClearHistory, handleDeleteHistoryItem, refreshHistory,
@@ -56,12 +90,14 @@ const App = () => {
 
 
   // Apply user-preferred default landing on first mount.
-  // settings.homepage.defaultLanding 形如 'home' | 'library' | 'library:42'。
+  // settings.homepage.defaultLanding 形如 'home' | 'libraries' | 'library' | 'library:42'。
   // 只在首次挂载（currentView === 'home'）时跳，避免覆盖用户已经在浏览的视图。
   useEffect(() => {
     const landing = settings.homepage?.defaultLanding;
     if (!landing || landing === 'home') return;
-    if (landing === 'library') {
+    if (landing === 'libraries') {
+      navigateTo('libraries');
+    } else if (landing === 'library') {
       navigateTo('library', { libraryId: null });
     } else if (landing.startsWith('library:')) {
       const id = parseInt(landing.split(':')[1] || '', 10);
@@ -491,8 +527,38 @@ const App = () => {
   return (
     <div className="min-h-screen font-sans selection:bg-secondary selection:text-white relative text-white flex overflow-hidden" style={{ backgroundColor: currentTheme.bg }}>
       <style>{getStyles(settings, currentTheme)}</style>
-      <div className="scanlines pointer-events-none z-[100]"></div> 
-      <div className="perspective-grid"></div> 
+
+      {/* 启动鉴权探测期间显示一帧 splash，避免主界面闪一下又被 Login 盖掉 */}
+      {!authReady && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center" style={{ backgroundColor: currentTheme.bg }}>
+          <div className="font-['Orbitron'] tracking-[0.5em] text-xs animate-pulse"
+            style={{ color: 'var(--color-primary)', textShadow: '0 0 8px var(--color-primary)' }}>
+            INITIALIZING…
+          </div>
+        </div>
+      )}
+
+      {/* 用户管理开启 + 未登录：只渲染 Login，连主体的全局 scanlines/grid 也跳过，
+          否则它们会盖在 Login 之上影响交互；scanlines 单独在 Login 内画。 */}
+      {authReady && requireLogin && (
+        <Login
+          themeName={themeName}
+          onLoggedIn={(s) => {
+            // 调试旁路 ?force_login=1 在登录成功后自动清掉，避免下次刷新又被强制弹回登录页
+            if (forceLogin && typeof window !== 'undefined') {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('force_login');
+              window.history.replaceState(null, '', url.toString());
+            }
+            setAuthStatus(s);
+          }}
+        />
+      )}
+
+      {!requireLogin && (
+        <>
+          <div className="scanlines pointer-events-none z-[100]"></div>
+          <div className="perspective-grid"></div>
 
       <div ref={scrollContainerRef} className={`flex-1 flex flex-col relative w-full h-screen overflow-y-auto transition-all duration-300`}>
         {overlayView !== 'player' && (
@@ -510,7 +576,12 @@ const App = () => {
             }} />)}
             {currentView === 'leaderboard' && (<Leaderboard onMovieSelect={handleMovieSelect} />)} 
             {currentView === 'history' && (<HistoryPage history={history} onMovieSelect={handleMovieSelect} onClearHistory={handleClearHistory} onDeleteHistoryItem={handleDeleteHistoryItem} />)} 
-            {currentView === 'profile' && (<ProfilePage initialTab={profileInitialTab} initialOpenAddResource={profileOpenAddResource} onConsumeOpenAddResource={() => setProfileOpenAddResource(false)} settings={settings} setSettings={setSettings} favorites={favorites} onToggleFavorite={handleToggleFavorite} onMovieSelect={handleMovieSelect} onEditMetadata={setMetadataMovie} currentTheme={themeName} setTheme={setThemeName} libraries={libraries} onRefreshLibraries={refreshLibraries} vaultState={vaultState} onRefreshVaultStatus={refreshVaultStatus} onRefreshFavorites={refreshFavorites} />)}
+            {currentView === 'profile' && (<ProfilePage initialTab={profileInitialTab} initialOpenAddResource={profileOpenAddResource} onConsumeOpenAddResource={() => setProfileOpenAddResource(false)} settings={settings} setSettings={setSettings} favorites={favorites} onToggleFavorite={handleToggleFavorite} onMovieSelect={handleMovieSelect} onEditMetadata={setMetadataMovie} currentTheme={themeName} setTheme={setThemeName} libraries={libraries} onRefreshLibraries={refreshLibraries} vaultState={vaultState} onRefreshVaultStatus={refreshVaultStatus} onRefreshFavorites={refreshFavorites} authStatus={authStatus} onLoggedOut={async () => {
+              const fresh = await authService.getStatus();
+              if (fresh) setAuthStatus(fresh);
+              else setAuthStatus(prev => prev ? { ...prev, authenticated: false, user: null, role: null, auth_via: null } : prev);
+              setCurrentView('home');
+            }} />)}
             {currentView === 'search' && (<SearchResults query={searchQuery} results={searchResults} onMovieSelect={handleMovieSelect} />)} 
             {currentView === 'review' && (<ReviewWorkbench onMovieSelect={handleMovieSelect} onEditMetadata={setMetadataMovie} />)}
           </div>
@@ -611,8 +682,10 @@ const App = () => {
 
       {/* Global Notification System */}
       <Toaster />
+        </>
+      )}
     </div>
-  ); 
-}; 
+  );
+};
 
 export default App;

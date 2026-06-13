@@ -46,7 +46,8 @@ export const resourceService = {
   stopAudioTranscode: async (id: string): Promise<boolean> => {
     try {
       const res = await fetch(`${getApiBase()}/v1/resources/${id}/audio-transcode`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       });
       return res.ok;
     } catch {

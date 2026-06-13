@@ -110,6 +110,7 @@ export const userService = {
     try {
       await fetch(`${getApiBase()}/v1/user/history`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           resource_id: resourceId,
@@ -193,6 +194,7 @@ export const userService = {
       if (req.currentPin) body.current_pin = req.currentPin;
       const res = await fetch(`${getApiBase()}/v1/user/vault/password`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -211,6 +213,7 @@ export const userService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/user/vault/unlock`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
       });
@@ -229,6 +232,7 @@ export const userService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/user/vault/lock`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
       });
       const json: any = await res.json().catch(() => ({}));
@@ -300,6 +304,7 @@ export const userService = {
     try {
       const res = await fetch(`${getApiBase()}/v1/user/achievements/unlock`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, device_id: getDeviceId() }),
       });

@@ -3,7 +3,7 @@ import { Filter, Cpu,Globe, Calendar, AlertTriangle, Loader2, ScanLine } from 'l
 import { MovieCard } from '../components/movies/Cards';
 import { Movie } from '../types';
 import { FILTERS } from '../constants';
-import { FilterTag } from '../components/ui/CyberComponents';
+import { FilterTag, FilterTagsRow } from '../components/ui/CyberComponents';
 import { movieService, libraryService, systemService } from '../api';
 import { toast } from '../utils';
 
@@ -342,39 +342,47 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
       </div>
       
       {/* Filter Control Panel (Inline) */}
-      <div className="bg-[#0a0a12]/80 border border-white/10 backdrop-blur-md p-6 mb-10 relative overflow-hidden group tech-border"> 
-        <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-red-500/50"></div> 
-        <div className="space-y-4 relative z-10"> 
+      <div className="bg-[#0a0a12]/80 border border-white/10 backdrop-blur-md p-6 mb-10 relative overflow-hidden group tech-border">
+        <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-red-500/50"></div>
+        <div className="space-y-4 relative z-10">
           {/* Genre Filter */}
-          <div className="flex flex-col md:flex-row md:items-start gap-2 md:gap-4"> 
-            <span className="text-primary font-['Noto_Sans_SC'] font-bold py-1 min-w-[4rem] flex items-center gap-2 mt-1"> <Cpu size={14} /> 类型 </span> 
-            <div className="flex flex-wrap gap-2"> {filterOptions.genres.map(type => (<FilterTag key={type} label={GENRE_DISPLAY_MAP[type] || type} active={filters.type === type} onClick={() => setFilters({ ...filters, type: type })} />))} </div> 
-          </div> 
-          <div className="h-[1px] bg-white/5 w-full"></div> 
-          
+          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+            <span className="text-primary font-['Noto_Sans_SC'] font-bold py-1 min-w-[4rem] flex items-center gap-2"> <Cpu size={14} /> 类型 </span>
+            <FilterTagsRow
+              items={filterOptions.genres}
+              active={filters.type}
+              onSelect={(v) => setFilters({ ...filters, type: v })}
+              labelOf={(v) => GENRE_DISPLAY_MAP[v] || v}
+              truncationMode="more"
+            />
+          </div>
+          <div className="h-[1px] bg-white/5 w-full"></div>
+
           {/* Region Filter */}
-          <div className="flex flex-col md:flex-row md:items-start gap-2 md:gap-4"> 
-            <span className="text-secondary font-['Noto_Sans_SC'] font-bold py-1 min-w-[4rem] flex items-center gap-2 mt-1"> <Globe size={14} /> 地区 </span> 
-            <div className="flex flex-wrap gap-2"> 
-              {filterOptions.regions.map(region => (
-                <FilterTag 
-                  key={region} 
-                  label={REGION_NAME_MAP[region] || region} 
-                  active={filters.region === region} 
-                  onClick={() => setFilters({ ...filters, region: region })} 
-                />
-              ))} 
-            </div> 
-          </div> 
-          <div className="h-[1px] bg-white/5 w-full"></div> 
-          
+          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+            <span className="text-secondary font-['Noto_Sans_SC'] font-bold py-1 min-w-[4rem] flex items-center gap-2"> <Globe size={14} /> 地区 </span>
+            <FilterTagsRow
+              items={filterOptions.regions}
+              active={filters.region}
+              onSelect={(v) => setFilters({ ...filters, region: v })}
+              labelOf={(v) => REGION_NAME_MAP[v] || v}
+              truncationMode="more"
+            />
+          </div>
+          <div className="h-[1px] bg-white/5 w-full"></div>
+
           {/* Year Filter */}
-          <div className="flex flex-col md:flex-row md:items-start gap-2 md:gap-4"> 
-            <span className="text-accent font-['Noto_Sans_SC'] font-bold py-1 min-w-[4rem] flex items-center gap-2 mt-1"> <Calendar size={14} /> 年份 </span> 
-            <div className="flex flex-wrap gap-2"> {filterOptions.years.map(year => (<FilterTag key={year} label={year} active={filters.year === year} onClick={() => setFilters({ ...filters, year: year })} />))} </div> 
-          </div> 
-        </div> 
-      </div> 
+          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+            <span className="text-accent font-['Noto_Sans_SC'] font-bold py-1 min-w-[4rem] flex items-center gap-2"> <Calendar size={14} /> 年份 </span>
+            <FilterTagsRow
+              items={filterOptions.years}
+              active={filters.year}
+              onSelect={(v) => setFilters({ ...filters, year: v })}
+              truncationMode="value"
+            />
+          </div>
+        </div>
+      </div>
       
       {/* List Header */}
       <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-6 font-['Rajdhani'] gap-4"> 

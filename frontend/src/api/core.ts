@@ -71,7 +71,7 @@ interface ApiMovieDetailed extends ApiMovieSimple {
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(`${getApiBase()}${path}`, options);
+    const res = await fetch(`${getApiBase()}${path}`, { credentials: 'include', ...options });
     if (!res.ok) {
       console.warn(`API Error ${res.status} on ${path}`);
       return null;
@@ -101,7 +101,7 @@ interface RawApiResult<T> {
 
 async function fetchApiRaw<T>(path: string, options?: RequestInit): Promise<RawApiResult<T>> {
   try {
-    const res = await fetch(`${getApiBase()}${path}`, options);
+    const res = await fetch(`${getApiBase()}${path}`, { credentials: 'include', ...options });
     let body: any = null;
     try { body = await res.json(); } catch { /* non-json or empty */ }
     return {
