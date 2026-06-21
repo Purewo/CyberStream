@@ -1,7 +1,7 @@
 import re
 import uuid
 from datetime import datetime
-from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy import JSON
 from backend.app.extensions import db
 from backend.app.providers.factory import provider_factory
 from backend.app.services.episode_diagnostics import (
@@ -25,6 +25,83 @@ def generate_uuid():
     return str(uuid.uuid4())
 
 
+class Account(db.Model):
+    """Tenant boundary for hosted business data."""
+    __tablename__ = 'accounts'
+    __table_args__ = {'extend_existing': True}
+
+    STATUS_ACTIVE = 'active'
+    STATUS_DISABLED = 'disabled'
+    STATUS_PENDING_DELETE = 'pending_delete'
+    STATUSES = {STATUS_ACTIVE, STATUS_DISABLED, STATUS_PENDING_DELETE}
+
+    id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    name = db.Column(db.String(120), nullable=False)
+    slug = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    status = db.Column(db.String(30), nullable=False, default=STATUS_ACTIVE, index=True)
+    settings = db.Column(JSON, nullable=False, default=dict)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    memberships = db.relationship(
+        'AccountMembership',
+        backref='account',
+        lazy='dynamic',
+        cascade="all, delete-orphan",
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "slug": self.slug,
+            "status": self.status,
+            "settings": self.settings or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class AccountMembership(db.Model):
+    """Maps login identities to tenant accounts."""
+    __tablename__ = 'account_memberships'
+    __table_args__ = (
+        db.UniqueConstraint('account_id', 'user_id', name='uq_account_membership_user'),
+        {'extend_existing': True},
+    )
+
+    ROLE_OWNER = 'owner'
+    ROLE_MEMBER = 'member'
+    ROLES = {ROLE_OWNER, ROLE_MEMBER}
+    STATUS_ACTIVE = 'active'
+    STATUS_DISABLED = 'disabled'
+    STATUSES = {STATUS_ACTIVE, STATUS_DISABLED}
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    role = db.Column(db.String(20), nullable=False, default=ROLE_MEMBER, index=True)
+    status = db.Column(db.String(20), nullable=False, default=STATUS_ACTIVE, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', back_populates='account_memberships')
+
+    def to_dict(self, include_account=False):
+        data = {
+            "id": self.id,
+            "account_id": self.account_id,
+            "user_id": self.user_id,
+            "role": self.role,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+        if include_account:
+            data["account"] = self.account.to_dict() if self.account else None
+        return data
+
+
 class StorageSource(db.Model):
     """存储源配置模型。
 
@@ -35,6 +112,7 @@ class StorageSource(db.Model):
     __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     name = db.Column(db.String(50), nullable=False)  # e.g. "NAS WebDAV"
     type = db.Column(db.String(20), nullable=False)  # 'local', 'webdav', 'smb'
 
@@ -164,6 +242,7 @@ class StorageSource(db.Model):
 
         data = {
             "id": self.id,
+            "account_id": self.account_id,
             "name": self.name,
             "type": normalized_type,
             "display_name": display_name,
@@ -188,11 +267,16 @@ class StorageSource(db.Model):
 class Library(db.Model):
     """逻辑资源库。"""
     __tablename__ = 'libraries'
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = (
+        db.UniqueConstraint('account_id', 'name', name='uq_libraries_account_name'),
+        db.UniqueConstraint('account_id', 'slug', name='uq_libraries_account_slug'),
+        {'extend_existing': True},
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, unique=True)
-    slug = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    slug = db.Column(db.String(100), nullable=False, index=True)
     description = db.Column(db.Text)
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     sort_order = db.Column(db.Integer, default=0, nullable=False)
@@ -206,6 +290,7 @@ class Library(db.Model):
     def to_dict(self, include_sources=False):
         data = {
             "id": self.id,
+            "account_id": self.account_id,
             "name": self.name,
             "slug": self.slug,
             "description": self.description,
@@ -224,11 +309,12 @@ class LibrarySource(db.Model):
     """Library 与 StorageSource 的绑定关系。"""
     __tablename__ = 'library_sources'
     __table_args__ = (
-        db.UniqueConstraint('library_id', 'source_id', 'root_path', name='uq_library_source_root'),
+        db.UniqueConstraint('account_id', 'library_id', 'source_id', 'root_path', name='uq_library_source_account_root'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     library_id = db.Column(db.Integer, db.ForeignKey('libraries.id'), nullable=False, index=True)
     source_id = db.Column(db.Integer, db.ForeignKey('storage_sources.id'), nullable=False, index=True)
     root_path = db.Column(db.String(500), default='/', nullable=False)
@@ -244,6 +330,7 @@ class LibrarySource(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "account_id": self.account_id,
             "library_id": self.library_id,
             "source_id": self.source_id,
             "root_path": self.root_path,
@@ -261,11 +348,12 @@ class LibraryMovieMembership(db.Model):
     """Library 与 Movie 的显式包含/排除规则。"""
     __tablename__ = 'library_movie_memberships'
     __table_args__ = (
-        db.UniqueConstraint('library_id', 'movie_id', name='uq_library_movie_membership'),
+        db.UniqueConstraint('account_id', 'library_id', 'movie_id', name='uq_library_movie_account_membership'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     library_id = db.Column(db.Integer, db.ForeignKey('libraries.id'), nullable=False, index=True)
     movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), nullable=False, index=True)
     mode = db.Column(db.String(20), nullable=False, default='include')
@@ -278,6 +366,7 @@ class LibraryMovieMembership(db.Model):
     def to_dict(self, include_movie=True):
         data = {
             "id": self.id,
+            "account_id": self.account_id,
             "library_id": self.library_id,
             "movie_id": self.movie_id,
             "mode": self.mode,
@@ -312,6 +401,12 @@ class User(db.Model):
     session_version = db.Column(db.Integer, nullable=False, default=1)
 
     library_rules = db.relationship('UserLibraryRule', backref='user', lazy='dynamic', cascade="all, delete-orphan")
+    account_memberships = db.relationship(
+        'AccountMembership',
+        back_populates='user',
+        lazy='dynamic',
+        cascade="all, delete-orphan",
+    )
 
     @classmethod
     def normalize_role(cls, value):
@@ -346,7 +441,7 @@ class UserLibraryRule(db.Model):
     """Per-user library visibility allow/deny rule."""
     __tablename__ = 'user_library_rules'
     __table_args__ = (
-        db.UniqueConstraint('user_id', 'library_id', name='uq_user_library_rule'),
+        db.UniqueConstraint('account_id', 'user_id', 'library_id', name='uq_user_library_rule_account'),
         {'extend_existing': True},
     )
 
@@ -355,6 +450,7 @@ class UserLibraryRule(db.Model):
     MODES = {MODE_ALLOW, MODE_DENY}
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     library_id = db.Column(db.Integer, db.ForeignKey('libraries.id'), nullable=False, index=True)
     mode = db.Column(db.String(20), nullable=False)
@@ -371,6 +467,7 @@ class UserLibraryRule(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "account_id": self.account_id,
             "user_id": self.user_id,
             "library_id": self.library_id,
             "mode": self.mode,
@@ -386,6 +483,7 @@ class AuditLog(db.Model):
     __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     actor_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     actor_username = db.Column(db.String(80))
     actor_role = db.Column(db.String(20))
@@ -405,6 +503,7 @@ class AuditLog(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "account_id": self.account_id,
             "actor_user_id": self.actor_user_id,
             "actor_username": self.actor_username,
             "actor_role": self.actor_role,
@@ -422,11 +521,15 @@ class AuditLog(db.Model):
 
 
 class HomepageSetting(db.Model):
-    """首页门户配置，当前按单例记录维护。"""
+    """首页门户配置，每个账号空间维护一份。"""
     __tablename__ = 'homepage_settings'
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = (
+        db.UniqueConstraint('account_id', name='uq_homepage_settings_account'),
+        {'extend_existing': True},
+    )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     hero_movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), nullable=True)
     sections = db.Column(JSON, nullable=False, default=list)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -437,6 +540,7 @@ class HomepageSetting(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "account_id": self.account_id,
             "hero_movie_id": self.hero_movie_id,
             "sections": self.sections or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -447,7 +551,10 @@ class HomepageSetting(db.Model):
 class Movie(db.Model):
     """影视条目模型，负责基础序列化；列表/详情的附加态由调用方注入。"""
     __tablename__ = 'movies'
-    __table_args__ = {'extend_existing': True}
+    __table_args__ = (
+        db.UniqueConstraint('account_id', 'tmdb_id', name='uq_movies_account_tmdb'),
+        {'extend_existing': True},
+    )
 
     MANUAL_SOURCE_MOVIE = "LOCAL_MANUAL_MOVIE"
     MANUAL_SOURCE_TV = "LOCAL_MANUAL_TV"
@@ -480,7 +587,8 @@ class Movie(db.Model):
     QUALITY_BADGE_HD = "HD"
 
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
-    tmdb_id = db.Column(db.String(50), unique=True, index=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
+    tmdb_id = db.Column(db.String(50), index=True)
 
     title = db.Column(db.String(255), nullable=False, index=True)
     original_title = db.Column(db.String(255))
@@ -1271,6 +1379,7 @@ class History(db.Model):
     __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=True)
     file_path = db.Column(db.String(500))  # Legacy
@@ -1293,11 +1402,12 @@ class UserAchievement(db.Model):
     """
     __tablename__ = 'user_achievements'
     __table_args__ = (
-        db.UniqueConstraint('scope_key', 'achievement_id', name='uq_user_achievement_scope_id'),
+        db.UniqueConstraint('account_id', 'scope_key', 'achievement_id', name='uq_user_achievement_account_scope_id'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     scope_key = db.Column(db.String(80), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     achievement_id = db.Column(db.String(80), nullable=False, index=True)
@@ -1322,11 +1432,12 @@ class UserFavorite(db.Model):
     """Per-user favorite movie relation backing the virtual Favorites library."""
     __tablename__ = 'user_favorites'
     __table_args__ = (
-        db.UniqueConstraint('scope_key', 'movie_id', name='uq_user_favorite_scope_movie'),
+        db.UniqueConstraint('account_id', 'scope_key', 'movie_id', name='uq_user_favorite_account_scope_movie'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     scope_key = db.Column(db.String(80), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), nullable=False, index=True)
@@ -1338,6 +1449,7 @@ class UserFavorite(db.Model):
     def to_dict(self, include_movie=False):
         data = {
             "id": self.id,
+            "account_id": self.account_id,
             "movie_id": self.movie_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
@@ -1350,11 +1462,12 @@ class UserVaultSecret(db.Model):
     """Per-admin vault PIN state for the Favorites virtual library."""
     __tablename__ = 'user_vault_secrets'
     __table_args__ = (
-        db.UniqueConstraint('scope_key', name='uq_user_vault_secret_scope'),
+        db.UniqueConstraint('account_id', 'scope_key', name='uq_user_vault_secret_account_scope'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     scope_key = db.Column(db.String(80), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     pin_hash = db.Column(db.String(255), nullable=False)
@@ -1375,6 +1488,7 @@ class MaintenanceJob(db.Model):
     __table_args__ = {'extend_existing': True}
 
     id = db.Column(db.String(36), primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     type = db.Column(db.String(80), nullable=False, index=True)
     title = db.Column(db.String(255))
     status = db.Column(db.String(30), nullable=False, index=True)
@@ -1394,6 +1508,7 @@ class MaintenanceJob(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "account_id": self.account_id,
             "type": self.type,
             "title": self.title,
             "status": self.status,
@@ -1413,6 +1528,7 @@ class MovieMetadataLock(db.Model):
     __table_args__ = {'extend_existing': True}
 
     movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     locked_fields = db.Column(JSON, default=list)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1452,6 +1568,7 @@ class MovieSeasonMetadata(db.Model):
 
     movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), primary_key=True)
     season = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     title = db.Column(db.String(255))
     overview = db.Column(db.Text)
     air_date = db.Column(db.String(10))
@@ -1483,6 +1600,7 @@ class MovieSeasonMetadata(db.Model):
 
     def to_dict(self):
         return {
+            "account_id": self.account_id,
             "season": self.season,
             "title": self.title,
             "display_title": self.get_display_title(),
@@ -1505,11 +1623,12 @@ class ResourceSubtitle(db.Model):
     """
     __tablename__ = 'resource_subtitles'
     __table_args__ = (
-        db.UniqueConstraint('resource_id', 'candidate_id', name='uq_resource_subtitle_candidate'),
+        db.UniqueConstraint('account_id', 'resource_id', 'candidate_id', name='uq_resource_subtitle_account_candidate'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=False, index=True)
     source = db.Column(db.String(50), nullable=False, default='online')
     provider_id = db.Column(db.String(50))
@@ -1531,11 +1650,12 @@ class ResourceSubtitleSetting(db.Model):
     """Per-resource subtitle display preferences for the web player."""
     __tablename__ = 'resource_subtitle_settings'
     __table_args__ = (
-        db.UniqueConstraint('resource_id', name='uq_resource_subtitle_settings_resource'),
+        db.UniqueConstraint('account_id', 'resource_id', name='uq_resource_subtitle_settings_account_resource'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=False, index=True)
     zh_size = db.Column(db.Integer, nullable=False, default=28)
     zh_color = db.Column(db.String(16), nullable=False, default="#FFFFFF")
@@ -1551,11 +1671,12 @@ class UserSubtitleSetting(db.Model):
     """Per-user subtitle display preferences for a media resource."""
     __tablename__ = 'user_subtitle_settings'
     __table_args__ = (
-        db.UniqueConstraint('user_id', 'resource_id', name='uq_user_subtitle_settings_user_resource'),
+        db.UniqueConstraint('account_id', 'user_id', 'resource_id', name='uq_user_subtitle_settings_account_user_resource'),
         {'extend_existing': True},
     )
 
     id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     resource_id = db.Column(db.String(36), db.ForeignKey('media_resources.id'), nullable=False, index=True)
     zh_size = db.Column(db.Integer, nullable=False, default=28)
@@ -1575,6 +1696,7 @@ class MediaResource(db.Model):
     __tablename__ = 'media_resources'
     __table_args__ = (
         db.UniqueConstraint('source_id', 'path', name='uq_media_resources_source_path'),
+        db.UniqueConstraint('account_id', 'source_id', 'path', name='uq_media_resources_account_source_path'),
         {'extend_existing': True},
     )
 
@@ -1683,6 +1805,7 @@ class MediaResource(db.Model):
     }
 
     id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
     movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), nullable=False)
 
     # 新增: 关联存储源
@@ -2237,3 +2360,27 @@ class MediaResource(db.Model):
                 "edit_context": edit_context,
             }
         }
+
+
+ACCOUNT_SCOPED_MODELS = (
+    AccountMembership,
+    StorageSource,
+    Library,
+    LibrarySource,
+    LibraryMovieMembership,
+    UserLibraryRule,
+    AuditLog,
+    HomepageSetting,
+    Movie,
+    History,
+    UserAchievement,
+    UserFavorite,
+    UserVaultSecret,
+    MaintenanceJob,
+    MovieMetadataLock,
+    MovieSeasonMetadata,
+    ResourceSubtitle,
+    ResourceSubtitleSetting,
+    UserSubtitleSetting,
+    MediaResource,
+)

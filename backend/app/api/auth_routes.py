@@ -1,13 +1,22 @@
 from datetime import datetime
 
-from flask import Blueprint, g, request, session
+from flask import Blueprint, current_app, g, request, session
 
 from backend.app.api.helpers import get_json_object_payload
 from backend.app.extensions import db
 from backend.app.models import AuditLog, User
-from backend.app.security import get_current_auth_role, get_current_user, is_user_management_enabled
+from backend.app.security import (
+    get_current_account,
+    get_current_account_role,
+    get_current_auth_role,
+    get_current_user,
+    is_hosted_managed_mode,
+    is_user_management_enabled,
+)
+from backend.app.services.accounts import create_account_for_user
 from backend.app.services.audit import record_audit
 from backend.app.services.login_rate_limit import check_login_rate_limit, clear_login_failures, record_login_failure
+from backend.app.services.playback_tickets import issue_admin_playback_ticket, issue_playback_ticket_for_user
 from backend.app.services.user_access import build_user_visibility_preview, visible_library_ids_for_current_user
 from backend.app.services.users import (
     UserValidationError,
@@ -43,17 +52,27 @@ def _auth_summary(user=None):
     role = get_current_auth_role() or (user.role if user else None)
     auth_via = getattr(g, "auth_via", None) or ("session" if user else None)
     authenticated = bool(role)
+    current_account = get_current_account()
+    account_role = get_current_account_role()
+    is_account_owner = account_role == "owner"
+    can_manage_server_config = role == User.ROLE_ADMIN and not is_hosted_managed_mode()
     data = {
         "user_management_enabled": is_user_management_enabled(),
+        "hosted_managed_mode": is_hosted_managed_mode(),
         "authenticated": authenticated,
         "role": role,
         "auth_via": auth_via,
+        "current_account": current_account.to_dict() if current_account else None,
+        "account_role": account_role,
         "user": user.to_dict(include_rules=True) if user else None,
         "permissions": {
             "admin": role == User.ROLE_ADMIN,
             "read_catalog": authenticated,
-            "manage_catalog": role == User.ROLE_ADMIN,
+            "manage_catalog": role == User.ROLE_ADMIN or is_account_owner,
+            "manage_storage": role == User.ROLE_ADMIN or is_account_owner,
             "manage_users": role == User.ROLE_ADMIN,
+            "manage_account_users": False,
+            "manage_server_config": can_manage_server_config,
             "personal_history": authenticated,
             "personal_favorites": authenticated,
             "personal_vault": authenticated,
@@ -123,6 +142,10 @@ def login():
     clear_login_failures(username)
     _set_login_session(user)
     user.last_login_at = datetime.utcnow()
+    if is_user_management_enabled():
+        from backend.app.services.accounts import resolve_or_provision_membership, set_request_account
+
+        set_request_account(resolve_or_provision_membership(user))
     record_audit(
         "auth.login",
         target_type="user",
@@ -133,6 +156,59 @@ def login():
     )
     db.session.commit()
     return api_response(data=_auth_summary(user), msg="Logged in")
+
+
+@auth_bp.route('/auth/register', methods=['POST'])
+def register():
+    if not current_app.config.get("REGISTRATION_ENABLED"):
+        return api_error(code=40341, msg="Registration is disabled", http_status=403)
+
+    payload = _json_payload()
+    try:
+        username = normalize_username(payload.get("username"))
+        password = normalize_password(payload.get("password"))
+    except UserValidationError as e:
+        return api_error(code=e.code, msg=e.message, http_status=e.http_status)
+
+    if User.query.filter_by(username=username).first():
+        return api_error(code=40910, msg="username already exists", http_status=409)
+
+    display_name = str(payload.get("display_name") or username).strip() or username
+    user = User(
+        username=username,
+        display_name=display_name,
+        role=User.ROLE_USER,
+        is_enabled=True,
+    )
+    try:
+        set_user_password(user, password)
+        db.session.add(user)
+        db.session.flush()
+        membership = create_account_for_user(
+            user,
+            account_name=payload.get("account_name") or display_name,
+            account_slug=payload.get("account_slug") or username,
+        )
+        db.session.commit()
+        _set_login_session(user)
+        from backend.app.services.accounts import set_request_account
+
+        set_request_account(membership)
+        record_audit(
+            "auth.register",
+            target_type="user",
+            target_id=user.id,
+            target_username=user.username,
+            actor=user,
+            commit=True,
+        )
+        return api_response(data=_auth_summary(user), msg="Registered", http_status=201)
+    except UserValidationError as e:
+        db.session.rollback()
+        return api_error(code=e.code, msg=e.message, http_status=e.http_status)
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 @auth_bp.route('/auth/logout', methods=['POST'])
@@ -155,6 +231,16 @@ def logout():
 def me():
     user = get_current_user()
     return api_response(data=_auth_summary(user), msg="current user")
+
+
+@auth_bp.route('/auth/playback-ticket', methods=['POST'])
+def create_playback_ticket():
+    user = get_current_user()
+    if user:
+        return api_response(data=issue_playback_ticket_for_user(user), msg="Playback ticket issued")
+    if get_current_auth_role() == User.ROLE_ADMIN:
+        return api_response(data=issue_admin_playback_ticket(), msg="Playback ticket issued")
+    return api_error(code=40100, msg="Authentication required", http_status=401)
 
 
 @auth_bp.route('/user/profile', methods=['GET'])

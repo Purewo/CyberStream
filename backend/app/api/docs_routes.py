@@ -90,6 +90,12 @@ DOCUMENTS = {
         "format": "markdown",
         "content_type": "text/markdown; charset=utf-8",
     },
+    "frontend-hosted-backend": {
+        "title": "Frontend Hosted Backend Integration",
+        "path": "docs/FRONTEND_HOSTED_BACKEND_INTEGRATION.md",
+        "format": "markdown",
+        "content_type": "text/markdown; charset=utf-8",
+    },
     "frontend-audio-transcode": {
         "title": "Frontend Audio Transcode Guide",
         "path": "docs/FRONTEND_AUDIO_TRANSCODE_GUIDE.md",

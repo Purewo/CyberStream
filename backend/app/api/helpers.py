@@ -2,6 +2,7 @@ from flask import request
 
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource
+from backend.app.services.accounts import get_account_scoped
 from backend.app.services.user_access import can_current_user_access_movie_id, current_user_id_for_personal_data
 
 
@@ -165,7 +166,7 @@ def _build_progress_info(progress, duration):
 
 def build_history_item(history_record):
     """将 History 记录组装为接口返回项；无效关联返回 None。"""
-    resource = db.session.get(MediaResource, history_record.resource_id) if history_record.resource_id else None
+    resource = get_account_scoped(MediaResource, history_record.resource_id) if history_record.resource_id else None
     if not resource or not resource.movie:
         return None
     if not can_current_user_access_movie_id(resource.movie_id):

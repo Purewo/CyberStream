@@ -62,7 +62,7 @@ def supercdn_assets_enabled() -> bool:
 
 
 def supercdn_serve_asset_urls_enabled() -> bool:
-    return _truthy(_config_value("SUPERCDN_SERVE_ASSET_URLS", True))
+    return supercdn_assets_enabled() and _truthy(_config_value("SUPERCDN_SERVE_ASSET_URLS", True))
 
 
 def supercdn_auto_upload_images_enabled() -> bool:

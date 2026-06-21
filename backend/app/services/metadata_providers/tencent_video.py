@@ -117,7 +117,7 @@ class TencentVideoMetadataProvider(MetadataProviderBase):
         return getattr(
             config,
             "TENCENT_VIDEO_USER_AGENT",
-            "Purewo/CyberStream/1.21.0 metadata manual matcher",
+            "Purewo/CyberStream/1.22.0 metadata manual matcher",
         )
 
     def _headers(self):

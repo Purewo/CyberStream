@@ -14,13 +14,15 @@ from backend.app.extensions import db
 
 
 class ApiAuthTests(unittest.TestCase):
-    def create_client(self, token="", enabled=False):
-        app = create_app({
+    def create_client(self, token="", enabled=False, **overrides):
+        config = {
             "TESTING": True,
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "API_TOKEN": token,
             "AUTH_ENABLED": enabled,
-        })
+        }
+        config.update(overrides)
+        app = create_app(config)
         ctx = app.app_context()
         ctx.push()
         db.drop_all()
@@ -78,6 +80,35 @@ class ApiAuthTests(unittest.TestCase):
 
         self.assertEqual(401, missing.status_code)
         self.assertEqual(200, valid.status_code)
+
+    def test_hosted_managed_mode_blocks_locked_writes_after_api_token_auth(self):
+        client = self.create_client(token="secret-token", enabled=True, HOSTED_MANAGED_MODE=True)
+
+        missing = client.put("/api/v1/system/tmdb-config", json={})
+        invalid = client.put(
+            "/api/v1/system/tmdb-config",
+            json={},
+            headers={"Authorization": "Bearer wrong"},
+        )
+        valid = client.put(
+            "/api/v1/system/tmdb-config",
+            json={},
+            headers={"Authorization": "Bearer secret-token"},
+        )
+
+        self.assertEqual(401, missing.status_code)
+        self.assertEqual(403, invalid.status_code)
+        self.assertEqual(40300, invalid.get_json()["code"])
+        self.assertEqual(403, valid.status_code)
+        self.assertEqual(40390, valid.get_json()["code"])
+
+    def test_hosted_managed_mode_blocks_locked_writes_when_auth_is_disabled(self):
+        client = self.create_client(HOSTED_MANAGED_MODE=True)
+
+        response = client.put("/api/v1/system/tmdb-config", json={})
+
+        self.assertEqual(403, response.status_code)
+        self.assertEqual(40390, response.get_json()["code"])
 
     def test_tmdb_config_check_is_not_public_when_api_token_auth_is_enabled(self):
         client = self.create_client(token="secret-token", enabled=True)

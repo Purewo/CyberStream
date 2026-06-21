@@ -7,6 +7,7 @@ from datetime import datetime
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource, Movie, ResourceSubtitle, StorageSource
 from backend.app.providers.factory import provider_factory
+from backend.app.services.accounts import get_account_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -663,7 +664,7 @@ def _build_apply_action(issue_code, resource_id, primary_resource_id=None):
 
 
 def _build_remove_resource_plan_item(issue_code, resource_id, primary_resource_id=None):
-    resource = db.session.get(MediaResource, resource_id)
+    resource = get_account_scoped(MediaResource, resource_id)
     ok, skip_reason, safety = _evaluate_remove_resource_safety(resource, primary_resource_id=primary_resource_id)
     action = _build_apply_action(issue_code, resource_id, primary_resource_id=primary_resource_id)
     item = {
@@ -781,7 +782,7 @@ def build_resource_governance_plan(payload=None):
                     continue
                 primary_resource_id = resource_ids[0]
                 for resource_id in resource_ids[1:]:
-                    resource = db.session.get(MediaResource, resource_id)
+                    resource = get_account_scoped(MediaResource, resource_id)
                     if not _resource_matches_selection(resource, selection["resource_ids"], selection["movie_ids"]):
                         continue
                     if resource_id in planned_resource_ids:
@@ -799,7 +800,7 @@ def build_resource_governance_plan(payload=None):
                 resource_id = resource_summary.get("resource_id")
                 if not resource_id:
                     continue
-                resource = db.session.get(MediaResource, resource_id)
+                resource = get_account_scoped(MediaResource, resource_id)
                 if not _resource_matches_selection(resource, selection["resource_ids"], selection["movie_ids"]):
                     continue
                 if resource_id in planned_resource_ids:
@@ -1050,18 +1051,18 @@ def _evaluate_restore_snapshot(snapshot):
         "source_path_available": True,
     }
 
-    movie = db.session.get(Movie, movie_id)
+    movie = get_account_scoped(Movie, movie_id)
     safety["movie_exists"] = movie is not None
     if not movie:
         return False, "movie_not_found", safety
 
     if source_id is not None:
-        source = db.session.get(StorageSource, source_id)
+        source = get_account_scoped(StorageSource, source_id)
         safety["source_exists"] = source is not None
         if not source:
             return False, "source_not_found", safety
 
-    existing_resource = db.session.get(MediaResource, resource_id)
+    existing_resource = get_account_scoped(MediaResource, resource_id)
     safety["resource_exists"] = existing_resource is not None
     if existing_resource:
         return False, "resource_already_exists", safety
@@ -1234,7 +1235,7 @@ def execute_resource_governance_restore_actions(payload, progress_callback=None)
 
 
 def _execute_remove_resource_action(action):
-    resource = db.session.get(MediaResource, action["resource_id"])
+    resource = get_account_scoped(MediaResource, action["resource_id"])
     resource_summary = _resource_summary(resource) if resource else None
     restore_snapshot = _resource_restore_snapshot(resource) if resource else None
     ok, skip_reason, safety = _evaluate_remove_resource_safety(resource, primary_resource_id=action.get("primary_resource_id"))

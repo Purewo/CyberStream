@@ -20,6 +20,7 @@ from backend.app.models import (
     UserFavorite,
     UserSubtitleSetting,
 )
+from backend.app.services.accounts import get_account_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -672,7 +673,7 @@ class MovieDatabaseAdapter:
         :param source_id: 存储源ID
         :param keep_metadata: 是否保留元数据。False=级联删除(默认), True=解除关联但不删电影
         """
-        source = db.session.get(StorageSource, source_id)
+        source = get_account_scoped(StorageSource, source_id)
         if not source:
             return False, "Source not found"
 
@@ -718,7 +719,7 @@ class MovieDatabaseAdapter:
         return StorageSource.query.all()
 
     def get_source_by_id(self, sid):
-        return db.session.get(StorageSource, sid)
+        return get_account_scoped(StorageSource, sid)
 
 
 scanner_adapter = MovieDatabaseAdapter()

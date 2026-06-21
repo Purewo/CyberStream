@@ -55,6 +55,7 @@ from backend.app.services.media_path_cleaner import MediaPathCleaner
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.metadata_scraper import ScrapeContext, metadata_scraper
 from backend.app.services.scanner import scanner_engine
+from backend.app.services.accounts import account_scope, get_account_scoped
 from backend.app.services.review_taxonomy import build_review_taxonomy
 from backend.app.services.resource_governance import (
     ResourceGovernanceValidationError,
@@ -73,6 +74,7 @@ from backend.app.services.user_access import clear_user_access_cache
 from backend.app.services.tmdb import scraper
 from backend.app.storage.source_registry import get_source_capabilities
 from backend.app.utils.genres import normalize_genres
+from backend.app.security import get_current_account_id
 from backend.app.utils.response import api_error, api_response
 
 logger = logging.getLogger(__name__)
@@ -924,62 +926,63 @@ def _build_movie_resource_sync_targets(movie, options):
     }
 
 
-def _movie_resource_sync_background_task(app, movie_id, movie_title, targets, options):
+def _movie_resource_sync_background_task(app, movie_id, movie_title, targets, options, account_id=None):
     with app.app_context():
-        session_started = False
-        try:
-            scanner_engine._begin_scan_session(current_source=f"{movie_title or movie_id}:sync")
-            session_started = True
-            app_instance = current_app._get_current_object()
+        with account_scope(account_id):
+            session_started = False
+            try:
+                scanner_engine._begin_scan_session(current_source=f"{movie_title or movie_id}:sync")
+                session_started = True
+                app_instance = current_app._get_current_object()
 
-            for target in targets:
-                source = db.session.get(StorageSource, target["source_id"])
-                if not source:
-                    continue
+                for target in targets:
+                    source = get_account_scoped(StorageSource, target["source_id"])
+                    if not source:
+                        continue
 
-                provider = None
-                if options["refresh"] and target["refresh_supported"]:
-                    try:
-                        provider = provider_factory.get_provider(source)
-                    except Exception as e:
-                        logger.warning(
-                            "Movie resource sync refresh provider unavailable movie_id=%s source_id=%s error=%s",
-                            movie_id,
-                            source.id,
-                            e,
+                    provider = None
+                    if options["refresh"] and target["refresh_supported"]:
+                        try:
+                            provider = provider_factory.get_provider(source)
+                        except Exception as e:
+                            logger.warning(
+                                "Movie resource sync refresh provider unavailable movie_id=%s source_id=%s error=%s",
+                                movie_id,
+                                source.id,
+                                e,
+                            )
+                            scanner_engine._record_indexing_directory_skip('/', e)
+
+                        if provider:
+                            for root_path in target["root_paths"]:
+                                try:
+                                    provider.refresh_directory(root_path)
+                                except Exception as e:
+                                    logger.warning(
+                                        "Movie resource sync refresh failed movie_id=%s source_id=%s root_path=%s error=%s",
+                                        movie_id,
+                                        source.id,
+                                        root_path or '/',
+                                        e,
+                                    )
+                                    scanner_engine._record_indexing_directory_skip(root_path, e)
+
+                    for root_path in target["root_paths"]:
+                        scanner_engine.scan_source(
+                            source,
+                            app_instance=app_instance,
+                            root_path=root_path,
+                            content_type=options["content_type"],
+                            scrape_enabled=options["scrape_enabled"],
+                            scraper_policy=options["scraper_policy"],
                         )
-                        scanner_engine._record_indexing_directory_skip('/', e)
-
-                    if provider:
-                        for root_path in target["root_paths"]:
-                            try:
-                                provider.refresh_directory(root_path)
-                            except Exception as e:
-                                logger.warning(
-                                    "Movie resource sync refresh failed movie_id=%s source_id=%s root_path=%s error=%s",
-                                    movie_id,
-                                    source.id,
-                                    root_path or '/',
-                                    e,
-                                )
-                                scanner_engine._record_indexing_directory_skip(root_path, e)
-
-                for root_path in target["root_paths"]:
-                    scanner_engine.scan_source(
-                        source,
-                        app_instance=app_instance,
-                        root_path=root_path,
-                        content_type=options["content_type"],
-                        scrape_enabled=options["scrape_enabled"],
-                        scraper_policy=options["scraper_policy"],
-                    )
-        except Exception as e:
-            logger.exception("Movie resource sync task failed movie_id=%s error=%s", movie_id, e)
-        finally:
-            scanner_engine.last_scan_time = time.time()
-            if session_started:
-                scanner_engine._finish_scan_session()
-            scanner_engine.finish_scan()
+            except Exception as e:
+                logger.exception("Movie resource sync task failed movie_id=%s error=%s", movie_id, e)
+            finally:
+                scanner_engine.last_scan_time = time.time()
+                if session_started:
+                    scanner_engine._finish_scan_session()
+                scanner_engine.finish_scan()
 
 
 def _normalize_image_selection_payload(payload):
@@ -1042,7 +1045,7 @@ def _select_image_movies(movie_ids, limit):
     missing_movie_ids = []
     if movie_ids is not None:
         for movie_id in movie_ids[:limit]:
-            movie = db.session.get(Movie, movie_id)
+            movie = get_account_scoped(Movie, movie_id)
             if movie:
                 movies.append(movie)
             else:
@@ -1383,7 +1386,7 @@ def _attach_resources_to_movie(movie, resource_items, media_type, preserve_episo
     for source_movie_id in sorted(source_movie_ids):
         if not source_movie_id or source_movie_id == movie.id:
             continue
-        source_movie = db.session.get(Movie, source_movie_id)
+        source_movie = get_account_scoped(Movie, source_movie_id)
         if not source_movie:
             continue
         if source_movie.resources.count() > 0:
@@ -3354,7 +3357,7 @@ def _publish_pending_review_movies(movie_ids, *, force=False, note=None):
     failed = []
 
     for movie_id in movie_ids:
-        movie = db.session.get(Movie, movie_id)
+        movie = get_account_scoped(Movie, movie_id)
         if not movie:
             failed.append({"movie_id": movie_id, "reason": "not_found"})
             continue
@@ -3570,7 +3573,7 @@ def _execute_metadata_batch_rescrape(items, progress_callback=None):
         if not isinstance(raw_movie_id, str) or not raw_movie_id.strip():
             raise MetadataValidationError(code=40024, msg=f"Invalid item at index {index}: movie id required")
 
-        movie = db.session.get(Movie, raw_movie_id.strip())
+        movie = get_account_scoped(Movie, raw_movie_id.strip())
         if not movie:
             results.append(_build_metadata_missing_batch_result(raw_movie_id.strip()))
             continue
@@ -3687,7 +3690,7 @@ def _select_metadata_reidentify_movies(movie_ids=None, issue_codes=None, limit=2
             if movie_id in seen:
                 continue
             seen.add(movie_id)
-            movie = db.session.get(Movie, movie_id)
+            movie = get_account_scoped(Movie, movie_id)
             if movie:
                 movies.append(movie)
             else:
@@ -4309,7 +4312,7 @@ def get_recommendations():
 
 @library_bp.route('/movies/<uuid:id>/recommendations', methods=['GET'])
 def get_movie_context_recommendations(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -4317,7 +4320,7 @@ def get_movie_context_recommendations(id):
     preferred_movie_ids = None
     library_id = request.args.get('library_id', type=int)
     if library_id is not None:
-        library = db.session.get(Library, library_id)
+        library = get_account_scoped(Library, library_id)
         if not library:
             return api_error(code=40410, msg="Library not found", http_status=404)
         preferred_movie_ids = build_library_movie_id_context(library)["final_ids"]
@@ -4546,7 +4549,7 @@ def list_movies():
 
 @library_bp.route('/movies/<uuid:id>', methods=['GET'])
 def get_movie_detail(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -4556,7 +4559,7 @@ def get_movie_detail(id):
 
 @library_bp.route('/movies/<uuid:id>/catalog-visibility', methods=['PATCH'])
 def update_movie_catalog_visibility(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -4592,7 +4595,7 @@ def update_movie_catalog_visibility(id):
 
 @library_bp.route('/movies/<uuid:id>/images/status', methods=['GET'])
 def get_movie_image_asset_status(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -4791,7 +4794,7 @@ def refresh_movie_images():
 
 @library_bp.route('/movies/<uuid:id>/images/<kind>', methods=['GET'])
 def get_movie_image_asset(id, kind):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -4826,7 +4829,7 @@ def get_movie_image_asset(id, kind):
 
 @library_bp.route('/movies/<uuid:id>/images/<kind>', methods=['DELETE'])
 def clear_movie_image_asset(id, kind):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5028,7 +5031,7 @@ def start_resource_governance_restore_job():
 
 @library_bp.route('/movies/<uuid:id>/resources', methods=['GET'])
 def get_movie_resources(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5042,7 +5045,7 @@ def get_movie_resources(id):
 
 @library_bp.route('/movies/<uuid:id>/resources/sync', methods=['POST'])
 def sync_movie_resources(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5062,7 +5065,7 @@ def sync_movie_resources(id):
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_movie_resource_sync_background_task,
-        args=(app, movie.id, movie.title, targets, options),
+        args=(app, movie.id, movie.title, targets, options, get_current_account_id()),
     )
     thread.start()
 
@@ -5087,7 +5090,7 @@ def sync_movie_resources(id):
 
 @library_bp.route('/movies/<uuid:id>/resources/attach', methods=['POST'])
 def attach_movie_resources(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5167,7 +5170,7 @@ def attach_movie_resources(id):
 
 @library_bp.route('/movies/<uuid:id>/seasons', methods=['GET'])
 def get_movie_seasons(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5180,7 +5183,7 @@ def get_movie_seasons(id):
 
 @library_bp.route('/movies/<uuid:id>/episode-diagnostics', methods=['GET'])
 def get_movie_episode_diagnostics(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5190,7 +5193,7 @@ def get_movie_episode_diagnostics(id):
 @library_bp.route('/movies/<uuid:id>', methods=['PATCH'])
 def update_movie_detail(id):
     """手动修改电影元数据。"""
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5246,7 +5249,7 @@ def update_movie_detail(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/refresh', methods=['POST'])
 def refresh_movie_metadata(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5328,7 +5331,7 @@ def refresh_movie_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/re-scrape', methods=['POST'])
 def re_scrape_movie_metadata(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5459,7 +5462,7 @@ def plan_batch_re_scrape_movie_metadata():
 
 @library_bp.route('/movies/<uuid:id>/metadata/preview', methods=['POST'])
 def preview_movie_metadata_pipeline(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5510,7 +5513,7 @@ def preview_movie_metadata_pipeline(id):
 
 @library_bp.route('/movies/<uuid:id>/metadata/search', methods=['GET'])
 def search_movie_metadata_candidates(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5574,7 +5577,7 @@ def search_movie_metadata_candidates(id):
 
 @library_bp.route('/resources/<uuid:id>/metadata', methods=['PATCH'])
 def update_resource_metadata(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -5606,7 +5609,7 @@ def update_resource_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/resources/metadata', methods=['PATCH'])
 def update_movie_resources_metadata(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5672,7 +5675,7 @@ def update_movie_resources_metadata(id):
 
 @library_bp.route('/movies/<uuid:id>/seasons/<int:season>/metadata', methods=['PATCH'])
 def update_movie_season_metadata(id, season):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5718,7 +5721,7 @@ def update_movie_season_metadata(id, season):
 
 @library_bp.route('/movies/<uuid:id>/metadata/match', methods=['POST'])
 def match_movie_metadata(id):
-    movie = db.session.get(Movie, str(id))
+    movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
@@ -5818,7 +5821,7 @@ def match_movie_metadata(id):
         db.session.rollback()
         logger.exception("Match movie metadata integrity conflict movie_id=%s tmdb_id=%s error=%s", movie.id, tmdb_id, e)
         try:
-            source_movie = db.session.get(Movie, source_movie_id)
+            source_movie = get_account_scoped(Movie, source_movie_id)
             target_movie = Movie.query.filter(
                 Movie.tmdb_id == target_tmdb_id,
                 Movie.id != source_movie_id,

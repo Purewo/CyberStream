@@ -49,7 +49,7 @@ ss -ltnp | grep ':5004 '
 ```bash
 curl -i http://127.0.0.1:5004/
 curl -i http://127.0.0.1:5004/api/v1/health
-./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --expected-version 1.21.0 --expected-openapi-version 1.21.0-beta --min-storage-sources 1
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --expected-version 1.22.0 --expected-openapi-version 1.22.0-beta --min-storage-sources 1
 ```
 
 预期：
@@ -57,9 +57,9 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - 返回 JSON
 - `data.status = up`
 - `data.database.status = ok`
-- `data.version = 1.21.0`
-- 文档索引 app version = `1.21.0`
-- OpenAPI index version = `1.21.0-beta`
+- `data.version = 1.22.0`
+- 文档索引 app version = `1.22.0`
+- OpenAPI index version = `1.22.0-beta`
 - `/` 与 `/api/v1/health` 返回相同健康状态、版本和数据库状态
 - smoke check 返回 `OK auth_me`，说明前端启动认证态探测和未登录权限契约可用
 - smoke check 返回 `OK update_check`，说明官方客户端公开更新检查契约可用
@@ -108,8 +108,8 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 CYBER_BACKEND_SMOKE_USERNAME=<username> \
 CYBER_BACKEND_SMOKE_PASSWORD=<password> \
 ./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160 \
-  --expected-version 1.21.0 \
-  --expected-openapi-version 1.21.0-beta
+  --expected-version 1.22.0 \
+  --expected-openapi-version 1.22.0-beta
 ```
 
 预期：
@@ -283,8 +283,8 @@ curl -s http://127.0.0.1:5004/api/v1/metadata/providers
 ```bash
 ./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
   --openapi-module-json-check \
-  --expected-version 1.21.0 \
-  --expected-openapi-version 1.21.0-beta \
+  --expected-version 1.22.0 \
+  --expected-openapi-version 1.22.0-beta \
   --min-storage-sources 1 \
   --storage-health-check \
   --min-storage-health-checks 1 \
@@ -808,7 +808,39 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 
 ---
 
-## 8. 文档改动的最小验收
+## 8. 代托管多租户验收
+
+涉及 `CYBER_HOSTED_MANAGED_MODE`、注册、账号隔离、存储挂载、扫描和迁移时至少覆盖：
+
+- `POST /api/v1/auth/register` 创建普通 `users.role=user`，返回 `current_account` 和 `account_role=owner`
+- `GET /api/v1/auth/me` 返回 `permissions.manage_storage=true`、`permissions.manage_catalog=true`、`permissions.manage_server_config=false`
+- A/B 两个账号互相看不到 storage sources、libraries、movies、resources、history、favorites、subtitle settings
+- 直接拿另一个账号的 source/movie/resource id 请求详情、播放、扫描或删除时返回 404/403，不泄露存在性
+- 同一 `tmdb_id` 可在两个账号下分别存在
+- SQLite 旧库不能保留全局 `movies.tmdb_id` 唯一索引；应存在 `uq_movies_account_tmdb(account_id, tmdb_id)`
+- 新注册账号自动拥有默认片库和首页配置
+- 新建账号内 storage source 会绑定默认片库
+- 扫描线程和后台任务保留 account context，`maintenance_jobs.account_id` 不为空，不把新用户扫描/治理任务写进 `pureworld`
+- 托管 AList/OpenList 新 mount path 带 `/cyberstream/accounts/{account_id}/sources/{source_id}` 前缀；百度网盘 OAuth callback 这种公开回调也不能丢失 account 前缀
+- `GET /api/v1/system/tmdb-config/check` 只暴露 token 池状态，不返回 token 明文
+- `PUT /api/v1/system/tmdb-config`、图片预热/刷新/清理在 hosted 模式下仍返回 `40390`
+- `GET /api/v1/openapi.json` 返回 `1.22.0-beta`，并包含注册、账号字段和 hosted storage flow 说明
+
+建议自动化命令：
+
+```bash
+.venv/bin/python -m pytest -q \
+  tests/test_api_auth.py \
+  tests/test_user_management.py \
+  tests/test_database_config.py \
+  tests/test_hosted_multitenant_migration.py \
+  tests/test_managed_baidunetdisk_routes.py \
+  tests/test_background_jobs.py \
+  tests/test_docs_routes.py \
+  tests/test_openapi_contract.py
+```
+
+## 9. 文档改动的最小验收
 
 如果本次只修改文档或注释，至少检查：
 
@@ -824,11 +856,11 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 .venv/bin/python -m pytest -q
 ```
 
-2026-06-07 维护基线：`772 passed, 9 skipped, 16 subtests passed`。
+2026-06-14 代托管多租户基线：`812 passed, 9 skipped, 16 subtests passed`。
 
 ---
 
-## 9. 1.16.0 收口验收基线
+## 10. 1.16.0 收口验收基线
 
 截至 2026-04-25，`1.16.0` 已作为稳定联调基线收口，最后确认项：
 
@@ -840,11 +872,11 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 - 资源库分页接口 `GET /api/v1/libraries/1/movies?page=1&page_size=1` 返回 `200`，包含 `pagination`
 - Avatar 资源接口已验证可返回 `UHD Blu-ray Remux`、`HDR10`、`Dolby TrueHD 7.1 Atmos`、`HEVC` 等技术字段
 
-该基线作为历史回归参考保留。当前主干版本为 `1.21.0`，发布前仍应优先执行本清单中的健康检查、OpenAPI 校验与全量 unittest。
+该基线作为历史回归参考保留。当前主干版本为 `1.22.0`，发布前仍应优先执行本清单中的健康检查、OpenAPI 校验与全量 unittest。
 
 ---
 
-## 10. 每次发布前建议人工确认的问题
+## 11. 每次发布前建议人工确认的问题
 
 1. 本地 5004 是否正常
 2. 当前公网入口 `https://cyberstream.gameuniverse.top:40160` 是否正常
@@ -855,7 +887,7 @@ curl -s http://127.0.0.1:5004/api/v1/user/history
 
 ---
 
-## 11. 当前已确认通过的基础项（接手阶段）
+## 12. 当前已确认通过的基础项（接手阶段）
 
 截至 2026-06-07，已确认：
 

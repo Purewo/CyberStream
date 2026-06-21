@@ -4,12 +4,12 @@
 
 ## 0. 当前基线
 
-当前版本：`1.21.0`
+当前版本：`1.22.0`
 
 当前 OpenAPI 联调基线：
 
-- `backend/openapi/openapi-1.21.0-beta/openapi-1.21.0-beta.json`
-- `backend/openapi/openapi-1.21.0-beta/release-notes-1.21.0-beta.md`
+- `backend/openapi/openapi-1.22.0-beta/openapi-1.22.0-beta.json`
+- `backend/openapi/openapi-1.22.0-beta/release-notes-1.22.0-beta.md`
 
 当前 `main` 即最新版主干，后续小步提交直接进入 `main`。
 
@@ -33,7 +33,16 @@ X-Cyber-API-Token: <token>
 
 当前公网托管试点 `https://cyberstream.gameuniverse.top:40160` 已启用用户管理。前端启动时应先请求 `GET /api/v1/auth/me`，所有请求带 `credentials: "include"`；匿名访问目录、存储管理、播放流等受保护接口会返回 `401`。
 
-前端平滑接入方案见：`docs/FRONTEND_USER_MANAGEMENT_INTEGRATION.md`。
+启用 `CYBER_HOSTED_MANAGED_MODE=true` 后，`GET /api/v1/auth/me` 会返回 `hosted_managed_mode=true`，并在登录后返回 `current_account`、`account_role`、`permissions.manage_storage` 和 `permissions.manage_catalog`。该模式用于统一代托管后端：账号 owner 可以管理自己账号下的云盘挂载、片库、扫描、审查和影视元数据，但服务器级 TMDB、代理、CDN 和图片缓存运维仍由平台维护。被封禁时返回 HTTP `403`、业务码 `40390`，消息为 `Hosted managed mode blocks server configuration changes`。
+
+托管模式封禁范围：
+
+- `PUT /api/v1/system/tmdb-config`
+- `POST /api/v1/images/preload`、`POST /api/v1/images/refresh`
+- `DELETE /api/v1/movies/<id>/images/<kind>`
+- `GET /api/v1/movies/<id>/images/<kind>?refresh=true`
+
+代托管前端接入方案见：`docs/FRONTEND_HOSTED_BACKEND_INTEGRATION.md`；通用用户系统接入方案见：`docs/FRONTEND_USER_MANAGEMENT_INTEGRATION.md`。
 
 审查工作台边界和非标准资源对接方案见：`docs/FRONTEND_REVIEW_WORKBENCH_INTEGRATION.md`。
 
@@ -43,6 +52,7 @@ X-Cyber-API-Token: <token>
 
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/register`
 - `GET /api/v1/auth/me`
 - `GET/PATCH /api/v1/user/profile`
 - `POST /api/v1/user/password`
@@ -95,7 +105,7 @@ X-Cyber-API-Token: <token>
 
 ### `GET /api/v1/system/tmdb-config`
 
-返回 `token_set`、`proxy_enabled`、`proxy_url` 和 `proxy_url_redacted`。接口不返回 TMDB token 明文；代理 URL 含 userinfo 时也会隐藏用户名和密码。
+返回 `token_set`、`token_pool_size`、`token_pool_enabled`、`proxy_enabled`、`proxy_url` 和 `proxy_url_redacted`。接口不返回 TMDB token 明文；代理 URL 含 userinfo 时也会隐藏用户名和密码。
 
 ### `PUT /api/v1/system/tmdb-config`
 
@@ -105,7 +115,9 @@ X-Cyber-API-Token: <token>
 
 ### `GET /api/v1/system/tmdb-config/check`
 
-主动调用 TMDB 认证接口验证当前 token 是否可用，不返回 token 明文。前端在扫描或批量刮削前应检查 `data.ready === true`；否则按 `data.status` 展示原因，例如 `missing_token`、`invalid_token`、`proxy_error`、`timeout` 或 `network_error`。
+主动调用 TMDB 认证接口验证当前 token 或平台 token 池是否可用，不返回 token 明文。前端在扫描或批量刮削前应检查 `data.ready === true`；否则按 `data.status` 展示原因，例如 `missing_token`、`invalid_token`、`proxy_error`、`timeout` 或 `network_error`。
+
+托管后端可能返回 `token_pool_size > 1`。池子里至少一个 token 可用时 `ready=true`；部分可用时 `status=partial_ok`，同时返回 `token_valid_count`、`token_invalid_count` 和不含明文 token 的 `token_checks`。
 
 ## 1.2 文档与契约入口
 
@@ -148,6 +160,7 @@ X-Cyber-API-Token: <token>
 - `terminology`
 - `frontend-review-workbench`
 - `frontend-user-management`
+- `frontend-hosted-backend`
 - `frontend-audio-transcode`
 - `frontend-managed-guangyapan`
 - `frontend-managed-tianyicloud`
@@ -1401,7 +1414,8 @@ X-Cyber-API-Token: <token>
 
 说明：
 - `MovieSimple.poster_asset_url` 和 `MovieDetailed.backdrop_asset_url` 会返回当前首选图片 URL；前端应优先加载该字段
-- 图片加载顺序为 CDN -> 后端本地图片入口 -> 原始 `poster_url/backdrop_url`
+- 默认图片加载顺序为 CDN -> 后端本地图片入口 -> 原始 `poster_url/backdrop_url`
+- 代托管后端可启用 `CYBER_IMAGE_ASSET_PREFER_ORIGINAL_URLS=true`，此时 `poster_asset_url/backdrop_asset_url` 会优先返回原始图片链接，`asset_urls.strategy=original_local`
 - 列表、详情和状态接口会额外返回 `poster_asset_urls/backdrop_asset_urls` 与 `poster_asset_fallback_urls/backdrop_asset_fallback_urls`，前端在图片加载失败时按 `fallback_urls` 顺序切换
 - 默认首选后端相对路径；配置 `CYBER_IMAGE_ASSET_PUBLIC_BASE_URL` 后，本地图片入口会返回 CDN/public base 下的绝对 URL
 - 启用 Super CDN 后，已上传的海报/背景图会优先返回 `cyberstream-cn-assets`、`hd-wallpapers` 等国内 `china_all` 桶 URL；未上传或上传失败时自动回退后端本地图片入口
@@ -2076,9 +2090,9 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 ## 9. 版本收口说明
 
-本文件为接手期概览文档，不替代 OpenAPI。当前 `1.21.0` 已作为 `main` 主干联调基线。
+本文件为接手期概览文档，不替代 OpenAPI。当前 `1.22.0` 已作为代托管多租户联调基线。
 
 当前必须保持同步的契约文件：
 
-- `backend/openapi/openapi-1.21.0-beta/openapi-1.21.0-beta.json`
-- `backend/openapi/openapi-1.21.0-beta/release-notes-1.21.0-beta.md`
+- `backend/openapi/openapi-1.22.0-beta/openapi-1.22.0-beta.json`
+- `backend/openapi/openapi-1.22.0-beta/release-notes-1.22.0-beta.md`

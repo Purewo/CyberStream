@@ -2,8 +2,8 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Cyber Media Center API (赛博影视)",
-    "description": "## 专业发烧级影视中心后端接口文档\n\n此文档定义了 Cyber Media 的核心 API 交互规范。旨在取代 Plex/Emby，提供高性能、低延迟的媒体管理与流媒体服务。\n\n### 🔗 API 生命周期说明 (x-lifecycle-status)\n我们在每个接口中定义了开发状态，请前端同学注意：\n\n1.  🔴 **pending** (未开发): 接口仅有定义，后端尚未实现，调用会返回 501。\n2.  🟠 **implemented_unverified** (已开发未验证): 代码已合并，但未经完整测试，可能存在 Bug。\n3.  ❌ **failed_verification** (验证失败): 测试发现严重问题，暂时禁止使用。\n4.  ⚠️ **passed_imperfect** (验证通过但格式不规范): 功能可用，但返回字段可能不全或命名不符合规范，后续会变动。\n5.  ✅ **stable** (验证通过): 接口稳定，可放心集成。\n\n### 🛡️ 鉴权说明\n默认用户管理关闭时沿用 `CYBER_API_TOKEN` Bearer 鉴权。开启 `CYBER_USER_MANAGEMENT_ENABLED` 后，网页端通过 HttpOnly Cookie 会话访问，前端所有 fetch 请求都应带 `credentials: include`；受保护接口返回 401 时应回到 `/api/v1/auth/me` 重新确认登录态。仅当 `CYBER_AUTH_ENABLED=true` 时，`CYBER_API_TOKEN` 可作为管理员后门。",
-    "version": "1.21.0-beta",
+    "description": "## 专业发烧级影视中心后端接口文档\n\n此文档定义了 Cyber Media 的核心 API 交互规范。旨在取代 Plex/Emby，提供高性能、低延迟的媒体管理与流媒体服务。\n\n### 🔗 API 生命周期说明 (x-lifecycle-status)\n我们在每个接口中定义了开发状态，请前端同学注意：\n\n1.  🔴 **pending** (未开发): 接口仅有定义，后端尚未实现，调用会返回 501。\n2.  🟠 **implemented_unverified** (已开发未验证): 代码已合并，但未经完整测试，可能存在 Bug。\n3.  ❌ **failed_verification** (验证失败): 测试发现严重问题，暂时禁止使用。\n4.  ⚠️ **passed_imperfect** (验证通过但格式不规范): 功能可用，但返回字段可能不全或命名不符合规范，后续会变动。\n5.  ✅ **stable** (验证通过): 接口稳定，可放心集成。\n\n### 🛡️ 鉴权说明\n默认用户管理关闭时沿用 `CYBER_API_TOKEN` Bearer 鉴权。开启 `CYBER_USER_MANAGEMENT_ENABLED` 后，网页端通过 HttpOnly Cookie 会话访问，前端所有 fetch 请求都应带 `credentials: include`；受保护接口返回 401 时应回到 `/api/v1/auth/me` 重新确认登录态。仅当 `CYBER_AUTH_ENABLED=true` 时，`CYBER_API_TOKEN` 可作为管理员后门。\n\n### 🧭 代托管多租户说明\n1.22.0-beta 新增开放注册和 Account 账号空间。普通注册用户是自己账号的 owner，业务数据按 current_account 隔离；前端不要在普通业务请求中传 account_id。",
+    "version": "1.22.0-beta",
     "contact": {
       "name": "Cyber Media Core Team",
       "email": "dev@cybermedia.local"
@@ -13,8 +13,13 @@
     "config": "CYBER_HOSTED_MANAGED_MODE",
     "auth_status_fields": [
       "hosted_managed_mode",
+      "current_account",
+      "account_role",
+      "permissions.manage_storage",
+      "permissions.manage_catalog",
       "permissions.manage_server_config"
     ],
+    "notes": "1.22.0-beta 代托管模式允许账号 owner 自助注册、挂载云盘、绑定默认片库、扫描和管理自己账号下的内容；仍禁止修改平台级服务器配置。",
     "error": {
       "http_status": 403,
       "code": 40390,
@@ -22,11 +27,6 @@
     },
     "blocked_mutations": [
       "PUT /api/v1/system/tmdb-config",
-      "POST/PATCH/DELETE /api/v1/storage/**",
-      "POST /api/v1/scan",
-      "POST /api/v1/libraries/{id}/scan",
-      "POST/PATCH/DELETE /api/v1/libraries/{id}/sources/**",
-      "POST /api/v1/movies/{id}/resources/sync",
       "POST /api/v1/images/preload",
       "POST /api/v1/images/refresh",
       "DELETE /api/v1/movies/{id}/images/{kind}",
@@ -34,6 +34,10 @@
     ]
   },
   "servers": [
+    {
+      "url": "https://cyberstream.gameuniverse.top:40162",
+      "description": "代托管内测后端 HTTPS"
+    },
     {
       "url": "https://pw.pioneer.fan:84",
       "description": "生产环境 (Production HTTPS)"
@@ -70,7 +74,7 @@
                   "msg": "Pong",
                   "data": {
                     "status": "up",
-                    "version": "1.21.0",
+                    "version": "1.22.0",
                     "database": {
                       "status": "ok",
                       "reason": "ok"
@@ -106,7 +110,7 @@
                   "msg": "Pong",
                   "data": {
                     "status": "up",
-                    "version": "1.21.0",
+                    "version": "1.22.0",
                     "database": {
                       "status": "ok",
                       "reason": "ok"
@@ -3852,7 +3856,7 @@
     "/api/v1/resources/{id}/subtitles/online/search": {
       "get": {
         "summary": "搜索在线字幕候选",
-        "description": "基于当前资源搜索在线字幕。当前支持 SubHD 与 SrtKu，默认只请求 SubHD；SrtKu 作为显式备用源，前端需要时传 providers=srtku 或 providers=subhd,srtku。OpenSubtitles 因中文覆盖和下载限额问题被忽略。电视剧资源会优先按当前季集号排序，避免宽关键词命中其他季/集。候选排序会优先展示网页播放器可用的文本字幕格式 srt/ass/ssa/vtt，再展示未知格式，最后展示 sub/sup 位图字幕。SrtKu 会受独立超时控制，超时会在响应的 providers.errors 中标记为 timeout。",
+        "description": "基于当前资源搜索在线字幕。当前支持 SubHD 与 SrtKu，默认只请求 SubHD；SrtKu 作为显式备用源，前端需要时传 providers=srtku 或 providers=subhd,srtku。OpenSubtitles 因中文覆盖和下载限额问题被忽略。电视剧资源会优先按当前季集号排序，避免宽关键词命中其他季/集。候选排序会优先展示网页播放器可用的文本字幕格式 srt/ass/ssa/vtt，再展示未知格式，最后展示 sub/sup 位图字幕。SrtKu 会受独立超时控制，超时会在响应的 providers.errors 中标记为 timeout。PC/外部播放器拿不到 Cookie 时可携带 playback ticket，代托管模式下仍按 current_account 隔离资源。",
         "operationId": "searchResourceOnlineSubtitles",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3866,6 +3870,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -3958,7 +3971,7 @@
     "/api/v1/resources/{id}/subtitles/online/download": {
       "post": {
         "summary": "下载在线字幕候选",
-        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。在线字幕原始下载、解压和嵌套归档默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；超限返回 413。",
+        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。在线字幕原始下载、解压和嵌套归档默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；超限返回 413。PC/外部播放器拿不到 Cookie 时可携带 playback ticket，代托管模式下仍按 current_account 隔离资源。",
         "operationId": "downloadResourceOnlineSubtitle",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3972,6 +3985,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -5333,7 +5355,7 @@
     "/api/v1/storage/sources": {
       "get": {
         "summary": "✅ [验证通过] 获取存储源列表",
-        "description": "列出所有已配置的存储源。",
+        "description": "列出当前账号空间内的存储源；代托管多租户模式下不会返回其他账号的来源。",
         "operationId": "listStorageSources",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -5369,7 +5391,7 @@
       },
       "post": {
         "summary": "🟠 [已开发未验证] 添加存储源",
-        "description": "添加新的媒体库来源。",
+        "description": "添加当前账号空间内的新媒体来源。代托管模式下账号 owner 可使用；服务器级配置仍不可修改。新来源会自动绑定默认片库。",
         "operationId": "addStorageSource",
         "x-lifecycle-status": "implemented_unverified",
         "tags": [
@@ -5732,7 +5754,7 @@
     "/api/v1/storage/sources/{id}/scan": {
       "post": {
         "summary": "✅ [验证通过] 扫描指定存储源",
-        "description": "仅对指定的存储源触发扫描。支持通过 root_path 或 target_path 将扫描范围限定到预览选中的子目录；未传时按存储源根目录扫描。",
+        "description": "扫描当前账号空间内的指定存储源。id 不属于当前账号时返回 404。异步扫描会携带 account context。",
         "operationId": "scanSource",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -6510,7 +6532,7 @@
     "/api/v1/auth/login": {
       "post": {
         "summary": "用户登录",
-        "description": "用户管理开启后用于建立网页会话。成功响应会写入 cyberstream_session HttpOnly Cookie；前端不要保存密码或 token，后续请求必须带 credentials: include。",
+        "description": "用户管理开启后用于建立网页会话。成功响应会写入 cyberstream_session HttpOnly Cookie，并返回包含 current_account/account_role 的 AuthStatus。",
         "operationId": "authLogin",
         "tags": [
           "Auth"
@@ -6569,7 +6591,7 @@
     "/api/v1/auth/me": {
       "get": {
         "summary": "当前登录状态",
-        "description": "公开探测接口。无论用户管理是否开启都返回 200；前端启动、刷新、登录后和 401 后都应调用该接口确认 user_management_enabled、authenticated 与 permissions。",
+        "description": "公开探测接口。前端启动、刷新、登录、注册、退出和 401 后都应调用，使用 authenticated、current_account、account_role 和 permissions 判断页面能力。",
         "operationId": "authMe",
         "tags": [
           "Auth"
@@ -6585,6 +6607,62 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/playback-ticket": {
+      "post": {
+        "summary": "签发播放临时票据",
+        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource；代托管模式下会恢复用户 current_account 并继续执行账号隔离。",
+        "operationId": "authCreatePlaybackTicket",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "ticket",
+                            "expires_at",
+                            "ttl"
+                          ],
+                          "properties": {
+                            "ticket": {
+                              "type": "string",
+                              "description": "不透明播放票据"
+                            },
+                            "expires_at": {
+                              "type": "integer",
+                              "description": "Unix 秒级过期时间"
+                            },
+                            "ttl": {
+                              "type": "integer",
+                              "description": "有效期秒数，默认 43200"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或 API token 无效；播放 URL 上非法/过期 ticket 返回业务码 40130"
           }
         }
       }
@@ -9302,6 +9380,49 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "summary": "开放注册并创建账号空间",
+        "description": "代托管内测使用。创建 users.role=user 的登录身份，自动创建 Account、owner membership、默认片库和账号级首页配置，并写入 Cookie 会话。注册成功返回与 /auth/me 相同的 AuthStatus。",
+        "operationId": "authRegister",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered and logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid username or password"
+          },
+          "403": {
+            "description": "Registration disabled"
+          },
+          "409": {
+            "description": "Username already exists"
+          }
+        },
+        "x-lifecycle-status": "stable"
       }
     }
   },
@@ -19775,7 +19896,7 @@
           },
           "hosted_managed_mode": {
             "type": "boolean",
-            "description": "true 表示后端运行在统一代托管模式，后端会拒绝修改服务器级配置、存储挂载、扫描任务和 CDN/cache 运维动作。"
+            "description": "true 表示后端运行在统一代托管模式。普通账号 owner 可管理自己账号下的云盘挂载、片库、扫描和元数据；服务器级 TMDB、代理、CDN、图片刷新等配置仍由平台统一维护。"
           },
           "authenticated": {
             "type": "boolean"
@@ -19789,7 +19910,8 @@
             "nullable": true
           },
           "user": {
-            "$ref": "#/components/schemas/User"
+            "$ref": "#/components/schemas/User",
+            "nullable": true
           },
           "permissions": {
             "type": "object",
@@ -19798,6 +19920,8 @@
               "read_catalog",
               "manage_catalog",
               "manage_users",
+              "manage_storage",
+              "manage_account_users",
               "manage_server_config",
               "personal_history",
               "personal_favorites",
@@ -19812,14 +19936,15 @@
                 "type": "boolean"
               },
               "manage_catalog": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "账号 owner 可管理自己账号下的片库、扫描、审查工作台和影视元数据；平台 admin 在没有显式平台后台时也默认作用于 current_account。"
               },
               "manage_users": {
                 "type": "boolean"
               },
               "manage_server_config": {
                 "type": "boolean",
-                "description": "管理员在自托管模式下为 true；代托管模式下为 false，前端应隐藏 TMDB、代理、存储挂载、扫描和 CDN/cache 运维入口。"
+                "description": "只有自托管平台管理员可为 true；代托管模式固定为 false，前端应隐藏 TMDB token、代理、CDN 和服务器运行配置入口。"
               },
               "personal_history": {
                 "type": "boolean"
@@ -19832,8 +19957,34 @@
               },
               "personal_subtitle_settings": {
                 "type": "boolean"
+              },
+              "manage_storage": {
+                "type": "boolean",
+                "description": "账号 owner 可管理自己账号下的 storage sources 和托管云盘登录流程。"
+              },
+              "manage_account_users": {
+                "type": "boolean",
+                "description": "预留给未来家庭子账号管理；1.22.0-beta 固定为 false。"
               }
             }
+          },
+          "current_account": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccountSummary"
+              }
+            ],
+            "nullable": true,
+            "description": "当前账号空间。未登录、未启用多租户或没有 active membership 时为 null。"
+          },
+          "account_role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "member"
+            ],
+            "nullable": true,
+            "description": "当前用户在 current_account 内的角色。v1 注册用户默认为 owner。"
           }
         }
       },
@@ -20983,11 +21134,11 @@
         "properties": {
           "version": {
             "type": "string",
-            "example": "1.21.0"
+            "example": "1.22.0"
           },
           "openapi_version": {
             "type": "string",
-            "example": "1.21.0-beta"
+            "example": "1.22.0-beta"
           },
           "openapi": {
             "$ref": "#/components/schemas/OpenApiDocumentationLink"
@@ -21051,11 +21202,11 @@
         "properties": {
           "version": {
             "type": "string",
-            "example": "1.21.0"
+            "example": "1.22.0"
           },
           "openapi_version": {
             "type": "string",
-            "example": "1.21.0-beta"
+            "example": "1.22.0-beta"
           },
           "full_url": {
             "type": "string",
@@ -21326,7 +21477,7 @@
           "backend_version": {
             "type": "string",
             "description": "当前后端运行版本。",
-            "example": "1.21.0"
+            "example": "1.22.0"
           }
         },
         "required": [
@@ -24720,6 +24871,68 @@
           "elapsed_ms",
           "token_checks"
         ]
+      },
+      "AccountSummary": {
+        "type": "object",
+        "description": "当前登录身份所在的账号空间。业务数据隔离以 account id 为边界，客户端只读展示，不要传回普通业务接口决定数据范围。",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "pending_delete"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 80,
+            "description": "用户名，全局唯一。允许字母、数字、点、下划线、@ 和短横线。"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 120
+          }
+        }
       }
     }
   },
@@ -24730,5 +24943,16 @@
     {
       "bearerAuth": []
     }
-  ]
+  ],
+  "x-hosted-multi-tenant": {
+    "account_boundary": "All business resources are scoped by current_account.id on the server side.",
+    "client_rules": [
+      "Do not send account_id in normal business requests.",
+      "Use /api/v1/auth/me after app start, login, register, logout and 401 responses.",
+      "Use permissions.manage_storage for storage onboarding UI.",
+      "Use permissions.manage_catalog for library, scan, review and metadata editing UI."
+    ],
+    "self_service_storage": true,
+    "mount_path_pattern": "/cyberstream/accounts/{account_id}/sources/{source_id}/..."
+  }
 }

@@ -11,7 +11,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.models import (
+    Account,
+    AccountMembership,
     AuditLog,
+    History,
     Library,
     LibrarySource,
     MediaResource,
@@ -21,6 +24,8 @@ from backend.app.models import (
     UserLibraryRule,
     UserSubtitleSetting,
 )
+from backend.app.api.history_routes import clear_all_history
+from backend.app.services.accounts import account_scope
 from backend.app.services import login_rate_limit
 from backend.app.services.login_rate_limit import clear_all_login_failures
 from backend.app.services.users import set_user_password
@@ -170,6 +175,212 @@ class UserManagementTests(unittest.TestCase):
         response = client.get("/api/v1/storage/sources", headers={"Authorization": "Bearer break-glass"})
 
         self.assertEqual(200, response.status_code)
+
+    def test_hosted_managed_mode_blocks_server_config_mutations(self):
+        app = self.create_enabled_app(
+            HOSTED_MANAGED_MODE=True,
+            API_TOKEN="break-glass",
+            AUTH_ENABLED=True,
+        )
+        client = app.test_client()
+        self._user("admin", role=User.ROLE_ADMIN)
+
+        self._login(client, "admin")
+        storage_response = client.post("/api/v1/storage/sources", json={
+            "name": "Local",
+            "type": "local",
+            "config": {"root_path": "/media"},
+        })
+        blocked_requests = [
+            client.put("/api/v1/system/tmdb-config", json={"token": "tmdb-token"}),
+            client.post("/api/v1/images/refresh", json={"limit": 1}),
+            client.delete("/api/v1/movies/11111111-1111-1111-1111-111111111111/images/poster"),
+            client.get("/api/v1/movies/11111111-1111-1111-1111-111111111111/images/poster?refresh=true"),
+        ]
+        image_read = client.get("/api/v1/movies/11111111-1111-1111-1111-111111111111/images/poster")
+        resource_sync = client.post("/api/v1/movies/11111111-1111-1111-1111-111111111111/resources/sync", json={})
+        client.post("/api/v1/auth/logout")
+        token_response = client.put(
+            "/api/v1/system/tmdb-config",
+            json={"token": "tmdb-token"},
+            headers={"Authorization": "Bearer break-glass"},
+        )
+
+        for response in [*blocked_requests, token_response]:
+            self.assertEqual(403, response.status_code, response.get_data(as_text=True))
+            self.assertEqual(40390, response.get_json()["code"])
+        self.assertEqual(200, storage_response.status_code)
+        source_data = storage_response.get_json()["data"]
+        self.assertTrue(source_data["account_id"])
+        default_library = Library.query.execution_options(include_all_accounts=True).filter_by(account_id=source_data["account_id"]).first()
+        self.assertIsNotNone(default_library)
+        self.assertIsNotNone(
+            LibrarySource.query.execution_options(include_all_accounts=True).filter_by(
+                account_id=source_data["account_id"],
+                library_id=default_library.id,
+                source_id=source_data["id"],
+                root_path="/",
+            ).first()
+        )
+        self.assertEqual(404, image_read.status_code)
+        self.assertNotEqual(40390, image_read.get_json()["code"])
+        self.assertEqual(404, resource_sync.status_code)
+        self.assertNotEqual(40390, resource_sync.get_json()["code"])
+
+    def test_hosted_managed_mode_reports_server_config_permission(self):
+        hosted_app = self.create_enabled_app(HOSTED_MANAGED_MODE=True)
+        hosted_client = hosted_app.test_client()
+        self._user("hosted-admin", role=User.ROLE_ADMIN)
+
+        self._login(hosted_client, "hosted-admin")
+        hosted_status = hosted_client.get("/api/v1/auth/me").get_json()["data"]
+
+        self.assertTrue(hosted_status["permissions"]["admin"])
+        self.assertTrue(hosted_status["hosted_managed_mode"])
+        self.assertFalse(hosted_status["permissions"]["manage_server_config"])
+        self.assertTrue(hosted_status["permissions"]["manage_storage"])
+        self.assertEqual("owner", hosted_status["account_role"])
+        self.assertIsNotNone(hosted_status["current_account"])
+
+    def test_hosted_registration_creates_account_owner_and_default_library(self):
+        app = self.create_enabled_app(HOSTED_MANAGED_MODE=True)
+        client = app.test_client()
+
+        response = client.post("/api/v1/auth/register", json={
+            "username": "new-owner",
+            "password": "password-123",
+            "display_name": "New Owner",
+        })
+        source_response = client.post("/api/v1/storage/sources", json={
+            "name": "Owner Local",
+            "type": "local",
+            "config": {"root_path": "/media/new-owner"},
+        })
+
+        self.assertEqual(201, response.status_code, response.get_data(as_text=True))
+        data = response.get_json()["data"]
+        self.assertEqual("user", data["role"])
+        self.assertEqual("owner", data["account_role"])
+        self.assertFalse(data["permissions"]["admin"])
+        self.assertTrue(data["permissions"]["manage_catalog"])
+        self.assertTrue(data["permissions"]["manage_storage"])
+        self.assertFalse(data["permissions"]["manage_server_config"])
+        account_id = data["current_account"]["id"]
+        membership = AccountMembership.query.execution_options(include_all_accounts=True).filter_by(
+            account_id=account_id,
+            user_id=data["user"]["id"],
+        ).first()
+        self.assertIsNotNone(membership)
+        self.assertEqual(AccountMembership.ROLE_OWNER, membership.role)
+        default_library = Library.query.execution_options(include_all_accounts=True).filter_by(account_id=account_id, slug="default").first()
+        self.assertIsNotNone(default_library)
+        self.assertEqual(200, source_response.status_code, source_response.get_data(as_text=True))
+        source_data = source_response.get_json()["data"]
+        self.assertEqual(account_id, source_data["account_id"])
+        self.assertIsNotNone(
+            LibrarySource.query.execution_options(include_all_accounts=True).filter_by(
+                account_id=account_id,
+                library_id=default_library.id,
+                source_id=source_data["id"],
+                root_path="/",
+            ).first()
+        )
+
+    def test_hosted_accounts_are_isolated_for_storage_and_movies(self):
+        app = self.create_enabled_app(HOSTED_MANAGED_MODE=True)
+        alpha_client = app.test_client()
+        beta_client = app.test_client()
+
+        alpha_register = alpha_client.post("/api/v1/auth/register", json={
+            "username": "alpha-owner",
+            "password": "password-123",
+        })
+        beta_register = beta_client.post("/api/v1/auth/register", json={
+            "username": "beta-owner",
+            "password": "password-123",
+        })
+        self.assertEqual(201, alpha_register.status_code)
+        self.assertEqual(201, beta_register.status_code)
+        alpha_account_id = alpha_register.get_json()["data"]["current_account"]["id"]
+        beta_account_id = beta_register.get_json()["data"]["current_account"]["id"]
+
+        alpha_source_response = alpha_client.post("/api/v1/storage/sources", json={
+            "name": "Alpha Local",
+            "type": "local",
+            "config": {"root_path": "/media/alpha"},
+        })
+        beta_source_response = beta_client.post("/api/v1/storage/sources", json={
+            "name": "Beta Local",
+            "type": "local",
+            "config": {"root_path": "/media/beta"},
+        })
+        self.assertEqual(200, alpha_source_response.status_code)
+        self.assertEqual(200, beta_source_response.status_code)
+        alpha_source_id = alpha_source_response.get_json()["data"]["id"]
+        beta_source_id = beta_source_response.get_json()["data"]["id"]
+
+        alpha_movie = Movie(
+            account_id=alpha_account_id,
+            tmdb_id="movie/shared-tmdb",
+            title="Alpha Movie",
+            original_title="Alpha Movie",
+            cover="https://img.example/alpha.jpg",
+            scraper_source="TMDB_STRICT",
+        )
+        beta_movie = Movie(
+            account_id=beta_account_id,
+            tmdb_id="movie/shared-tmdb",
+            title="Beta Movie",
+            original_title="Beta Movie",
+            cover="https://img.example/beta.jpg",
+            scraper_source="TMDB_STRICT",
+        )
+        db.session.add_all([alpha_movie, beta_movie])
+        db.session.flush()
+        alpha_movie_id = alpha_movie.id
+        beta_movie_id = beta_movie.id
+        db.session.add(MediaResource(
+            account_id=alpha_account_id,
+            movie_id=alpha_movie_id,
+            source_id=alpha_source_id,
+            path="alpha.mkv",
+            filename="alpha.mkv",
+            label="Alpha",
+        ))
+        db.session.add(MediaResource(
+            account_id=beta_account_id,
+            movie_id=beta_movie_id,
+            source_id=beta_source_id,
+            path="beta.mkv",
+            filename="beta.mkv",
+            label="Beta",
+        ))
+        db.session.commit()
+
+        alpha_sources = alpha_client.get("/api/v1/storage/sources").get_json()["data"]
+        beta_sources = beta_client.get("/api/v1/storage/sources").get_json()["data"]
+        alpha_movies = alpha_client.get("/api/v1/movies?page=1&page_size=20").get_json()["data"]["items"]
+        beta_movies = beta_client.get("/api/v1/movies?page=1&page_size=20").get_json()["data"]["items"]
+
+        self.assertEqual([alpha_source_id], [item["id"] for item in alpha_sources])
+        self.assertEqual([beta_source_id], [item["id"] for item in beta_sources])
+        self.assertIn(alpha_movie_id, [item["id"] for item in alpha_movies])
+        self.assertNotIn(beta_movie_id, [item["id"] for item in alpha_movies])
+        self.assertIn(beta_movie_id, [item["id"] for item in beta_movies])
+        self.assertNotIn(alpha_movie_id, [item["id"] for item in beta_movies])
+        self.assertEqual(404, alpha_client.get(f"/api/v1/storage/sources/{beta_source_id}").status_code)
+        self.assertEqual(404, beta_client.get(f"/api/v1/movies/{alpha_movie_id}").status_code)
+
+    def test_self_hosted_admin_reports_server_config_permission(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        self._user("admin", role=User.ROLE_ADMIN)
+
+        self._login(client, "admin")
+        status = client.get("/api/v1/auth/me").get_json()["data"]
+
+        self.assertFalse(status["hosted_managed_mode"])
+        self.assertTrue(status["permissions"]["manage_server_config"])
 
     def test_api_token_backdoor_respects_auth_enabled_switch(self):
         app = self.create_enabled_app(API_TOKEN="disabled-token", AUTH_ENABLED=False)
@@ -685,6 +896,42 @@ class UserManagementTests(unittest.TestCase):
         self._login(client, "alice")
         alice_item = client.get("/api/v1/user/history").get_json()["data"]["items"][0]
         self.assertEqual(100, alice_item["progress"])
+
+    def test_clear_history_bulk_delete_is_scoped_by_account(self):
+        self.create_enabled_app(MULTI_TENANT_ENABLED=True)
+        account_a = Account(
+            id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            name="Account A",
+            slug="account-a",
+            status=Account.STATUS_ACTIVE,
+            settings={},
+        )
+        account_b = Account(
+            id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            name="Account B",
+            slug="account-b",
+            status=Account.STATUS_ACTIVE,
+            settings={},
+        )
+        db.session.add_all([
+            account_a,
+            account_b,
+            History(account_id=account_a.id, user_id=None, progress=10, duration=100),
+            History(account_id=account_b.id, user_id=None, progress=20, duration=100),
+        ])
+        db.session.commit()
+
+        with account_scope(account_a.id):
+            response = clear_all_history()
+
+        self.assertEqual(200, response[1])
+        remaining = (
+            History.query.execution_options(include_all_accounts=True)
+            .order_by(History.id.asc())
+            .all()
+        )
+        self.assertEqual(1, len(remaining))
+        self.assertEqual(account_b.id, remaining[0].account_id)
 
     def test_subtitle_settings_are_isolated_by_user(self):
         app = self.create_enabled_app()

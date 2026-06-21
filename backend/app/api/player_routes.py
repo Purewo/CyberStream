@@ -6,6 +6,7 @@ from backend.app.api.helpers import get_json_object_payload
 from backend.app.extensions import db
 from backend.app.models import MediaResource
 from backend.app.providers.factory import provider_factory
+from backend.app.services.accounts import get_account_scoped
 from backend.app.services.audio_transcode import (
     DEFAULT_AUDIO_TRANSCODE_MAX_CONCURRENT,
     DEFAULT_AUDIO_TRANSCODE_HISTORY_TIMEOUT_SECONDS,
@@ -108,7 +109,7 @@ def _online_subtitle_search_keywords():
 
 @player_bp.route('/resources/<uuid:id>/subtitle-settings', methods=['GET'])
 def get_resource_subtitle_settings(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -117,7 +118,7 @@ def get_resource_subtitle_settings(id):
 
 @player_bp.route('/resources/<uuid:id>/subtitle-settings', methods=['PUT', 'PATCH'])
 def update_resource_subtitle_settings(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -252,7 +253,7 @@ def _stream_resource_subtitle(resource, subtitle_id):
 
 @player_bp.route('/resources/<uuid:id>/stream', methods=['GET'])
 def stream_resource(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         logger.warning("Stream resource not found id=%s", id)
         return Response("Resource not found", status=404)
@@ -315,7 +316,7 @@ def stream_resource(id):
 
 @player_bp.route('/resources/<uuid:id>/streaming-qualities', methods=['GET'])
 def get_resource_streaming_qualities(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -335,7 +336,7 @@ def get_resource_streaming_qualities(id):
 
 @player_bp.route('/resources/<uuid:id>/stream-transcoded', methods=['GET'])
 def stream_resource_transcoded(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         logger.warning("Transcoded stream resource not found id=%s", id)
         return Response("Resource not found", status=404)
@@ -376,7 +377,7 @@ def stream_resource_transcoded(id):
 
 @player_bp.route('/resources/<uuid:id>/external-playback', methods=['GET'])
 def get_resource_external_playback(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -408,7 +409,7 @@ def get_resource_external_playback(id):
 
 @player_bp.route('/resources/<uuid:id>/subtitles/online/search', methods=['GET'])
 def search_resource_online_subtitles(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -430,7 +431,7 @@ def search_resource_online_subtitles(id):
 
 @player_bp.route('/resources/<uuid:id>/subtitles/online/download', methods=['POST'])
 def download_resource_online_subtitle(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -468,7 +469,7 @@ def download_resource_online_subtitle(id):
 
 @player_bp.route('/resources/<uuid:id>/subtitles/online/bind', methods=['POST'])
 def bind_resource_online_subtitle(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -496,7 +497,7 @@ def bind_resource_online_subtitle(id):
 
 @player_bp.route('/resources/<uuid:id>/subtitles/<subtitle_id>', methods=['DELETE'])
 def delete_resource_subtitle(id, subtitle_id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -512,7 +513,7 @@ def delete_resource_subtitle(id, subtitle_id):
 
 @player_bp.route('/resources/<uuid:id>/subtitles/<subtitle_id>/default', methods=['POST'])
 def set_resource_default_subtitle(id, subtitle_id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -528,7 +529,7 @@ def set_resource_default_subtitle(id, subtitle_id):
 
 @player_bp.route('/resources/<uuid:id>/subtitles/upload', methods=['POST'])
 def upload_resource_subtitle_file(id):
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40403, msg="Resource not found", http_status=404)
 
@@ -553,7 +554,7 @@ def transcode_resource_audio(id):
     except AudioTranscodeError as e:
         return Response(str(e), status=e.status_code)
 
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         logger.warning("Audio transcode resource not found id=%s", id)
         return Response("Resource not found", status=404)
@@ -717,7 +718,7 @@ def get_resource_audio_transcode_diagnostics(id):
     except AudioTranscodeError as e:
         return Response(str(e), status=e.status_code)
 
-    resource = db.session.get(MediaResource, str(id))
+    resource = get_account_scoped(MediaResource, str(id))
     if not resource:
         return api_error(code=40402, msg="Resource not found", http_status=404)
 

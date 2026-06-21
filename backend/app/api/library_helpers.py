@@ -6,6 +6,7 @@ from datetime import datetime
 
 from backend.app.extensions import db
 from backend.app.models import History, LibraryMovieMembership, LibrarySource, Movie, MediaResource
+from backend.app.services.accounts import get_account_scoped
 from backend.app.services.user_access import apply_current_user_movie_visibility_filter
 from backend.app.services.user_access import current_user_id_for_personal_data
 from backend.app.utils.genres import get_genre_query_terms, normalize_genres
@@ -279,7 +280,7 @@ def get_featured_movies(limit=5, custom_hero_id=None):
     featured_movies = []
 
     if custom_hero_id:
-        hero_movie = db.session.get(Movie, custom_hero_id)
+        hero_movie = get_account_scoped(Movie, custom_hero_id)
         visible_ids = apply_current_user_movie_visibility_filter(Movie.query.filter_by(id=custom_hero_id)).with_entities(Movie.id).first()
         if hero_movie and hero_movie.is_visible_in_catalog() and visible_ids:
             featured_movies.append(hero_movie)

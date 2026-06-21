@@ -7,6 +7,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from backend.app.extensions import db
 from backend.app.models import Library, User, UserLibraryRule
+from backend.app.services.accounts import get_account_scoped
 from backend.app.services.user_access import clear_user_access_cache
 
 
@@ -133,6 +134,11 @@ def bootstrap_admin(app):
     user.role = User.ROLE_ADMIN
     user.is_enabled = True
     set_user_password(user, password)
+    db.session.flush()
+    if app.config.get("MULTI_TENANT_ENABLED"):
+        from backend.app.services.accounts import create_account_for_user
+
+        create_account_for_user(user, adopt_legacy_data=True)
     db.session.commit()
     clear_user_access_cache()
     return user
@@ -163,7 +169,7 @@ def normalize_library_rules_payload(payload):
         mode = UserLibraryRule.normalize_mode(raw_rule.get("mode"))
         if not mode:
             raise UserValidationError("library rule mode must be allow or deny")
-        if not db.session.get(Library, library_id):
+        if not get_account_scoped(Library, library_id):
             raise UserValidationError(f"library not found: {library_id}", code=40410, http_status=404)
         if library_id in seen:
             raise UserValidationError(f"duplicate library rule: {library_id}")

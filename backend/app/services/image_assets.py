@@ -153,6 +153,9 @@ def movie_image_asset_url(movie, kind: str) -> str | None:
     if not source_url:
         return None
 
+    if _prefer_original_image_urls():
+        return source_url
+
     metadata = _load_metadata(movie.id, kind)
     cdn_url = _cdn_asset_url_from_metadata(source_url, metadata)
     if cdn_url:
@@ -184,15 +187,24 @@ def movie_image_asset_urls(movie, kind: str) -> dict:
     original_url = movie_image_original_url(movie, kind)
     local_url = movie_image_local_asset_url(movie, kind)
     cdn_url = None
-    if original_url:
+    prefer_original = _prefer_original_image_urls()
+    if original_url and not prefer_original:
         metadata = _load_metadata(movie.id, kind)
         cdn_url = _cdn_asset_url_from_metadata(original_url, metadata)
 
-    ordered_urls = [
-        ("cdn", cdn_url),
-        ("local", local_url),
-        ("original", original_url),
-    ]
+    if prefer_original:
+        strategy = "original_local"
+        ordered_urls = [
+            ("original", original_url),
+            ("local", local_url),
+        ]
+    else:
+        strategy = "cdn_local_original"
+        ordered_urls = [
+            ("cdn", cdn_url),
+            ("local", local_url),
+            ("original", original_url),
+        ]
     primary_source = None
     primary_url = None
     fallback_urls = []
@@ -209,7 +221,7 @@ def movie_image_asset_urls(movie, kind: str) -> dict:
 
     return {
         "kind": kind,
-        "strategy": "cdn_local_original",
+        "strategy": strategy,
         "primary_url": primary_url,
         "url": primary_url,
         "cdn_url": cdn_url,
@@ -227,6 +239,10 @@ def _asset_dir(movie_id: str) -> Path:
 def _asset_public_base_url() -> str | None:
     raw = str(_config_value("IMAGE_ASSET_PUBLIC_BASE_URL", "") or "").strip()
     return raw.rstrip("/") or None
+
+
+def _prefer_original_image_urls() -> bool:
+    return _is_truthy(_config_value("IMAGE_ASSET_PREFER_ORIGINAL_URLS", False))
 
 
 def _cdn_asset_url_from_metadata(source_url: str, metadata: dict | None) -> str | None:

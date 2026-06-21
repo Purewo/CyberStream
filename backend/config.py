@@ -1,5 +1,6 @@
 
 import os
+import re
 import sys
 from datetime import timedelta
 
@@ -48,6 +49,36 @@ def _env_csv(key, default="*"):
     return items
 
 
+def _parse_env_list(value):
+    if value in (None, ""):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        raw_items = []
+        for item in value:
+            raw_items.extend(_parse_env_list(item))
+    else:
+        raw_items = re.split(r"[\s,;]+", str(value))
+
+    items = []
+    seen = set()
+    for item in raw_items:
+        normalized = str(item or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        items.append(normalized)
+    return items
+
+
+def _build_tmdb_token_pool(cyber_pool_value="", legacy_pool_value="", single_token=""):
+    pool = _parse_env_list(cyber_pool_value)
+    if not pool:
+        pool = _parse_env_list(legacy_pool_value)
+    if not pool:
+        pool = _parse_env_list(single_token)
+    return pool
+
+
 def _normalize_proxy_url(value):
     raw = str(value or "").strip()
     if not raw:
@@ -93,8 +124,18 @@ DB_NAME = "cyber_library.db"
 DB_PATH = os.path.join(DATA_DIR, DB_NAME)
 
 # --- 数据库配置 (SQLAlchemy) ---
-SQLALCHEMY_DATABASE_URI = f"sqlite:///{DB_PATH}"
+DATABASE_URL = _env('CYBER_DATABASE_URL', _env('DATABASE_URL', ''))
+SQLALCHEMY_DATABASE_URI = DATABASE_URL or f"sqlite:///{DB_PATH}"
 SQLALCHEMY_TRACK_MODIFICATIONS = False
+SQLALCHEMY_ENGINE_OPTIONS = (
+    {"pool_pre_ping": True}
+    if not SQLALCHEMY_DATABASE_URI.startswith("sqlite:")
+    else {}
+)
+DATABASE_AUTO_CREATE_SCHEMA = _env_bool(
+    'CYBER_DATABASE_AUTO_CREATE_SCHEMA',
+    SQLALCHEMY_DATABASE_URI.startswith("sqlite:"),
+)
 
 # --- 历史单存储配置（兼容保留，非主流程配置入口） ---
 # 当前主流程实际以数据库 storage_sources.config 为准；
@@ -120,6 +161,9 @@ TARGET_ROOT_PATH = LOCAL_ROOT_PATH if STORAGE_MODE == 'local' else WEBDAV_ROOT_P
 # --- TMDB 配置 ---
 # Secrets must come from the runtime environment, not source control.
 TMDB_TOKEN = _env('TMDB_TOKEN', '')
+CYBER_TMDB_TOKEN_POOL = _env('CYBER_TMDB_TOKEN_POOL', '')
+TMDB_TOKEN_POOL_RAW = _env('TMDB_TOKEN_POOL', '')
+TMDB_TOKEN_POOL = _build_tmdb_token_pool(CYBER_TMDB_TOKEN_POOL, TMDB_TOKEN_POOL_RAW, TMDB_TOKEN)
 TMDB_IMAGE_BASE = _env('TMDB_IMAGE_BASE', "https://image.tmdb.org/t/p/w500")
 TMDB_BACKDROP_BASE = _env('TMDB_BACKDROP_BASE', "https://image.tmdb.org/t/p/original")
 TMDB_PROXY_ENABLED = _env_bool('TMDB_PROXY_ENABLED', True)
@@ -128,7 +172,7 @@ TMDB_PROXIES = _build_http_proxy_map(TMDB_PROXY_URL) if TMDB_PROXY_ENABLED else 
 
 # --- Bangumi 配置 ---
 BANGUMI_API_BASE = _env('BANGUMI_API_BASE', 'https://api.bgm.tv')
-BANGUMI_USER_AGENT = _env('BANGUMI_USER_AGENT', 'Purewo/CyberStream/1.21.0 (https://github.com/Purewo/CyberStream)')
+BANGUMI_USER_AGENT = _env('BANGUMI_USER_AGENT', 'Purewo/CyberStream/1.22.0 (https://github.com/Purewo/CyberStream)')
 BANGUMI_TIMEOUT_SECONDS = _env_float('BANGUMI_TIMEOUT_SECONDS', 10)
 BANGUMI_PROXY_ENABLED = _env_bool('BANGUMI_PROXY_ENABLED', False)
 BANGUMI_PROXY_URL = _normalize_proxy_url(_env('BANGUMI_PROXY_URL', ''))
@@ -138,7 +182,7 @@ BANGUMI_PROXIES = _build_http_proxy_map(BANGUMI_PROXY_URL) if BANGUMI_PROXY_ENAB
 # Official no-auth GraphQL API. Not part of the default scan order; use
 # provider_order/anilist explicitly for anime-focused libraries or manual match.
 ANILIST_API_URL = _env('ANILIST_API_URL', 'https://graphql.anilist.co')
-ANILIST_USER_AGENT = _env('ANILIST_USER_AGENT', 'Purewo/CyberStream/1.21.0 metadata matcher')
+ANILIST_USER_AGENT = _env('ANILIST_USER_AGENT', 'Purewo/CyberStream/1.22.0 metadata matcher')
 ANILIST_TIMEOUT_SECONDS = _env_float('ANILIST_TIMEOUT_SECONDS', 10)
 
 # --- Tencent Video metadata manual matcher ---
@@ -147,7 +191,7 @@ ANILIST_TIMEOUT_SECONDS = _env_float('ANILIST_TIMEOUT_SECONDS', 10)
 TENCENT_VIDEO_TIMEOUT_SECONDS = _env_float('TENCENT_VIDEO_TIMEOUT_SECONDS', 8)
 TENCENT_VIDEO_USER_AGENT = _env(
     'TENCENT_VIDEO_USER_AGENT',
-    'Purewo/CyberStream/1.21.0 metadata manual matcher',
+    'Purewo/CyberStream/1.22.0 metadata manual matcher',
 )
 
 # --- 聚合搜索（外部影视资源站）---
@@ -172,6 +216,7 @@ IMAGE_ASSET_TIMEOUT_SECONDS = _env_float('CYBER_IMAGE_ASSET_TIMEOUT_SECONDS', 15
 IMAGE_ASSET_MAX_REDIRECTS = _env_int('CYBER_IMAGE_ASSET_MAX_REDIRECTS', 5)
 IMAGE_ASSET_CACHE_MAX_AGE_SECONDS = _env_int('CYBER_IMAGE_ASSET_CACHE_MAX_AGE_SECONDS', 24 * 60 * 60)
 IMAGE_ASSET_PUBLIC_BASE_URL = _env('CYBER_IMAGE_ASSET_PUBLIC_BASE_URL', None)
+IMAGE_ASSET_PREFER_ORIGINAL_URLS = _env_bool('CYBER_IMAGE_ASSET_PREFER_ORIGINAL_URLS', False)
 IMAGE_ASSET_CDN_PURGE_PROVIDER = _env('CYBER_IMAGE_ASSET_CDN_PURGE_PROVIDER', 'noop')
 
 # --- Super CDN 静态资产加速 ---
@@ -288,6 +333,15 @@ MANAGED_OPENLIST_BAIDUNETDISK_RENEW_API_URL = _env(
 
 # --- 用户管理 ---
 USER_MANAGEMENT_ENABLED = _env_bool('CYBER_USER_MANAGEMENT_ENABLED', False)
+HOSTED_MANAGED_MODE = _env_bool('CYBER_HOSTED_MANAGED_MODE', False)
+MULTI_TENANT_ENABLED = _env_bool('CYBER_MULTI_TENANT_ENABLED', HOSTED_MANAGED_MODE)
+REGISTRATION_ENABLED = _env_bool('CYBER_REGISTRATION_ENABLED', HOSTED_MANAGED_MODE)
+ACCOUNT_AUTO_PROVISION_LEGACY_USERS = _env_bool(
+    'CYBER_ACCOUNT_AUTO_PROVISION_LEGACY_USERS',
+    MULTI_TENANT_ENABLED,
+)
+DEFAULT_ACCOUNT_LIBRARY_NAME = _env('CYBER_DEFAULT_ACCOUNT_LIBRARY_NAME', '默认片库')
+DEFAULT_ACCOUNT_LIBRARY_SLUG = _env('CYBER_DEFAULT_ACCOUNT_LIBRARY_SLUG', 'default')
 SESSION_SECRET = _env('CYBER_SESSION_SECRET', _env('SECRET_KEY', ''))
 SECRET_KEY = SESSION_SECRET or _env('FLASK_SECRET_KEY', 'cyberstream-dev-session-secret')
 SESSION_COOKIE_NAME = _env('CYBER_SESSION_COOKIE_NAME', 'cyberstream_session')
@@ -296,6 +350,8 @@ SESSION_COOKIE_SECURE = _env_bool('CYBER_SESSION_COOKIE_SECURE', False)
 SESSION_COOKIE_SAMESITE = _env('CYBER_SESSION_COOKIE_SAMESITE', 'Lax')
 SESSION_DAYS = _env_int('CYBER_SESSION_DAYS', 30)
 PERMANENT_SESSION_LIFETIME = timedelta(days=SESSION_DAYS)
+PLAYBACK_TICKET_TTL_SECONDS = _env_int('CYBER_PLAYBACK_TICKET_TTL_SECONDS', 12 * 60 * 60)
+PLAYBACK_TICKET_SECRET = _env('CYBER_PLAYBACK_TICKET_SECRET', '')
 BOOTSTRAP_ADMIN_USERNAME = _env('CYBER_BOOTSTRAP_ADMIN_USERNAME', '')
 BOOTSTRAP_ADMIN_PASSWORD = _env('CYBER_BOOTSTRAP_ADMIN_PASSWORD', '')
 BOOTSTRAP_ADMIN_DISPLAY_NAME = _env('CYBER_BOOTSTRAP_ADMIN_DISPLAY_NAME', 'Administrator')
@@ -363,7 +419,7 @@ PROXIES = TMDB_PROXIES
 
 # --- 应用版本 ---
 # 统一版本源：健康检查、文档与发布说明均应以此为准
-APP_VERSION = "1.21.0"
+APP_VERSION = "1.22.0"
 
 # --- 维护任务持久化 ---
 MAINTENANCE_JOB_RESULT_ITEM_LIMIT = _env_int('CYBER_MAINTENANCE_JOB_RESULT_ITEM_LIMIT', 20)

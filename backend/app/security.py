@@ -35,6 +35,7 @@ AUTH_PUBLIC_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
     "/api/v1/auth/me",
+    "/api/v1/auth/register",
 }
 
 UUID_PATTERN = r"[0-9a-fA-F-]{36}"
@@ -81,6 +82,18 @@ NORMAL_USER_WRITE_PATTERNS = (
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/download$"),
 )
 
+HOSTED_MANAGED_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+HOSTED_MANAGED_LOCKED_WRITE_PATTERNS = (
+    re.compile(r"^/api/v1/system/tmdb-config$"),
+    re.compile(r"^/api/v1/images/(?:preload|refresh)$"),
+    re.compile(rf"^/api/v1/movies/{UUID_PATTERN}/images/[^/]+$"),
+)
+
+HOSTED_MANAGED_LOCKED_REFRESH_GET_PATTERNS = (
+    re.compile(rf"^/api/v1/movies/{UUID_PATTERN}/images/[^/]+$"),
+)
+
 MOVIE_PATH_PATTERNS = (
     re.compile(rf"^/api/v1/movies/(?P<id>{UUID_PATTERN})(?:$|/(?:recommendations|resources|seasons|images/(?:poster|backdrop)))"),
     re.compile(rf"^/api/v1/user/favorites/(?P<id>{UUID_PATTERN})$"),
@@ -94,8 +107,41 @@ RESOURCE_PATH_PATTERNS = (
     ),
 )
 
+PLAYBACK_TICKET_GET_PATTERNS = (
+    re.compile(
+        rf"^/api/v1/resources/{UUID_PATTERN}/"
+        r"(?:stream|streaming-qualities|stream-transcoded|audio-transcode|subtitles/online/search)$"
+    ),
+)
+
+PLAYBACK_TICKET_POST_PATTERNS = (
+    re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/download$"),
+)
+
 LIBRARY_PATH_PATTERNS = (
     re.compile(r"^/api/v1/libraries/(?P<id>\d+)(?:$|/(?:movies|featured|recommendations|filters))"),
+)
+
+ACCOUNT_OWNER_GET_PATTERNS = (
+    re.compile(r"^/api/v1/storage(?:$|/)"),
+    re.compile(r"^/api/v1/libraries(?:$|/)"),
+    re.compile(r"^/api/v1/movies(?:$|/)"),
+    re.compile(r"^/api/v1/resources(?:$|/)"),
+    re.compile(r"^/api/v1/homepage$"),
+    re.compile(r"^/api/v1/featured$"),
+    re.compile(r"^/api/v1/recommendations$"),
+    re.compile(r"^/api/v1/filters$"),
+    re.compile(r"^/api/v1/user(?:$|/)"),
+)
+
+ACCOUNT_OWNER_WRITE_PATTERNS = (
+    re.compile(r"^/api/v1/storage(?:$|/)"),
+    re.compile(r"^/api/v1/scan$"),
+    re.compile(r"^/api/v1/libraries(?:$|/)"),
+    re.compile(r"^/api/v1/movies(?:$|/)"),
+    re.compile(r"^/api/v1/resources(?:$|/)"),
+    re.compile(r"^/api/v1/homepage$"),
+    re.compile(r"^/api/v1/user(?:$|/)"),
 )
 
 
@@ -106,6 +152,10 @@ def _configured_token():
 
 def is_user_management_enabled():
     return bool(current_app.config.get("USER_MANAGEMENT_ENABLED"))
+
+
+def is_hosted_managed_mode():
+    return bool(current_app.config.get("HOSTED_MANAGED_MODE"))
 
 
 def is_api_auth_enabled():
@@ -151,6 +201,10 @@ def _reset_request_auth():
     g.current_user = None
     g.auth_role = None
     g.auth_via = None
+    g.current_account = None
+    g.current_account_id = None
+    g.current_account_membership = None
+    g.current_account_role = None
 
 
 def get_current_user():
@@ -163,6 +217,24 @@ def get_current_auth_role():
 
 def is_admin_request():
     return get_current_auth_role() == ADMIN_ROLE
+
+
+def get_current_account():
+    return getattr(g, "current_account", None)
+
+
+def get_current_account_id():
+    return getattr(g, "current_account_id", None)
+
+
+def get_current_account_role():
+    return getattr(g, "current_account_role", None)
+
+
+def is_account_owner_request():
+    from backend.app.models import AccountMembership
+
+    return get_current_account_role() == AccountMembership.ROLE_OWNER
 
 
 def _authenticate_api_token():
@@ -201,10 +273,69 @@ def _load_session_user():
     g.current_user = user
     g.auth_role = user.role
     g.auth_via = "session"
+    if current_app.config.get("MULTI_TENANT_ENABLED"):
+        from backend.app.services.accounts import resolve_or_provision_membership, set_request_account
+
+        membership = resolve_or_provision_membership(user)
+        set_request_account(membership)
     return True
 
 
+def _authenticate_playback_ticket():
+    if "ticket" not in request.args:
+        return False, None
+    if request.method == "GET":
+        allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_GET_PATTERNS)
+    elif request.method == "POST":
+        allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_POST_PATTERNS)
+    else:
+        allowed = False
+    if not allowed:
+        return False, None
+
+    from backend.app.services.playback_tickets import (
+        PlaybackTicketError,
+        PlaybackTicketExpired,
+        validate_playback_ticket,
+    )
+
+    try:
+        ticket_auth = validate_playback_ticket(request.args.get("ticket"))
+    except PlaybackTicketExpired:
+        return False, api_error(code=40130, msg="Playback ticket expired", http_status=401)
+    except PlaybackTicketError:
+        return False, api_error(code=40130, msg="Invalid playback ticket", http_status=401)
+
+    if ticket_auth["type"] == "admin":
+        g.current_user = None
+        g.auth_role = ADMIN_ROLE
+        g.auth_via = "playback_ticket"
+        return True, None
+
+    user = ticket_auth["user"]
+    g.current_user = user
+    g.auth_role = user.role
+    g.auth_via = "playback_ticket"
+    if current_app.config.get("MULTI_TENANT_ENABLED"):
+        from backend.app.services.accounts import resolve_or_provision_membership, set_request_account
+
+        membership = resolve_or_provision_membership(user)
+        set_request_account(membership)
+    return True, None
+
+
 def _normal_user_can_access_route():
+    if request.path == "/api/v1/auth/playback-ticket" and request.method == "POST":
+        return True
+    if is_account_owner_request():
+        if request.method == "GET":
+            return any(pattern.match(request.path) for pattern in ACCOUNT_OWNER_GET_PATTERNS)
+        if request.path == "/api/v1/auth/logout" and request.method == "POST":
+            return True
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            return any(pattern.match(request.path) for pattern in ACCOUNT_OWNER_WRITE_PATTERNS)
+        return False
+
     if request.method == "GET":
         return any(pattern.match(request.path) for pattern in NORMAL_USER_GET_PATTERNS)
     if request.path == "/api/v1/auth/logout" and request.method == "POST":
@@ -214,8 +345,36 @@ def _normal_user_can_access_route():
     return False
 
 
+def _enforce_hosted_managed_mode():
+    if not is_hosted_managed_mode():
+        return None
+
+    if request.method in HOSTED_MANAGED_WRITE_METHODS:
+        if any(pattern.match(request.path) for pattern in HOSTED_MANAGED_LOCKED_WRITE_PATTERNS):
+            return api_error(
+                code=40390,
+                msg="Hosted managed mode blocks server configuration changes",
+                http_status=403,
+            )
+        return None
+
+    refresh_requested = str(request.args.get("refresh") or "").strip().lower() in {"1", "true", "yes", "on"}
+    if request.method != "GET" or not refresh_requested:
+        return None
+    if not any(pattern.match(request.path) for pattern in HOSTED_MANAGED_LOCKED_REFRESH_GET_PATTERNS):
+        return None
+
+    return api_error(
+        code=40390,
+        msg="Hosted managed mode blocks server configuration changes",
+        http_status=403,
+    )
+
+
 def _enforce_visibility_for_normal_user():
     if is_admin_request() or not is_user_management_enabled():
+        return None
+    if is_account_owner_request():
         return None
 
     from backend.app.services.user_access import (
@@ -247,8 +406,25 @@ def _require_user_session():
         _authenticate_api_token() or _load_session_user()
         return None
     if _authenticate_api_token():
-        return None
+        return _enforce_hosted_managed_mode()
     if _load_session_user():
+        if current_app.config.get("MULTI_TENANT_ENABLED") and not get_current_account_id():
+            return api_error(code=40340, msg="Current user has no active account", http_status=403)
+        hosted_response = _enforce_hosted_managed_mode()
+        if hosted_response:
+            return hosted_response
+        if not is_admin_request() and not _normal_user_can_access_route():
+            return api_error(code=40310, msg="Admin permission required", http_status=403)
+        return _enforce_visibility_for_normal_user()
+    playback_ticket_ok, playback_ticket_error = _authenticate_playback_ticket()
+    if playback_ticket_error:
+        return playback_ticket_error
+    if playback_ticket_ok:
+        if current_app.config.get("MULTI_TENANT_ENABLED") and not get_current_account_id():
+            return api_error(code=40340, msg="Current user has no active account", http_status=403)
+        hosted_response = _enforce_hosted_managed_mode()
+        if hosted_response:
+            return hosted_response
         if not is_admin_request() and not _normal_user_can_access_route():
             return api_error(code=40310, msg="Admin permission required", http_status=403)
         return _enforce_visibility_for_normal_user()
@@ -262,7 +438,7 @@ def require_api_token():
         return _require_user_session()
 
     if not is_api_auth_enabled() or _is_public_request():
-        return None
+        return _enforce_hosted_managed_mode()
 
     expected = _configured_token()
     supplied = _request_token()
@@ -270,4 +446,7 @@ def require_api_token():
         return api_error(code=40100, msg="Authentication required", http_status=401)
     if not hmac.compare_digest(supplied, expected):
         return api_error(code=40300, msg="Invalid API token", http_status=403)
-    return None
+    g.current_user = None
+    g.auth_role = ADMIN_ROLE
+    g.auth_via = "api_token"
+    return _enforce_hosted_managed_mode()

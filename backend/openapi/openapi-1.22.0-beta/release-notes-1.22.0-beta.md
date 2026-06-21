@@ -1,4 +1,62 @@
-# 1.21.0-beta 更新说明
+# 1.22.0-beta 更新说明
+
+本文档记录代托管多租户最小闭环接口变化。1.21.0-beta 目录保留为历史契约，1.22.0-beta 是当前 `/api/v1/openapi.json` 返回版本。
+
+## 代托管多租户
+
+- 新增 `Account` / `AccountMembership` 账号空间模型，业务数据以 `current_account.id` 为隔离边界。
+- 新增开放注册 `POST /api/v1/auth/register`：创建普通 `users.role=user` 登录身份、账号空间、owner membership、默认片库和首页配置，并直接建立 Cookie 会话。
+- `GET /api/v1/auth/me`、`POST /api/v1/auth/login` 返回新增 `current_account`、`account_role`、`permissions.manage_storage`、`permissions.manage_account_users`。
+- 新增 `POST /api/v1/auth/playback-ticket`，用于 PC/mpv 等拿不到 HttpOnly Cookie 的外部播放器换取 12 小时播放临时票据；`/resources/{id}/stream`、`stream-transcoded`、`streaming-qualities`、`audio-transcode`、`subtitles/online/search` 和 `subtitles/online/download` 可通过 `?ticket=` 鉴权，非法或过期返回 `40130`，并继续按 current_account 做隔离。
+- 普通注册用户不会成为平台 admin；账号 owner 可管理自己账号下的片库、挂载、扫描、审查和元数据。
+- 平台级 `users.role=admin` 保留给托管商语义；在没有平台后台时，默认也只操作自己的 current account。
+
+## 自助挂载和扫描
+
+- 代托管模式不再封禁账号 owner 的 storage source 创建、托管云盘登录、默认片库绑定和扫描入口。
+- `GET /api/v1/storage/sources`、详情、刷新、扫描、删除等均按当前账号过滤；直接访问其他账号 id 优先返回 404。
+- 新建托管 AList/OpenList mount path 采用账号前缀，目标格式为 `/cyberstream/accounts/{account_id}/sources/{source_id}/...`。
+- 百度网盘 OAuth callback 属于公开回调入口，也会根据 `oauth_state -> source.account_id` 恢复账号上下文，确保最终 OpenList mount path 不会丢失 account 前缀。
+- storage source 创建后自动绑定账号默认片库，前端注册后可直接进入挂载和扫描流程。
+- 资源治理、批量重识别等持久化后台任务会写入 `account_id`，异步执行和 `/jobs` 查询都按账号上下文隔离。
+
+## 服务器级配置仍由平台维护
+
+以下能力在 `CYBER_HOSTED_MANAGED_MODE=true` 下仍返回 `40390`：
+
+- `PUT /api/v1/system/tmdb-config`
+- `POST /api/v1/images/preload`
+- `POST /api/v1/images/refresh`
+- `DELETE /api/v1/movies/{id}/images/{kind}`
+- `GET /api/v1/movies/{id}/images/{kind}?refresh=true`
+
+前端应使用 `permissions.manage_server_config=false` 隐藏 TMDB token、代理、CDN 和图片缓存运维入口。
+
+## 数据库和迁移
+
+- 新增 `CYBER_DATABASE_URL` / `DATABASE_URL` 优先级，正式代托管建议使用 PostgreSQL。
+- 引入 Flask-Migrate/Alembic 迁移目录，SQLite 继续作为本地开发和自托管 fallback。
+- 旧数据迁移会要求存在 `pureworld`（或 `CYBER_LEGACY_ACCOUNT_USERNAME` 指定用户），并把既有片库、影视、资源、审查、历史、收藏和字幕设置归入该账号。
+- `movies.tmdb_id`、`libraries.name`、`libraries.slug` 从全局唯一调整为账号内唯一。
+- SQLite 运行时兼容 patch 会移除旧库遗留的全局 `movies.tmdb_id` 唯一索引，并创建 `account_id + tmdb_id` 账号级唯一索引；正式 hosted 仍建议走 Alembic/PostgreSQL。
+
+## 前端必须调整
+
+- 启动、登录、注册、退出和 401 后统一请求 `/api/v1/auth/me`。
+- 不要在普通业务请求里传 `account_id`，也不要信任本地保存的 account 状态决定数据范围。
+- 使用 `permissions.manage_storage` 展示云盘挂载入口。
+- 使用 `permissions.manage_catalog` 展示片库、扫描、审查工作台和元数据编辑入口。
+- 不要把 `users.role=user` 理解成没有管理自己片库的权限；账号内权限看 `account_role=owner` 和 permissions。
+
+## 兼容性
+
+- 登录、退出、播放、历史、收藏、字幕等旧接口路径保持不变。
+- `AuthStatus.permissions.manage_users` 保留平台用户管理语义；未来家庭子账号管理会走账号级接口，1.22.0-beta 中 `manage_account_users=false`。
+- 代托管部署中的 `40162` 后端使用本版本契约；旧 `40160` 自托管/试点后端不要和新前端配置混用。
+
+---
+
+# 1.21.0-beta 历史更新说明
 
 本文档记录 `1.21.0-beta` 的接口变化，作为其他视频归档联调基线。
 

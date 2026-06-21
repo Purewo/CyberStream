@@ -17,8 +17,23 @@ Flask app 会通过 `app.config.from_object(config)` 载入该模块。
 #### `SQLALCHEMY_DATABASE_URI`
 用于 Flask-SQLAlchemy 连接数据库。
 
+数据库 URL 优先级：
+
+1. `CYBER_DATABASE_URL`
+2. `DATABASE_URL`
+3. SQLite fallback：`sqlite:///<DATA_DIR>/cyber_library.db`
+
+正式代托管部署建议使用 PostgreSQL，例如：
+
+```env
+CYBER_DATABASE_URL=postgresql+psycopg://cyberstream:password@127.0.0.1:5432/cyberstream_hosted
+```
+
 #### `SQLALCHEMY_TRACK_MODIFICATIONS`
 SQLAlchemy 追踪修改开关。
+
+#### `CYBER_DATABASE_AUTO_CREATE_SCHEMA`
+控制启动时是否自动 `db.create_all()`。SQLite fallback 默认 `true`，方便本地开发；非 SQLite 默认 `false`，正式 PostgreSQL 应通过 Alembic/Flask-Migrate 执行迁移。
 
 ---
 
@@ -28,6 +43,17 @@ SQLAlchemy 追踪修改开关。
 用于 `app/services/tmdb.py` 请求 TMDB API。
 
 必须通过环境变量或 `.env.local` 提供。代码中不再内置默认 token；未配置时 TMDB 请求会被跳过，扫描会继续走 NFO / Bangumi / Local fallback 等其他 provider。
+
+#### `CYBER_TMDB_TOKEN_POOL` / `TMDB_TOKEN_POOL`
+平台托管部署使用的 TMDB bearer token 池。推荐使用 `CYBER_TMDB_TOKEN_POOL`；`TMDB_TOKEN_POOL` 是兼容别名。
+
+多个 token 可用逗号、分号或空白分隔，后端会去重并按请求轮询。配置池子后以池子为准；未配置池子时自动回退到单值 `TMDB_TOKEN`，因此原自托管配置无需修改。
+
+示例：
+
+```env
+CYBER_TMDB_TOKEN_POOL=token-a,token-b,token-c
+```
 
 #### `TMDB_IMAGE_BASE`
 用于拼接海报地址。
@@ -43,7 +69,7 @@ TMDB 专用代理地址，默认 `http://127.0.0.1:17890`。
 
 桌面端可通过 `GET/PUT /api/v1/system/tmdb-config` 查询或更新上述 TMDB 配置。运行时接口不会返回 token 明文，代理 URL 含凭证时会脱敏；写入采用加锁和原子替换，拒绝换行/控制字符注入，并在持久化成功后才更新进程环境。
 
-刮削前可调用 `GET /api/v1/system/tmdb-config/check` 做主动预检。只有 `data.ready=true` 才表示 token 已配置、TMDB 已接受且本次检查请求成功；`data.status` 会区分 `missing_token`、`invalid_token`、`proxy_error`、`timeout`、`network_error` 等状态，方便前端阻止无效配置下的批量刮削。
+刮削前可调用 `GET /api/v1/system/tmdb-config/check` 做主动预检。单 token 或池子中至少一个 token 可用时 `data.ready=true`；部分可用时 `data.status=partial_ok`。响应会给出 `token_pool_size`、`token_valid_count`、`token_invalid_count` 和不含明文凭证的 `token_checks`，方便平台维护池子。
 
 说明：
 - 该代理只在 `app/services/tmdb.py` 中使用
@@ -62,7 +88,7 @@ TMDB 专用代理地址，默认 `http://127.0.0.1:17890`。
 Bangumi / 番组计划 API 地址，默认 `https://api.bgm.tv`。
 
 #### `BANGUMI_USER_AGENT`
-Bangumi API 请求使用的 User-Agent，默认 `Purewo/CyberStream/1.21.0 (https://github.com/Purewo/CyberStream)`。Bangumi 官方要求非浏览器 API 使用者提供明确的开发者 ID 和应用名；当前默认值已带项目 GitHub 仓库地址。
+Bangumi API 请求使用的 User-Agent，默认 `Purewo/CyberStream/1.22.0 (https://github.com/Purewo/CyberStream)`。Bangumi 官方要求非浏览器 API 使用者提供明确的开发者 ID 和应用名；当前默认值已带项目 GitHub 仓库地址。
 
 #### `BANGUMI_TIMEOUT_SECONDS`
 Bangumi API 请求超时时间，默认 `10` 秒。
@@ -84,7 +110,7 @@ AniList 作为动漫类补充元数据来源接入，使用官方 GraphQL API，
 AniList GraphQL API 地址，默认 `https://graphql.anilist.co`。
 
 #### `ANILIST_USER_AGENT`
-AniList 请求使用的 User-Agent，默认 `Purewo/CyberStream/1.21.0 metadata matcher`。
+AniList 请求使用的 User-Agent，默认 `Purewo/CyberStream/1.22.0 metadata matcher`。
 
 #### `ANILIST_TIMEOUT_SECONDS`
 AniList API 请求超时时间，默认 `10` 秒。
@@ -171,6 +197,11 @@ ffmpeg 原生 `-re` 输入限速开关，默认 `true`。优先保护原始视�
 - 实际图片读取、缓存、刷新和清理仍由后端图片接口处理
 - 适合让真实 CDN 反向代理后端图片接口，后续接对象存储/CDN SDK 时再扩展上传与 purge provider
 
+#### `CYBER_IMAGE_ASSET_PREFER_ORIGINAL_URLS`
+默认 `false`。设为 `true` 后，`poster_asset_url/backdrop_asset_url` 直接优先返回数据库中的原始 `poster_url/backdrop_url`，后端本地图片入口仅作为失败回退。
+
+代托管初期不使用 CDN 时建议启用。影片表仍只保存元数据来源提供的图片链接，不会因为用户数量增加而自动把海报上传到平台 CDN。
+
 #### `CYBER_IMAGE_ASSET_CDN_PURGE_PROVIDER`
 图片 CDN purge provider，默认 `noop`。
 
@@ -226,7 +257,7 @@ CYBER_SUPERCDN_SERVE_ASSET_URLS=true
 分别控制图片缓存写入后、用户绑定字幕写入后是否自动上传 Super CDN，默认均为 `true`，但只有在 Super CDN provider 启用后生效。
 
 #### `CYBER_SUPERCDN_SERVE_ASSET_URLS`
-默认 `true`。当本地缓存元数据中存在已上传的 Super CDN URL 时，`poster_asset_url/backdrop_asset_url` 和绑定字幕 `url/web_player.url` 会优先返回 CDN URL；上传失败或未上传时自动回退后端 URL。
+默认 `true`，但只有 Super CDN provider 启用时生效。当本地缓存元数据中存在已上传的 Super CDN URL 时，`poster_asset_url/backdrop_asset_url` 和绑定字幕 `url/web_player.url` 会优先返回 CDN URL；上传失败、未上传或 provider 已关闭时自动回退非 CDN URL。
 
 图片接口的正式加载链路为 CDN -> 后端本地图片入口 -> 原始元数据 URL。列表、详情和状态接口会返回 `*_asset_urls` 与 `*_asset_fallback_urls`，后端本地图片入口在无缓存且回源失败时会 302 到原始 URL。
 
@@ -419,6 +450,30 @@ SrtKu 搜索请求总超时上限，默认 `5` 秒。SrtKu 仍然是显式备用
 #### `CYBER_USER_MANAGEMENT_ENABLED`
 用户管理总开关，默认 `false`。关闭时不改变现有业务行为；开启后网页端通过 Cookie 会话登录；当 `CYBER_AUTH_ENABLED=true` 且已配置 `CYBER_API_TOKEN` 时，该 token 保留为管理员后门。
 
+#### `CYBER_HOSTED_MANAGED_MODE`
+统一代托管模式开关，默认 `false`。开启后会默认启用多租户和开放注册。账号 owner 可以管理自己账号下的云盘挂载、片库、扫描、审查和影视元数据；服务器级配置和平台运维写接口仍由托管方统一维护，即使请求来自管理员 session 或有效的 `CYBER_API_TOKEN` 也会返回 HTTP `403`、业务码 `40390`。
+
+当前封禁范围：
+
+- `PUT /api/v1/system/tmdb-config`
+- `POST /api/v1/images/preload`、`POST /api/v1/images/refresh`
+- `DELETE /api/v1/movies/<id>/images/<kind>`
+- `GET /api/v1/movies/<id>/images/<kind>?refresh=true`
+
+只读状态、影视目录、播放、个人资料、注册、账号内存储和扫描接口不受这个服务器级封禁影响。`GET /api/v1/auth/me` 会返回 `hosted_managed_mode=true`、`current_account`、`account_role` 和 `permissions.manage_server_config=false`。
+
+#### `CYBER_MULTI_TENANT_ENABLED`
+多租户账号空间开关，默认跟随 `CYBER_HOSTED_MANAGED_MODE`。开启后，请求会解析当前用户 active membership 并以 `current_account.id` 作为业务数据隔离边界。
+
+#### `CYBER_REGISTRATION_ENABLED`
+开放注册开关，默认跟随 `CYBER_HOSTED_MANAGED_MODE`。开启后 `POST /api/v1/auth/register` 可创建普通用户、账号空间、owner membership、默认片库和账号级首页配置。
+
+#### `CYBER_ACCOUNT_AUTO_PROVISION_LEGACY_USERS`
+旧用户自动补账号空间开关，默认跟随多租户。用于让已有 `pureworld` 等旧账号首次登录时获得 account membership；正式迁移仍应优先使用 Alembic 迁移脚本。
+
+#### `CYBER_DEFAULT_ACCOUNT_LIBRARY_NAME` / `CYBER_DEFAULT_ACCOUNT_LIBRARY_SLUG`
+新账号默认片库名称和 slug，默认分别为 `默认片库` 与 `default`。
+
 #### `CYBER_SESSION_SECRET`
 用户管理开启时必须设置，用于签名 Flask session cookie。
 
@@ -557,6 +612,8 @@ CYBER_CORS_SUPPORTS_CREDENTIALS=true
 ### 6.2 TMDB 相关变量
 
 - `TMDB_TOKEN`
+- `CYBER_TMDB_TOKEN_POOL`
+- `TMDB_TOKEN_POOL`
 - `TMDB_IMAGE_BASE`
 - `TMDB_BACKDROP_BASE`
 - `TMDB_PROXY_ENABLED`
@@ -564,7 +621,8 @@ CYBER_CORS_SUPPORTS_CREDENTIALS=true
 
 说明：
 - 这组变量属于当前主流程真实有效配置
-- `TMDB_TOKEN` 未设置时不会请求 TMDB，扫描会继续尝试 NFO / Bangumi / Local fallback
+- token 池未配置时回退到 `TMDB_TOKEN`
+- token 池和 `TMDB_TOKEN` 都未设置时不会请求 TMDB，扫描会继续尝试 NFO / Bangumi / Local fallback
 
 ### 6.3 最小 API 鉴权变量
 
@@ -573,6 +631,7 @@ CYBER_CORS_SUPPORTS_CREDENTIALS=true
 - `CYBER_AUTH_ENABLED`
 - `CYBER_AUTH_EXEMPT_MEDIA_GET`
 - `CYBER_USER_MANAGEMENT_ENABLED`
+- `CYBER_HOSTED_MANAGED_MODE`
 - `CYBER_SESSION_SECRET`
 - `CYBER_BOOTSTRAP_ADMIN_USERNAME`
 - `CYBER_BOOTSTRAP_ADMIN_PASSWORD`

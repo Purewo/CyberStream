@@ -99,7 +99,7 @@ class AniListMetadataProvider(MetadataProviderBase):
             "User-Agent": getattr(
                 config,
                 "ANILIST_USER_AGENT",
-                "Purewo/CyberStream/1.21.0 metadata matcher",
+                "Purewo/CyberStream/1.22.0 metadata matcher",
             ),
         }
 

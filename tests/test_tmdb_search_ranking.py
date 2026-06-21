@@ -222,11 +222,15 @@ class TMDBSearchRankingTests(unittest.TestCase):
             return FakeTMDBResponse({"ok": True})
 
         with patch("backend.app.services.tmdb.config.TMDB_TOKEN", "old-token"), \
+             patch("backend.app.services.tmdb.config.CYBER_TMDB_TOKEN_POOL", ""), \
+             patch("backend.app.services.tmdb.config.TMDB_TOKEN_POOL_RAW", ""), \
              patch("backend.app.services.tmdb.config.TMDB_PROXIES", {"http": "http://old", "https": "http://old"}):
             scraper.refresh_runtime_config(reset_session=False)
 
         with patch.object(scraper.session, "get", side_effect=fake_get), \
              patch("backend.app.services.tmdb.config.TMDB_TOKEN", "new-token"), \
+             patch("backend.app.services.tmdb.config.CYBER_TMDB_TOKEN_POOL", ""), \
+             patch("backend.app.services.tmdb.config.TMDB_TOKEN_POOL_RAW", ""), \
              patch("backend.app.services.tmdb.config.TMDB_PROXIES", {"http": "http://new", "https": "http://new"}):
             self.assertEqual({"ok": True}, scraper._get("https://api.themoviedb.org/test"))
 
@@ -247,6 +251,8 @@ class TMDBSearchRankingTests(unittest.TestCase):
         with patch.object(scraper, "_pick_dns_family", return_value=socket.AF_INET6), \
              patch.object(scraper.session, "get", side_effect=fake_get), \
              patch("backend.app.services.tmdb.config.TMDB_TOKEN", "token"), \
+             patch("backend.app.services.tmdb.config.CYBER_TMDB_TOKEN_POOL", ""), \
+             patch("backend.app.services.tmdb.config.TMDB_TOKEN_POOL_RAW", ""), \
              patch("backend.app.services.tmdb.config.TMDB_PROXIES", None):
             self.assertEqual({"ok": True}, scraper._get("https://api.themoviedb.org/test"))
 

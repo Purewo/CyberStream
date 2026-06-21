@@ -40,6 +40,21 @@ class BackgroundJobManager:
     def _snapshot_unlocked(self, job):
         return copy.deepcopy(job)
 
+    def _current_account_id(self):
+        try:
+            from backend.app.services.accounts import current_account_id
+
+            account_id = current_account_id()
+            return str(account_id) if account_id else None
+        except RuntimeError:
+            return None
+
+    def _visible_in_current_scope(self, job):
+        account_id = self._current_account_id()
+        if not account_id:
+            return True
+        return str(job.get("account_id") or "") == account_id
+
     def _config_int(self, key, default, minimum=0, maximum=10000):
         try:
             from flask import current_app
@@ -97,10 +112,20 @@ class BackgroundJobManager:
             from backend.app.extensions import db
             from backend.app.models import MaintenanceJob
 
-            row = db.session.get(MaintenanceJob, job["id"])
+            account_id = str(job.get("account_id") or "").strip() or None
+            query = MaintenanceJob.query.execution_options(include_all_accounts=True).filter_by(
+                id=job["id"],
+            )
+            if account_id:
+                query = query.filter_by(account_id=account_id)
+            else:
+                query = query.filter(MaintenanceJob.account_id.is_(None))
+            row = query.first()
             if not row:
-                row = MaintenanceJob(id=job["id"])
+                row = MaintenanceJob(id=job["id"], account_id=account_id)
                 db.session.add(row)
+            else:
+                row.account_id = account_id
             row.type = job.get("type") or "unknown"
             row.title = job.get("title")
             row.status = job.get("status") or "queued"
@@ -125,10 +150,10 @@ class BackgroundJobManager:
 
     def _load_persisted_job(self, job_id):
         try:
-            from backend.app.extensions import db
             from backend.app.models import MaintenanceJob
+            from backend.app.services.accounts import get_account_scoped
 
-            row = db.session.get(MaintenanceJob, job_id)
+            row = get_account_scoped(MaintenanceJob, job_id)
             return row.to_dict() if row else None
         except RuntimeError:
             return None
@@ -156,7 +181,11 @@ class BackgroundJobManager:
             from backend.app.extensions import db
             from backend.app.models import MaintenanceJob
 
-            MaintenanceJob.query.delete()
+            query = MaintenanceJob.query
+            account_id = self._current_account_id()
+            if account_id:
+                query = query.filter(MaintenanceJob.account_id == account_id)
+            query.delete(synchronize_session=False)
             db.session.commit()
         except RuntimeError:
             return
@@ -248,6 +277,7 @@ class BackgroundJobManager:
         job_id = str(uuid.uuid4())
         job = {
             "id": job_id,
+            "account_id": self._current_account_id(),
             "type": job_type,
             "title": title,
             "status": "queued",
@@ -274,22 +304,26 @@ class BackgroundJobManager:
     def start(self, app, job_type, target, title=None, request=None, inline=False):
         job = self.create(job_type, title=title, request=request)
         job_id = job["id"]
+        account_id = job.get("account_id")
 
         def runner():
             with app.app_context():
-                self.mark_running(job_id)
-                try:
-                    result = target(job_id)
-                    self.mark_succeeded(job_id, result=result)
-                except Exception as exc:
-                    logger.exception("Background job failed job_id=%s type=%s error=%s", job_id, job_type, exc)
-                    self.mark_failed(job_id, exc)
-                finally:
+                from backend.app.services.accounts import account_scope
+
+                with account_scope(account_id):
+                    self.mark_running(job_id)
                     try:
-                        from backend.app.extensions import db
-                        db.session.remove()
-                    except Exception:
-                        logger.debug("Background job session cleanup failed job_id=%s", job_id, exc_info=True)
+                        result = target(job_id)
+                        self.mark_succeeded(job_id, result=result)
+                    except Exception as exc:
+                        logger.exception("Background job failed job_id=%s type=%s error=%s", job_id, job_type, exc)
+                        self.mark_failed(job_id, exc)
+                    finally:
+                        try:
+                            from backend.app.extensions import db
+                            db.session.remove()
+                        except Exception:
+                            logger.debug("Background job session cleanup failed job_id=%s", job_id, exc_info=True)
 
         if inline:
             runner()
@@ -357,7 +391,7 @@ class BackgroundJobManager:
     def get(self, job_id):
         with self._lock:
             job = self._jobs.get(job_id)
-            if job:
+            if job and self._visible_in_current_scope(job):
                 return self._snapshot_unlocked(job)
         return self._load_persisted_job(job_id)
 
@@ -372,6 +406,8 @@ class BackgroundJobManager:
             for job_id in job_ids:
                 job = self._jobs.get(job_id)
                 if not job:
+                    continue
+                if not self._visible_in_current_scope(job):
                     continue
                 if job_type and job.get("type") != job_type:
                     continue

@@ -3,7 +3,7 @@ from flask_cors import CORS
 from sqlalchemy import text
 from werkzeug.middleware.proxy_fix import ProxyFix
 from backend import config
-from backend.app.extensions import db as db_ext
+from backend.app.extensions import db as db_ext, migrate
 from backend.app.db.schema import ensure_sqlite_schema
 from backend.app.api.routes import api_bp
 from backend.app.api.system_routes import system_bp
@@ -17,6 +17,7 @@ from backend.app.api.auth_routes import auth_bp
 from backend.app.api.docs_routes import docs_bp
 from backend.app.api.aggregator_routes import aggregator_bp
 from backend.app.security import require_api_token
+from backend.app.services.accounts import install_account_session_hooks
 from backend.app.services.users import bootstrap_admin
 
 
@@ -25,6 +26,17 @@ def create_app(config_overrides=None):
     app.config.from_object(config)
     if config_overrides:
         app.config.update(config_overrides)
+    config_overrides = config_overrides or {}
+    if app.config.get("HOSTED_MANAGED_MODE"):
+        app.config.setdefault("MULTI_TENANT_ENABLED", True)
+        app.config.setdefault("REGISTRATION_ENABLED", True)
+        app.config.setdefault("ACCOUNT_AUTO_PROVISION_LEGACY_USERS", True)
+        if "MULTI_TENANT_ENABLED" not in config_overrides:
+            app.config["MULTI_TENANT_ENABLED"] = True
+        if "REGISTRATION_ENABLED" not in config_overrides:
+            app.config["REGISTRATION_ENABLED"] = True
+        if "ACCOUNT_AUTO_PROVISION_LEGACY_USERS" not in config_overrides:
+            app.config["ACCOUNT_AUTO_PROVISION_LEGACY_USERS"] = True
 
     if app.config.get("USER_MANAGEMENT_ENABLED") and not app.config.get("SESSION_SECRET"):
         raise RuntimeError("CYBER_SESSION_SECRET is required when user management is enabled")
@@ -53,8 +65,9 @@ def create_app(config_overrides=None):
         supports_credentials=bool(app.config.get("CORS_SUPPORTS_CREDENTIALS", False)),
     )
 
-    # 使用重命名后的变量进行初始化，彻底避免 AttributeError
     db_ext.init_app(app)
+    migrate.init_app(app, db_ext, directory=app.config.get("MIGRATIONS_DIR", "migrations"))
+    install_account_session_hooks()
 
     @app.route('/')
     @app.route('/api/v1/health')
@@ -100,10 +113,11 @@ def create_app(config_overrides=None):
     app.register_blueprint(docs_bp)
     app.register_blueprint(aggregator_bp)
 
-    # 初始化数据库表
+    # 初始化数据库表。PostgreSQL/正式托管库必须走 Alembic，不在启动时隐式 create_all。
     with app.app_context():
-        ensure_sqlite_schema(db_ext.engine)
-        db_ext.create_all()
+        if app.config.get("DATABASE_AUTO_CREATE_SCHEMA", True):
+            ensure_sqlite_schema(db_ext.engine)
+            db_ext.create_all()
         bootstrap_admin(app)
 
     return app

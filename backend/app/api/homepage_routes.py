@@ -7,6 +7,7 @@ from backend.app.api.helpers import get_history_map, get_json_object_payload
 from backend.app.api.library_helpers import apply_movie_filters, apply_public_movie_visibility_filter
 from backend.app.extensions import db
 from backend.app.models import HomepageSetting, Movie
+from backend.app.services.accounts import get_account_scoped
 from backend.app.services.user_access import apply_current_user_movie_visibility_filter, can_current_user_access_movie_id
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
@@ -25,7 +26,6 @@ DEFAULT_HOMEPAGE_SECTIONS = [
 
 SECTION_MODES = {"custom", "latest"}
 MAX_SECTION_LIMIT = 20
-HOMEPAGE_SETTING_ID = 1
 LEGACY_DEFAULT_SECTION_LIMITS = {4, 10}
 
 
@@ -42,13 +42,12 @@ def _get_json_payload():
 
 
 def _get_or_create_homepage_setting():
-    setting = db.session.get(HomepageSetting, HOMEPAGE_SETTING_ID)
+    setting = HomepageSetting.query.order_by(HomepageSetting.id.asc()).first()
     if setting:
         _upgrade_legacy_default_sections(setting)
         return setting
 
     setting = HomepageSetting(
-        id=HOMEPAGE_SETTING_ID,
         hero_movie_id=None,
         sections=_default_sections(),
     )
@@ -58,7 +57,7 @@ def _get_or_create_homepage_setting():
         return setting
     except IntegrityError:
         db.session.rollback()
-        existing = db.session.get(HomepageSetting, HOMEPAGE_SETTING_ID)
+        existing = HomepageSetting.query.order_by(HomepageSetting.id.asc()).first()
         if existing:
             return existing
         raise
@@ -177,7 +176,7 @@ def _normalize_hero_movie_id(value):
     movie_id = value.strip()
     if not movie_id:
         return None
-    if not db.session.get(Movie, movie_id):
+    if not get_account_scoped(Movie, movie_id):
         raise HomepageConfigError(f"movie not found: {movie_id}")
     return movie_id
 
@@ -262,7 +261,7 @@ def _passes_section_rules(movie, section, used_ids, animation_section_enabled):
 def _select_custom_section_movies(section, used_ids, animation_section_enabled):
     movies = []
     for movie_id in section["movie_ids"]:
-        movie = db.session.get(Movie, movie_id)
+        movie = get_account_scoped(Movie, movie_id)
         if not movie:
             continue
         if not can_current_user_access_movie_id(movie.id):
@@ -311,7 +310,7 @@ def _select_section_movies(section, used_ids, animation_section_enabled):
 
 def _select_hero_movie(setting):
     if setting.hero_movie_id:
-        hero_movie = db.session.get(Movie, setting.hero_movie_id)
+        hero_movie = get_account_scoped(Movie, setting.hero_movie_id)
         if hero_movie and can_current_user_access_movie_id(hero_movie.id):
             return hero_movie, "custom"
 

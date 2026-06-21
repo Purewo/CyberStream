@@ -199,13 +199,33 @@ class TMDBScraper:
     def __init__(self):
         self.session = requests.Session()
         self.session.trust_env = False
+        self._token_pool_lock = threading.Lock()
+        self.token_pool = []
+        self._token_pool_index = 0
         self.refresh_runtime_config(reset_session=False)
 
-    def refresh_runtime_config(self, reset_session=False):
-        self.headers = {
-            "Authorization": f"Bearer {config.TMDB_TOKEN}",
-            "accept": "application/json"
+    def _configured_token_pool(self):
+        return config._build_tmdb_token_pool(
+            getattr(config, "CYBER_TMDB_TOKEN_POOL", ""),
+            getattr(config, "TMDB_TOKEN_POOL_RAW", ""),
+            getattr(config, "TMDB_TOKEN", ""),
+        )
+
+    def _request_headers(self, token):
+        return {
+            "Authorization": f"Bearer {token}",
+            "accept": "application/json",
         }
+
+    def refresh_runtime_config(self, reset_session=False):
+        token_pool = self._configured_token_pool()
+        with self._token_pool_lock:
+            if token_pool != self.token_pool:
+                self.token_pool = token_pool
+                self._token_pool_index = 0
+
+        first_token = token_pool[0] if token_pool else ""
+        self.headers = self._request_headers(first_token)
         self.proxies = getattr(config, "TMDB_PROXIES", None)
         if reset_session:
             try:
@@ -214,6 +234,19 @@ class TMDBScraper:
                 logger.debug("TMDB session close failed during config refresh", exc_info=True)
             self.session = requests.Session()
             self.session.trust_env = False
+
+    def _current_token_pool(self):
+        with self._token_pool_lock:
+            return list(self.token_pool)
+
+    def _next_token(self):
+        with self._token_pool_lock:
+            if not self.token_pool:
+                return None, None
+            token_index = self._token_pool_index % len(self.token_pool)
+            token = self.token_pool[token_index]
+            self._token_pool_index = (token_index + 1) % len(self.token_pool)
+            return token, token_index
 
     def _normalize_search_query(self, query):
         clean_query = re.sub(r'\b(19|20)\d{2}\b', '', query or '').strip()
@@ -409,11 +442,12 @@ class TMDBScraper:
         if cache_key:
             _tmdb_clear_family(cache_key, family=family)
 
-    def _session_get(self, url, params=None, family=None, timeout=10):
+    def _session_get(self, url, params=None, family=None, timeout=10, token=None):
+        headers = self._request_headers(token) if token else self.headers
         if family not in (socket.AF_INET, socket.AF_INET6):
             return self.session.get(
                 url,
-                headers=self.headers,
+                headers=headers,
                 params=params,
                 proxies=self.proxies,
                 timeout=timeout
@@ -425,7 +459,7 @@ class TMDBScraper:
             try:
                 return self.session.get(
                     url,
-                    headers=self.headers,
+                    headers=headers,
                     params=params,
                     proxies=self.proxies,
                     timeout=timeout
@@ -433,33 +467,10 @@ class TMDBScraper:
             finally:
                 urllib3_connection.allowed_gai_family = original_gai_family
 
-    def check_token_status(self):
-        token = str(config.TMDB_TOKEN or "").strip()
-        proxy_enabled = bool(getattr(config, "TMDB_PROXY_ENABLED", True))
-        proxy_url = str(getattr(config, "TMDB_PROXY_URL", "") or "").strip()
-        base_payload = {
-            "ready": False,
-            "token_set": bool(token),
-            "token_valid": False,
-            "status": "missing_token" if not token else "unknown",
-            "message": "TMDB token is not configured" if not token else "",
-            "http_status": None,
-            "tmdb_status_code": None,
-            "tmdb_status_message": "",
-            "proxy_enabled": proxy_enabled,
-            "proxy_configured": bool(proxy_url),
-            "elapsed_ms": None,
-        }
-        if not token:
-            return base_payload
-
-        self.refresh_runtime_config(reset_session=False)
-        url = "https://api.themoviedb.org/3/authentication"
+    def _check_single_token_status(self, url, token, token_index, family=None):
         started = time.monotonic()
-        family = None if self.proxies else self._pick_dns_family(url)
-
         try:
-            response = self._session_get(url, family=family, timeout=6)
+            response = self._session_get(url, family=family, timeout=6, token=token)
             elapsed_ms = int((time.monotonic() - started) * 1000)
             try:
                 data = response.json()
@@ -469,7 +480,11 @@ class TMDBScraper:
             tmdb_status_code = data.get("status_code")
             tmdb_status_message = data.get("status_message") or ""
             payload = {
-                **base_payload,
+                "token_index": token_index,
+                "ready": False,
+                "token_valid": False,
+                "status": "unknown",
+                "message": "",
                 "http_status": response.status_code,
                 "tmdb_status_code": tmdb_status_code,
                 "tmdb_status_message": tmdb_status_message,
@@ -527,30 +542,127 @@ class TMDBScraper:
 
         if family:
             self._clear_dns_family_cache(url, family=family)
-        logger.warning("TMDB token check failed status=%s error=%s", status, error)
+        logger.warning("TMDB token check failed status=%s token_index=%s error=%s", status, token_index, error)
         return {
-            **base_payload,
+            "token_index": token_index,
+            "ready": False,
+            "token_valid": False,
             "status": status,
             "message": message,
+            "http_status": None,
+            "tmdb_status_code": None,
+            "tmdb_status_message": "",
             "elapsed_ms": int((time.monotonic() - started) * 1000),
         }
 
+    def _aggregate_token_check_status(self, checks):
+        if not checks:
+            return "missing_token", "TMDB token is not configured"
+
+        valid_count = sum(1 for item in checks if item.get("token_valid"))
+        total = len(checks)
+        if valid_count == total:
+            return "ok", "All TMDB tokens are valid"
+        if valid_count > 0:
+            return "partial_ok", f"{valid_count} of {total} TMDB tokens are valid"
+
+        statuses = [item.get("status") for item in checks]
+        if statuses and all(status == "invalid_token" for status in statuses):
+            return "invalid_token", "TMDB rejected all configured tokens"
+        if statuses and all(status == "rate_limited" for status in statuses):
+            return "rate_limited", "All TMDB tokens are rate limited"
+
+        for status, message in (
+            ("proxy_error", "TMDB proxy connection failed"),
+            ("timeout", "TMDB token check timed out"),
+            ("tls_error", "TMDB TLS verification failed"),
+            ("network_error", "TMDB token check request failed"),
+            ("tmdb_error", "TMDB returned an error"),
+            ("rate_limited", "TMDB rate limit reached"),
+            ("invalid_token", "TMDB rejected at least one configured token"),
+        ):
+            if status in statuses:
+                return status, message
+        return "unknown", "TMDB token check returned an unknown status"
+
+    def check_token_status(self):
+        self.refresh_runtime_config(reset_session=False)
+        token_pool = self._current_token_pool()
+        proxy_enabled = bool(getattr(config, "TMDB_PROXY_ENABLED", True))
+        proxy_url = str(getattr(config, "TMDB_PROXY_URL", "") or "").strip()
+        base_payload = {
+            "ready": False,
+            "token_set": bool(token_pool),
+            "token_pool_size": len(token_pool),
+            "token_pool_enabled": len(token_pool) > 1,
+            "token_valid": False,
+            "token_valid_count": 0,
+            "token_invalid_count": 0,
+            "status": "missing_token" if not token_pool else "unknown",
+            "message": "TMDB token is not configured" if not token_pool else "",
+            "http_status": None,
+            "tmdb_status_code": None,
+            "tmdb_status_message": "",
+            "proxy_enabled": proxy_enabled,
+            "proxy_configured": bool(proxy_url),
+            "elapsed_ms": None,
+            "token_checks": [],
+        }
+        if not token_pool:
+            return base_payload
+
+        url = "https://api.themoviedb.org/3/authentication"
+        family = None if self.proxies else self._pick_dns_family(url)
+        started = time.monotonic()
+        checks = [
+            self._check_single_token_status(url, token, token_index, family=family)
+            for token_index, token in enumerate(token_pool)
+        ]
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        valid_count = sum(1 for item in checks if item.get("token_valid"))
+        invalid_count = sum(1 for item in checks if item.get("status") == "invalid_token")
+        aggregate_status, aggregate_message = self._aggregate_token_check_status(checks)
+        representative = next((item for item in checks if item.get("token_valid")), checks[0])
+
+        return {
+            **base_payload,
+            "ready": valid_count > 0,
+            "token_valid": valid_count > 0,
+            "token_valid_count": valid_count,
+            "token_invalid_count": invalid_count,
+            "status": aggregate_status,
+            "message": aggregate_message,
+            "http_status": representative.get("http_status"),
+            "tmdb_status_code": representative.get("tmdb_status_code"),
+            "tmdb_status_message": representative.get("tmdb_status_message", ""),
+            "elapsed_ms": elapsed_ms,
+            "token_checks": checks,
+        }
+
     def _get(self, url, params=None):
-        if not config.TMDB_TOKEN:
+        self.refresh_runtime_config(reset_session=False)
+        token_pool = self._current_token_pool()
+        if not token_pool:
             logger.warning("TMDB_TOKEN is not configured; skipping TMDB request url=%s", url)
             return None
-        self.refresh_runtime_config(reset_session=False)
 
-        for _ in range(3):
+        for attempt in range(3):
+            token, token_index = self._next_token()
             family = None if self.proxies else self._pick_dns_family(url)
             try:
-                response = self._session_get(url, params=params, family=family)
+                response = self._session_get(url, params=params, family=family, token=token)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
                 if family:
                     self._clear_dns_family_cache(url, family=family)
-                logger.warning("TMDB request failed url=%s attempt=%s error=%s", url, _ + 1, e)
+                logger.warning(
+                    "TMDB request failed url=%s attempt=%s token_index=%s error=%s",
+                    url,
+                    attempt + 1,
+                    token_index,
+                    e,
+                )
                 time.sleep(1)
         return None
 

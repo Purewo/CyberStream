@@ -27,13 +27,14 @@ from backend.app.services.favorites import (
 )
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
+from backend.app.services.accounts import account_scope, get_account_scoped
 from backend.app.services.user_access import (
     apply_current_user_movie_visibility_filter,
     clear_user_access_cache,
     visible_library_ids_for_current_user,
 )
 from backend.app.services.vault import VaultAccessError, require_vault_unlocked
-from backend.app.security import is_admin_request
+from backend.app.security import get_current_account_id, is_admin_request
 from backend.app.storage.source_registry import get_source_capabilities
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
@@ -177,52 +178,53 @@ def _refresh_library_binding_source(library_id, binding):
     return []
 
 
-def _scan_library_background_task(app, library_id, refresh=True):
+def _scan_library_background_task(app, library_id, refresh=True, account_id=None):
     with app.app_context():
-        session_started = False
-        try:
-            library = db.session.get(Library, library_id)
-            if not library:
-                logger.warning('Library scan skipped library_id=%s reason=not_found', library_id)
-                return
+        with account_scope(account_id):
+            session_started = False
+            try:
+                library = get_account_scoped(Library, library_id)
+                if not library:
+                    logger.warning('Library scan skipped library_id=%s reason=not_found', library_id)
+                    return
 
-            bindings = _get_enabled_library_bindings(library)
-            if not bindings:
-                logger.info('Library scan skipped library_id=%s reason=no_bindings', library_id)
-                return
+                bindings = _get_enabled_library_bindings(library)
+                if not bindings:
+                    logger.info('Library scan skipped library_id=%s reason=no_bindings', library_id)
+                    return
 
-            scanner_engine._begin_scan_session(current_source=f'library:{library.name}')
-            session_started = True
-            app_instance = current_app._get_current_object()
-            refresh_errors = []
-            for binding in bindings:
-                if not binding.source or not binding.is_enabled:
-                    continue
-                if refresh:
-                    refresh_errors.extend(_refresh_library_binding_source(library_id, binding))
-                scanner_engine.scan_source(
-                    binding.source,
-                    app_instance=app_instance,
-                    root_path=binding.root_path,
-                    content_type=binding.content_type,
-                    scrape_enabled=binding.scrape_enabled,
-                    library_id=binding.library_id,
-                    library_source_id=binding.id,
-                    scraper_policy=binding.scraper_policy or {},
-                )
-            for path, error in refresh_errors:
-                scanner_engine._record_indexing_directory_skip(path, error)
-        except Exception as e:
-            logger.exception('Library scan failed library_id=%s error=%s', library_id, e)
-        finally:
-            if session_started:
-                scanner_engine._finish_scan_session()
-            scanner_engine.finish_scan()
-            logger.info('Library scan finished library_id=%s', library_id)
+                scanner_engine._begin_scan_session(current_source=f'library:{library.name}')
+                session_started = True
+                app_instance = current_app._get_current_object()
+                refresh_errors = []
+                for binding in bindings:
+                    if not binding.source or not binding.is_enabled:
+                        continue
+                    if refresh:
+                        refresh_errors.extend(_refresh_library_binding_source(library_id, binding))
+                    scanner_engine.scan_source(
+                        binding.source,
+                        app_instance=app_instance,
+                        root_path=binding.root_path,
+                        content_type=binding.content_type,
+                        scrape_enabled=binding.scrape_enabled,
+                        library_id=binding.library_id,
+                        library_source_id=binding.id,
+                        scraper_policy=binding.scraper_policy or {},
+                    )
+                for path, error in refresh_errors:
+                    scanner_engine._record_indexing_directory_skip(path, error)
+            except Exception as e:
+                logger.exception('Library scan failed library_id=%s error=%s', library_id, e)
+            finally:
+                if session_started:
+                    scanner_engine._finish_scan_session()
+                scanner_engine.finish_scan()
+                logger.info('Library scan finished library_id=%s', library_id)
 
 
 def _get_library_or_404(id):
-    library = db.session.get(Library, id)
+    library = get_account_scoped(Library, id)
     if not library:
         return None, api_error(code=40410, msg='Library not found', http_status=404)
     return library, None
@@ -519,7 +521,7 @@ def bind_library_source(id):
     if source_id is None:
         return api_error(code=40001, msg='Missing required field: source_id')
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg='Source not found', http_status=404)
 
@@ -976,6 +978,6 @@ def trigger_library_scan(id):
         return api_error(code=42900, msg='Scanner is already running', http_status=429)
 
     app = current_app._get_current_object()
-    thread = threading.Thread(target=_scan_library_background_task, args=(app, id, refresh))
+    thread = threading.Thread(target=_scan_library_background_task, args=(app, id, refresh, get_current_account_id()))
     thread.start()
     return api_response(msg='Library scan task accepted', http_status=202)

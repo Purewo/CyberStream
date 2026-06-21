@@ -6,9 +6,11 @@ from flask import Blueprint, Response, current_app, request
 from backend.app.api.helpers import get_json_object_payload
 from backend.app.db.database import scanner_adapter
 from backend.app.extensions import db
-from backend.app.models import StorageSource
+from backend.app.models import Library, LibrarySource, StorageSource
 from backend.app.providers.base import StorageProviderError
 from backend.app.providers.factory import provider_factory
+from backend.app.security import get_current_account, get_current_account_id
+from backend.app.services.accounts import account_scope, get_account_scoped
 from backend.app.services.managed_alist import ManagedAListClient, ManagedAListError, ManagedOpenListClient
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
@@ -125,6 +127,20 @@ def _managed_alist_error_response(error):
     return api_error(code=error.code, msg=error.message, http_status=http_status)
 
 
+def _managed_client(client_class, source_id=None):
+    client = client_class()
+    if source_id and hasattr(client, "set_source_scope"):
+        client.set_source_scope(source_id)
+    return client
+
+
+def _create_pending_managed_source(name, source_type):
+    source = StorageSource(name=name, type=source_type, config={})
+    db.session.add(source)
+    db.session.flush()
+    return source
+
+
 def _parse_source_id(payload):
     source_id = payload.get('source_id') or payload.get('id')
     if not source_id:
@@ -139,12 +155,47 @@ def _load_managed_source(payload, source_type, display_name):
     source_id, error_response = _parse_source_id(payload)
     if error_response:
         return None, None, error_response
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return source_id, None, api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != source_type:
         return source_id, source, api_error(code=40061, msg=f"Storage source is not a managed {display_name} source")
     return source_id, source, None
+
+
+def _bind_source_to_default_library(source):
+    account = get_current_account()
+    if not account or not source:
+        return None
+    if not source.id:
+        db.session.flush()
+
+    default_library_id = (account.settings or {}).get("default_library_id")
+    library = get_account_scoped(Library, default_library_id) if default_library_id else None
+    if not library:
+        library = Library.query.order_by(Library.sort_order.asc(), Library.id.asc()).first()
+    if not library:
+        return None
+
+    existing = LibrarySource.query.filter_by(
+        library_id=library.id,
+        source_id=source.id,
+        root_path='/',
+    ).first()
+    if existing:
+        return existing
+
+    binding = LibrarySource(
+        library_id=library.id,
+        source_id=source.id,
+        root_path='/',
+        scrape_enabled=True,
+        scraper_policy={},
+        scan_order=0,
+        is_enabled=True,
+    )
+    db.session.add(binding)
+    return binding
 
 
 def _config_int(config, key):
@@ -287,7 +338,7 @@ def _find_managed_source_by_oauth_state(source_type, oauth_state):
     normalized_state = str(oauth_state or "").strip()
     if not normalized_state:
         return None
-    for source in StorageSource.query.filter_by(type=source_type).all():
+    for source in StorageSource.query.execution_options(include_all_accounts=True).filter_by(type=source_type).all():
         if str((source.config or {}).get("oauth_state") or "").strip() == normalized_state:
             return source
     return None
@@ -308,35 +359,36 @@ def _oauth_html(title, message):
 
 
 def _complete_baidunetdisk_oauth_source(source, code):
-    source_config = source.config or {}
-    old_storage_id = _config_int(source_config, "openlist_storage_id")
-    callback_mode = str(source_config.get("oauth_callback_mode") or "redirect").strip().lower()
-    redirect_uri = str(source_config.get("oauth_redirect_uri") or "").strip()
-    if not redirect_uri:
-        redirect_uri = "oob" if callback_mode == "oob" else api_url_for("storage.callback_managed_baidunetdisk_oauth")
-    client = ManagedOpenListClient()
-    login_state = client.complete_baidunetdisk_oauth(
-        code=code,
-        redirect_uri=redirect_uri,
-        root_path=source_config.get("root_folder_path") or source_config.get("cloud_root_path") or "/",
-        download_api=_select_baidunetdisk_download_api(current_value=source_config.get("download_api")),
-    )
-    next_config = dict(source_config)
-    next_config.update(_build_baidunetdisk_source_config(login_state, auth_state='ready'))
-    for key in ("oauth_state", "oauth_error", "oauth_callback_mode", "oauth_redirect_uri"):
-        next_config.pop(key, None)
-    source.config = normalize_source_config('baidunetdisk', next_config)
-    db.session.commit()
-    old_storage_deleted = _delete_replaced_runtime_storage(
-        client,
-        "Baidu Netdisk",
-        source.id,
-        old_storage_id,
-        login_state.get("storage_id"),
-    )
-    login_state["replaced_openlist_storage_id"] = old_storage_id
-    login_state["old_openlist_storage_deleted"] = old_storage_deleted
-    return login_state
+    with account_scope(source.account_id):
+        source_config = source.config or {}
+        old_storage_id = _config_int(source_config, "openlist_storage_id")
+        callback_mode = str(source_config.get("oauth_callback_mode") or "redirect").strip().lower()
+        redirect_uri = str(source_config.get("oauth_redirect_uri") or "").strip()
+        if not redirect_uri:
+            redirect_uri = "oob" if callback_mode == "oob" else api_url_for("storage.callback_managed_baidunetdisk_oauth")
+        client = _managed_client(ManagedOpenListClient, source.id)
+        login_state = client.complete_baidunetdisk_oauth(
+            code=code,
+            redirect_uri=redirect_uri,
+            root_path=source_config.get("root_folder_path") or source_config.get("cloud_root_path") or "/",
+            download_api=_select_baidunetdisk_download_api(current_value=source_config.get("download_api")),
+        )
+        next_config = dict(source_config)
+        next_config.update(_build_baidunetdisk_source_config(login_state, auth_state='ready'))
+        for key in ("oauth_state", "oauth_error", "oauth_callback_mode", "oauth_redirect_uri"):
+            next_config.pop(key, None)
+        source.config = normalize_source_config('baidunetdisk', next_config)
+        db.session.commit()
+        old_storage_deleted = _delete_replaced_runtime_storage(
+            client,
+            "Baidu Netdisk",
+            source.id,
+            old_storage_id,
+            login_state.get("storage_id"),
+        )
+        login_state["replaced_openlist_storage_id"] = old_storage_id
+        login_state["old_openlist_storage_deleted"] = old_storage_deleted
+        return login_state
 
 
 _MANAGED_QUARK_UC_PROVIDERS = {
@@ -361,19 +413,20 @@ def _build_quark_uc_source_config(state, auth_state):
     }
 
 
-def _scan_background_task(app, source_id=None, root_path=None, content_type=None, scrape_enabled=True, scraper_policy=None):
+def _scan_background_task(app, source_id=None, root_path=None, content_type=None, scrape_enabled=True, scraper_policy=None, account_id=None):
     with app.app_context():
-        try:
-            scanner_engine.scan(
-                source_id,
-                root_path=root_path,
-                content_type=content_type,
-                scrape_enabled=scrape_enabled,
-                scraper_policy=scraper_policy,
-                lock_acquired=True,
-            )
-        except Exception as e:
-            logger.exception("Background scan failed source_id=%s error=%s", source_id, e)
+        with account_scope(account_id):
+            try:
+                scanner_engine.scan(
+                    source_id,
+                    root_path=root_path,
+                    content_type=content_type,
+                    scrape_enabled=scrape_enabled,
+                    scraper_policy=scraper_policy,
+                    lock_acquired=True,
+                )
+            except Exception as e:
+                logger.exception("Background scan failed source_id=%s error=%s", source_id, e)
 
 
 @storage_bp.route('/storage/sources', methods=['GET'])
@@ -384,7 +437,7 @@ def list_sources():
 
 @storage_bp.route('/storage/sources/<int:id>', methods=['GET'])
 def get_source(id):
-    source = db.session.get(StorageSource, id)
+    source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     return api_response(data=source.to_dict())
@@ -392,7 +445,7 @@ def get_source(id):
 
 @storage_bp.route('/storage/sources/<int:id>/health', methods=['GET'])
 def get_source_health(id):
-    source = db.session.get(StorageSource, id)
+    source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     return api_response(data=source.to_dict(include_health=True))
@@ -442,6 +495,7 @@ def add_source():
             return error_response
         source = StorageSource(name=name, type=normalized_type, config=normalized_config)
         db.session.add(source)
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data=source.to_dict())
     except StorageProviderError as e:
@@ -468,7 +522,8 @@ def start_managed_guangyapan_sms():
 
     storage_state = None
     try:
-        client = ManagedAListClient()
+        source = _create_pending_managed_source(name, 'guangyapan')
+        client = _managed_client(ManagedAListClient, source.id)
         storage_state = client.create_guangyapan_storage(
             phone_number=phone_number,
             root_path=root_path,
@@ -478,8 +533,8 @@ def start_managed_guangyapan_sms():
             'guangyapan',
             _build_guangyapan_source_config(storage_state, auth_state='sms_pending'),
         )
-        source = StorageSource(name=name, type='guangyapan', config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data={
             "verification_sent": True,
@@ -533,7 +588,7 @@ def restart_managed_guangyapan_sms():
     storage_state = None
     old_storage_deleted = False
     try:
-        client = ManagedAListClient()
+        client = _managed_client(ManagedAListClient, source.id)
         storage_state = client.create_guangyapan_storage(
             phone_number=phone_number,
             root_path=root_path,
@@ -595,7 +650,7 @@ def verify_managed_guangyapan_sms():
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != 'guangyapan':
@@ -606,7 +661,7 @@ def verify_managed_guangyapan_sms():
         storage_id = int(source_config.get("alist_storage_id") or 0)
         if not storage_id:
             return api_error(code=40061, msg="Managed GuangYaPan source has no AList storage id")
-        client = ManagedAListClient()
+        client = _managed_client(ManagedAListClient, source.id)
         verified_state = client.verify_guangyapan_storage(storage_id, verify_code)
         next_config = dict(source_config)
         next_config.update({
@@ -645,7 +700,8 @@ def start_managed_tianyicloud_qr():
 
     storage_state = None
     try:
-        client = ManagedOpenListClient()
+        source = _create_pending_managed_source(name, 'tianyicloud')
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_tianyicloud_storage(
             root_folder_id=root_folder_id,
             cloud_type=cloud_type,
@@ -654,8 +710,8 @@ def start_managed_tianyicloud_qr():
             'tianyicloud',
             _build_tianyicloud_source_config(storage_state, auth_state='qr_pending'),
         )
-        source = StorageSource(name=name, type='tianyicloud', config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data={
             "qr_started": True,
@@ -705,7 +761,7 @@ def restart_managed_tianyicloud_qr():
     storage_state = None
     old_storage_deleted = False
     try:
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_tianyicloud_storage(
             root_folder_id=root_folder_id,
             cloud_type=cloud_type,
@@ -765,7 +821,7 @@ def poll_managed_tianyicloud_qr():
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != 'tianyicloud':
@@ -776,7 +832,7 @@ def poll_managed_tianyicloud_qr():
         storage_id = int(source_config.get("openlist_storage_id") or 0)
         if not storage_id:
             return api_error(code=40061, msg="Managed TianYiCloud source has no OpenList storage id")
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         login_state = client.poll_tianyicloud_storage(storage_id)
         if not login_state.get("authenticated"):
             data = {
@@ -829,7 +885,8 @@ def start_managed_tianyicloud_pc_qr_experimental():
 
     storage_state = None
     try:
-        client = ManagedOpenListClient()
+        source = _create_pending_managed_source(name, 'tianyicloud')
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_tianyicloud_pc_qr_storage(
             root_folder_id=root_folder_id,
             cloud_type=cloud_type,
@@ -839,8 +896,8 @@ def start_managed_tianyicloud_pc_qr_experimental():
             'tianyicloud',
             _build_tianyicloud_source_config(storage_state, auth_state=auth_state),
         )
-        source = StorageSource(name=name, type='tianyicloud', config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data={
             "experimental": True,
@@ -892,7 +949,7 @@ def restart_managed_tianyicloud_pc_qr_experimental():
     storage_state = None
     old_storage_deleted = False
     try:
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_tianyicloud_pc_qr_storage(
             root_folder_id=root_folder_id,
             cloud_type=cloud_type,
@@ -957,7 +1014,7 @@ def poll_managed_tianyicloud_pc_qr_experimental():
         storage_id = int(source_config.get("openlist_storage_id") or 0)
         if not storage_id:
             return api_error(code=40061, msg="Managed TianYiCloud source has no OpenList storage id")
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         login_state = client.poll_tianyicloud_pc_qr_storage(storage_id)
         if not login_state.get("authenticated"):
             auth_state = login_state.get("auth_state") or "qr_pending"
@@ -1023,7 +1080,8 @@ def start_managed_115cloud_qr():
 
     storage_state = None
     try:
-        client = ManagedOpenListClient()
+        source = _create_pending_managed_source(name, '115cloud')
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_115cloud_storage(
             root_folder_id=root_folder_id,
             qrcode_source=qrcode_source,
@@ -1033,8 +1091,8 @@ def start_managed_115cloud_qr():
             '115cloud',
             _build_115cloud_source_config(storage_state, auth_state=auth_state),
         )
-        source = StorageSource(name=name, type='115cloud', config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         data = {
             "qr_started": auth_state != "ready",
@@ -1090,7 +1148,7 @@ def restart_managed_115cloud_qr():
     storage_state = None
     old_storage_deleted = False
     try:
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_115cloud_storage(
             root_folder_id=root_folder_id,
             qrcode_source=qrcode_source,
@@ -1153,7 +1211,7 @@ def poll_managed_115cloud_qr():
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != '115cloud':
@@ -1173,7 +1231,7 @@ def poll_managed_115cloud_qr():
                 "qr_time": source_config.get("qr_time"),
             }
 
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         login_state = client.poll_115cloud_storage(storage_id, qr_session=qr_session)
         if not login_state.get("authenticated"):
             auth_state = login_state.get("auth_state") or "qr_pending"
@@ -1251,7 +1309,8 @@ def start_managed_aliyundrive_qr():
         return api_error(code=40038, msg="Invalid field value: name cannot be empty")
 
     try:
-        client = ManagedOpenListClient()
+        source = _create_pending_managed_source(name, 'aliyundrive')
+        client = _managed_client(ManagedOpenListClient, source.id)
         login_state = client.start_aliyundrive_qr(
             root_folder_id=root_folder_id,
             drive_type=drive_type,
@@ -1261,8 +1320,8 @@ def start_managed_aliyundrive_qr():
             'aliyundrive',
             _build_aliyundrive_source_config(login_state, auth_state='qr_pending'),
         )
-        source = StorageSource(name=name, type='aliyundrive', config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data={
             "qr_started": True,
@@ -1304,7 +1363,7 @@ def restart_managed_aliyundrive_qr():
     old_storage_id = _config_int(source_config, "openlist_storage_id")
 
     try:
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         login_state = client.start_aliyundrive_qr(
             root_folder_id=root_folder_id,
             drive_type=drive_type,
@@ -1351,7 +1410,7 @@ def poll_managed_aliyundrive_qr():
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != 'aliyundrive':
@@ -1371,7 +1430,7 @@ def poll_managed_aliyundrive_qr():
         if not qr_sid:
             return api_error(code=40061, msg="Managed Aliyundrive source has no QR session")
 
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         login_state = client.poll_aliyundrive_storage(
             qr_sid=qr_sid,
             root_folder_id=source_config.get("root_folder_id") or "root",
@@ -1441,7 +1500,8 @@ def start_managed_baidunetdisk_oauth():
 
     try:
         redirect_uri = api_url_for("storage.callback_managed_baidunetdisk_oauth")
-        client = ManagedOpenListClient()
+        source = _create_pending_managed_source(name, 'baidunetdisk')
+        client = _managed_client(ManagedOpenListClient, source.id)
         oauth_state = client.start_baidunetdisk_oauth(
             redirect_uri=redirect_uri,
             root_path=root_path,
@@ -1451,8 +1511,8 @@ def start_managed_baidunetdisk_oauth():
             'baidunetdisk',
             _build_baidunetdisk_source_config(oauth_state, auth_state='oauth_pending'),
         )
-        source = StorageSource(name=name, type='baidunetdisk', config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data={
             "oauth_started": True,
@@ -1503,7 +1563,7 @@ def restart_managed_baidunetdisk_oauth():
 
     try:
         redirect_uri = api_url_for("storage.callback_managed_baidunetdisk_oauth")
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         oauth_state = client.start_baidunetdisk_oauth(
             redirect_uri=redirect_uri,
             root_path=root_path,
@@ -1554,7 +1614,7 @@ def poll_managed_baidunetdisk_oauth():
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != 'baidunetdisk':
@@ -1599,7 +1659,7 @@ def complete_managed_baidunetdisk_oauth():
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != 'baidunetdisk':
@@ -1656,30 +1716,31 @@ def callback_managed_baidunetdisk_oauth():
 
     source_config = source.config or {}
     try:
-        if error:
-            next_config = dict(source_config)
-            next_config.update({
-                "auth_state": "oauth_failed",
-                "oauth_error": error,
-            })
-            source.config = normalize_source_config('baidunetdisk', next_config)
-            db.session.commit()
-            return _oauth_html("Baidu Netdisk authorization failed", error), 400
-        if not code:
-            next_config = dict(source_config)
-            next_config.update({
-                "auth_state": "oauth_failed",
-                "oauth_error": "missing_authorization_code",
-            })
-            source.config = normalize_source_config('baidunetdisk', next_config)
-            db.session.commit()
-            return _oauth_html("Baidu Netdisk authorization failed", "Missing authorization code"), 400
+        with account_scope(source.account_id):
+            if error:
+                next_config = dict(source_config)
+                next_config.update({
+                    "auth_state": "oauth_failed",
+                    "oauth_error": error,
+                })
+                source.config = normalize_source_config('baidunetdisk', next_config)
+                db.session.commit()
+                return _oauth_html("Baidu Netdisk authorization failed", error), 400
+            if not code:
+                next_config = dict(source_config)
+                next_config.update({
+                    "auth_state": "oauth_failed",
+                    "oauth_error": "missing_authorization_code",
+                })
+                source.config = normalize_source_config('baidunetdisk', next_config)
+                db.session.commit()
+                return _oauth_html("Baidu Netdisk authorization failed", "Missing authorization code"), 400
 
-        _complete_baidunetdisk_oauth_source(source, code)
-        return _oauth_html(
-            "Baidu Netdisk authorization completed",
-            "Authorization completed. You can return to CyberStream.",
-        )
+            _complete_baidunetdisk_oauth_source(source, code)
+            return _oauth_html(
+                "Baidu Netdisk authorization completed",
+                "Authorization completed. You can return to CyberStream.",
+            )
     except ManagedAListError as e:
         db.session.rollback()
         try:
@@ -1721,7 +1782,8 @@ def login_managed_123pan():
 
     storage_state = None
     try:
-        client = ManagedOpenListClient()
+        source = _create_pending_managed_source(name, '123pan')
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_123pan_storage(
             username=username,
             password=password,
@@ -1732,8 +1794,8 @@ def login_managed_123pan():
             '123pan',
             _build_123pan_source_config(storage_state, auth_state='ready'),
         )
-        source = StorageSource(name=name, type='123pan', config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data={
             "authenticated": True,
@@ -1788,7 +1850,7 @@ def restart_managed_123pan_login():
     storage_state = None
     old_storage_deleted = False
     try:
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_123pan_storage(
             username=username,
             password=password,
@@ -1847,7 +1909,8 @@ def _start_managed_quark_uc_qr(source_type):
 
     storage_state = None
     try:
-        client = ManagedOpenListClient()
+        source = _create_pending_managed_source(name, source_type)
+        client = _managed_client(ManagedOpenListClient, source.id)
         storage_state = client.create_quark_uc_tv_storage(
             kind=source_type,
             root_folder_id=root_folder_id,
@@ -1857,8 +1920,8 @@ def _start_managed_quark_uc_qr(source_type):
             source_type,
             _build_quark_uc_source_config(storage_state, auth_state='qr_pending'),
         )
-        source = StorageSource(name=name, type=source_type, config=source_config)
-        db.session.add(source)
+        source.config = source_config
+        _bind_source_to_default_library(source)
         db.session.commit()
         return api_response(data={
             "qr_started": True,
@@ -1901,7 +1964,7 @@ def _restart_managed_quark_uc_qr(source_type):
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != source_type:
@@ -1922,7 +1985,7 @@ def _restart_managed_quark_uc_qr(source_type):
     storage_state = None
     old_storage_deleted = False
     try:
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         if old_storage_id:
             old_storage_deleted = _delete_replaced_runtime_storage(
                 client,
@@ -2003,7 +2066,7 @@ def _poll_managed_quark_uc_qr(source_type):
     except (TypeError, ValueError):
         return api_error(code=40036, msg="Invalid field type: source_id should be integer")
 
-    source = db.session.get(StorageSource, source_id)
+    source = get_account_scoped(StorageSource, source_id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
     if source.type != source_type:
@@ -2014,7 +2077,7 @@ def _poll_managed_quark_uc_qr(source_type):
         storage_id = int(source_config.get("openlist_storage_id") or 0)
         if not storage_id:
             return api_error(code=40061, msg=f"Managed {provider_meta['display_name']} source has no OpenList storage id")
-        client = ManagedOpenListClient()
+        client = _managed_client(ManagedOpenListClient, source.id)
         login_state = client.poll_quark_uc_tv_storage(storage_id, source_type)
         if not login_state.get("authenticated"):
             auth_state = login_state.get("auth_state") or "qr_pending"
@@ -2076,7 +2139,7 @@ def poll_managed_uctv_qr():
 @storage_bp.route('/storage/sources/<int:id>', methods=['PATCH'])
 def update_storage_source(id):
     """v1.9.0 新增: 更新存储源配置 (支持 name, config 修改)。"""
-    source = db.session.get(StorageSource, id)
+    source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 
@@ -2136,7 +2199,7 @@ def delete_source(id):
         return api_error(code=40041, msg="Invalid field value: keepMetadata should be boolean")
     if keep_metadata is None:
         keep_metadata = request.args.get('keep_metadata', 'false').lower() == 'true'
-    source = db.session.get(StorageSource, id)
+    source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 
@@ -2177,7 +2240,7 @@ def scan_specific_source(id):
     if not scanner_engine.try_start_scan():
         return api_error(code=42900, msg="Scanner is busy", http_status=429)
 
-    source = db.session.get(StorageSource, id)
+    source = get_account_scoped(StorageSource, id)
     if not source:
         scanner_engine.finish_scan()
         return api_error(code=40402, msg="Source not found", http_status=404)
@@ -2199,7 +2262,7 @@ def scan_specific_source(id):
     app = current_app._get_current_object()
     thread = threading.Thread(
         target=_scan_background_task,
-        args=(app, id, root_path, content_type, scrape_enabled, scraper_policy),
+        args=(app, id, root_path, content_type, scrape_enabled, scraper_policy, get_current_account_id()),
     )
     thread.start()
     return api_response(
@@ -2218,7 +2281,7 @@ def scan_specific_source(id):
 @storage_bp.route('/storage/sources/<int:id>/browse', methods=['GET'])
 def browse_storage_source(id):
     """浏览已保存存储源的目录，主要用于资源库绑定时选择 root_path。"""
-    source = db.session.get(StorageSource, id)
+    source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 
@@ -2245,7 +2308,7 @@ def browse_storage_source(id):
 @storage_bp.route('/storage/sources/<int:id>/refresh', methods=['POST'])
 def refresh_storage_source_directory(id):
     """刷新支持目录缓存的已保存存储源目录，不触发扫描或刮削。"""
-    source = db.session.get(StorageSource, id)
+    source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
 

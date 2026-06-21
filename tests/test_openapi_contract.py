@@ -15,7 +15,7 @@ from backend.app import create_app
 from backend.app.api.docs_routes import DOCUMENTS
 
 
-OPENAPI_PATH = PROJECT_ROOT / "backend/openapi/openapi-1.21.0-beta/openapi-1.21.0-beta.json"
+OPENAPI_PATH = PROJECT_ROOT / "backend/openapi/openapi-1.22.0-beta/openapi-1.22.0-beta.json"
 HTTP_METHODS = {"GET", "POST", "PATCH", "PUT", "DELETE"}
 
 
@@ -59,6 +59,29 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertEqual("apiHealthCheck", health_operation["operationId"])
         self.assertEqual([], health_operation["security"])
         self.assertEqual("stable", health_operation["x-lifecycle-status"])
+
+    def test_hosted_registration_and_account_context_are_documented(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        register = openapi["paths"]["/api/v1/auth/register"]["post"]
+        auth_status = schemas["AuthStatus"]
+        permissions = auth_status["properties"]["permissions"]
+
+        self.assertEqual("authRegister", register["operationId"])
+        self.assertEqual([], register["security"])
+        self.assertEqual(
+            "#/components/schemas/RegisterRequest",
+            register["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        )
+        self.assertIn("201", register["responses"])
+        self.assertIn("current_account", auth_status["properties"])
+        self.assertIn("account_role", auth_status["properties"])
+        self.assertIn("manage_storage", permissions["properties"])
+        self.assertIn("manage_account_users", permissions["properties"])
+        self.assertEqual(
+            "/cyberstream/accounts/{account_id}/sources/{source_id}/...",
+            openapi["x-hosted-multi-tenant"]["mount_path_pattern"],
+        )
 
     def test_documentation_doc_key_enum_matches_runtime_index(self):
         openapi = self._load_openapi()
@@ -336,7 +359,9 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("SystemTmdbConfig", schemas)
         self.assertIn("SystemTmdbConfigUpdateRequest", schemas)
         self.assertIn("SystemTmdbConfigCheckResult", schemas)
+        self.assertIn("SystemTmdbTokenCheckItem", schemas)
         self.assertNotIn("token", schemas["SystemTmdbConfig"]["properties"])
+        self.assertIn("token_pool_size", schemas["SystemTmdbConfig"]["properties"])
         self.assertIn("proxy_url_redacted", schemas["SystemTmdbConfig"]["properties"])
         self.assertEqual(
             2048,
@@ -345,6 +370,9 @@ class OpenApiContractTests(unittest.TestCase):
         check_schema = schemas["SystemTmdbConfigCheckResult"]
         self.assertIn("ready", check_schema["properties"])
         self.assertIn("token_valid", check_schema["properties"])
+        self.assertIn("token_valid_count", check_schema["properties"])
+        self.assertIn("token_checks", check_schema["properties"])
+        self.assertIn("partial_ok", check_schema["properties"]["status"]["enum"])
         self.assertIn("invalid_token", check_schema["properties"]["status"]["enum"])
         self.assertIn("network_error", check_schema["properties"]["status"]["enum"])
         self.assertNotIn("security", check_operation)
@@ -640,6 +668,7 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("/api/v1/auth/login", paths)
         self.assertIn("/api/v1/auth/logout", paths)
         self.assertIn("/api/v1/auth/me", paths)
+        self.assertIn("/api/v1/auth/playback-ticket", paths)
         self.assertIn("/api/v1/user/profile", paths)
         self.assertIn("/api/v1/user/password", paths)
         self.assertIn("/api/v1/admin/users", paths)
@@ -654,6 +683,10 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("UserVisibilityPreview", schemas)
         self.assertIn("UserVisibilityLibraryPreview", schemas)
         self.assertIn("AuthStatus", schemas)
+        self.assertIn("hosted_managed_mode", schemas["AuthStatus"]["properties"])
+        self.assertIn("manage_server_config", schemas["AuthStatus"]["properties"]["permissions"]["required"])
+        self.assertIn("manage_server_config", schemas["AuthStatus"]["properties"]["permissions"]["properties"])
+        self.assertEqual(40390, openapi["x-hosted-managed-mode"]["error"]["code"])
         self.assertIn("AuditLog", schemas)
         self.assertIn("session_version", schemas["User"]["properties"])
 

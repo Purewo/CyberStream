@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.app.extensions import db
 from backend.app.models import Library, LibraryMovieMembership, LibrarySource, MediaResource, Movie, User, UserLibraryRule
+from backend.app.services.accounts import get_account_scoped
 from backend.app.security import get_current_user, is_admin_request, is_user_management_enabled
 
 
@@ -50,7 +51,7 @@ def _apply_public_movie_visibility_filter(query):
 
 
 def _library_movie_ids(library_id):
-    library = db.session.get(Library, library_id)
+    library = get_account_scoped(Library, library_id)
     if not library or not library.is_enabled:
         return set()
 
@@ -228,7 +229,7 @@ def can_current_user_access_movie_id(movie_id):
 def can_current_user_access_resource_id(resource_id):
     if not is_user_management_enabled() or is_admin_request():
         return True
-    resource = db.session.get(MediaResource, str(resource_id))
+    resource = get_account_scoped(MediaResource, str(resource_id))
     return bool(resource and can_current_user_access_movie_id(resource.movie_id))
 
 

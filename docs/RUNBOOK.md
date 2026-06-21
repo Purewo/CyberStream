@@ -51,10 +51,10 @@ cp .env.local.example .env.local
 ```bash
 curl -i http://127.0.0.1:5004/
 curl -i http://127.0.0.1:5004/api/v1/health
-./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --expected-version 1.21.0 --expected-openapi-version 1.21.0-beta --min-storage-sources 1
+./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 --expected-version 1.22.0 --expected-openapi-version 1.22.0-beta --min-storage-sources 1
 ```
 
-预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.21.0`；`data.database.status` 应为 `ok`）。
+预期返回 `200` 与健康检查 JSON（`data.version` 应等于 `APP_VERSION`，当前为 `1.22.0`；`data.database.status` 应为 `ok`）。
 `backend_smoke_check.py` 会同时检查 `/` 与 `/api/v1/health` 健康入口一致性、OpenAPI 健康入口、文档索引、文档 markdown 内容入口、OpenAPI 模块索引、聚合资源站能力枚举、扫描状态、元数据 provider 注册表、TMDB 配置读取、复核工作台入口契约、其他视频归档队列、目录列表、目录元数据筛选项、metadata issue/source group 筛选与 keyword 搜索、季列表、剧集诊断详情、provider 云转码清晰度入口、`/stream` Range/跳转探测、外部播放器 manifest/M3U 播放交接、字幕显示设置、音频转码诊断读取、用户成就状态、收藏保险库访问契约、后台任务列表与详情入口、存储源列表/详情与资源型挂载动作、fallback 队列样本契约、pending-review 回填 dry-run、episode 队列和资源治理 live check；带 `--systemd` 时还会检查 `cyberstream-backend`、`nginx`、`cyberstream-alist`、`cyberstream-openlist` 和 `ddns-go`。
 
 刮削或前端联调前建议额外验证 TMDB token 和资源型挂载 live health：
@@ -62,8 +62,8 @@ curl -i http://127.0.0.1:5004/api/v1/health
 ```bash
 ./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
   --openapi-module-json-check \
-  --expected-version 1.21.0 \
-  --expected-openapi-version 1.21.0-beta \
+  --expected-version 1.22.0 \
+  --expected-openapi-version 1.22.0-beta \
   --min-storage-sources 1 \
   --storage-health-check \
   --min-storage-health-checks 1 \
@@ -87,8 +87,8 @@ CYBER_BACKEND_SMOKE_USERNAME=<username> \
 CYBER_BACKEND_SMOKE_PASSWORD=<password> \
 ./scripts/backend_smoke_check.py --systemd --base-url http://127.0.0.1:5004 \
   --openapi-module-json-check \
-  --expected-version 1.21.0 \
-  --expected-openapi-version 1.21.0-beta \
+  --expected-version 1.22.0 \
+  --expected-openapi-version 1.22.0-beta \
   --min-storage-sources 1 \
   --storage-health-check \
   --min-storage-health-checks 1 \
@@ -109,8 +109,36 @@ curl -i http://127.0.0.1:5004/api/v1/storage/sources \
 ```bash
 curl -i https://cyberstream.gameuniverse.top:40160/
 curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
-./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160 --expected-version 1.21.0 --expected-openapi-version 1.21.0-beta
+./scripts/backend_smoke_check.py --base-url https://cyberstream.gameuniverse.top:40160 --expected-version 1.22.0 --expected-openapi-version 1.22.0-beta
 ```
+
+代托管内测后端使用独立端口：
+
+```bash
+curl -i https://cyberstream.gameuniverse.top:40162/api/v1/health
+curl -i https://cyberstream.gameuniverse.top:40162/api/v1/auth/me
+curl -i https://cyberstream.gameuniverse.top:40162/api/v1/openapi.json
+```
+
+前端联调只使用 `40162`，不要和旧 `40160` 后端混用。
+
+### PostgreSQL 代托管部署
+
+正式代托管建议使用 PostgreSQL，并通过 Alembic 管理 schema：
+
+```bash
+export CYBER_DATABASE_URL='postgresql+psycopg://cyberstream:password@127.0.0.1:5432/cyberstream_hosted'
+export CYBER_HOSTED_MANAGED_MODE=true
+export CYBER_USER_MANAGEMENT_ENABLED=true
+export CYBER_REGISTRATION_ENABLED=true
+export CYBER_IMAGE_ASSET_PREFER_ORIGINAL_URLS=true
+
+.venv/bin/flask --app backend.app:create_app db upgrade
+```
+
+迁移旧库前必须先完成数据库备份。已有业务数据会归入 `CYBER_LEGACY_ACCOUNT_USERNAME` 或 `CYBER_BOOTSTRAP_ADMIN_USERNAME` 指定用户，未设置时默认 `pureworld`；如果旧数据存在但该用户不存在，迁移会失败，避免把数据静默分配给错误账号。
+
+SQLite 仍支持本地开发和单人自托管，默认 `CYBER_DATABASE_AUTO_CREATE_SCHEMA=true`。PostgreSQL 默认不自动建表，必须执行迁移。
 
 ## 4. 当前已知运行事实
 
@@ -126,7 +154,7 @@ curl -i https://cyberstream.gameuniverse.top:40160/api/v1/openapi.json
 - `TMDB_TOKEN` 不再写在代码里；未设置时 TMDB 请求会被跳过，扫描继续走其他 provider fallback
 - 正式海报层 CDN 默认使用 Super CDN 图片桶 `hd-wallpapers`，加载链路为 CDN -> 后端本地图片入口 -> 原始元数据 URL
 - 不建议直接用 `python backend/run.py`
-- 当前 `main` 是唯一主干分支，`1.21.0` 是当前运行版本；`1.16.0` 保留为历史稳定标签
+- 当前 `main` 是唯一主干分支，`1.22.0` 是当前运行版本；`1.16.0` 保留为历史稳定标签
 
 ### 4.1 SQLite 备份与恢复
 

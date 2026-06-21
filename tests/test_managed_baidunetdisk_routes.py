@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
-from backend.app.models import StorageSource
+from backend.app.models import Account, StorageSource
 
 
 class FakeManagedOpenListClient:
@@ -22,7 +22,16 @@ class FakeManagedOpenListClient:
     callback_mode = "redirect"
 
     def __init__(self):
-        pass
+        from backend.app.services.accounts import current_account_id
+
+        self.mount_prefix = "/cyberstream"
+        account_id = current_account_id()
+        if account_id:
+            self.mount_prefix = f"{self.mount_prefix}/accounts/{account_id}"
+
+    def set_source_scope(self, source_id):
+        self.mount_prefix = f"{self.mount_prefix}/sources/{source_id}"
+        return self
 
     @classmethod
     def reset(cls):
@@ -59,10 +68,11 @@ class FakeManagedOpenListClient:
             "redirect_uri": redirect_uri,
             "root_path": root_path,
             "download_api": download_api,
+            "mount_prefix": self.mount_prefix,
         })
         return {
             "storage_id": 211,
-            "mount_path": "/cyberstream/baidunetdisk/fake",
+            "mount_path": f"{self.mount_prefix}/baidunetdisk/fake",
             "authenticated": True,
             "auth_state": "ready",
             "cloud_root_path": root_path or "/",
@@ -257,6 +267,42 @@ class ManagedBaiduNetdiskRouteTests(unittest.TestCase):
         self.assertNotIn("oauth_state", stored.config)
         self.assertTrue(stored.to_dict()["actions"]["can_preview"])
         self.assertEqual("baidu-code", FakeManagedOpenListClient.completed_requests[0]["code"])
+
+    def test_public_callback_restores_source_account_for_mount_path(self):
+        account = Account(
+            id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            name="Account A",
+            slug="account-a",
+            status=Account.STATUS_ACTIVE,
+            settings={},
+        )
+        db.session.add(account)
+        db.session.flush()
+        source = StorageSource(
+            account_id=account.id,
+            name="Baidu test",
+            type="baidunetdisk",
+            config={
+                "auth_state": "oauth_pending",
+                "cloud_root_path": "/",
+                "root_folder_path": "/",
+                "download_api": "official",
+                "oauth_state": "baidu-state",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        with patch("backend.app.api.storage_routes.ManagedOpenListClient", FakeManagedOpenListClient):
+            response = self.client.get(
+                "/api/v1/storage/managed/baidunetdisk/oauth/callback?state=baidu-state&code=baidu-code"
+            )
+
+        self.assertEqual(200, response.status_code)
+        stored = db.session.get(StorageSource, source.id)
+        expected_prefix = f"/cyberstream/accounts/{account.id}/sources/{source.id}"
+        self.assertEqual(expected_prefix, FakeManagedOpenListClient.completed_requests[0]["mount_prefix"])
+        self.assertEqual(f"{expected_prefix}/baidunetdisk/fake", stored.config["mount_path"])
 
     def test_complete_oob_oauth_marks_source_ready(self):
         source = StorageSource(

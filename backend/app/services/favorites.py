@@ -4,6 +4,7 @@ from datetime import datetime
 
 from backend.app.extensions import db
 from backend.app.models import Movie, UserFavorite
+from backend.app.services.accounts import get_account_scoped
 from backend.app.services.user_access import (
     apply_current_user_movie_visibility_filter,
     can_current_user_access_movie_id,
@@ -109,7 +110,7 @@ def favorite_state(movie_id):
 
 def add_favorite(movie_id):
     require_vault_unlocked()
-    movie = db.session.get(Movie, str(movie_id))
+    movie = get_account_scoped(Movie, str(movie_id))
     if not movie:
         raise FavoriteValidationError(40401, "Movie not found")
     if not can_current_user_access_movie_id(movie.id):

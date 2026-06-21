@@ -2,26 +2,73 @@ from sqlalchemy import inspect, text
 
 
 SQLITE_COLUMN_PATCHES = {
+    "storage_sources": {
+        "account_id": "ALTER TABLE storage_sources ADD COLUMN account_id VARCHAR(36)",
+    },
+    "libraries": {
+        "account_id": "ALTER TABLE libraries ADD COLUMN account_id VARCHAR(36)",
+    },
     "media_resources": {
+        "account_id": "ALTER TABLE media_resources ADD COLUMN account_id VARCHAR(36)",
         "title": "ALTER TABLE media_resources ADD COLUMN title VARCHAR(255)",
         "overview": "ALTER TABLE media_resources ADD COLUMN overview TEXT",
         "metadata_edited_at": "ALTER TABLE media_resources ADD COLUMN metadata_edited_at DATETIME",
     },
     "movie_season_metadata": {
+        "account_id": "ALTER TABLE movie_season_metadata ADD COLUMN account_id VARCHAR(36)",
         "poster": "ALTER TABLE movie_season_metadata ADD COLUMN poster VARCHAR(500)",
         "episode_count": "ALTER TABLE movie_season_metadata ADD COLUMN episode_count INTEGER",
         "aired_episode_count": "ALTER TABLE movie_season_metadata ADD COLUMN aired_episode_count INTEGER",
     },
     "library_sources": {
+        "account_id": "ALTER TABLE library_sources ADD COLUMN account_id VARCHAR(36)",
         "scraper_policy": "ALTER TABLE library_sources ADD COLUMN scraper_policy JSON",
     },
+    "library_movie_memberships": {
+        "account_id": "ALTER TABLE library_movie_memberships ADD COLUMN account_id VARCHAR(36)",
+    },
     "movies": {
+        "account_id": "ALTER TABLE movies ADD COLUMN account_id VARCHAR(36)",
         "catalog_visibility_status": "ALTER TABLE movies ADD COLUMN catalog_visibility_status VARCHAR(20) NOT NULL DEFAULT 'auto'",
         "catalog_visibility_note": "ALTER TABLE movies ADD COLUMN catalog_visibility_note TEXT",
         "catalog_visibility_updated_at": "ALTER TABLE movies ADD COLUMN catalog_visibility_updated_at DATETIME",
     },
     "history": {
+        "account_id": "ALTER TABLE history ADD COLUMN account_id VARCHAR(36)",
         "user_id": "ALTER TABLE history ADD COLUMN user_id INTEGER",
+    },
+    "user_library_rules": {
+        "account_id": "ALTER TABLE user_library_rules ADD COLUMN account_id VARCHAR(36)",
+    },
+    "audit_logs": {
+        "account_id": "ALTER TABLE audit_logs ADD COLUMN account_id VARCHAR(36)",
+    },
+    "homepage_settings": {
+        "account_id": "ALTER TABLE homepage_settings ADD COLUMN account_id VARCHAR(36)",
+    },
+    "user_achievements": {
+        "account_id": "ALTER TABLE user_achievements ADD COLUMN account_id VARCHAR(36)",
+    },
+    "user_favorites": {
+        "account_id": "ALTER TABLE user_favorites ADD COLUMN account_id VARCHAR(36)",
+    },
+    "user_vault_secrets": {
+        "account_id": "ALTER TABLE user_vault_secrets ADD COLUMN account_id VARCHAR(36)",
+    },
+    "maintenance_jobs": {
+        "account_id": "ALTER TABLE maintenance_jobs ADD COLUMN account_id VARCHAR(36)",
+    },
+    "movie_metadata_locks": {
+        "account_id": "ALTER TABLE movie_metadata_locks ADD COLUMN account_id VARCHAR(36)",
+    },
+    "resource_subtitles": {
+        "account_id": "ALTER TABLE resource_subtitles ADD COLUMN account_id VARCHAR(36)",
+    },
+    "resource_subtitle_settings": {
+        "account_id": "ALTER TABLE resource_subtitle_settings ADD COLUMN account_id VARCHAR(36)",
+    },
+    "user_subtitle_settings": {
+        "account_id": "ALTER TABLE user_subtitle_settings ADD COLUMN account_id VARCHAR(36)",
     },
     "users": {
         "password_changed_at": "ALTER TABLE users ADD COLUMN password_changed_at DATETIME",
@@ -36,6 +83,28 @@ SQLITE_DROP_COLUMNS = {
 }
 
 SQLITE_INDEX_PATCHES = {
+    "movies": [
+        {
+            "name": "uq_movies_account_tmdb",
+            "ddl": """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_movies_account_tmdb
+                ON movies (account_id, tmdb_id)
+                WHERE account_id IS NOT NULL AND tmdb_id IS NOT NULL
+            """,
+            "duplicate_check": """
+                SELECT account_id, tmdb_id, COUNT(*) AS duplicate_count
+                FROM movies
+                WHERE account_id IS NOT NULL AND tmdb_id IS NOT NULL
+                GROUP BY account_id, tmdb_id
+                HAVING COUNT(*) > 1
+                LIMIT 1
+            """,
+        },
+        {
+            "name": "ix_movies_tmdb_id",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_movies_tmdb_id ON movies (tmdb_id)",
+        },
+    ],
     "media_resources": [
         {
             "name": "uq_media_resources_source_path",
@@ -49,6 +118,22 @@ SQLITE_INDEX_PATCHES = {
                 FROM media_resources
                 WHERE source_id IS NOT NULL
                 GROUP BY source_id, path
+                HAVING COUNT(*) > 1
+                LIMIT 1
+            """,
+        },
+        {
+            "name": "uq_media_resources_account_source_path",
+            "ddl": """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_media_resources_account_source_path
+                ON media_resources (account_id, source_id, path)
+                WHERE account_id IS NOT NULL AND source_id IS NOT NULL
+            """,
+            "duplicate_check": """
+                SELECT account_id, source_id, path, COUNT(*) AS duplicate_count
+                FROM media_resources
+                WHERE account_id IS NOT NULL AND source_id IS NOT NULL
+                GROUP BY account_id, source_id, path
                 HAVING COUNT(*) > 1
                 LIMIT 1
             """,
@@ -80,10 +165,37 @@ SQLITE_INDEX_PATCHES = {
     ],
 }
 
+for _account_table in (
+    "storage_sources",
+    "libraries",
+    "library_sources",
+    "library_movie_memberships",
+    "user_library_rules",
+    "audit_logs",
+    "homepage_settings",
+    "movies",
+    "history",
+    "user_achievements",
+    "user_favorites",
+    "user_vault_secrets",
+    "maintenance_jobs",
+    "movie_metadata_locks",
+    "movie_season_metadata",
+    "resource_subtitles",
+    "resource_subtitle_settings",
+    "user_subtitle_settings",
+    "media_resources",
+):
+    SQLITE_INDEX_PATCHES.setdefault(_account_table, []).append({
+        "name": f"ix_{_account_table}_account_id",
+        "ddl": f"CREATE INDEX IF NOT EXISTS ix_{_account_table}_account_id ON {_account_table} (account_id)",
+    })
+
 SQLITE_TABLE_PATCHES = {
     "library_movie_memberships": """
         CREATE TABLE library_movie_memberships (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             library_id INTEGER NOT NULL,
             movie_id VARCHAR(36) NOT NULL,
             mode VARCHAR(20) NOT NULL,
@@ -91,7 +203,7 @@ SQLITE_TABLE_PATCHES = {
             created_at DATETIME,
             updated_at DATETIME,
             PRIMARY KEY (id),
-            CONSTRAINT uq_library_movie_membership UNIQUE (library_id, movie_id),
+            CONSTRAINT uq_library_movie_account_membership UNIQUE (account_id, library_id, movie_id),
             FOREIGN KEY(library_id) REFERENCES libraries (id),
             FOREIGN KEY(movie_id) REFERENCES movies (id)
         )
@@ -99,6 +211,7 @@ SQLITE_TABLE_PATCHES = {
     "homepage_settings": """
         CREATE TABLE homepage_settings (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             hero_movie_id VARCHAR(36),
             sections JSON NOT NULL,
             created_at DATETIME,
@@ -111,6 +224,7 @@ SQLITE_TABLE_PATCHES = {
         CREATE TABLE movie_season_metadata (
             movie_id VARCHAR(36) NOT NULL,
             season INTEGER NOT NULL,
+            account_id VARCHAR(36),
             title VARCHAR(255),
             overview TEXT,
             air_date VARCHAR(10),
@@ -127,6 +241,7 @@ SQLITE_TABLE_PATCHES = {
     "maintenance_jobs": """
         CREATE TABLE maintenance_jobs (
             id VARCHAR(36) NOT NULL,
+            account_id VARCHAR(36),
             type VARCHAR(80) NOT NULL,
             title VARCHAR(255),
             status VARCHAR(30) NOT NULL,
@@ -144,6 +259,7 @@ SQLITE_TABLE_PATCHES = {
     "resource_subtitle_settings": """
         CREATE TABLE resource_subtitle_settings (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             resource_id VARCHAR(36) NOT NULL,
             zh_size INTEGER NOT NULL,
             zh_color VARCHAR(16) NOT NULL,
@@ -154,7 +270,7 @@ SQLITE_TABLE_PATCHES = {
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY (id),
-            CONSTRAINT uq_resource_subtitle_settings_resource UNIQUE (resource_id),
+            CONSTRAINT uq_resource_subtitle_settings_account_resource UNIQUE (account_id, resource_id),
             FOREIGN KEY(resource_id) REFERENCES media_resources (id)
         )
     """,
@@ -178,6 +294,7 @@ SQLITE_TABLE_PATCHES = {
     "audit_logs": """
         CREATE TABLE audit_logs (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             actor_user_id INTEGER,
             actor_username VARCHAR(80),
             actor_role VARCHAR(20),
@@ -198,13 +315,14 @@ SQLITE_TABLE_PATCHES = {
     "user_library_rules": """
         CREATE TABLE user_library_rules (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             user_id INTEGER NOT NULL,
             library_id INTEGER NOT NULL,
             mode VARCHAR(20) NOT NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY (id),
-            CONSTRAINT uq_user_library_rule UNIQUE (user_id, library_id),
+            CONSTRAINT uq_user_library_rule_account UNIQUE (account_id, user_id, library_id),
             FOREIGN KEY(user_id) REFERENCES users (id),
             FOREIGN KEY(library_id) REFERENCES libraries (id)
         )
@@ -212,6 +330,7 @@ SQLITE_TABLE_PATCHES = {
     "user_subtitle_settings": """
         CREATE TABLE user_subtitle_settings (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             user_id INTEGER NOT NULL,
             resource_id VARCHAR(36) NOT NULL,
             zh_size INTEGER NOT NULL,
@@ -223,7 +342,7 @@ SQLITE_TABLE_PATCHES = {
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY (id),
-            CONSTRAINT uq_user_subtitle_settings_user_resource UNIQUE (user_id, resource_id),
+            CONSTRAINT uq_user_subtitle_settings_account_user_resource UNIQUE (account_id, user_id, resource_id),
             FOREIGN KEY(user_id) REFERENCES users (id),
             FOREIGN KEY(resource_id) REFERENCES media_resources (id)
         )
@@ -231,6 +350,7 @@ SQLITE_TABLE_PATCHES = {
     "user_achievements": """
         CREATE TABLE user_achievements (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             scope_key VARCHAR(80) NOT NULL,
             user_id INTEGER,
             achievement_id VARCHAR(80) NOT NULL,
@@ -239,19 +359,20 @@ SQLITE_TABLE_PATCHES = {
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY (id),
-            CONSTRAINT uq_user_achievement_scope_id UNIQUE (scope_key, achievement_id),
+            CONSTRAINT uq_user_achievement_account_scope_id UNIQUE (account_id, scope_key, achievement_id),
             FOREIGN KEY(user_id) REFERENCES users (id)
         )
     """,
     "user_favorites": """
         CREATE TABLE user_favorites (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             scope_key VARCHAR(80) NOT NULL,
             user_id INTEGER,
             movie_id VARCHAR(36) NOT NULL,
             created_at DATETIME NOT NULL,
             PRIMARY KEY (id),
-            CONSTRAINT uq_user_favorite_scope_movie UNIQUE (scope_key, movie_id),
+            CONSTRAINT uq_user_favorite_account_scope_movie UNIQUE (account_id, scope_key, movie_id),
             FOREIGN KEY(user_id) REFERENCES users (id),
             FOREIGN KEY(movie_id) REFERENCES movies (id)
         )
@@ -259,6 +380,7 @@ SQLITE_TABLE_PATCHES = {
     "user_vault_secrets": """
         CREATE TABLE user_vault_secrets (
             id INTEGER NOT NULL,
+            account_id VARCHAR(36),
             scope_key VARCHAR(80) NOT NULL,
             user_id INTEGER,
             pin_hash VARCHAR(255) NOT NULL,
@@ -270,7 +392,7 @@ SQLITE_TABLE_PATCHES = {
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY (id),
-            CONSTRAINT uq_user_vault_secret_scope UNIQUE (scope_key),
+            CONSTRAINT uq_user_vault_secret_account_scope UNIQUE (account_id, scope_key),
             FOREIGN KEY(user_id) REFERENCES users (id)
         )
     """,
@@ -305,6 +427,7 @@ def ensure_sqlite_schema(engine):
                 conn.execute(text("""
                     CREATE TABLE user_vault_secrets_nullable (
                         id INTEGER NOT NULL,
+                        account_id VARCHAR(36),
                         scope_key VARCHAR(80) NOT NULL,
                         user_id INTEGER,
                         pin_hash VARCHAR(255) NOT NULL,
@@ -316,22 +439,23 @@ def ensure_sqlite_schema(engine):
                         created_at DATETIME NOT NULL,
                         updated_at DATETIME NOT NULL,
                         PRIMARY KEY (id),
-                        CONSTRAINT uq_user_vault_secret_scope UNIQUE (scope_key),
+                        CONSTRAINT uq_user_vault_secret_account_scope UNIQUE (account_id, scope_key),
                         FOREIGN KEY(user_id) REFERENCES users (id)
                     )
                 """))
+                account_select = "account_id" if "account_id" in vault_columns else "NULL AS account_id"
                 conn.execute(text("""
                     INSERT INTO user_vault_secrets_nullable (
-                        id, scope_key, user_id, pin_hash, pin_changed_at,
+                        id, account_id, scope_key, user_id, pin_hash, pin_changed_at,
                         pin_change_window_started_at, pin_change_count, is_locked,
                         locked_until, created_at, updated_at
                     )
                     SELECT
-                        id, scope_key, user_id, pin_hash, pin_changed_at,
+                        id, {account_select}, scope_key, user_id, pin_hash, pin_changed_at,
                         pin_change_window_started_at, pin_change_count, is_locked,
                         locked_until, created_at, updated_at
                     FROM user_vault_secrets
-                """))
+                """.format(account_select=account_select)))
                 conn.execute(text("DROP TABLE user_vault_secrets"))
                 conn.execute(text("ALTER TABLE user_vault_secrets_nullable RENAME TO user_vault_secrets"))
 
@@ -344,6 +468,61 @@ def ensure_sqlite_schema(engine):
                 if column_name in existing_columns:
                     continue
                 conn.execute(text(ddl))
+
+        if "libraries" in existing_tables:
+            library_sql = conn.execute(text("""
+                SELECT sql FROM sqlite_master
+                WHERE type = 'table' AND name = 'libraries'
+            """)).scalar() or ""
+            if "UNIQUE (name)" in library_sql or "UNIQUE (slug)" in library_sql:
+                conn.execute(text("PRAGMA foreign_keys=OFF"))
+                conn.execute(text("PRAGMA legacy_alter_table=ON"))
+                conn.execute(text("ALTER TABLE libraries RENAME TO libraries_legacy_global_unique"))
+                conn.execute(text("""
+                    CREATE TABLE libraries (
+                        id INTEGER NOT NULL,
+                        account_id VARCHAR(36),
+                        name VARCHAR(100) NOT NULL,
+                        slug VARCHAR(100) NOT NULL,
+                        description TEXT,
+                        is_enabled BOOLEAN NOT NULL,
+                        sort_order INTEGER NOT NULL,
+                        settings JSON,
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        PRIMARY KEY (id),
+                        CONSTRAINT uq_libraries_account_name UNIQUE (account_id, name),
+                        CONSTRAINT uq_libraries_account_slug UNIQUE (account_id, slug)
+                    )
+                """))
+                legacy_columns = {
+                    row[1]
+                    for row in conn.execute(text("PRAGMA table_info(libraries_legacy_global_unique)")).all()
+                }
+                account_select = "account_id" if "account_id" in legacy_columns else "NULL AS account_id"
+                conn.execute(text(f"""
+                    INSERT INTO libraries (
+                        id, account_id, name, slug, description, is_enabled,
+                        sort_order, settings, created_at, updated_at
+                    )
+                    SELECT
+                        id, {account_select}, name, slug, description, is_enabled,
+                        sort_order, settings, created_at, updated_at
+                    FROM libraries_legacy_global_unique
+                """))
+                conn.execute(text("DROP TABLE libraries_legacy_global_unique"))
+                conn.execute(text("PRAGMA legacy_alter_table=OFF"))
+                conn.execute(text("PRAGMA foreign_keys=ON"))
+
+        if "movies" in existing_tables:
+            for index in inspect(engine).get_indexes("movies"):
+                if (
+                    index.get("name") == "ix_movies_tmdb_id"
+                    and index.get("unique")
+                    and index.get("column_names") == ["tmdb_id"]
+                ):
+                    conn.execute(text("DROP INDEX ix_movies_tmdb_id"))
+                    break
 
         for table_name, column_names in SQLITE_DROP_COLUMNS.items():
             if table_name not in existing_tables:
@@ -359,7 +538,7 @@ def ensure_sqlite_schema(engine):
             if table_name not in existing_tables:
                 continue
 
-            existing_indexes = {idx["name"] for idx in inspector.get_indexes(table_name)}
+            existing_indexes = {idx["name"] for idx in inspect(engine).get_indexes(table_name)}
             for index_patch in index_patches:
                 index_name = index_patch["name"]
                 if index_name in existing_indexes:
@@ -369,9 +548,12 @@ def ensure_sqlite_schema(engine):
                 if duplicate_check:
                     duplicate = conn.execute(text(duplicate_check)).first()
                     if duplicate:
+                        details = ", ".join(
+                            f"{key}={getattr(duplicate, key)!r}"
+                            for key in duplicate._mapping.keys()
+                        )
                         raise RuntimeError(
-                            f"Cannot create unique index {index_name}: duplicate media resource "
-                            f"source_id={duplicate.source_id} path={duplicate.path!r} count={duplicate.duplicate_count}"
+                            f"Cannot create unique index {index_name}: duplicate rows found ({details})"
                         )
 
                 conn.execute(text(index_patch["ddl"]))

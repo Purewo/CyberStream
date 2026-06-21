@@ -7,6 +7,8 @@ from flask import Blueprint, current_app, request
 from backend.app.api.helpers import build_history_item, build_pagination_meta, get_json_object_payload
 from backend.app.extensions import db
 from backend.app.models import History, MediaResource, Movie
+from backend.app.services.accounts import get_account_scoped
+from backend.app.services.accounts import current_account_id
 from backend.app.services.achievements import (
     AchievementValidationError,
     build_user_achievement_payload,
@@ -99,6 +101,9 @@ def _notify_audio_transcode_history_heartbeat(resource_id, payload):
 
 
 def _scope_history_query(query):
+    account_id = current_account_id()
+    if account_id:
+        query = query.filter(History.account_id == account_id)
     user_id = current_user_id_for_personal_data()
     if user_id is None:
         return query.filter(History.user_id.is_(None))
@@ -139,7 +144,7 @@ def report_progress():
         return api_error(code=40001, msg="Missing required fields: resource_id, position_sec, total_duration")
 
     try:
-        resource = db.session.get(MediaResource, resource_id)
+        resource = get_account_scoped(MediaResource, resource_id)
         if not resource:
             return api_error(code=40402, msg="Resource not found", http_status=404)
         if not can_current_user_access_resource_id(resource_id):

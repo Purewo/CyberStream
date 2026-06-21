@@ -10,6 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.services.managed_alist import ManagedAListClient, ManagedAListError
+from backend.app.services.accounts import account_scope
 
 
 class FakeResponse:
@@ -28,9 +29,11 @@ class FakeManagedSession:
         self.fail_create = fail_create
         self.deleted = []
         self.updated = False
+        self.created_payload = None
 
     def post(self, url, json=None, params=None, headers=None, timeout=None, verify=None):
         if url.endswith("/api/admin/storage/create"):
+            self.created_payload = json
             if self.fail_create:
                 return FakeResponse({"code": 500, "message": "send failed", "data": {"id": 91}})
             return FakeResponse({"code": 200, "data": {"id": 77}})
@@ -97,6 +100,20 @@ class ManagedAListClientTests(unittest.TestCase):
             client.create_guangyapan_storage("+861380001234")
 
         self.assertEqual([91], session.deleted)
+
+    def test_source_scope_mount_path_includes_account_and_source(self):
+        session = FakeManagedSession()
+        with account_scope("account-1"):
+            client = self.create_client(session)
+            client.set_source_scope(42)
+
+            client.create_guangyapan_storage("+861380001234")
+
+        self.assertTrue(
+            session.created_payload["mount_path"].startswith(
+                "/cyberstream/accounts/account-1/sources/42/guangyapan/"
+            )
+        )
 
 
 if __name__ == "__main__":

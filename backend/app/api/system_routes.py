@@ -237,8 +237,21 @@ def _redact_proxy_url(value):
         return "", False
 
 
+def _runtime_tmdb_token_pool():
+    cyber_pool = os.environ.get("CYBER_TMDB_TOKEN_POOL")
+    legacy_pool = os.environ.get("TMDB_TOKEN_POOL")
+    single_token = os.environ.get("TMDB_TOKEN")
+    if cyber_pool in ("", None):
+        cyber_pool = current_app.config.get("CYBER_TMDB_TOKEN_POOL", "")
+    if legacy_pool in ("", None):
+        legacy_pool = current_app.config.get("TMDB_TOKEN_POOL_RAW", "")
+    if single_token in ("", None):
+        single_token = current_app.config.get("TMDB_TOKEN", "")
+    return backend_config._build_tmdb_token_pool(cyber_pool, legacy_pool, single_token)
+
+
 def _tmdb_config_payload():
-    token = os.environ.get("TMDB_TOKEN") or current_app.config.get("TMDB_TOKEN") or ""
+    token_pool = _runtime_tmdb_token_pool()
     proxy_url = os.environ.get("TMDB_PROXY_URL") or current_app.config.get("TMDB_PROXY_URL") or ""
     proxy_enabled_raw = os.environ.get("TMDB_PROXY_ENABLED")
     if proxy_enabled_raw not in ("", None):
@@ -249,7 +262,9 @@ def _tmdb_config_payload():
             proxy_enabled = True
     visible_proxy_url, proxy_url_redacted = _redact_proxy_url(proxy_url)
     return {
-        "token_set": bool(token),
+        "token_set": bool(token_pool),
+        "token_pool_size": len(token_pool),
+        "token_pool_enabled": len(token_pool) > 1,
         "proxy_enabled": bool(proxy_enabled),
         "proxy_url": visible_proxy_url,
         "proxy_url_redacted": proxy_url_redacted,
@@ -272,6 +287,9 @@ def _refresh_runtime_config():
     "保存即生效、不重启"。代理 map 是派生量，单独重算。
     """
     token = os.environ.get("TMDB_TOKEN", "")
+    cyber_token_pool = os.environ.get("CYBER_TMDB_TOKEN_POOL", "")
+    token_pool_raw = os.environ.get("TMDB_TOKEN_POOL", "")
+    token_pool = backend_config._build_tmdb_token_pool(cyber_token_pool, token_pool_raw, token)
     proxy_url_raw = os.environ.get("TMDB_PROXY_URL", "")
     proxy_enabled_raw = os.environ.get("TMDB_PROXY_ENABLED", "")
     proxy_enabled = (
@@ -285,6 +303,9 @@ def _refresh_runtime_config():
 
     # 模块属性 —— 直接拿模块对象写
     backend_config.TMDB_TOKEN = token
+    backend_config.CYBER_TMDB_TOKEN_POOL = cyber_token_pool
+    backend_config.TMDB_TOKEN_POOL_RAW = token_pool_raw
+    backend_config.TMDB_TOKEN_POOL = token_pool
     backend_config.TMDB_PROXY_URL = proxy_url
     backend_config.TMDB_PROXY_ENABLED = proxy_enabled
     backend_config.TMDB_PROXIES = proxies
@@ -294,6 +315,9 @@ def _refresh_runtime_config():
     # current_app.config —— Flask 把 backend.config 的属性 from_object 进
     # 来过一次，但运行时不会跟踪原模块的变化，所以这里手工同步。
     current_app.config["TMDB_TOKEN"] = token
+    current_app.config["CYBER_TMDB_TOKEN_POOL"] = cyber_token_pool
+    current_app.config["TMDB_TOKEN_POOL_RAW"] = token_pool_raw
+    current_app.config["TMDB_TOKEN_POOL"] = token_pool
     current_app.config["TMDB_PROXY_URL"] = proxy_url
     current_app.config["TMDB_PROXY_ENABLED"] = proxy_enabled
     current_app.config["TMDB_PROXIES"] = proxies
@@ -344,7 +368,6 @@ def put_tmdb_config():
         token_value = payload.get("token")
         if token_value is None or (isinstance(token_value, str) and not token_value.strip()):
             updates[_ENV_KEYS["token"]] = None  # 删除
-            response_data["token_set"] = False
         elif isinstance(token_value, str):
             stripped = token_value.strip()
             if len(stripped) > 4096:
@@ -352,7 +375,6 @@ def put_tmdb_config():
             if _contains_unsafe_env_characters(stripped):
                 return api_error(code=40028, msg="TMDB token 不得包含空白或控制字符")
             updates[_ENV_KEYS["token"]] = stripped
-            response_data["token_set"] = True
         else:
             return api_error(code=40021, msg="token 字段类型错误，应为字符串")
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
 
@@ -11,7 +12,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
-from backend.app.models import MaintenanceJob
+from backend.app.models import Account, MaintenanceJob
+from backend.app.services.accounts import account_scope, current_account_id
 from backend.app.services.jobs import job_manager
 
 
@@ -138,6 +140,53 @@ class BackgroundJobPersistenceTests(unittest.TestCase):
         self.assertIsNone(db.session.get(MaintenanceJob, "old-job"))
         self.assertIsNotNone(db.session.get(MaintenanceJob, "recent-job"))
         self.assertIsNotNone(db.session.get(MaintenanceJob, "running-job"))
+
+    def test_job_persists_and_restores_account_scope(self):
+        account_a = Account(
+            id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            name="Account A",
+            slug="account-a",
+            status=Account.STATUS_ACTIVE,
+            settings={},
+        )
+        account_b = Account(
+            id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            name="Account B",
+            slug="account-b",
+            status=Account.STATUS_ACTIVE,
+            settings={},
+        )
+        db.session.add_all([account_a, account_b])
+        db.session.commit()
+
+        with account_scope(account_a.id):
+            job_a = job_manager.start(
+                self.app,
+                "account_scoped",
+                lambda _job_id: {"account_id": current_account_id()},
+                inline=True,
+            )
+        with account_scope(account_b.id):
+            job_b = job_manager.start(
+                self.app,
+                "account_scoped",
+                lambda _job_id: {"account_id": current_account_id()},
+                inline=True,
+            )
+
+        self.assertEqual(account_a.id, job_a["account_id"])
+        self.assertEqual(account_a.id, job_a["result"]["account_id"])
+        persisted_a = (
+            MaintenanceJob.query.execution_options(include_all_accounts=True)
+            .filter_by(id=job_a["id"])
+            .one()
+        )
+        self.assertEqual(account_a.id, persisted_a.account_id)
+
+        with patch.object(job_manager, "_list_persisted_jobs", return_value=None):
+            with account_scope(account_a.id):
+                self.assertEqual([job_a["id"]], [item["id"] for item in job_manager.list()])
+                self.assertIsNone(job_manager.get(job_b["id"]))
 
 
 if __name__ == "__main__":

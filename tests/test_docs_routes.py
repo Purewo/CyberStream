@@ -39,7 +39,7 @@ class DocumentationRoutesTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         data = response.get_json()["data"]
-        self.assertEqual("1.21.0-beta", data["openapi_version"])
+        self.assertEqual("1.22.0-beta", data["openapi_version"])
         self.assertEqual("/api/v1/openapi.json", data["openapi"]["url"])
         self.assertEqual("/api/v1/openapi/modules", data["openapi"]["modules_url"])
         keys = {item["key"] for item in data["documents"]}
@@ -48,6 +48,7 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertIn("terminology", keys)
         self.assertIn("frontend-review-workbench", keys)
         self.assertIn("frontend-user-management", keys)
+        self.assertIn("frontend-hosted-backend", keys)
         self.assertIn("frontend-managed-guangyapan", keys)
         self.assertIn("frontend-managed-tianyicloud", keys)
         self.assertIn("experimental-tianyicloud-pc-qr", keys)
@@ -136,7 +137,7 @@ class DocumentationRoutesTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("text/markdown", response.mimetype)
-        self.assertIn("# 1.21.0-beta", response.get_data(as_text=True))
+        self.assertIn("# 1.22.0-beta", response.get_data(as_text=True))
 
     def test_managed_guangyapan_frontend_guide_is_served_raw(self):
         client = self._create_client()
@@ -158,6 +159,18 @@ class DocumentationRoutesTests(unittest.TestCase):
         self.assertIn("GET /api/v1/auth/me", text)
         self.assertIn("credentials: \"include\"", text)
         self.assertIn("401", text)
+
+    def test_hosted_backend_frontend_guide_is_served_raw(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/docs/frontend-hosted-backend")
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("text/markdown", response.mimetype)
+        text = response.get_data(as_text=True)
+        self.assertIn("https://cyberstream.gameuniverse.top:40162", text)
+        self.assertIn("permissions.manage_server_config", text)
+        self.assertIn("40390", text)
 
     def test_terminology_document_is_served_raw(self):
         client = self._create_client()

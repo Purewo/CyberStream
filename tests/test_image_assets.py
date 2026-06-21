@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.models import Movie
+from backend.app.services import image_assets as image_assets_module
 
 
 JPEG_BYTES = b"\xff\xd8\xff\xe0poster-data\xff\xd9"
@@ -120,6 +121,50 @@ class MovieImageAssetTests(unittest.TestCase):
         self.assertEqual("cover", list_item["poster_source_info"]["field"])
         self.assertEqual("tmdb", detail["backdrop_source_info"]["provider"])
         self.assertEqual("background_cover", detail["backdrop_source_info"]["field"])
+
+    def test_movie_payload_can_prefer_original_image_urls_for_hosted_mode(self):
+        movie = self._movie(background_cover="https://image.tmdb.org/t/p/original/backdrop.jpg")
+        self.app.config["IMAGE_ASSET_PREFER_ORIGINAL_URLS"] = True
+
+        list_response = self.client.get("/api/v1/movies?page_size=10")
+        list_item = list_response.get_json()["data"]["items"][0]
+        detail_response = self.client.get(f"/api/v1/movies/{movie.id}")
+        detail = detail_response.get_json()["data"]
+        local_poster_url = f"/api/v1/movies/{movie.id}/images/poster"
+        local_backdrop_url = f"/api/v1/movies/{movie.id}/images/backdrop"
+
+        self.assertEqual("https://image.tmdb.org/t/p/w500/poster.jpg", list_item["poster_asset_url"])
+        self.assertEqual("https://image.tmdb.org/t/p/w500/poster.jpg", detail["poster_asset_url"])
+        self.assertEqual("https://image.tmdb.org/t/p/original/backdrop.jpg", detail["backdrop_asset_url"])
+        self.assertEqual("original_local", list_item["poster_asset_urls"]["strategy"])
+        self.assertEqual("original", list_item["poster_asset_urls"]["source"])
+        self.assertIsNone(list_item["poster_asset_urls"]["cdn_url"])
+        self.assertEqual(local_poster_url, list_item["poster_asset_urls"]["local_url"])
+        self.assertEqual([local_poster_url], list_item["poster_asset_fallback_urls"])
+        self.assertEqual([local_backdrop_url], detail["backdrop_asset_fallback_urls"])
+
+    def test_movie_payload_ignores_stale_supercdn_metadata_when_provider_disabled(self):
+        movie = self._movie()
+        image_assets_module._write_metadata(movie.id, "poster", {
+            "source_url": movie.cover,
+            "filename": "poster.jpg",
+            "mimetype": "image/jpeg",
+            "size": 12,
+            "updated_at": 1781430000,
+            "cdn": {
+                "provider": "supercdn",
+                "status": "uploaded",
+                "url": "https://cdn.example.test/poster.jpg",
+            },
+        })
+
+        list_response = self.client.get("/api/v1/movies?page_size=10")
+        list_item = list_response.get_json()["data"]["items"][0]
+
+        self.assertEqual(f"/api/v1/movies/{movie.id}/images/poster", list_item["poster_asset_url"])
+        self.assertEqual("local", list_item["poster_asset_urls"]["source"])
+        self.assertIsNone(list_item["poster_asset_urls"]["cdn_url"])
+        self.assertNotIn("cdn.example.test", str(list_item["poster_asset_urls"]))
 
     def test_movie_payload_uses_configured_image_asset_public_base_url(self):
         movie = self._movie(background_cover="https://image.tmdb.org/t/p/original/backdrop.jpg")

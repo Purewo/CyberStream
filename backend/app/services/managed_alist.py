@@ -208,6 +208,14 @@ class ManagedAListClient:
         self.timeout = float(cfg.get(f"{prefix}_TIMEOUT_SECONDS") or 30)
         self.verify_ssl = bool(cfg.get(f"{prefix}_VERIFY_SSL", False))
         self.mount_prefix = self._normalize_mount_path(cfg.get(f"{prefix}_MOUNT_PREFIX") or "/cyberstream")
+        from backend.app.services.accounts import current_account_id
+
+        scoped_account_id = current_account_id()
+        if scoped_account_id:
+            self.mount_prefix = self._normalize_mount_path(
+                posixpath.join(self.mount_prefix, "accounts", str(scoped_account_id))
+            )
+        self.account_mount_prefix = self.mount_prefix
         if not self.base_url:
             raise ManagedAListError(f"Managed {self.RUNTIME_LABEL} base URL is not configured", code=40060)
         if not self.token and not (self.username and self.password):
@@ -225,6 +233,13 @@ class ManagedAListClient:
         raw = str(value or "").replace("\\", "/").strip()
         normalized = posixpath.normpath("/" + raw.strip("/"))
         return "/" if normalized == "." else normalized
+
+    def set_source_scope(self, source_id):
+        if source_id:
+            self.mount_prefix = self._normalize_mount_path(
+                posixpath.join(self.account_mount_prefix, "sources", str(source_id))
+            )
+        return self
 
     def _url(self, path):
         return urljoin(self.base_url + "/", str(path or "").lstrip("/"))

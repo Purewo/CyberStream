@@ -22,7 +22,13 @@ from backend.app.services import tmdb as tmdb_module
 from backend.app.services.tmdb import TMDBScraper
 
 
-TMDB_ENV_KEYS = ("TMDB_TOKEN", "TMDB_PROXY_ENABLED", "TMDB_PROXY_URL")
+TMDB_ENV_KEYS = (
+    "TMDB_TOKEN",
+    "CYBER_TMDB_TOKEN_POOL",
+    "TMDB_TOKEN_POOL",
+    "TMDB_PROXY_ENABLED",
+    "TMDB_PROXY_URL",
+)
 
 
 class TmdbConfigRouteTests(unittest.TestCase):
@@ -37,6 +43,9 @@ class TmdbConfigRouteTests(unittest.TestCase):
             "TESTING": True,
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "TMDB_TOKEN": "",
+            "CYBER_TMDB_TOKEN_POOL": "",
+            "TMDB_TOKEN_POOL_RAW": "",
+            "TMDB_TOKEN_POOL": [],
             "TMDB_PROXY_ENABLED": True,
             "TMDB_PROXY_URL": "",
         })
@@ -152,6 +161,18 @@ class TmdbConfigRouteTests(unittest.TestCase):
         self.assertTrue(data["proxy_url_redacted"])
         self.assertNotIn("pass", data["proxy_url"])
 
+    def test_get_reports_token_pool_status_without_leaking_values(self):
+        os.environ["CYBER_TMDB_TOKEN_POOL"] = "token-a, token-b token-a"
+
+        response = self.client.get("/api/v1/system/tmdb-config")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertTrue(data["token_set"])
+        self.assertEqual(2, data["token_pool_size"])
+        self.assertTrue(data["token_pool_enabled"])
+        self.assertNotIn("token-a", str(data))
+
     def test_put_redacted_proxy_placeholder_preserves_existing_secret_value(self):
         self.env_path.write_text(
             "TMDB_PROXY_URL=http://user:pass@127.0.0.1:7890\n",
@@ -219,14 +240,25 @@ class _FakeResponse:
         self.status_code = status_code
         self._payload = payload
 
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}")
+
     def json(self):
         return self._payload
 
 
 class TMDBTokenCheckTests(unittest.TestCase):
-    def create_scraper(self, token="valid-token"):
+    def create_scraper(self, token="valid-token", token_pool=""):
         patches = [
             patch.object(tmdb_module.config, "TMDB_TOKEN", token),
+            patch.object(tmdb_module.config, "CYBER_TMDB_TOKEN_POOL", token_pool),
+            patch.object(tmdb_module.config, "TMDB_TOKEN_POOL_RAW", ""),
+            patch.object(
+                tmdb_module.config,
+                "TMDB_TOKEN_POOL",
+                tmdb_module.config._build_tmdb_token_pool(token_pool, "", token),
+            ),
             patch.object(tmdb_module.config, "TMDB_PROXY_ENABLED", False),
             patch.object(tmdb_module.config, "TMDB_PROXY_URL", ""),
             patch.object(tmdb_module.config, "TMDB_PROXIES", None),
@@ -247,6 +279,7 @@ class TMDBTokenCheckTests(unittest.TestCase):
         self.assertFalse(status["ready"])
         self.assertFalse(status["token_set"])
         self.assertFalse(status["token_valid"])
+        self.assertEqual(0, status["token_pool_size"])
         self.assertEqual("missing_token", status["status"])
         session_get.assert_not_called()
 
@@ -267,6 +300,8 @@ class TMDBTokenCheckTests(unittest.TestCase):
         self.assertTrue(status["ready"])
         self.assertTrue(status["token_set"])
         self.assertTrue(status["token_valid"])
+        self.assertEqual(1, status["token_pool_size"])
+        self.assertEqual(1, status["token_valid_count"])
         self.assertEqual("ok", status["status"])
         self.assertEqual(200, status["http_status"])
         self.assertEqual(1, status["tmdb_status_code"])
@@ -288,6 +323,9 @@ class TMDBTokenCheckTests(unittest.TestCase):
         self.assertFalse(status["ready"])
         self.assertTrue(status["token_set"])
         self.assertFalse(status["token_valid"])
+        self.assertEqual(1, status["token_pool_size"])
+        self.assertEqual(0, status["token_valid_count"])
+        self.assertEqual(1, status["token_invalid_count"])
         self.assertEqual("invalid_token", status["status"])
         self.assertEqual(401, status["http_status"])
         self.assertEqual(7, status["tmdb_status_code"])
@@ -306,6 +344,57 @@ class TMDBTokenCheckTests(unittest.TestCase):
         self.assertTrue(status["token_set"])
         self.assertEqual("proxy_error", status["status"])
         self.assertIsNone(status["http_status"])
+
+    def test_requests_rotate_through_configured_token_pool(self):
+        scraper = self.create_scraper(token="", token_pool="token-a,token-b")
+        calls = []
+
+        def fake_get(url, headers=None, params=None, proxies=None, timeout=None):
+            calls.append(headers["Authorization"])
+            return _FakeResponse(200, {"ok": True})
+
+        with patch.object(scraper, "_pick_dns_family", return_value=None), patch.object(
+            scraper.session,
+            "get",
+            side_effect=fake_get,
+        ):
+            self.assertEqual({"ok": True}, scraper._get("https://api.themoviedb.org/test"))
+            self.assertEqual({"ok": True}, scraper._get("https://api.themoviedb.org/test"))
+
+        self.assertEqual(["Bearer token-a", "Bearer token-b"], calls)
+
+    def test_check_token_status_reports_partial_token_pool(self):
+        scraper = self.create_scraper(token="", token_pool="valid-token,bad-token")
+
+        def fake_session_get(url, params=None, family=None, timeout=10, token=None):
+            if token == "valid-token":
+                return _FakeResponse(200, {
+                    "success": True,
+                    "status_code": 1,
+                    "status_message": "Success.",
+                })
+            return _FakeResponse(401, {
+                "success": False,
+                "status_code": 7,
+                "status_message": "Invalid API key.",
+            })
+
+        with patch.object(scraper, "_pick_dns_family", return_value=None), patch.object(
+            scraper,
+            "_session_get",
+            side_effect=fake_session_get,
+        ):
+            status = scraper.check_token_status()
+
+        self.assertTrue(status["ready"])
+        self.assertTrue(status["token_set"])
+        self.assertTrue(status["token_valid"])
+        self.assertEqual("partial_ok", status["status"])
+        self.assertEqual(2, status["token_pool_size"])
+        self.assertEqual(1, status["token_valid_count"])
+        self.assertEqual(1, status["token_invalid_count"])
+        self.assertEqual([0, 1], [item["token_index"] for item in status["token_checks"]])
+        self.assertNotIn("valid-token", str(status))
 
 
 if __name__ == "__main__":

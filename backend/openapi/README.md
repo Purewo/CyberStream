@@ -16,9 +16,9 @@ backend/openapi/
 当前版本：
 
 ```text
-backend/openapi/openapi-1.21.0-beta/
-  openapi-1.21.0-beta.json
-  release-notes-1.21.0-beta.md
+backend/openapi/openapi-1.22.0-beta/
+  openapi-1.22.0-beta.json
+  release-notes-1.22.0-beta.md
 ```
 
 ## 约定说明
