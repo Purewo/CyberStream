@@ -8,6 +8,7 @@ from backend.app.models import AuditLog, User
 from backend.app.security import get_current_auth_role, get_current_user, is_user_management_enabled
 from backend.app.services.audit import record_audit
 from backend.app.services.login_rate_limit import check_login_rate_limit, clear_login_failures, record_login_failure
+from backend.app.services.playback_tickets import issue_admin_playback_ticket, issue_playback_ticket_for_user
 from backend.app.services.user_access import build_user_visibility_preview, visible_library_ids_for_current_user
 from backend.app.services.users import (
     UserValidationError,
@@ -155,6 +156,16 @@ def logout():
 def me():
     user = get_current_user()
     return api_response(data=_auth_summary(user), msg="current user")
+
+
+@auth_bp.route('/auth/playback-ticket', methods=['POST'])
+def create_playback_ticket():
+    user = get_current_user()
+    if user:
+        return api_response(data=issue_playback_ticket_for_user(user), msg="Playback ticket issued")
+    if get_current_auth_role() == User.ROLE_ADMIN:
+        return api_response(data=issue_admin_playback_ticket(), msg="Playback ticket issued")
+    return api_error(code=40100, msg="Authentication required", http_status=401)
 
 
 @auth_bp.route('/user/profile', methods=['GET'])

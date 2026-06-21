@@ -35,6 +35,38 @@ GET /api/v1/auth/me
 - 不要在前端代码、配置、文档或日志里写死任何测试账号密码；账号由服务端运维侧发放。
 - 普通用户只展示 `permissions` 允许的页面。管理员入口至少需要检查 `permissions.admin`、`permissions.manage_users`、`permissions.manage_catalog`。
 
+## PC / 外部播放器播放票据
+
+WebView 内的 HttpOnly Cookie 不能可靠交给 mpv 等独立播放器进程。PC 端启动外部播放器前先在登录态下请求：
+
+```http
+POST /api/v1/auth/playback-ticket
+```
+
+响应仍是标准 `ApiResponse`，`data` 包含：
+
+```json
+{
+  "ticket": "<opaque>",
+  "expires_at": 1780000000,
+  "ttl": 43200
+}
+```
+
+把 `ticket` 作为 query 拼到外部播放器会直接请求的 URL 上，例如：
+
+```text
+/api/v1/resources/{id}/stream?ticket=<opaque>
+/api/v1/resources/{id}/stream?subtitle_id=<subtitle_id>&ticket=<opaque>
+/api/v1/resources/{id}/stream-transcoded?resolution=high&ticket=<opaque>
+/api/v1/resources/{id}/streaming-qualities?ticket=<opaque>
+/api/v1/resources/{id}/subtitles/online/search?keyword=<keyword>&ticket=<opaque>
+/api/v1/resources/{id}/subtitles/online/download?ticket=<opaque>
+/api/v1/resources/{id}/audio-transcode?start=0&ticket=<opaque>
+```
+
+票据绑定当前用户和 session_version，不绑定单个 resource；默认有效期 12 小时，可覆盖一整场观影和换集。非法或过期票据返回 HTTP `401`、业务码 `40130`，PC 端应重新请求 `/auth/playback-ticket` 后重试。浏览器内播放继续走 Cookie，不强制使用 ticket。
+
 ## 最小 API 客户端草案
 
 ```ts

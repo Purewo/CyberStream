@@ -94,6 +94,17 @@ RESOURCE_PATH_PATTERNS = (
     ),
 )
 
+PLAYBACK_TICKET_GET_PATTERNS = (
+    re.compile(
+        rf"^/api/v1/resources/{UUID_PATTERN}/"
+        r"(?:stream|streaming-qualities|stream-transcoded|audio-transcode|subtitles/online/search)$"
+    ),
+)
+
+PLAYBACK_TICKET_POST_PATTERNS = (
+    re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/download$"),
+)
+
 LIBRARY_PATH_PATTERNS = (
     re.compile(r"^/api/v1/libraries/(?P<id>\d+)(?:$|/(?:movies|featured|recommendations|filters))"),
 )
@@ -204,7 +215,47 @@ def _load_session_user():
     return True
 
 
+def _authenticate_playback_ticket():
+    if "ticket" not in request.args:
+        return False, None
+    if request.method == "GET":
+        allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_GET_PATTERNS)
+    elif request.method == "POST":
+        allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_POST_PATTERNS)
+    else:
+        allowed = False
+    if not allowed:
+        return False, None
+
+    from backend.app.services.playback_tickets import (
+        PlaybackTicketError,
+        PlaybackTicketExpired,
+        validate_playback_ticket,
+    )
+
+    try:
+        ticket_auth = validate_playback_ticket(request.args.get("ticket"))
+    except PlaybackTicketExpired:
+        return False, api_error(code=40130, msg="Playback ticket expired", http_status=401)
+    except PlaybackTicketError:
+        return False, api_error(code=40130, msg="Invalid playback ticket", http_status=401)
+
+    if ticket_auth["type"] == "admin":
+        g.current_user = None
+        g.auth_role = ADMIN_ROLE
+        g.auth_via = "playback_ticket"
+        return True, None
+
+    user = ticket_auth["user"]
+    g.current_user = user
+    g.auth_role = user.role
+    g.auth_via = "playback_ticket"
+    return True, None
+
+
 def _normal_user_can_access_route():
+    if request.path == "/api/v1/auth/playback-ticket" and request.method == "POST":
+        return True
     if request.method == "GET":
         return any(pattern.match(request.path) for pattern in NORMAL_USER_GET_PATTERNS)
     if request.path == "/api/v1/auth/logout" and request.method == "POST":
@@ -249,6 +300,13 @@ def _require_user_session():
     if _authenticate_api_token():
         return None
     if _load_session_user():
+        if not is_admin_request() and not _normal_user_can_access_route():
+            return api_error(code=40310, msg="Admin permission required", http_status=403)
+        return _enforce_visibility_for_normal_user()
+    playback_ticket_ok, playback_ticket_error = _authenticate_playback_ticket()
+    if playback_ticket_error:
+        return playback_ticket_error
+    if playback_ticket_ok:
         if not is_admin_request() and not _normal_user_can_access_route():
             return api_error(code=40310, msg="Admin permission required", http_status=403)
         return _enforce_visibility_for_normal_user()

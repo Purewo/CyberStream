@@ -11,6 +11,7 @@
 - 托管试点前端契约已更新：`/api/v1/auth/me` 是启动探测入口，Cookie 会话请求必须带 `credentials: include`，受保护接口返回 `401` 时前端应重新确认登录态。
 - `AuthStatus.permissions` 现在显式暴露 `personal_favorites` 与 `personal_vault`，普通账号可在自己的可见影片范围内使用收藏和收藏保险库。
 - 普通账号现在可以访问可见资源的云端转码清晰度、云端转码播放和在线字幕下载；未授权资源仍返回 `403`。
+- 新增 `POST /api/v1/auth/playback-ticket`，用于 PC/mpv 等拿不到 HttpOnly Cookie 的外部播放器换取 12 小时播放临时票据；`/resources/{id}/stream`、`stream-transcoded`、`streaming-qualities`、`audio-transcode`、`subtitles/online/search` 和 `subtitles/online/download` 可通过 `?ticket=` 鉴权，非法或过期返回 `40130`。
 - 非对象 JSON 请求体不再让登录、历史、字幕等接口落入 `500`，会按缺字段或非法凭据返回稳定 `4xx`。
 
 ## 运维 smoke check

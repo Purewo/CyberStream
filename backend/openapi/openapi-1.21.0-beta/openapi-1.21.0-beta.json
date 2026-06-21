@@ -3827,7 +3827,7 @@
     "/api/v1/resources/{id}/subtitles/online/search": {
       "get": {
         "summary": "搜索在线字幕候选",
-        "description": "基于当前资源搜索在线字幕。当前支持 SubHD 与 SrtKu，默认只请求 SubHD；SrtKu 作为显式备用源，前端需要时传 providers=srtku 或 providers=subhd,srtku。OpenSubtitles 因中文覆盖和下载限额问题被忽略。电视剧资源会优先按当前季集号排序，避免宽关键词命中其他季/集。候选排序会优先展示网页播放器可用的文本字幕格式 srt/ass/ssa/vtt，再展示未知格式，最后展示 sub/sup 位图字幕。SrtKu 会受独立超时控制，超时会在响应的 providers.errors 中标记为 timeout。",
+        "description": "基于当前资源搜索在线字幕。当前支持 SubHD 与 SrtKu，默认只请求 SubHD；SrtKu 作为显式备用源，前端需要时传 providers=srtku 或 providers=subhd,srtku。OpenSubtitles 因中文覆盖和下载限额问题被忽略。电视剧资源会优先按当前季集号排序，避免宽关键词命中其他季/集。候选排序会优先展示网页播放器可用的文本字幕格式 srt/ass/ssa/vtt，再展示未知格式，最后展示 sub/sup 位图字幕。SrtKu 会受独立超时控制，超时会在响应的 providers.errors 中标记为 timeout。PC/外部播放器拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "searchResourceOnlineSubtitles",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3841,6 +3841,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -3933,7 +3942,7 @@
     "/api/v1/resources/{id}/subtitles/online/download": {
       "post": {
         "summary": "下载在线字幕候选",
-        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。在线字幕原始下载、解压和嵌套归档默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；超限返回 413。",
+        "description": "根据搜索接口返回的 candidate_id 下载字幕文件。candidate_id 只支持 subhd:<hash> 与 srtku:<detail_id>；OpenSubtitles 不接入。若来源返回 zip/7z/tar/gzip 压缩包，后端会尝试提取其中的 srt/ass/ssa/vtt/sub/sup，并只把选中的真实字幕文件返回给前端。在线字幕原始下载、解压和嵌套归档默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；超限返回 413。PC/外部播放器拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "downloadResourceOnlineSubtitle",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3947,6 +3956,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -6560,6 +6578,62 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/playback-ticket": {
+      "post": {
+        "summary": "签发播放临时票据",
+        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource。",
+        "operationId": "authCreatePlaybackTicket",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "ticket",
+                            "expires_at",
+                            "ttl"
+                          ],
+                          "properties": {
+                            "ticket": {
+                              "type": "string",
+                              "description": "不透明播放票据"
+                            },
+                            "expires_at": {
+                              "type": "integer",
+                              "description": "Unix 秒级过期时间"
+                            },
+                            "ttl": {
+                              "type": "integer",
+                              "description": "有效期秒数，默认 43200"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或 API token 无效"
           }
         }
       }
