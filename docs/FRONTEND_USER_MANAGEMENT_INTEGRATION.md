@@ -67,6 +67,8 @@ POST /api/v1/auth/playback-ticket
 /api/v1/resources/{id}/streaming-qualities?ticket=<opaque>
 /api/v1/resources/{id}/subtitles/online/search?keyword=<keyword>&ticket=<opaque>
 /api/v1/resources/{id}/subtitles/online/download?ticket=<opaque>
+/api/v1/resources/{id}/subtitles/online/bind?ticket=<opaque>
+/api/v1/resources/{id}/subtitles/{subtitle_id}?ticket=<opaque>
 /api/v1/resources/{id}/audio-transcode?start=0&ticket=<opaque>
 ```
 

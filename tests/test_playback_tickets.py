@@ -135,6 +135,42 @@ class PlaybackTicketTests(unittest.TestCase):
         self.assertIn(b"Ticket", download_response.data)
         download.assert_called_once()
 
+    def test_admin_ticket_authenticates_online_subtitle_bind_and_delete_without_cookie(self):
+        app = self.create_app(API_TOKEN="api-secret", AUTH_ENABLED=True)
+        _user, resource = self._create_user_and_resource()
+        issued = app.test_client().post(
+            "/api/v1/auth/playback-ticket",
+            headers={"Authorization": "Bearer api-secret"},
+        )
+        self.assertEqual(200, issued.status_code)
+        ticket = issued.get_json()["data"]["ticket"]
+        client = app.test_client()
+
+        with patch(
+            "backend.app.api.player_routes.bind_online_subtitle",
+            return_value={"id": "subtitle-bound", "source": "online_bound"},
+        ) as bind:
+            bind_response = client.post(
+                f"/api/v1/resources/{resource.id}/subtitles/online/bind",
+                query_string={"ticket": ticket},
+                json={"candidate_id": "subhd:ticket", "download_index": 0, "confirm": True},
+            )
+        with patch(
+            "backend.app.api.player_routes.delete_bound_resource_subtitle",
+            return_value={"id": "subtitle-bound", "deleted": True},
+        ) as delete:
+            delete_response = client.delete(
+                f"/api/v1/resources/{resource.id}/subtitles/subtitle-bound",
+                query_string={"ticket": ticket},
+            )
+
+        self.assertEqual(200, bind_response.status_code)
+        self.assertEqual("subtitle-bound", bind_response.get_json()["data"]["id"])
+        bind.assert_called_once()
+        self.assertEqual(200, delete_response.status_code)
+        self.assertTrue(delete_response.get_json()["data"]["deleted"])
+        delete.assert_called_once()
+
     def test_invalid_and_expired_tickets_return_40130(self):
         app = self.create_app()
         resource, ticket_data = self._issue_user_ticket(app)
@@ -256,11 +292,43 @@ class PlaybackTicketTests(unittest.TestCase):
             f"/api/v1/resources/{resource_b.id}/streaming-qualities",
             query_string={"ticket": ticket},
         )
+        with patch(
+            "backend.app.api.player_routes.bind_online_subtitle",
+            return_value={"id": "subtitle-a", "source": "online_bound"},
+        ) as bind:
+            own_bind = no_cookie_client.post(
+                f"/api/v1/resources/{resource_a.id}/subtitles/online/bind",
+                query_string={"ticket": ticket},
+                json={"candidate_id": "subhd:ticket", "confirm": True},
+            )
+            other_bind = no_cookie_client.post(
+                f"/api/v1/resources/{resource_b.id}/subtitles/online/bind",
+                query_string={"ticket": ticket},
+                json={"candidate_id": "subhd:ticket", "confirm": True},
+            )
+        with patch(
+            "backend.app.api.player_routes.delete_bound_resource_subtitle",
+            return_value={"id": "subtitle-a", "deleted": True},
+        ) as delete:
+            own_delete = no_cookie_client.delete(
+                f"/api/v1/resources/{resource_a.id}/subtitles/subtitle-a",
+                query_string={"ticket": ticket},
+            )
+            other_delete = no_cookie_client.delete(
+                f"/api/v1/resources/{resource_b.id}/subtitles/subtitle-b",
+                query_string={"ticket": ticket},
+            )
 
         self.assertEqual(400, own.status_code)
         self.assertEqual(40074, own.get_json()["code"])
         self.assertEqual(404, other.status_code)
         self.assertEqual(40403, other.get_json()["code"])
+        self.assertEqual(200, own_bind.status_code)
+        self.assertEqual(404, other_bind.status_code)
+        bind.assert_called_once()
+        self.assertEqual(200, own_delete.status_code)
+        self.assertEqual(404, other_delete.status_code)
+        delete.assert_called_once()
 
 
 if __name__ == "__main__":

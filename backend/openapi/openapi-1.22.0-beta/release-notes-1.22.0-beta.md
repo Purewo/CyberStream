@@ -7,7 +7,7 @@
 - 新增 `Account` / `AccountMembership` 账号空间模型，业务数据以 `current_account.id` 为隔离边界。
 - 新增开放注册 `POST /api/v1/auth/register`：创建普通 `users.role=user` 登录身份、账号空间、owner membership、默认片库和首页配置，并直接建立 Cookie 会话。
 - `GET /api/v1/auth/me`、`POST /api/v1/auth/login` 返回新增 `current_account`、`account_role`、`permissions.manage_storage`、`permissions.manage_account_users`。
-- 新增 `POST /api/v1/auth/playback-ticket`，用于 PC/mpv 等拿不到 HttpOnly Cookie 的外部播放器换取 12 小时播放临时票据；`/resources/{id}/stream`、`stream-transcoded`、`streaming-qualities`、`audio-transcode`、`subtitles/online/search` 和 `subtitles/online/download` 可通过 `?ticket=` 鉴权，非法或过期返回 `40130`，并继续按 current_account 做隔离。
+- 新增 `POST /api/v1/auth/playback-ticket`，用于 PC/mpv 等拿不到 HttpOnly Cookie 的外部播放器换取 12 小时播放临时票据；`/resources/{id}/stream`、`stream-transcoded`、`streaming-qualities`、`audio-transcode`、在线字幕搜索/下载/绑定/删除可通过 `?ticket=` 鉴权，非法或过期返回 `40130`，并继续按 current_account 做隔离。
 - 普通注册用户不会成为平台 admin；账号 owner 可管理自己账号下的片库、挂载、扫描、审查和元数据。
 - 平台级 `users.role=admin` 保留给托管商语义；在没有平台后台时，默认也只操作自己的 current account。
 
