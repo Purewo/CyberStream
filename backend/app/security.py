@@ -90,7 +90,7 @@ RESOURCE_PATH_PATTERNS = (
     re.compile(
         rf"^/api/v1/resources/(?P<id>{UUID_PATTERN})/"
         r"(?:stream|streaming-qualities|stream-transcoded|external-playback|audio-transcode|"
-        r"audio-transcode/diagnostics|subtitle-settings|subtitles/online/(?:search|download))$"
+        r"audio-transcode/diagnostics|subtitle-settings|subtitles/online/(?:search|download|bind)|subtitles/[^/]+)$"
     ),
 )
 
@@ -102,7 +102,11 @@ PLAYBACK_TICKET_GET_PATTERNS = (
 )
 
 PLAYBACK_TICKET_POST_PATTERNS = (
-    re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/download$"),
+    re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/(?:download|bind)$"),
+)
+
+PLAYBACK_TICKET_DELETE_PATTERNS = (
+    re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/[^/]+$"),
 )
 
 LIBRARY_PATH_PATTERNS = (
@@ -222,6 +226,8 @@ def _authenticate_playback_ticket():
         allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_GET_PATTERNS)
     elif request.method == "POST":
         allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_POST_PATTERNS)
+    elif request.method == "DELETE":
+        allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_DELETE_PATTERNS)
     else:
         allowed = False
     if not allowed:

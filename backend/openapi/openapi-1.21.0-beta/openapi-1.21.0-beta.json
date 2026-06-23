@@ -4068,7 +4068,7 @@
     "/api/v1/resources/{id}/subtitles/online/bind": {
       "post": {
         "summary": "确认并绑定在线字幕候选",
-        "description": "用户在前端明确选中某个在线字幕候选后调用。该接口必须传 confirm=true；后端不会根据搜索排序自动绑定字幕。绑定后的字幕保存到后端缓存目录，并通过 playback.subtitles.items 暴露为 online_bound 字幕，播放时继续使用 /api/v1/resources/{id}/stream?subtitle_id=...。",
+        "description": "用户在前端明确选中某个在线字幕候选后调用。该接口必须传 confirm=true；后端不会根据搜索排序自动绑定字幕。绑定后的字幕保存到后端缓存目录，并通过 playback.subtitles.items 暴露为 online_bound 字幕，播放时继续使用 /api/v1/resources/{id}/stream?subtitle_id=...。PC/外部播放器拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "bindResourceOnlineSubtitle",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -4082,6 +4082,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -4146,7 +4155,7 @@
     "/api/v1/resources/{id}/subtitles/{subtitle_id}": {
       "delete": {
         "summary": "移除用户绑定的在线字幕",
-        "description": "只移除用户确认后绑定到资源的 online_bound/manual_upload 字幕，并清理后端缓存文件；不会删除同目录外挂字幕，也不会改动原始媒体存储目录。",
+        "description": "只移除用户确认后绑定到资源的 online_bound/manual_upload 字幕，并清理后端缓存文件；不会删除同目录外挂字幕，也不会改动原始媒体存储目录。PC/外部播放器拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "deleteResourceSubtitle",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -4167,6 +4176,15 @@
             "in": "path",
             "required": true,
             "description": "必须是 playback.subtitles.items[].id 中 source=online_bound 或 source=manual_upload 的字幕 ID。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
             "schema": {
               "type": "string"
             }
@@ -6585,7 +6603,7 @@
     "/api/v1/auth/playback-ticket": {
       "post": {
         "summary": "签发播放临时票据",
-        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource。",
+        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载/绑定/删除和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource。",
         "operationId": "authCreatePlaybackTicket",
         "tags": [
           "Auth"
