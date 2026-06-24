@@ -670,6 +670,7 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("/api/v1/auth/me", paths)
         self.assertIn("/api/v1/auth/playback-ticket", paths)
         self.assertIn("/api/v1/user/profile", paths)
+        self.assertIn("/api/v1/user/preferences", paths)
         self.assertIn("/api/v1/user/password", paths)
         self.assertIn("/api/v1/admin/users", paths)
         self.assertIn("/api/v1/admin/users/{user_id}", paths)

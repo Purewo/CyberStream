@@ -56,6 +56,7 @@ NORMAL_USER_GET_PATTERNS = (
     re.compile(r"^/api/v1/libraries/\d+$"),
     re.compile(r"^/api/v1/libraries/\d+/(?:movies|featured|recommendations|filters)$"),
     re.compile(r"^/api/v1/user/profile$"),
+    re.compile(r"^/api/v1/user/preferences$"),
     re.compile(r"^/api/v1/user/history$"),
     re.compile(r"^/api/v1/user/achievements$"),
     re.compile(r"^/api/v1/user/favorites$"),
@@ -71,6 +72,7 @@ NORMAL_USER_GET_PATTERNS = (
 
 NORMAL_USER_WRITE_PATTERNS = (
     re.compile(r"^/api/v1/user/profile$"),
+    re.compile(r"^/api/v1/user/preferences$"),
     re.compile(r"^/api/v1/user/password$"),
     re.compile(r"^/api/v1/user/history$"),
     re.compile(rf"^/api/v1/user/history/{UUID_PATTERN}$"),
@@ -108,17 +110,25 @@ RESOURCE_PATH_PATTERNS = (
 )
 
 PLAYBACK_TICKET_GET_PATTERNS = (
+    re.compile(r"^/api/v1/user/preferences$"),
+    re.compile(r"^/api/v1/user/history$"),
     re.compile(
         rf"^/api/v1/resources/{UUID_PATTERN}/"
         r"(?:stream|streaming-qualities|stream-transcoded|audio-transcode|subtitles/online/search)$"
     ),
 )
 
+PLAYBACK_TICKET_PUT_PATTERNS = (
+    re.compile(r"^/api/v1/user/preferences$"),
+)
+
 PLAYBACK_TICKET_POST_PATTERNS = (
+    re.compile(r"^/api/v1/user/history$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/online/(?:download|bind)$"),
 )
 
 PLAYBACK_TICKET_DELETE_PATTERNS = (
+    re.compile(rf"^/api/v1/user/history(?:/{UUID_PATTERN})?$"),
     re.compile(rf"^/api/v1/resources/{UUID_PATTERN}/subtitles/[^/]+$"),
 )
 
@@ -290,6 +300,8 @@ def _authenticate_playback_ticket():
         return False, None
     if request.method == "GET":
         allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_GET_PATTERNS)
+    elif request.method == "PUT":
+        allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_PUT_PATTERNS)
     elif request.method == "POST":
         allowed = any(pattern.match(request.path) for pattern in PLAYBACK_TICKET_POST_PATTERNS)
     elif request.method == "DELETE":

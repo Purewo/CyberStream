@@ -347,6 +347,18 @@ SQLITE_TABLE_PATCHES = {
             FOREIGN KEY(resource_id) REFERENCES media_resources (id)
         )
     """,
+    "user_preferences": """
+        CREATE TABLE user_preferences (
+            id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            data JSON NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_user_preferences_user_id UNIQUE (user_id),
+            FOREIGN KEY(user_id) REFERENCES users (id)
+        )
+    """,
     "user_achievements": """
         CREATE TABLE user_achievements (
             id INTEGER NOT NULL,

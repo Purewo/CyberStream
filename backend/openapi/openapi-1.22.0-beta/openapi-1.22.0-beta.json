@@ -5816,12 +5816,21 @@
     "/api/v1/user/history": {
       "get": {
         "summary": "获取观看历史",
-        "description": "分页获取观看历史记录，用于历史页面和续播入口。历史接口保留，但返回的播放上下文不再包含 is_played 标记。",
+        "description": "分页获取观看历史记录，用于历史页面和续播入口。历史接口保留，但返回的播放上下文不再包含 is_played 标记。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "getHistory",
         "tags": [
           "User"
         ],
         "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "page",
             "in": "query",
@@ -5855,10 +5864,21 @@
       },
       "post": {
         "summary": "上报播放进度",
-        "description": "上报播放进度心跳。使用独立音频实时转码时，该接口也是后端 watchdog 的保活信号；超过音频转码响应头 X-Cyber-History-Timeout 指定时间未提交对应 resource_id 的进度时，后端会停止转码。",
+        "description": "上报播放进度心跳。使用独立音频实时转码时，该接口也是后端 watchdog 的保活信号；超过音频转码响应头 X-Cyber-History-Timeout 指定时间未提交对应 resource_id 的进度时，后端会停止转码。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "reportProgress",
         "tags": [
           "User"
+        ],
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
@@ -5909,10 +5929,21 @@
       },
       "delete": {
         "summary": "清空观看历史",
-        "description": "清空所有观看历史记录。",
+        "description": "清空当前用户的所有观看历史记录。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "clearAllHistory",
         "tags": [
           "User"
+        ],
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
@@ -5931,7 +5962,7 @@
     "/api/v1/user/history/{resource_id}": {
       "delete": {
         "summary": "删除单条历史记录",
-        "description": "删除指定资源的观看历史记录。",
+        "description": "删除当前用户指定资源的观看历史记录。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
         "operationId": "deleteHistoryItem",
         "tags": [
           "User"
@@ -5942,6 +5973,15 @@
             "in": "path",
             "required": true,
             "description": "要删除的资源 ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
             "schema": {
               "type": "string"
             }
@@ -6632,7 +6672,7 @@
     "/api/v1/auth/playback-ticket": {
       "post": {
         "summary": "签发播放临时票据",
-        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载/绑定/删除和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource；代托管模式下会恢复用户 current_account 并继续执行账号隔离。",
+        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载/绑定/删除、历史心跳/读删、用户偏好读写和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource；代托管模式下会恢复用户 current_account 并继续执行账号隔离。",
         "operationId": "authCreatePlaybackTicket",
         "tags": [
           "Auth"
@@ -6935,6 +6975,104 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/user/preferences": {
+      "get": {
+        "summary": "获取当前用户前端偏好",
+        "description": "返回当前登录用户已保存的前端 UI 偏好 JSON；未保存时 data 为 {}。后端不解释字段，原样返回。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
+        "operationId": "getUserPreferences",
+        "tags": [
+          "Auth"
+        ],
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "用户偏好 JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或 playback ticket 无效"
+          }
+        }
+      },
+      "put": {
+        "summary": "整体覆盖当前用户前端偏好",
+        "description": "保存当前登录用户的前端 UI 偏好 JSON。body 必须是 JSON object；后端不解释字段，整体覆盖旧值并原样返回。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
+        "operationId": "replaceUserPreferences",
+        "tags": [
+          "Auth"
+        ],
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "example": {
+                  "theme": {
+                    "themeName": "CYBER"
+                  },
+                  "scanlines": true,
+                  "glitch": false,
+                  "homepage": {
+                    "defaultLanding": "library",
+                    "libraryDefaults": {
+                      "type": "all",
+                      "sort": "recent"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "用户偏好已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求体不是 JSON object"
+          },
+          "401": {
+            "description": "未登录或 playback ticket 无效"
           }
         }
       }

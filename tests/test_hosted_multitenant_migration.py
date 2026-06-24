@@ -18,6 +18,9 @@ if str(PROJECT_ROOT) not in sys.path:
 migration = importlib.import_module(
     "migrations.versions.20260614_01_hosted_multitenant"
 )
+preferences_migration = importlib.import_module(
+    "migrations.versions.20260624_01_user_preferences"
+)
 
 
 class HostedMultitenantMigrationTests(unittest.TestCase):
@@ -80,14 +83,17 @@ class HostedMultitenantMigrationTests(unittest.TestCase):
         return engine
 
     def _upgrade(self, engine):
+        self._run_migration(engine, migration)
+
+    def _run_migration(self, engine, migration_module):
         with engine.begin() as connection:
             context = MigrationContext.configure(connection)
-            previous_op = migration.op
-            migration.op = Operations(context)
+            previous_op = migration_module.op
+            migration_module.op = Operations(context)
             try:
-                migration.upgrade()
+                migration_module.upgrade()
             finally:
-                migration.op = previous_op
+                migration_module.op = previous_op
 
     def test_upgrade_backfills_pureworld_and_account_unique_constraints(self):
         engine = self._legacy_engine()
@@ -141,6 +147,22 @@ class HostedMultitenantMigrationTests(unittest.TestCase):
                 "INSERT INTO movies (id, account_id, tmdb_id, title) "
                 "VALUES ('movie-2', 'account-2', 'movie/1', 'Movie')"
             ))
+
+    def test_user_preferences_migration_is_idempotent_after_current_model_create_all(self):
+        engine = self._legacy_engine()
+
+        self._upgrade(engine)
+        self._run_migration(engine, preferences_migration)
+
+        with engine.begin() as connection:
+            tables = set(inspect(connection).get_table_names())
+            unique_columns = {
+                tuple(item["column_names"])
+                for item in inspect(connection).get_unique_constraints("user_preferences")
+            }
+
+        self.assertIn("user_preferences", tables)
+        self.assertIn(("user_id",), unique_columns)
 
     def test_upgrade_refuses_legacy_data_without_owner_user(self):
         engine = self._legacy_engine(include_owner=False)

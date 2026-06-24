@@ -4,7 +4,7 @@ from flask import Blueprint, current_app, g, request, session
 
 from backend.app.api.helpers import get_json_object_payload
 from backend.app.extensions import db
-from backend.app.models import AuditLog, User
+from backend.app.models import AuditLog, User, UserPreference
 from backend.app.security import (
     get_current_account,
     get_current_account_role,
@@ -270,6 +270,39 @@ def update_profile():
     )
     db.session.commit()
     return api_response(data=_profile_payload(user), msg="Profile updated")
+
+
+@auth_bp.route('/user/preferences', methods=['GET'])
+def get_user_preferences():
+    user = get_current_user()
+    if not user:
+        return api_error(code=40100, msg="Authentication required", http_status=401)
+
+    preferences = UserPreference.query.filter_by(user_id=user.id).first()
+    return api_response(
+        data=preferences.to_dict() if preferences else {},
+        msg="User preferences",
+    )
+
+
+@auth_bp.route('/user/preferences', methods=['PUT'])
+def replace_user_preferences():
+    user = get_current_user()
+    if not user:
+        return api_error(code=40100, msg="Authentication required", http_status=401)
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return api_error(code=40090, msg="Preferences must be a JSON object")
+
+    preferences = UserPreference.query.filter_by(user_id=user.id).first()
+    if preferences:
+        preferences.data = dict(payload)
+    else:
+        preferences = UserPreference(user_id=user.id, data=dict(payload))
+        db.session.add(preferences)
+    db.session.commit()
+    return api_response(data=preferences.to_dict(), msg="User preferences updated")
 
 
 @auth_bp.route('/user/password', methods=['POST'])

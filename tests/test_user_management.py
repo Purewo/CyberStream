@@ -897,6 +897,46 @@ class UserManagementTests(unittest.TestCase):
         alice_item = client.get("/api/v1/user/history").get_json()["data"]["items"][0]
         self.assertEqual(100, alice_item["progress"])
 
+    def test_preferences_are_isolated_by_user_and_replace_whole_object(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        self._user("alice")
+        self._user("bob")
+
+        self.assertEqual(401, client.get("/api/v1/user/preferences").status_code)
+
+        self._login(client, "alice")
+        self.assertEqual({}, client.get("/api/v1/user/preferences").get_json()["data"])
+        alice_preferences = {
+            "theme": {"themeName": "CYBER", "accent": "#00ffaa"},
+            "scanlines": True,
+            "glitch": False,
+            "homepage": {
+                "defaultLanding": "library",
+                "libraryDefaults": {"type": "all", "sort": "recent"},
+            },
+        }
+        save_alice = client.put("/api/v1/user/preferences", json=alice_preferences)
+        self.assertEqual(200, save_alice.status_code)
+        self.assertEqual(alice_preferences, save_alice.get_json()["data"])
+        replace_alice = client.put("/api/v1/user/preferences", json={"theme": {"themeName": "NOIR"}})
+        self.assertEqual(200, replace_alice.status_code)
+        self.assertEqual({"theme": {"themeName": "NOIR"}}, replace_alice.get_json()["data"])
+        invalid = client.put("/api/v1/user/preferences", json=["not", "object"])
+        self.assertEqual(400, invalid.status_code)
+        self.assertEqual(40090, invalid.get_json()["code"])
+        client.post("/api/v1/auth/logout")
+
+        self._login(client, "bob")
+        self.assertEqual({}, client.get("/api/v1/user/preferences").get_json()["data"])
+        bob_preferences = {"theme": {"themeName": "SOLAR"}}
+        self.assertEqual(200, client.put("/api/v1/user/preferences", json=bob_preferences).status_code)
+        self.assertEqual(bob_preferences, client.get("/api/v1/user/preferences").get_json()["data"])
+        client.post("/api/v1/auth/logout")
+
+        self._login(client, "alice")
+        self.assertEqual({"theme": {"themeName": "NOIR"}}, client.get("/api/v1/user/preferences").get_json()["data"])
+
     def test_clear_history_bulk_delete_is_scoped_by_account(self):
         self.create_enabled_app(MULTI_TENANT_ENABLED=True)
         account_a = Account(

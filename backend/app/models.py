@@ -407,6 +407,12 @@ class User(db.Model):
         lazy='dynamic',
         cascade="all, delete-orphan",
     )
+    preferences = db.relationship(
+        'UserPreference',
+        back_populates='user',
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     @classmethod
     def normalize_role(cls, value):
@@ -475,6 +481,26 @@ class UserLibraryRule(db.Model):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "library": self.library.to_dict() if self.library else None,
         }
+
+
+class UserPreference(db.Model):
+    """Opaque per-user UI preferences owned by the frontend."""
+    __tablename__ = 'user_preferences'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', name='uq_user_preferences_user_id'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    data = db.Column(JSON, nullable=False, default=dict)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', back_populates='preferences')
+
+    def to_dict(self):
+        return dict(self.data or {})
 
 
 class AuditLog(db.Model):

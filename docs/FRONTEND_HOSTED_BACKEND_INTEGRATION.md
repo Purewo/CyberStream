@@ -129,6 +129,9 @@ POST /api/v1/auth/playback-ticket
 /api/v1/resources/{id}/subtitles/online/bind?ticket=<opaque>
 /api/v1/resources/{id}/subtitles/{subtitle_id}?ticket=<opaque>
 /api/v1/resources/{id}/audio-transcode?start=0&ticket=<opaque>
+/api/v1/user/history?ticket=<opaque> (GET/POST/DELETE)
+/api/v1/user/history/{resource_id}?ticket=<opaque> (DELETE)
+/api/v1/user/preferences?ticket=<opaque> (GET/PUT)
 ```
 
 票据默认 12 小时有效，绑定当前用户和 session_version，不绑定单个资源。非法或过期返回 HTTP `401`、业务码 `40130`，PC 端重新换票后重试。代托管后端会按 ticket 所属用户恢复 current_account，并继续做账号隔离和资源可见性校验。

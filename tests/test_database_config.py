@@ -67,6 +67,7 @@ class DatabaseConfigTests(unittest.TestCase):
                     "library_sources",
                     "library_movie_memberships",
                     "user_library_rules",
+                    "user_preferences",
                     "user_achievements",
                     "user_favorites",
                     "user_vault_secrets",
@@ -80,6 +81,7 @@ class DatabaseConfigTests(unittest.TestCase):
             self.assertIn(("account_id", "library_id", "source_id", "root_path"), constraints["library_sources"])
             self.assertIn(("account_id", "library_id", "movie_id"), constraints["library_movie_memberships"])
             self.assertIn(("account_id", "user_id", "library_id"), constraints["user_library_rules"])
+            self.assertIn(("user_id",), constraints["user_preferences"])
             self.assertIn(("account_id", "scope_key", "achievement_id"), constraints["user_achievements"])
             self.assertIn(("account_id", "scope_key", "movie_id"), constraints["user_favorites"])
             self.assertIn(("account_id", "scope_key"), constraints["user_vault_secrets"])

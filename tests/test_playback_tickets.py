@@ -171,6 +171,95 @@ class PlaybackTicketTests(unittest.TestCase):
         self.assertTrue(delete_response.get_json()["data"]["deleted"])
         delete.assert_called_once()
 
+    def test_user_ticket_authenticates_history_routes_without_cookie(self):
+        app = self.create_app()
+        resource, ticket_data = self._issue_user_ticket(app)
+        client = app.test_client()
+
+        post_response = client.post(
+            "/api/v1/user/history",
+            query_string={"ticket": ticket_data["ticket"]},
+            json={
+                "resource_id": resource.id,
+                "position_sec": 120,
+                "total_duration": 1800,
+                "device_id": "pc-native",
+                "device_name": "PC Native",
+            },
+        )
+        get_response = client.get(
+            "/api/v1/user/history",
+            query_string={"ticket": ticket_data["ticket"]},
+        )
+        delete_item_response = client.delete(
+            f"/api/v1/user/history/{resource.id}",
+            query_string={"ticket": ticket_data["ticket"]},
+        )
+        post_again_response = client.post(
+            "/api/v1/user/history",
+            query_string={"ticket": ticket_data["ticket"]},
+            json={
+                "resource_id": resource.id,
+                "position_sec": 240,
+                "total_duration": 1800,
+            },
+        )
+        clear_response = client.delete(
+            "/api/v1/user/history",
+            query_string={"ticket": ticket_data["ticket"]},
+        )
+
+        self.assertEqual(200, post_response.status_code)
+        self.assertEqual(200, get_response.status_code)
+        items = get_response.get_json()["data"]["items"]
+        self.assertEqual(1, len(items))
+        self.assertEqual(120, items[0]["progress"])
+        self.assertEqual(200, delete_item_response.status_code)
+        self.assertEqual(200, post_again_response.status_code)
+        self.assertEqual(200, clear_response.status_code)
+
+    def test_user_ticket_authenticates_preferences_without_cookie(self):
+        app = self.create_app()
+        _resource, ticket_data = self._issue_user_ticket(app)
+        client = app.test_client()
+        prefs = {
+            "theme": {"themeName": "NEON", "accent": "#00ffaa"},
+            "scanlines": True,
+            "glitch": False,
+            "homepage": {
+                "defaultLanding": "library",
+                "libraryDefaults": {"type": "grid", "sort": "recent"},
+            },
+        }
+
+        initial = client.get(
+            "/api/v1/user/preferences",
+            query_string={"ticket": ticket_data["ticket"]},
+        )
+        saved = client.put(
+            "/api/v1/user/preferences",
+            query_string={"ticket": ticket_data["ticket"]},
+            json=prefs,
+        )
+        loaded = client.get(
+            "/api/v1/user/preferences",
+            query_string={"ticket": ticket_data["ticket"]},
+        )
+        invalid = client.put(
+            "/api/v1/user/preferences",
+            query_string={"ticket": ticket_data["ticket"]},
+            json=["not", "an", "object"],
+        )
+
+        self.assertEqual(200, initial.status_code)
+        self.assertEqual({}, initial.get_json()["data"])
+        self.assertEqual(200, saved.status_code)
+        self.assertEqual(prefs, saved.get_json()["data"])
+        self.assertEqual(200, loaded.status_code)
+        self.assertEqual(prefs, loaded.get_json()["data"])
+        self.assertEqual(400, invalid.status_code)
+        self.assertEqual(40090, invalid.get_json()["code"])
+
     def test_invalid_and_expired_tickets_return_40130(self):
         app = self.create_app()
         resource, ticket_data = self._issue_user_ticket(app)
@@ -292,6 +381,24 @@ class PlaybackTicketTests(unittest.TestCase):
             f"/api/v1/resources/{resource_b.id}/streaming-qualities",
             query_string={"ticket": ticket},
         )
+        own_history = no_cookie_client.post(
+            "/api/v1/user/history",
+            query_string={"ticket": ticket},
+            json={
+                "resource_id": resource_a.id,
+                "position_sec": 60,
+                "total_duration": 600,
+            },
+        )
+        other_history = no_cookie_client.post(
+            "/api/v1/user/history",
+            query_string={"ticket": ticket},
+            json={
+                "resource_id": resource_b.id,
+                "position_sec": 60,
+                "total_duration": 600,
+            },
+        )
         with patch(
             "backend.app.api.player_routes.bind_online_subtitle",
             return_value={"id": "subtitle-a", "source": "online_bound"},
@@ -323,6 +430,9 @@ class PlaybackTicketTests(unittest.TestCase):
         self.assertEqual(40074, own.get_json()["code"])
         self.assertEqual(404, other.status_code)
         self.assertEqual(40403, other.get_json()["code"])
+        self.assertEqual(200, own_history.status_code)
+        self.assertEqual(404, other_history.status_code)
+        self.assertEqual(40402, other_history.get_json()["code"])
         self.assertEqual(200, own_bind.status_code)
         self.assertEqual(404, other_bind.status_code)
         bind.assert_called_once()
