@@ -993,6 +993,19 @@ class CyberScanner:
             logger.exception("Global scan failed error=%s", e)
         finally:
             self.last_scan_time = time.time()
+            try:
+                from backend.app.extensions import db as session_db
+                from backend.app.services.review_snapshots import mark_review_snapshots_stale
+
+                mark_review_snapshots_stale()
+                session_db.session.commit()
+            except Exception:
+                try:
+                    from backend.app.extensions import db as session_db
+                    session_db.session.rollback()
+                except Exception:
+                    pass
+                logger.debug("Mark review snapshots stale after scan failed", exc_info=True)
             self._finish_scan_session()
             self.finish_scan()
             logger.info("Scan task finished")

@@ -7,6 +7,8 @@ from backend.app.providers.factory import provider_factory
 from backend.app.services.episode_diagnostics import (
     EPISODE_DIAGNOSTIC_ISSUES,
     build_movie_episode_diagnostics,
+    episode_numbers_for_resource,
+    format_episode_label,
 )
 from backend.app.services.image_assets import movie_image_asset_urls, movie_image_source_info
 from backend.app.services.playback import build_resource_playback
@@ -155,7 +157,25 @@ class StorageSource(db.Model):
             ),
         }
 
-        if include_health and supported and config_valid and capabilities.get("health_check"):
+        managed_types = {"guangyapan", "tianyicloud", "115cloud", "aliyundrive", "baidunetdisk", "123pan", "quarktv", "uctv"}
+        auth_state = str((self.config or {}).get("auth_state") or "").strip().lower()
+        persisted_auth_expired = normalized_type == "guangyapan" and auth_state == "auth_expired"
+        reauthorize_action = {
+            "method": "POST",
+            "endpoint": "/api/v1/storage/managed/guangyapan/sms/restart",
+        }
+
+        if persisted_auth_expired:
+            health = {
+                "status": "offline",
+                "reason": "auth_expired",
+                "message": "GuangYaPan authorization expired; please reauthorize",
+                "action": "reauthorize",
+                "reauthorize": reauthorize_action,
+                "path": "/",
+                "path_exists": False,
+            }
+        elif include_health and supported and config_valid and capabilities.get("health_check"):
             try:
                 provider = provider_factory.create(normalized_type, self.config or {})
                 health = provider.check_connection() or health
@@ -165,12 +185,19 @@ class StorageSource(db.Model):
                     "status": "offline",
                     "message": error_message,
                 }
+                if getattr(e, "code", None) == 40062:
+                    health.update({
+                        "reason": "auth_expired",
+                        "action": "reauthorize",
+                        "reauthorize": reauthorize_action,
+                    })
                 if "device limit" in error_message.lower():
                     health["reason"] = "device_limit"
 
+        requires_reauthorization = persisted_auth_expired or health.get("reason") == "auth_expired"
         ready_for_actions = True
-        if normalized_type in {"guangyapan", "tianyicloud", "115cloud", "aliyundrive", "baidunetdisk", "123pan", "quarktv", "uctv"}:
-            ready_for_actions = str((self.config or {}).get("auth_state") or "").strip().lower() == "ready"
+        if normalized_type in managed_types:
+            ready_for_actions = auth_state == "ready" and not requires_reauthorization
 
         actions = {
             "can_preview": supported and config_valid and ready_for_actions and capabilities.get("preview", False),
@@ -178,6 +205,13 @@ class StorageSource(db.Model):
             "can_stream": supported and config_valid and ready_for_actions and capabilities.get("stream", False),
             "can_refresh": supported and config_valid and ready_for_actions and capabilities.get("refresh", False),
         }
+        if normalized_type == "guangyapan":
+            actions["can_reauthorize"] = supported and config_valid and requires_reauthorization
+            actions["reauthorize"] = {
+                **reauthorize_action,
+                "required_fields": ["source_id"],
+                "body": {"source_id": self.id},
+            }
 
         return {
             "normalized_type": normalized_type,
@@ -188,6 +222,8 @@ class StorageSource(db.Model):
             "config_error": config_error,
             "health": health,
             "actions": actions,
+            "auth_state": "auth_expired" if requires_reauthorization else (auth_state or None),
+            "requires_reauthorization": requires_reauthorization,
         }
 
     def get_usage_summary(self):
@@ -233,6 +269,8 @@ class StorageSource(db.Model):
         config_error = state["config_error"]
         health = state["health"]
         actions = state["actions"]
+        auth_state = state.get("auth_state")
+        requires_reauthorization = bool(state.get("requires_reauthorization"))
         usage = self.get_usage_summary()
         guards = self.get_mutation_guards()
         try:
@@ -253,6 +291,8 @@ class StorageSource(db.Model):
             "config_error": config_error,
             "capabilities": capabilities,
             "config": safe_config,
+            "auth_state": auth_state,
+            "requires_reauthorization": requires_reauthorization,
             "actions": actions,
             "usage": usage,
             "guards": guards,
@@ -503,6 +543,95 @@ class UserPreference(db.Model):
         return dict(self.data or {})
 
 
+class ReviewSnapshotState(db.Model):
+    """Materialized review workbench bucket state for one account."""
+    __tablename__ = 'review_snapshot_states'
+    __table_args__ = (
+        db.UniqueConstraint('account_id', 'bucket', name='uq_review_snapshot_state_account_bucket'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
+    bucket = db.Column(db.String(60), nullable=False, index=True)
+    revision = db.Column(db.String(80), nullable=False, default='')
+    rebuilding = db.Column(db.Boolean, nullable=False, default=False)
+    stale = db.Column(db.Boolean, nullable=False, default=True)
+    item_count = db.Column(db.Integer, nullable=False, default=0)
+    error = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_meta(self):
+        return {
+            "revision": self.revision or None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "rebuilding": bool(self.rebuilding),
+            "stale": bool(self.stale),
+            "item_count": int(self.item_count or 0),
+            "error": self.error,
+        }
+
+
+class ReviewSnapshotItem(db.Model):
+    """Materialized review workbench item.
+
+    The payload keeps the public response item stable while the scalar columns
+    keep tab filters and pagination index-friendly.
+    """
+    __tablename__ = 'review_snapshot_items'
+    __table_args__ = (
+        db.Index('ix_review_snapshot_item_account_bucket_sort', 'account_id', 'bucket', 'sort_key'),
+        db.Index('ix_review_snapshot_item_account_bucket_issue', 'account_id', 'bucket', 'issue_code'),
+        db.Index('ix_review_snapshot_item_account_bucket_status', 'account_id', 'bucket', 'status'),
+        db.Index('ix_review_snapshot_item_account_bucket_source', 'account_id', 'bucket', 'source_id'),
+        db.Index('ix_review_snapshot_item_account_bucket_source_group', 'account_id', 'bucket', 'source_group'),
+        db.Index('ix_review_snapshot_item_account_bucket_review_priority', 'account_id', 'bucket', 'review_priority'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
+    bucket = db.Column(db.String(60), nullable=False, index=True)
+    entity_type = db.Column(db.String(30), nullable=False, index=True)
+    entity_id = db.Column(db.String(80), nullable=False, index=True)
+    issue_code = db.Column(db.String(80), index=True)
+    issue_codes = db.Column(JSON, nullable=False, default=list)
+    issue_codes_text = db.Column(db.Text, nullable=False, default='')
+    severity = db.Column(db.String(20), index=True)
+    status = db.Column(db.String(40), index=True)
+    source_group = db.Column(db.String(40), index=True)
+    review_priority = db.Column(db.String(40), index=True)
+    source_id = db.Column(db.Integer, index=True)
+    movie_id = db.Column(db.String(36), index=True)
+    sort_key = db.Column(db.String(120), nullable=False, default='', index=True)
+    search_text = db.Column(db.Text, nullable=False, default='')
+    payload = db.Column(JSON, nullable=False, default=dict)
+    revision = db.Column(db.String(80), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ReviewSnapshotSummary(db.Model):
+    """Precomputed issue/status counts for review workbench buckets."""
+    __tablename__ = 'review_snapshot_summaries'
+    __table_args__ = (
+        db.UniqueConstraint('account_id', 'bucket', 'summary_key', name='uq_review_snapshot_summary_account_bucket_key'),
+        db.Index('ix_review_snapshot_summary_account_bucket', 'account_id', 'bucket'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
+    bucket = db.Column(db.String(60), nullable=False, index=True)
+    summary_key = db.Column(db.String(100), nullable=False, index=True)
+    count = db.Column(db.Integer, nullable=False, default=0)
+    payload = db.Column(JSON, nullable=False, default=dict)
+    revision = db.Column(db.String(80), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class AuditLog(db.Model):
     """Append-only audit record for authentication and user administration."""
     __tablename__ = 'audit_logs'
@@ -567,6 +696,37 @@ class HomepageSetting(db.Model):
         return {
             "id": self.id,
             "account_id": self.account_id,
+            "hero_movie_id": self.hero_movie_id,
+            "sections": self.sections or [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class UserHomepageSetting(db.Model):
+    """Per-user homepage layout override within an account."""
+    __tablename__ = 'user_homepage_settings'
+    __table_args__ = (
+        db.UniqueConstraint('account_id', 'user_id', name='uq_user_homepage_settings_account_user'),
+        {'extend_existing': True},
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.String(36), db.ForeignKey('accounts.id'), nullable=True, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    hero_movie_id = db.Column(db.String(36), db.ForeignKey('movies.id'), nullable=True)
+    sections = db.Column(JSON, nullable=False, default=list)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User')
+    hero_movie = db.relationship('Movie', foreign_keys=[hero_movie_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "user_id": self.user_id,
             "hero_movie_id": self.hero_movie_id,
             "sections": self.sections or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -696,8 +856,7 @@ class Movie(db.Model):
                 "primary_resource_id": None,
             })
             entry["resource_count"] += 1
-            if resource.episode is not None:
-                entry["episode_numbers"].add(resource.episode)
+            entry["episode_numbers"].update(episode_numbers_for_resource(resource))
             if entry["primary_resource_id"] is None:
                 entry["primary_resource_id"] = resource.id
 
@@ -746,6 +905,23 @@ class Movie(db.Model):
             })
 
         return cards
+
+    def get_media_type(self, season_count=None, resources=None):
+        tmdb_id = str(self.tmdb_id or "").strip().lower()
+        if tmdb_id.startswith("tv/"):
+            return "tv"
+        if tmdb_id.startswith("movie/"):
+            return "movie"
+
+        if season_count is not None:
+            return "tv" if int(season_count or 0) > 0 else "movie"
+
+        resources = resources if resources is not None else self.resources.all()
+        if any(resource.season is not None for resource in resources):
+            return "tv"
+        if self.season_metadata.count() > 0:
+            return "tv"
+        return "movie"
 
     @staticmethod
     def _normalize_quality_marker(value):
@@ -1350,11 +1526,19 @@ class Movie(db.Model):
                 if field in user_history
             }
 
+        play_count = getattr(self, "_cyber_play_count", None)
+        try:
+            play_count = int(play_count or 0)
+        except (TypeError, ValueError):
+            play_count = 0
+
         poster_asset_urls = movie_image_asset_urls(self, "poster")
 
         return {
             "id": self.id,
             "title": self.title,
+            "media_type": self.get_media_type(season_count=season_count, resources=resources),
+            "content_type": self.get_media_type(season_count=season_count, resources=resources),
             "poster_url": self.cover,
             "poster_asset_url": poster_asset_urls["primary_url"],
             "poster_asset_urls": poster_asset_urls,
@@ -1372,6 +1556,8 @@ class Movie(db.Model):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "tags": public_categories,
             "source_ids": source_ids,
+            "views": play_count,
+            "play_count": play_count,
             "season_cards": season_cards,
             "season_count": season_count,
             "has_multi_season_content": season_count > 1,
@@ -1855,11 +2041,11 @@ class MediaResource(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def get_episode_label(self):
-        if self.season is not None and self.episode is not None:
-            return f"S{self.season:02d}E{self.episode:02d}"
-        if self.episode is not None:
-            return f"EP{self.episode:02d}"
-        return None
+        return format_episode_label(
+            self.season,
+            episode_numbers=episode_numbers_for_resource(self),
+            episode=self.episode,
+        )
 
     def get_display_title(self):
         if self.title:
@@ -2396,7 +2582,11 @@ ACCOUNT_SCOPED_MODELS = (
     LibraryMovieMembership,
     UserLibraryRule,
     AuditLog,
+    ReviewSnapshotState,
+    ReviewSnapshotItem,
+    ReviewSnapshotSummary,
     HomepageSetting,
+    UserHomepageSetting,
     Movie,
     History,
     UserAchievement,

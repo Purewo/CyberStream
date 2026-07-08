@@ -1,6 +1,6 @@
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, request
 
@@ -166,9 +166,19 @@ def report_progress():
         history = history_records[0] if history_records else None
 
         if history:
+            now = datetime.utcnow()
+            should_increment_view_count = (
+                position_sec <= 30
+                and (
+                    history.last_watched is None
+                    or now - history.last_watched >= timedelta(minutes=30)
+                )
+            )
+            if should_increment_view_count:
+                history.view_count = int(history.view_count or 0) + 1
             history.progress = position_sec
             history.duration = total_duration
-            history.last_watched = datetime.utcnow()
+            history.last_watched = now
             if device_id:
                 history.device_id = device_id
             if device_name:

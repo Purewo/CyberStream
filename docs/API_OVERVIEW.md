@@ -85,16 +85,41 @@ X-Cyber-API-Token: <token>
 - `channel`：可选，默认 `stable`
 - `platform`：可选，默认 `windows`
 - `arch`：可选，默认 `x64`
-- `variant`：可选，`lite` 或 `full`；不传时返回该平台/架构的全部安装包，并默认选择 `full`
+- `variant`：可选，`lite` 或 `full`；代托管 PC 客户端传 `lite`
+
+代托管 PC lite 示例：
+
+```http
+GET /api/v1/system/update-check?current_version=1.21.1&current_release=1.21.1-pc.5&platform=windows&arch=x64&variant=lite
+```
 
 响应重点字段：
 
 - `latest.version`：最新客户端版本号
-- `latest.release`：最新发行标识，当前示例为 `1.21.1-pc.2`
+- `latest.release`：最新发行标识，当前示例为 `1.21.1-pc.6`
 - `update_available`：根据 `current_version/current_release` 与最新版本比较得出
 - `downloads`：可用下载列表，只包含后端认可的 CDN URL
 - `selected_download`：推荐下载项；前端可直接用它做主按钮，也可以展示 `downloads` 让用户选择 `lite/full`
 - `warnings`：如发布清单缺失、下载未配置或非 CDN URL 被忽略
+
+代托管 PC lite 前端主按钮读取：
+
+```json
+{
+  "update_available": true,
+  "latest": {
+    "version": "1.21.1",
+    "release": "1.21.1-pc.6"
+  },
+  "selected_download": {
+    "variant": "lite",
+    "name": "CyberStream_1.21.1-pc.6_lite_x64_setup.exe",
+    "url": "https://qwk.ccwu.cc/a/cyberstream-releases/pc/v1.21.1-pc.6/CyberStream_1.21.1-pc.6_lite_x64_setup.exe",
+    "size": 37254652,
+    "sha256": "c7f237a725ede72e636d2e33598936f4fd215ba2cb8054d7be60ff287e301ae6"
+  }
+}
+```
 
 边界：
 - 前端只对接该官方接口，不对接 Super CDN 控制面。
@@ -419,11 +444,13 @@ X-Cyber-API-Token: <token>
 - `capabilities`：当前挂载点是否支持 `preview`、`scan`、`refresh`、`stream`、`ffmpeg_input`
 - `config`：脱敏后的当前配置摘要
 - `actions`：前端可直接判断是否展示 `preview/scan/refresh/stream` 入口
+- `auth_state` / `requires_reauthorization`：托管来源认证状态；光鸭过期时为 `auth_expired` / `true`
 - `usage`：当前挂载点被多少专辑绑定、已有多少媒体文件引用
 - `guards`：当前挂载点是否允许改类型、是否允许直接删除
 
 说明：
 - 列表接口默认不做实时网络探测，避免挂载点多了以后把列表拉慢
+- 可传 `include_health=true` 主动执行实时健康检查，用于设置页发现光鸭登录态过期
 - 此时 `status` 只表达静态支持状态：当前通常是 `unknown` 或 `unsupported`
 
 ### `GET /api/v1/storage/sources/<id>`
@@ -431,6 +458,7 @@ X-Cyber-API-Token: <token>
 
 说明：
 - 返回结构与列表项一致，但适合编辑页单条拉取
+- 可传 `include_health=true` 主动执行该挂载点实时健康检查
 - 敏感字段会做脱敏展示，例如 `token`、`password`、`otp_code`、`path_password` 仅返回 `***`
 - 同协议更新配置时，前端可把已脱敏字段原样传回 `PATCH /api/v1/storage/sources/<id>`；后端会保留数据库中的真实值
 
@@ -443,6 +471,7 @@ X-Cyber-API-Token: <token>
 - `status` 可能为 `online|offline|unknown|unsupported`
 - `reason` 为机器可读原因，便于前端和运维快速区分 `dns_resolution_failed`、`auth_failed`、`permission_denied`、`root_not_found`、`timeout` 等问题
 - 托管 `guangyapan`、`tianyicloud`、`115cloud`、`aliyundrive`、`baidunetdisk`、`123pan`、`quarktv` 和 `uctv` 的健康响应不会暴露 localhost AList/OpenList 地址、内部挂载路径或运行时元数据
+- 托管 `guangyapan` 登录态过期时 `health.reason=auth_expired`，顶层 `requires_reauthorization=true`；目录浏览/刷新遇到过期会返回 `code=40062`
 
 ### `GET /api/v1/storage/provider-types`
 列出当前后端真正支持的存储协议与配置字段定义。
@@ -485,13 +514,14 @@ X-Cyber-API-Token: <token>
 
 请求体：
 - `source_id` / `id`：必填，已有光鸭挂载点 ID
-- `phone_number`：必填，后端不保存明文手机号，重新登录必须重新提交
 - `root_path` / `cloud_root_path`：可选，不传则沿用当前 `source.config.cloud_root_path`
 - `captcha_token`：可选
 
 说明：
+- 前端不要提交手机号；后端会使用该 source 原绑定的光鸭账号手机号发送验证码，并返回 `phone_number_masked` 供展示
 - 不会新建 CyberStream 挂载点；保留同一个 `source_id`，资源索引和专辑绑定目录不变
 - 成功后该来源回到 `config.auth_state=sms_pending`，前端继续调用 `sms/verify`
+- 当前端看到 `requires_reauthorization=true`、`auth_state=auth_expired`、`health.reason=auth_expired` 或操作返回 `40062` 时，应调用该接口对原挂载点重新授权
 
 ### `POST /api/v1/storage/managed/guangyapan/sms/verify`
 提交短信验证码，完成托管光鸭云盘登录。
@@ -967,22 +997,34 @@ X-Cyber-API-Token: <token>
 支持参数：
 - `limit`
 - `library_id`：可选。专辑内详情页传当前专辑 ID，推荐会先从该专辑最终影片集合里选，不足再从全局补齐。
+- `season` / `target_season`：可选。当前打开的是某一季卡片时传当前季号，例如 `season=1`。
 
 说明：
-- 返回结构仍是影片数组，每个条目带 `recommendation`
+- 这是详情页唯一的“猜你喜欢”推荐接口；前端不需要另起第二套推荐模块
+- 返回结构仍是卡片数组，每个条目带 `recommendation`
+- 未传 `season` 时，当前卡片按整部影片实体理解，推荐会排除当前 `movie_id`
+- 传入 `season` 时，当前卡片按 `movie_id + season` 理解，只排除当前季；同剧其他季会以 `recommendation_card_type=season` 的条目优先返回
+- season 推荐条目的 `id` 仍是父级影片 UUID；前端列表 key 应用 `recommendation_card_id`，跳转/打开时使用 `id + season`
 - 未传 `library_id` 时按全局单片上下文推荐
 - 传 `library_id` 时先按当前专辑候选排序，专辑内候选不足 `limit` 才使用专辑外候选补齐
-- 同系列 / 同标题族优先，例如同一电影系列或误拆成多个条目的不同季
+- 同系列 / 同标题族优先，例如同一电影系列或历史上误拆成多个影片条目的不同季
+- 当前条目是电视剧时，相似影视优先返回 `media_type=tv` 的候选，再用电影补齐
 - 同系列数量不足时，用同类型内容补齐
 - 同类型仍不足时，只在同分区内兜底
 - 动漫与非动漫严格隔离：当前影片含 `动画` 时只推荐动漫；当前影片不含 `动画` 时绝不推荐动漫
 - 候选不足时允许返回少于 `limit`，不会跨动漫边界补齐
 
+多季剧集详情契约：
+- `MovieSimple.media_type` 与 `content_type` 明确返回 `movie` 或 `tv`，前端不应根据页面入口自行猜测
+- `GET /api/v1/movies/<id>` 的 `season_cards` 是剧集详情的基础季数据；猜你喜欢不要由前端硬拼 `season_cards`，而应调用 `/movies/<id>/recommendations?season=<当前季>`
+
 ### `GET /api/v1/homepage`
 获取首页门户聚合数据。
 
+代托管模式下只使用当前登录用户保存的个人首页配置；没有个人配置时返回空 hero 和空分类区块。
+
 返回：
-- `hero`：超大海报影片，支持后台指定；未指定时自动返回最新且有横幅图的影片
+- `hero`：超大海报影片，支持后台指定；代托管模式下未指定时为空
 - `sections`：首页分类区块，默认包含 `科幻`、`动作`、`剧情`、`动画`，每个分类默认最多 15 个
 - 首页区块按影片条目计数，不返回可展开的 `season_cards`，避免多季动漫在门户里突破分类数量限制
 
@@ -991,25 +1033,13 @@ X-Cyber-API-Token: <token>
 - 后面的分类区块不会重复前面已经返回过的影片
 - 一旦启用 `动画` 分类，其余分类不会展示带 `动画` 标签的影片
 
-### `GET /api/v1/homepage/config`
-获取首页配置。
+### `GET /api/v1/user/homepage/config`
+获取当前登录用户的个人首页配置。用户没有保存过个人配置时，返回空配置，并带 `source: "empty"`；已有个人配置时带 `source: "user"`。
 
-### `PATCH /api/v1/homepage/config`
-更新首页配置。
+### `PATCH /api/v1/user/homepage/config`
+保存当前登录用户的个人首页配置，只影响当前用户。支持 `hero_movie_id` 和 `sections`；`sections` 为完整数组替换，`hero_movie_id` 和 custom 区块里的 `movie_ids` 必须对当前用户可见。
 
-支持字段：
-- `hero_movie_id`
-- `sections`
-
-`sections` 为完整数组替换，每项支持：
-- `key`
-- `title`
-- `genre`
-- `mode=custom|latest`
-- `limit`
-- `movie_ids`
-- `enabled`
-- `sort_order`
+PC 原生线程可携带 `?ticket=<opaque>` 访问这两个接口，浏览器端继续使用 Cookie 会话。
 
 ### `GET /api/v1/reviews/resources`
 获取路径清洗阶段标记为 `needs_review` 的资源复核队列。
@@ -1038,6 +1068,7 @@ X-Cyber-API-Token: <token>
 说明：
 - 只读 dry-run，不删除资源、不修改影片、不触发扫描
 - 默认只做数据库层治理分析：孤儿资源、空壳影片、重复播放资源
+- `live_check=false` 默认读取资源治理快照，并返回 `revision/updated_at/rebuilding/stale`
 - `live_check=true` 时才访问挂载点；后端会按媒体文件父目录 `list_items()`，再匹配文件名和大小，不直接用 `path_exists()` 判断视频文件
 - 返回 `issues[].samples` 和 `actions`，前端可作为扫描治理工作台入口
 - 失效路径、大小变化或挂载点不可用只作为建议，不自动清理
@@ -1051,6 +1082,10 @@ X-Cyber-API-Token: <token>
 - `page_size`
 - `live_check`
 - `live_check_limit`
+
+说明：
+- `live_check=false` 默认读取资源治理快照，分页成本接近 `page_size`
+- `live_check=true` 仍实时访问挂载点，只用于显式校验
 
 当前 issue：
 - `detached_source_resource`
@@ -1174,6 +1209,7 @@ X-Cyber-API-Token: <token>
 
 列表项补充：
 - `quality_badge`：影片级海报标签，只会返回 `Remux`、`4K`、`HD` 或 `null`
+- `views` / `play_count`：当前账号范围内累计播放次数；两个字段同义，前端新代码优先读 `views`
 
 清晰度标签规则：
 - 任一资源为 Remux 时返回 `Remux`
@@ -1186,6 +1222,22 @@ X-Cyber-API-Token: <token>
 - `needs_attention=true` 返回待人工处理的影片，包含 raw/占位/缺海报条目，适合做处理队列入口
 - 显式传 `metadata_source_group`、`metadata_review_priority`、`metadata_issue_code` 时按工作台筛选语义返回，不额外强制公开库过滤
 - 手工归档影片默认不会混入普通列表，需通过 `/api/v1/other-videos`、专辑显式 `include` 或手动发布进入可见范围
+
+### `GET /api/v1/leaderboard`
+获取当前账号可见影视排行榜。
+
+查询参数：
+- `type`：`hot`、`rated`、`new`，默认 `hot`
+- `window`：`weekly`、`monthly`、`all_time`，默认 `weekly`
+- `page` / `page_size`：分页，`page_size` 最大 50
+
+语义：
+- `hot` 按窗口内播放次数排序，播放次数来自 `/api/v1/user/history` 上报聚合；老片本周被播放也会进入周榜
+- `rated` 按评分排序；`weekly/monthly` 只统计对应窗口内入库的影片
+- `new` 按入库时间排序；`weekly/monthly` 只返回对应窗口内入库的影片
+- 返回项基于 `MovieSimple`，额外包含 `rank` 和 `leaderboard.metric_name/metric_value`
+- `MovieSimple.views` 和 `MovieSimple.play_count` 返回账号内累计播放次数；榜单主指标以 `leaderboard.metric_value` 为准
+- `trend` 暂不返回，前端不要展示涨跌箭头占位
 
 ### `GET /api/v1/movies/<id>`
 获取影视详情。
@@ -1203,6 +1255,7 @@ X-Cyber-API-Token: <token>
 - 带 `season` 的剧集资源不进入该队列；缺集、重复集号、集号缺失和季资料问题统一走 `/api/v1/metadata/episode-review-items`
 - `catalog_visibility.status=pending_review` 的条目不进入该队列；它们统一从 `/api/v1/metadata/work-items?effective_status=pending_review` 审核
 - `include_manual=true` 时也可把已手工归档的资源重新纳入列表
+- 默认读取其他视频归档快照，支持 `keyword/source_id/needs_attention/include_manual` 过滤，并返回 `revision/updated_at/rebuilding/stale`
 - 每条返回 `resource_info`、`playback`、`metadata_state`、`catalog_visibility` 和手工归档所需的动作入口；这里的 `metadata_issues` 不包含剧集审查问题码
 - 每条同时返回 `metadata_match_context` 与 `actions.match_metadata`，用于把明显是真实电影/剧集的资源走“搜索候选 -> 预览匹配 -> 确认覆盖”流程，而不是强制手工创建
 - 这是给“自建课程 / 爬虫视频 / 录屏 / 零散视频”使用的整理页入口，不属于元数据审查工作台
@@ -1848,6 +1901,8 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 - 返回 `actions`，给出下一步处理入口，例如批量重识别 dry-run 和剧集复核队列
 - `totals.bulk_reidentify_movie_count` 统计可进入批量重识别的影片数
 - `totals.episode_review_movie_count` 统计可进入剧集复核队列的影片数
+- 默认读取账号级审查快照，不在每次打开页面时全量扫描影片和资源
+- 返回 `revision/updated_at/rebuilding/stale`；后台重建期间旧快照继续可读
 - 适合作为资料库质量工作台首页入口
 
 ### `GET /api/v1/metadata/work-items`
@@ -1866,6 +1921,7 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 说明：
 - 每个条目都带 `metadata_state`、`metadata_actions`、`metadata_diagnostics`、`metadata_issues`
 - `effective_status=pending_review` 返回批量刮削或历史回填进入待审批池的影片，默认不进入普通影视库和其他视频队列
+- `effective_status=pending_review` 使用待审批快照分页读取，并返回 `revision/updated_at/rebuilding/stale`
 - 剧集诊断问题会进入 `metadata_issues`，前端可用 `metadata_issue_code=missing_episode_numbers|duplicate_episode_numbers|episode_number_missing|episode_count_mismatch` 直接打开复核列表
 - 适合前端直接渲染“待处理元数据列表”，不用自己拼装详情字段
 - 当前统计基于已入库影片和资源，不扫描磁盘
@@ -1896,6 +1952,8 @@ GET /api/v1/movies/<id>/metadata/search?query=诛仙3&providers=tencent_video&me
 
 说明：
 - 聚合 `missing_episode_numbers`、`duplicate_episode_numbers`、`episode_number_missing`、`episode_count_mismatch` 和 `season_metadata_missing`
+- 默认读取剧集审查快照，分页查询不会重新遍历全部影片
+- 返回 `revision/updated_at/rebuilding/stale`
 - 每条返回 `episode_diagnostics`、需要复核的季号、自动修复数量、人工建议数量和 warning 数量
 - `diagnostics_endpoint` 指向单片 `GET /api/v1/movies/<id>/episode-diagnostics`
 - `apply_payload` 只包含无冲突的资源季集修复项；前端确认后提交给该条目的 `apply_endpoint`

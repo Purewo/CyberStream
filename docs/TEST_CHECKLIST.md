@@ -90,7 +90,6 @@ curl -i http://127.0.0.1:5004/api/v1/health
 - smoke check 返回 `OK metadata_fallback_pipeline_match`，说明兜底匹配队列数量在阈值内，且样本包含审核所需元数据状态、动作和可见性契约
 - smoke check 返回 `OK pending_review_backfill_dry_run`，说明待审回填 dry-run 不会产生 updated 项，且 candidates/summary 契约可用
 - smoke check 返回 `OK featured`，说明首页旧置顶/轮播入口仍返回详情影片契约
-- smoke check 返回 `OK homepage_config`，说明首页配置读取契约可用
 - smoke check 返回 `OK homepage`，说明首页 hero 与 sections 聚合契约可用
 - smoke check 返回 `OK recommendations`，说明发现页推荐流和推荐理由契约可用
 - smoke check 返回 `OK movie_context_recommendations`，说明详情页/播放页单片相关推荐契约可用
@@ -254,14 +253,14 @@ curl -s -X PATCH http://127.0.0.1:5004/api/v1/movies/<id>/catalog-visibility \
 
 ```bash
 curl -s http://127.0.0.1:5004/api/v1/homepage
-curl -s http://127.0.0.1:5004/api/v1/homepage/config
+curl -s http://127.0.0.1:5004/api/v1/user/homepage/config
 ```
 
 预期：
-- 返回 `hero` 与 `sections`
-- 默认分类包含 `科幻` / `动作` / `剧情` / `动画`
+- 代托管模式下返回 `hero` 与 `sections`，未配置个人首页时两者都为空
+- `/api/v1/user/homepage/config` 未配置时返回 `source = empty`
 - 分类区块之间不重复影片
-- smoke check 返回 `OK homepage_config` 和 `OK homepage`，说明首页配置、hero 影片详情、section 条目和去重规则可用
+- smoke check 返回 `OK homepage`，说明首页 hero、section 条目和去重规则可用
 
 ### 3.9 元数据 provider 与动漫候选搜索
 

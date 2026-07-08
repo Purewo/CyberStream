@@ -618,7 +618,7 @@
     "/api/v1/homepage": {
       "get": {
         "summary": "✅ [验证通过] 获取首页门户聚合数据",
-        "description": "返回首页 hero 与分类区块。默认分类为科幻/动作/剧情/动画，每类默认最多 15 个；hero 与分类区块之间会去重，启用动画分类时其余分类不展示动画内容。首页区块按影片条目计数，不返回可展开的 season_cards，避免多季动漫突破分类数量限制。",
+        "description": "返回首页 hero 与分类区块。代托管模式下只使用当前用户保存的个人首页配置；如果没有个人配置，则返回空 hero 和空分类区块。默认分类为科幻/动作/剧情/动画，每类默认最多 15 个；hero 与分类区块之间会去重，启用动画分类时其余分类不展示动画内容。首页区块按影片条目计数，不返回可展开的 season_cards，避免多季动漫突破分类数量限制。",
         "operationId": "getHomepage",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -638,18 +638,29 @@
         }
       }
     },
-    "/api/v1/homepage/config": {
+    "/api/v1/user/homepage/config": {
       "get": {
-        "summary": "✅ [验证通过] 获取首页配置",
-        "description": "读取首页 hero 指定影片与分类区块配置。",
-        "operationId": "getHomepageConfig",
-        "x-lifecycle-status": "stable",
+        "summary": "获取当前用户首页配置",
+        "description": "返回当前登录用户的个人首页配置；用户未保存过时返回空配置，并在 data.source 标记为 empty。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
+        "operationId": "getUserHomepageConfig",
+        "x-lifecycle-status": "beta",
         "tags": [
           "Homepage"
         ],
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "首页配置",
+            "description": "当前用户首页配置",
             "content": {
               "application/json": {
                 "schema": {
@@ -657,16 +668,30 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "未登录或 playback ticket 无效"
           }
         }
       },
       "patch": {
-        "summary": "✅ [验证通过] 更新首页配置",
-        "description": "更新首页 hero 指定影片与分类区块配置。sections 为完整数组替换。",
-        "operationId": "updateHomepageConfig",
-        "x-lifecycle-status": "stable",
+        "summary": "更新当前用户首页配置",
+        "description": "保存当前登录用户的个人首页 hero 与分类区块配置，只影响当前用户。sections 为完整数组替换；custom 模式的 movie_ids 和 hero_movie_id 必须对当前用户可见。PC 原生进程拿不到 Cookie 时可携带 playback ticket。",
+        "operationId": "updateUserHomepageConfig",
+        "x-lifecycle-status": "beta",
         "tags": [
           "Homepage"
+        ],
+        "parameters": [
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "description": "由 POST /api/v1/auth/playback-ticket 签发的临时播放票据；浏览器 Cookie 会话可不传。",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
@@ -680,7 +705,7 @@
         },
         "responses": {
           "200": {
-            "description": "首页配置已更新",
+            "description": "当前用户首页配置已保存",
             "content": {
               "application/json": {
                 "schema": {
@@ -690,7 +715,10 @@
             }
           },
           "400": {
-            "description": "配置无效或影片不存在"
+            "description": "配置无效、影片不存在或影片对当前用户不可见"
+          },
+          "401": {
+            "description": "未登录或 playback ticket 无效"
           }
         }
       }
@@ -1970,7 +1998,7 @@
     "/api/v1/metadata/quality-summary": {
       "get": {
         "summary": "🔵 [新增] 获取资料库质量汇总",
-        "description": "返回资料库元数据 issue 计数、样例影片和建议动作，不触发扫描或写库。",
+        "description": "返回资料库元数据 issue 计数、样例影片和建议动作，不触发扫描或写库。默认读取账号级审查快照，响应额外包含 revision/updated_at/rebuilding/stale。",
         "operationId": "getMetadataQualitySummary",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -2049,7 +2077,7 @@
     "/api/v1/metadata/episode-review-items": {
       "get": {
         "summary": "🔵 [新增] 获取剧集复核队列",
-        "description": "聚合所有包含剧集诊断问题的影片，返回每条影片的剧集诊断摘要、自动修复数量和 dry-run apply_payload。",
+        "description": "聚合所有包含剧集诊断问题的影片，返回每条影片的剧集诊断摘要、自动修复数量和 dry-run apply_payload。默认读取账号级审查快照，响应额外包含 revision/updated_at/rebuilding/stale。",
         "operationId": "listEpisodeReviewItems",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -2208,7 +2236,7 @@
     "/api/v1/metadata/work-items": {
       "get": {
         "summary": "✅ [验证通过] 获取元数据工作台条目列表",
-        "description": "返回适合元数据工作台直接渲染的影片条目，包含状态、动作、诊断和问题清单，不触发扫描。",
+        "description": "返回适合元数据工作台直接渲染的影片条目，包含状态、动作、诊断和问题清单，不触发扫描。effective_status=pending_review 默认读取账号级待审批快照，响应额外包含 revision/updated_at/rebuilding/stale。",
         "operationId": "listMetadataWorkItems",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -2500,6 +2528,88 @@
                       }
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leaderboard": {
+      "get": {
+        "summary": "获取影视排行榜",
+        "description": "返回当前账号可见影视的排行榜。hot 按指定时间窗口内的播放次数排序；rated 和 new 在 weekly/monthly 时按入库时间限定候选范围。暂不返回排名趋势数据。",
+        "operationId": "getLeaderboard",
+        "x-lifecycle-status": "stable",
+        "tags": [
+          "Library"
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "排行榜类型。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hot",
+                "rated",
+                "new"
+              ],
+              "default": "hot"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "description": "统计或候选时间窗口。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "weekly",
+                "monthly",
+                "all_time"
+              ],
+              "default": "weekly"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "排行榜分页数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaderboardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "排行榜类型或时间窗口不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -3404,7 +3514,7 @@
     "/api/v1/movies/{id}/recommendations": {
       "get": {
         "summary": "获取单片上下文相关推荐",
-        "description": "用于详情页或播放页下方推荐。同系列/同标题族优先，其次同类型，最后同动漫/非动漫分区兜底；动漫与非动漫严格隔离。资源库内详情页可传 library_id，服务端会先从该资源库最终影片集合推荐，不足再从全局补齐。",
+        "description": "用于详情页或播放页下方唯一的猜你喜欢模块。传入 season/target_season 时，服务端按当前季卡片推荐同剧其他季，再推荐其他相似影视；未传季上下文时按影片实体推荐其他影视。同系列/同标题族优先，其次同类型，最后同动漫/非动漫分区兜底；动漫与非动漫严格隔离。资源库内详情页可传 library_id，服务端会先从该资源库最终影片集合推荐，不足再从全局补齐。",
         "operationId": "getMovieContextRecommendations",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -3435,6 +3545,24 @@
             "description": "可选资源库 ID；传入后先推荐该库内影片，不足再补全局候选。",
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "description": "可选当前打开的季号。传入后，推荐列表会先返回同一剧集内除当前季以外的 season 卡片。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "target_season",
+            "in": "query",
+            "description": "season 的兼容别名。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4800,7 +4928,7 @@
     "/api/v1/resources/governance-summary": {
       "get": {
         "summary": "🔵 [新增] 获取资源治理只读汇总",
-        "description": "返回失效路径、孤儿资源、重复资源和扫描治理建议。默认不做真实存储访问；传 live_check=true 时按 live_check_limit 有界检查资源父目录。",
+        "description": "返回失效路径、孤儿资源、重复资源和扫描治理建议。live_check=false 默认读取账号级资源治理快照，响应额外包含 revision/updated_at/rebuilding/stale；传 live_check=true 时按 live_check_limit 有界检查资源父目录。",
         "operationId": "getResourceGovernanceSummary",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -4850,7 +4978,7 @@
     "/api/v1/resources/governance-items": {
       "get": {
         "summary": "🔵 [新增] 获取资源治理问题列表",
-        "description": "分页返回资源治理问题条目，可按 issue_code 过滤。默认不做真实存储访问；传 live_check=true 时按 live_check_limit 有界检查资源父目录。",
+        "description": "分页返回资源治理问题条目，可按 issue_code 过滤。live_check=false 默认读取账号级资源治理快照，响应额外包含 revision/updated_at/rebuilding/stale；传 live_check=true 时按 live_check_limit 有界检查资源父目录。",
         "operationId": "listResourceGovernanceItems",
         "x-lifecycle-status": "beta",
         "tags": [
@@ -5379,6 +5507,18 @@
         "tags": [
           "Storage"
         ],
+        "parameters": [
+          {
+            "name": "include_health",
+            "in": "query",
+            "required": false,
+            "description": "是否对每个存储源执行实时健康检查；用于主动发现托管光鸭登录态过期。",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "存储源列表",
@@ -5552,6 +5692,16 @@
             "description": "存储源 ID",
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "name": "include_health",
+            "in": "query",
+            "required": false,
+            "description": "是否执行该存储源的实时健康检查。",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -6672,7 +6822,7 @@
     "/api/v1/auth/playback-ticket": {
       "post": {
         "summary": "签发播放临时票据",
-        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载/绑定/删除、历史心跳/读删、用户偏好读写和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource；代托管模式下会恢复用户 current_account 并继续执行账号隔离。",
+        "description": "用户管理开启后，PC/外部播放器可先用 Cookie 会话或有效 API token 换取 12 小时播放票据，再把 ticket 作为 query 拼到 stream、stream-transcoded、streaming-qualities、audio-transcode、在线字幕搜索/下载/绑定/删除、历史心跳/读删、用户偏好读写、用户首页配置读写和字幕流 URL 上。票据是 HMAC 签名的不透明字符串，普通用户票据绑定 user_id 与 session_version，不绑定单个 resource；代托管模式下会恢复用户 current_account 并继续执行账号隔离。",
         "operationId": "authCreatePlaybackTicket",
         "tags": [
           "Auth"
@@ -7223,7 +7373,7 @@
     "/api/v1/other-videos": {
       "get": {
         "summary": "✅ [验证通过] 获取其他视频归档队列",
-        "description": "返回适合手工归档的其他视频资源，默认只包含未带季集号的未归档资源；带 season 的剧集资源走 /api/v1/metadata/episode-review-items。每条 item 同时返回 metadata_match_context 与 actions.match_metadata，前端可让真实影视资源走搜索候选 -> 预览匹配 -> 确认覆盖，确认是自建/零散视频时再进入新建电影/电视剧和资源挂载流程。",
+        "description": "返回适合手工归档的其他视频资源，默认只包含未带季集号的未归档资源；带 season 的剧集资源走 /api/v1/metadata/episode-review-items。默认读取账号级其他视频归档快照，响应额外包含 revision/updated_at/rebuilding/stale。每条 item 同时返回 metadata_match_context 与 actions.match_metadata，前端可让真实影视资源走搜索候选 -> 预览匹配 -> 确认覆盖，确认是自建/零散视频时再进入新建电影/电视剧和资源挂载流程。",
         "operationId": "listOtherVideos",
         "x-lifecycle-status": "stable",
         "tags": [
@@ -7675,7 +7825,7 @@
     "/api/v1/storage/managed/guangyapan/sms/restart": {
       "post": {
         "summary": "🟠 [已开发未验证] 重新启动托管 GuangYaPan 短信登录",
-        "description": "用于光鸭登录态失效后的重新短信验证；后端保留同一个 CyberStream source_id，只替换 localhost AList 内部挂载。",
+        "description": "用于光鸭登录态失效后的重新短信验证；前端只提交 source_id，后端使用该 source 原绑定的光鸭手机号发送验证码，并保留同一个 CyberStream source_id，只替换 localhost AList 内部挂载。",
         "operationId": "restartManagedGuangYaPanSms",
         "x-lifecycle-status": "implemented_unverified",
         "tags": [
@@ -10069,6 +10219,21 @@
             "items": {
               "type": "object"
             }
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rebuilding": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
           }
         }
       },
@@ -10101,6 +10266,21 @@
           },
           "summary": {
             "type": "object"
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rebuilding": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
           }
         }
       },
@@ -11679,6 +11859,23 @@
               }
             ]
           },
+          "auth_state": {
+            "type": "string",
+            "nullable": true,
+            "description": "托管来源认证状态。光鸭登录态过期时为 auth_expired。",
+            "enum": [
+              "sms_pending",
+              "qr_pending",
+              "qr_expired",
+              "device_limit",
+              "ready",
+              "auth_expired"
+            ]
+          },
+          "requires_reauthorization": {
+            "type": "boolean",
+            "description": "是否需要用户对该托管来源重新授权。当前光鸭凭证过期时为 true。"
+          },
           "actions": {
             "$ref": "#/components/schemas/StorageSourceActions"
           },
@@ -12006,6 +12203,16 @@
           },
           "resource_count": {
             "type": "integer"
+          },
+          "available_episode_count": {
+            "type": "integer",
+            "nullable": true,
+            "description": "season 推荐卡片返回：该季当前可播放集数。"
+          },
+          "episode_count": {
+            "type": "integer",
+            "nullable": true,
+            "description": "season 推荐卡片返回：该季元数据期望集数。"
           }
         }
       },
@@ -12881,6 +13088,74 @@
           "title": {
             "type": "string"
           },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "tv"
+            ],
+            "description": "后端根据 TMDB ID、季元数据和资源季集信息推断的内容类型。剧集详情页应优先按 tv 渲染季入口。"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "movie",
+              "tv"
+            ],
+            "description": "media_type 的兼容别名，便于前端复用扫描/刮削侧命名。"
+          },
+          "movie_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "推荐接口返回 season 卡片时指向父级影片 UUID；普通 movie 推荐等同于 id。"
+          },
+          "movie_title": {
+            "type": "string",
+            "nullable": true,
+            "description": "推荐接口返回 season 卡片时的父级影片标题。"
+          },
+          "recommendation_card_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "movie",
+              "season",
+              null
+            ],
+            "description": "仅推荐接口返回：movie 表示普通影视卡片，season 表示同剧季卡片。"
+          },
+          "recommendation_card_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "仅推荐接口返回：前端列表 key。season 卡片形如 <movie_id>:season:<season>。"
+          },
+          "season": {
+            "type": "integer",
+            "nullable": true,
+            "description": "推荐接口返回 season 卡片时的季号。"
+          },
+          "season_number": {
+            "type": "integer",
+            "nullable": true,
+            "description": "season 的兼容别名。"
+          },
+          "season_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "season_display_title": {
+            "type": "string",
+            "nullable": true
+          },
+          "season_card": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SeasonCard"
+              }
+            ],
+            "nullable": true,
+            "description": "推荐接口返回 season 卡片时的原始季卡片数据。"
+          },
           "poster_url": {
             "type": "string"
           },
@@ -12930,6 +13205,14 @@
             "items": {
               "type": "integer"
             }
+          },
+          "views": {
+            "type": "integer",
+            "description": "该影片在当前账号范围内的累计播放次数。"
+          },
+          "play_count": {
+            "type": "integer",
+            "description": "与 views 同义的播放次数字段，兼容旧前端读取。"
           },
           "date_added": {
             "type": "string",
@@ -16392,6 +16675,37 @@
           }
         }
       },
+      "StorageSourceReauthorizeAction": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "example": "POST"
+          },
+          "endpoint": {
+            "type": "string",
+            "example": "/api/v1/storage/managed/guangyapan/sms/restart"
+          },
+          "required_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "source_id",
+              "phone_number"
+            ]
+          },
+          "body": {
+            "type": "object",
+            "additionalProperties": true,
+            "example": {
+              "source_id": 3
+            }
+          }
+        },
+        "description": "托管来源重新授权动作描述。前端按 endpoint 和 required_fields 引导用户重新授权。"
+      },
       "StorageSourceActions": {
         "type": "object",
         "properties": {
@@ -16410,9 +16724,16 @@
           "can_stream": {
             "type": "boolean",
             "description": "Whether resources under this source can currently be streamed."
+          },
+          "can_reauthorize": {
+            "type": "boolean",
+            "description": "Whether this managed source should show an in-place reauthorization action. For GuangYaPan this is true when auth_state=auth_expired."
+          },
+          "reauthorize": {
+            "$ref": "#/components/schemas/StorageSourceReauthorizeAction"
           }
         },
-        "description": "Frontend action flags computed from provider capability and runtime source state. For managed GuangYaPan and TianYiCloud, all action flags stay false until config.auth_state is ready."
+        "description": "Frontend action flags computed from provider capability and runtime source state. Managed sources keep preview/scan/refresh/stream false until config.auth_state is ready; GuangYaPan exposes reauthorize when auth_state=auth_expired."
       },
       "StorageSourceHealth": {
         "type": "object",
@@ -16429,14 +16750,30 @@
           "reason": {
             "type": "string",
             "nullable": true,
-            "description": "健康检查结果的机器可读原因，例如 ok、dns_resolution_failed、auth_failed"
+            "description": "健康检查结果的机器可读原因，例如 ok、dns_resolution_failed、auth_failed、auth_expired"
           },
           "message": {
             "type": "string",
             "nullable": true
+          },
+          "action": {
+            "type": "string",
+            "nullable": true,
+            "description": "建议前端执行的动作。光鸭过期时为 reauthorize。"
+          },
+          "reauthorize": {
+            "$ref": "#/components/schemas/StorageSourceReauthorizeAction"
+          },
+          "path": {
+            "type": "string",
+            "nullable": true
+          },
+          "path_exists": {
+            "type": "boolean",
+            "nullable": true
           }
         },
-        "description": "Storage health status. Managed GuangYaPan and TianYiCloud health responses do not expose localhost AList/OpenList URL, internal mount path, or runtime metadata."
+        "description": "Storage health status. Managed GuangYaPan and TianYiCloud health responses do not expose localhost AList/OpenList URL, internal mount path, or runtime metadata. GuangYaPan auth expiry is reported as reason=auth_expired."
       },
       "StorageSourceUsage": {
         "type": "object",
@@ -17874,6 +18211,21 @@
             "items": {
               "$ref": "#/components/schemas/MetadataQualityAction"
             }
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rebuilding": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
           }
         }
       },
@@ -18332,6 +18684,21 @@
           },
           "summary": {
             "type": "object"
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rebuilding": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
           }
         }
       },
@@ -18546,6 +18913,21 @@
           },
           "pagination": {
             "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rebuilding": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
           }
         }
       },
@@ -19234,6 +19616,14 @@
       "HomepageConfig": {
         "type": "object",
         "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "user"
+            ],
+            "description": "仅 /api/v1/user/homepage/config 返回。empty 表示当前用户尚未保存个人配置；user 表示个人配置。"
+          },
           "hero_movie_id": {
             "type": "string",
             "nullable": true
@@ -19538,6 +19928,129 @@
                 "items": {
                   "$ref": "#/components/schemas/MovieDetailed"
                 }
+              }
+            }
+          }
+        ]
+      },
+      "LeaderboardMetric": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "hot",
+              "rated",
+              "new"
+            ]
+          },
+          "window": {
+            "type": "string",
+            "enum": [
+              "weekly",
+              "monthly",
+              "all_time"
+            ]
+          },
+          "metric_name": {
+            "type": "string",
+            "enum": [
+              "views",
+              "rating",
+              "added_at"
+            ]
+          },
+          "metric_value": {
+            "description": "榜单主指标值；hot 为整数播放量，rated 为评分数值，new 为上映/入库时间 ISO 字符串。",
+            "nullable": true,
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "LeaderboardItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MovieSimple"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "rank": {
+                "type": "integer"
+              },
+              "leaderboard": {
+                "$ref": "#/components/schemas/LeaderboardMetric"
+              }
+            }
+          }
+        ]
+      },
+      "LeaderboardSummary": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "hot",
+              "rated",
+              "new"
+            ]
+          },
+          "window": {
+            "type": "string",
+            "enum": [
+              "weekly",
+              "monthly",
+              "all_time"
+            ]
+          },
+          "metric_name": {
+            "type": "string",
+            "enum": [
+              "views",
+              "rating",
+              "added_at"
+            ]
+          }
+        }
+      },
+      "LeaderboardData": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/LeaderboardSummary"
+          }
+        }
+      },
+      "LeaderboardResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ApiResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/LeaderboardData"
               }
             }
           }
@@ -21215,6 +21728,21 @@
           },
           "actions": {
             "type": "object"
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rebuilding": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
           }
         }
       },
@@ -21651,20 +22179,20 @@
             "example": "1.21.1"
           },
           "release": {
-            "type": "string",
-            "description": "最新发行标识。",
-            "example": "1.21.1-pc.2"
+          "type": "string",
+          "description": "最新发行标识。",
+          "example": "1.21.1-pc.6"
           },
           "tag": {
-            "type": "string",
-            "nullable": true,
-            "description": "对应 Git tag 或发布标识。",
-            "example": "v1.21.1-pc.2"
+          "type": "string",
+          "nullable": true,
+          "description": "对应 Git tag 或发布标识。",
+          "example": "v1.21.1-pc.6"
           },
           "title": {
-            "type": "string",
-            "description": "发布标题。",
-            "example": "CyberStream PC 1.21.1-pc.2"
+          "type": "string",
+          "description": "发布标题。",
+          "example": "CyberStream PC 1.21.1-pc.6"
           },
           "released_at": {
             "type": "string",
@@ -21716,9 +22244,9 @@
             "description": "安装包类型。"
           },
           "name": {
-            "type": "string",
-            "nullable": true,
-            "example": "CyberStream_1.21.1-pc.2_full_x64.msi"
+          "type": "string",
+          "nullable": true,
+          "example": "CyberStream_1.21.1-pc.6_lite_x64_setup.exe"
           },
           "platform": {
             "type": "string",
@@ -21913,10 +22441,11 @@
             "type": "string",
             "enum": [
               "sms_pending",
-              "ready"
+              "ready",
+              "auth_expired"
             ],
             "default": "sms_pending",
-            "description": "短信认证状态；ready 后才可浏览、扫描和播放。"
+            "description": "短信认证状态；ready 后才可浏览、扫描和播放；auth_expired 表示需要对原 source 重新短信授权。"
           },
           "phone_number_masked": {
             "type": "string",
@@ -23670,8 +24199,7 @@
       "ManagedGuangYaPanSmsRestartRequest": {
         "type": "object",
         "required": [
-          "source_id",
-          "phone_number"
+          "source_id"
         ],
         "properties": {
           "source_id": {
@@ -23682,10 +24210,6 @@
           "id": {
             "type": "integer",
             "description": "source_id 的兼容别名。"
-          },
-          "phone_number": {
-            "type": "string",
-            "description": "光鸭手机号。后端不保存明文手机号，重新登录时必须重新提交。"
           },
           "root_path": {
             "type": "string",
@@ -23715,6 +24239,11 @@
             "enum": [
               "sms_pending"
             ]
+          },
+          "phone_number_masked": {
+            "type": "string",
+            "description": "后端用于发送验证码的原绑定光鸭账号脱敏手机号。",
+            "example": "********1234"
           },
           "replaced_alist_storage_id": {
             "type": "integer",

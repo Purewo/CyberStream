@@ -18,8 +18,11 @@ from backend.app.models import (
     ResourceSubtitleSetting,
     StorageSource,
     UserFavorite,
+    UserHomepageSetting,
     UserSubtitleSetting,
 )
+from backend.app.services.playback_stats import attach_movie_play_counts
+from backend.app.services.filter_options_cache import clear_filter_options_cache
 from backend.app.services.accounts import get_account_scoped
 
 logger = logging.getLogger(__name__)
@@ -208,21 +211,22 @@ class MovieDatabaseAdapter:
         return next_sections, changed
 
     def _merge_homepage_settings(self, source_movie, target_movie):
-        for setting in HomepageSetting.query.all():
-            changed = False
-            if setting.hero_movie_id == source_movie.id:
-                setting.hero_movie_id = target_movie.id
-                changed = True
-            sections, sections_changed = self._replace_movie_id_in_homepage_sections(
-                setting.sections,
-                source_movie.id,
-                target_movie.id,
-            )
-            if sections_changed:
-                setting.sections = sections
-                changed = True
-            if changed:
-                setting.updated_at = datetime.utcnow()
+        for model in (HomepageSetting, UserHomepageSetting):
+            for setting in model.query.all():
+                changed = False
+                if setting.hero_movie_id == source_movie.id:
+                    setting.hero_movie_id = target_movie.id
+                    changed = True
+                sections, sections_changed = self._replace_movie_id_in_homepage_sections(
+                    setting.sections,
+                    source_movie.id,
+                    target_movie.id,
+                )
+                if sections_changed:
+                    setting.sections = sections
+                    changed = True
+                if changed:
+                    setting.updated_at = datetime.utcnow()
 
     def _merge_metadata_locks(self, source_movie, target_movie):
         source_lock = MovieMetadataLock.query.filter_by(movie_id=source_movie.id).first()
@@ -339,30 +343,31 @@ class MovieDatabaseAdapter:
         return target_resource
 
     def _remove_movie_from_homepage_settings(self, movie_id):
-        for setting in HomepageSetting.query.all():
-            changed = False
-            if setting.hero_movie_id == movie_id:
-                setting.hero_movie_id = None
-                changed = True
+        for model in (HomepageSetting, UserHomepageSetting):
+            for setting in model.query.all():
+                changed = False
+                if setting.hero_movie_id == movie_id:
+                    setting.hero_movie_id = None
+                    changed = True
 
-            sections = setting.sections
-            if isinstance(sections, list):
-                next_sections = []
-                for section in sections:
-                    if not isinstance(section, dict) or not isinstance(section.get('movie_ids'), list):
+                sections = setting.sections
+                if isinstance(sections, list):
+                    next_sections = []
+                    for section in sections:
+                        if not isinstance(section, dict) or not isinstance(section.get('movie_ids'), list):
+                            next_sections.append(section)
+                            continue
+                        next_movie_ids = [item for item in section['movie_ids'] if item != movie_id]
+                        if len(next_movie_ids) != len(section['movie_ids']):
+                            section = dict(section)
+                            section['movie_ids'] = next_movie_ids
+                            changed = True
                         next_sections.append(section)
-                        continue
-                    next_movie_ids = [item for item in section['movie_ids'] if item != movie_id]
-                    if len(next_movie_ids) != len(section['movie_ids']):
-                        section = dict(section)
-                        section['movie_ids'] = next_movie_ids
-                        changed = True
-                    next_sections.append(section)
-                if changed:
-                    setting.sections = next_sections
+                    if changed:
+                        setting.sections = next_sections
 
-            if changed:
-                setting.updated_at = datetime.utcnow()
+                if changed:
+                    setting.updated_at = datetime.utcnow()
 
     def _delete_resource_dependencies(self, resource_id):
         for model in (History, ResourceSubtitle, ResourceSubtitleSetting, UserSubtitleSetting):
@@ -651,6 +656,7 @@ class MovieDatabaseAdapter:
 
     def search_local(self, query):
         movies = Movie.query.filter(Movie.title.contains(query)).limit(20).all()
+        attach_movie_play_counts(movies)
         return [m.to_simple_dict() for m in movies]
 
     def get_recommendations(self, source_path, limit=6, exclude_id=None):
@@ -658,6 +664,7 @@ class MovieDatabaseAdapter:
         if exclude_id:
             query = query.filter(Movie.id != exclude_id)
         movies = query.order_by(db.func.random()).limit(limit).all()
+        attach_movie_play_counts(movies)
         return [m.to_detail_dict() for m in movies]
 
     # --- Storage Source Management ---
@@ -709,6 +716,7 @@ class MovieDatabaseAdapter:
             # 最后删除源配置
             db.session.delete(source)
             db.session.commit()
+            clear_filter_options_cache()
             return True, "Deleted successfully"
         except Exception as e:
             db.session.rollback()

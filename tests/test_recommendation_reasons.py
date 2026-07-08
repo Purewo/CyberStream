@@ -11,7 +11,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.app.extensions import db
-from backend.app.models import History, Library, LibraryMovieMembership, MediaResource, Movie, StorageSource
+from backend.app.models import (
+    History,
+    Library,
+    LibraryMovieMembership,
+    MediaResource,
+    Movie,
+    MovieSeasonMetadata,
+    StorageSource,
+)
 
 
 class RecommendationReasonsTests(unittest.TestCase):
@@ -60,6 +68,43 @@ class RecommendationReasonsTests(unittest.TestCase):
         db.session.add(resource)
         db.session.commit()
         return movie, resource
+
+    def _series(self, title, rating=7.0, category=None, added_days_ago=0, season_count=1):
+        movie = Movie(
+            tmdb_id=f"tv/{title}",
+            title=title,
+            original_title=title,
+            year=2026,
+            rating=rating,
+            cover=f"https://img.example/{title}.jpg",
+            category=category or ["剧情"],
+            scraper_source="TMDB",
+            added_at=datetime.utcnow() - timedelta(days=added_days_ago),
+        )
+        db.session.add(movie)
+        db.session.flush()
+        resources = []
+        for season in range(1, season_count + 1):
+            db.session.add(MovieSeasonMetadata(
+                movie_id=movie.id,
+                season=season,
+                title=f"第 {season} 季",
+                episode_count=1,
+            ))
+            resource = MediaResource(
+                movie_id=movie.id,
+                source_id=self.source.id,
+                path=f"shows/{title}.S{season:02d}E01.mkv",
+                filename=f"{title}.S{season:02d}E01.mkv",
+                season=season,
+                episode=1,
+                label=f"S{season:02d}E01 - 1080P",
+                tech_specs={"resolution": "1080P", "resolution_rank": 1080},
+            )
+            db.session.add(resource)
+            resources.append(resource)
+        db.session.commit()
+        return movie, resources[0]
 
     def _history(self, resource, progress=300, duration=1000):
         history = History(
@@ -175,6 +220,104 @@ class RecommendationReasonsTests(unittest.TestCase):
         self.assertNotIn(live_action_candidate.id, item_ids)
         reason_codes = [reason["code"] for reason in items[0]["recommendation"]["reasons"]]
         self.assertIn("anime_partition", reason_codes)
+
+    def test_context_recommendations_prefer_same_media_type_for_series(self):
+        anchor, _ = self._series("Prison Break", rating=8.1, category=["剧情", "犯罪"], added_days_ago=5)
+        same_type_candidate, _ = self._series(
+            "Sherlock",
+            rating=7.0,
+            category=["剧情", "犯罪"],
+            added_days_ago=10,
+        )
+        higher_rated_movie, _ = self._movie(
+            "The Departed",
+            rating=9.3,
+            category=["剧情", "犯罪"],
+            added_days_ago=0,
+        )
+
+        response = self.client.get(f"/api/v1/movies/{anchor.id}/recommendations?limit=2")
+
+        self.assertEqual(200, response.status_code)
+        items = response.get_json()["data"]
+        self.assertNotIn(anchor.id, [item["id"] for item in items])
+        self.assertEqual([same_type_candidate.id, higher_rated_movie.id], [item["id"] for item in items])
+        self.assertEqual("tv", items[0]["media_type"])
+        self.assertEqual("movie", items[1]["media_type"])
+        self.assertEqual("same_media_type", items[0]["recommendation"]["primary_reason"]["code"])
+
+    def test_context_recommendations_include_other_seasons_for_current_season_card(self):
+        anchor, _ = self._series(
+            "Prison Break",
+            rating=8.1,
+            category=["剧情", "犯罪"],
+            added_days_ago=5,
+            season_count=3,
+        )
+        same_type_candidate, _ = self._series(
+            "Sherlock",
+            rating=7.0,
+            category=["剧情", "犯罪"],
+            added_days_ago=10,
+        )
+
+        response = self.client.get(f"/api/v1/movies/{anchor.id}/recommendations?season=1&limit=3")
+
+        self.assertEqual(200, response.status_code)
+        items = response.get_json()["data"]
+        self.assertEqual(["season", "season", "movie"], [item["recommendation_card_type"] for item in items])
+        self.assertEqual([2, 3], [item["season"] for item in items[:2]])
+        self.assertEqual([anchor.id, anchor.id, same_type_candidate.id], [item["id"] for item in items])
+        self.assertNotIn(f"{anchor.id}:season:1", [item["recommendation_card_id"] for item in items])
+        self.assertEqual("next_season", items[0]["recommendation"]["primary_reason"]["code"])
+        self.assertEqual("same_media_type", items[2]["recommendation"]["primary_reason"]["code"])
+
+    def test_movie_detail_marks_multiseason_series_without_self_recommendations(self):
+        movie = Movie(
+            tmdb_id="tv/prison-break",
+            title="越狱",
+            original_title="Prison Break",
+            year=2005,
+            rating=8.1,
+            cover="https://img.example/prison-break.jpg",
+            category=["剧情", "犯罪", "动作"],
+            scraper_source="TMDB",
+            added_at=datetime.utcnow(),
+        )
+        db.session.add(movie)
+        db.session.flush()
+
+        resources = []
+        for season in (1, 2, 3):
+            db.session.add(MovieSeasonMetadata(
+                movie_id=movie.id,
+                season=season,
+                title=f"第 {season} 季",
+                episode_count=1,
+            ))
+            resource = MediaResource(
+                movie_id=movie.id,
+                source_id=self.source.id,
+                path=f"shows/Prison.Break.S{season:02d}E01.mkv",
+                filename=f"Prison.Break.S{season:02d}E01.mkv",
+                season=season,
+                episode=1,
+                label=f"S{season:02d}E01 - 1080P",
+                tech_specs={"resolution": "1080P", "resolution_rank": 1080},
+            )
+            db.session.add(resource)
+            resources.append(resource)
+        db.session.commit()
+        self._history(resources[0], progress=1000, duration=1000)
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}")
+
+        self.assertEqual(200, response.status_code)
+        data = response.get_json()["data"]
+        self.assertEqual("tv", data["media_type"])
+        self.assertEqual("tv", data["content_type"])
+        self.assertEqual([1, 2, 3], [item["season"] for item in data["season_cards"]])
+        self.assertNotIn("season_recommendations", data)
 
 
 if __name__ == "__main__":

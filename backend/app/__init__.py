@@ -18,6 +18,7 @@ from backend.app.api.docs_routes import docs_bp
 from backend.app.api.aggregator_routes import aggregator_bp
 from backend.app.security import require_api_token
 from backend.app.services.accounts import install_account_session_hooks
+from backend.app.services.filter_options_cache import install_filter_options_cache_hooks
 from backend.app.services.users import bootstrap_admin
 
 
@@ -68,6 +69,7 @@ def create_app(config_overrides=None):
     db_ext.init_app(app)
     migrate.init_app(app, db_ext, directory=app.config.get("MIGRATIONS_DIR", "migrations"))
     install_account_session_hooks()
+    install_filter_options_cache_hooks()
 
     @app.route('/')
     @app.route('/api/v1/health')

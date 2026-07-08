@@ -73,9 +73,19 @@ POST /api/v1/auth/playback-ticket
 /api/v1/user/history?ticket=<opaque> (GET/POST/DELETE)
 /api/v1/user/history/{resource_id}?ticket=<opaque> (DELETE)
 /api/v1/user/preferences?ticket=<opaque> (GET/PUT)
+/api/v1/user/homepage/config?ticket=<opaque> (GET/PATCH)
 ```
 
 票据绑定当前用户和 session_version，不绑定单个 resource；默认有效期 12 小时，可覆盖一整场观影和换集。代托管模式下，ticket 请求会恢复当前账号上下文并继续按 account 隔离。非法或过期票据返回 HTTP `401`、业务码 `40130`，PC 端应重新请求 `/auth/playback-ticket` 后重试。浏览器内播放继续走 Cookie，不强制使用 ticket。
+
+## Per-User 首页配置
+
+代托管模式下没有全局 `/api/v1/homepage/config`。租户自己的首页编辑器只对接：
+
+- `GET /api/v1/user/homepage/config`：返回当前用户配置；如果用户从未保存过，返回空配置并带 `source: "empty"`。
+- `PATCH /api/v1/user/homepage/config`：保存当前用户配置，只影响本人；字段沿用全局 `HomepageConfigPatchRequest`，`sections` 是完整替换。
+- `GET /api/v1/homepage`：渲染时只使用当前用户配置；没有个人配置就返回空 hero 和空分类区块。
+- PC 原生线程可给 GET/PATCH 拼 `?ticket=<opaque>`，浏览器继续用 Cookie。
 
 ## 最小 API 客户端草案
 

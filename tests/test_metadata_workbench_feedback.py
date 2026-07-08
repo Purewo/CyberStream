@@ -71,6 +71,14 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         db.session.commit()
         return resource
 
+    def _assert_snapshot_meta(self, data):
+        self.assertIn("revision", data)
+        self.assertIn("updated_at", data)
+        self.assertIn("rebuilding", data)
+        self.assertIn("stale", data)
+        self.assertFalse(data["rebuilding"])
+        self.assertFalse(data["stale"])
+
     def _work_item_titles(self, issue_code):
         response = self.client.get(
             "/api/v1/metadata/work-items",
@@ -128,7 +136,9 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
         )
 
         self.assertEqual(200, response.status_code)
-        items = response.get_json()["data"]["items"]
+        data = response.get_json()["data"]
+        self._assert_snapshot_meta(data)
+        items = data["items"]
         ids = [item["id"] for item in items]
         self.assertIn(pending.id, ids)
         self.assertNotIn(public.id, ids)
@@ -736,6 +746,7 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         data = response.get_json()["data"]
+        self._assert_snapshot_meta(data)
         issues = {item["code"]: item for item in data["issues"]}
         self.assertEqual(1, issues["poster_missing"]["movie_count"])
         self.assertEqual(1, issues["fallback_pipeline_match"]["movie_count"])
@@ -877,6 +888,7 @@ class MetadataWorkbenchFeedbackTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         data = response.get_json()["data"]
+        self._assert_snapshot_meta(data)
         self.assertEqual(1, data["pagination"]["total_items"])
         item = data["items"][0]
         self.assertEqual(movie.id, item["movie_id"])

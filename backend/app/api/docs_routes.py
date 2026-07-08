@@ -227,6 +227,8 @@ def _send_static_contract_file(path, content_type):
 def _classify_openapi_path(path):
     if path == "/" or path == "/api/v1/openapi.json" or path.startswith("/api/v1/docs") or path.startswith("/api/v1/openapi/modules"):
         return "docs"
+    if path == "/api/v1/user/homepage/config":
+        return "catalog"
     if path.startswith("/api/v1/auth") or path.startswith("/api/v1/user") or path.startswith("/api/v1/admin"):
         return "auth-users"
     if path.startswith("/api/v1/libraries"):

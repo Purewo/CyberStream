@@ -10,7 +10,9 @@ from urllib.parse import urlsplit, urlunsplit
 from flask import Blueprint, current_app, request
 
 from backend.app import config as backend_config
+from backend.app.services.accounts import account_scope
 from backend.app.services.scanner import scanner_engine
+from backend.app.security import get_current_account_id
 from backend.app.services.tmdb import scraper as tmdb_scraper
 from backend.app.services.update_check import get_update_check_payload
 from backend.app.utils.response import api_error, api_response
@@ -20,12 +22,13 @@ logger = logging.getLogger(__name__)
 system_bp = Blueprint('system', __name__, url_prefix='/api/v1')
 
 
-def _scan_background_task(app):
+def _scan_background_task(app, account_id=None):
     with app.app_context():
-        try:
-            scanner_engine.scan(lock_acquired=True)
-        except Exception as e:
-            logger.exception("Background scan failed error=%s", e)
+        with account_scope(account_id):
+            try:
+                scanner_engine.scan(lock_acquired=True)
+            except Exception as e:
+                logger.exception("Background scan failed error=%s", e)
 
 
 @system_bp.route('/scan', methods=['GET'])
@@ -38,8 +41,13 @@ def trigger_scan():
     if not scanner_engine.try_start_scan():
         return api_error(code=42900, msg="Scanner is already running", http_status=429)
 
+    account_id = get_current_account_id()
+    if current_app.config.get("MULTI_TENANT_ENABLED") and not account_id:
+        scanner_engine.finish_scan()
+        return api_error(code=40340, msg="Current account required for scan", http_status=403)
+
     app = current_app._get_current_object()
-    thread = threading.Thread(target=_scan_background_task, args=(app,))
+    thread = threading.Thread(target=_scan_background_task, args=(app, account_id))
     thread.start()
     return api_response(msg="Scan task accepted", http_status=202)
 

@@ -10,6 +10,7 @@
 - 新增 `POST /api/v1/auth/playback-ticket`，用于 PC/mpv 等拿不到 HttpOnly Cookie 的外部播放器换取 12 小时播放临时票据；`/resources/{id}/stream`、`stream-transcoded`、`streaming-qualities`、`audio-transcode`、在线字幕搜索/下载/绑定/删除、观看历史 GET/POST/DELETE 和用户偏好 GET/PUT 可通过 `?ticket=` 鉴权，非法或过期返回 `40130`，并继续按 current_account 做隔离。
 - 普通注册用户不会成为平台 admin；账号 owner 可管理自己账号下的片库、挂载、扫描、审查和元数据。
 - 平台级 `users.role=admin` 保留给托管商语义；在没有平台后台时，默认也只操作自己的 current account。
+- 新增 `GET /api/v1/leaderboard` 账号级排行榜接口；`MovieSimple` 增加 `views/play_count`，前端可实现真实热度榜、好评榜和新片榜，趋势字段暂不返回。
 
 ## 自助挂载和扫描
 
@@ -149,6 +150,19 @@
 - 接口只修改数据库索引和资源元数据，不移动、不删除实体视频文件。
 - `catalog_visibility.status=pending_review` 的条目不再出现在 `/other-videos`；历史遗留的可疑 `auto` 条目可用 backfill 先 dry-run 再回填到待审批池。
 
+## 审查工作台快照
+
+- `GET /api/v1/metadata/quality-summary`
+- `GET /api/v1/metadata/work-items?effective_status=pending_review`
+- `GET /api/v1/metadata/episode-review-items`
+- `GET /api/v1/resources/governance-summary`
+- `GET /api/v1/resources/governance-items`
+- `GET /api/v1/other-videos`
+
+这些审查工作台接口默认读取账号级物化快照/索引，避免切 tab 时重新全量遍历影片和资源。响应会额外返回 `revision`、`updated_at`、`rebuilding`、`stale`。前端在 `rebuilding=true` 或 `stale=true` 时应继续展示旧结果并给轻提示。
+
+`live_check=true` 的资源治理接口仍然实时访问挂载点，适合显式校验或后台任务，不会变成普通 tab 的默认路径。
+
 ## 批量重识别搜索关键词覆盖
 
 - `POST /api/v1/metadata/re-scrape/plan` 调整为本地快速关键词预览：不访问 TMDB、sidecar NFO 或存储 provider，不再因为 dry-run 真搜 TMDB 阻塞批量操作。
@@ -266,6 +280,8 @@
 - 新增 `POST /api/v1/storage/managed/guangyapan/sms/verify`，提交短信验证码后把来源状态更新为 `ready`。
 - 新增前端专项联调文档 `GET /api/v1/docs/frontend-managed-guangyapan`，包含短信登录时序、状态机、错误码和播放链路说明。
 - `sms_pending` 状态下托管光鸭来源的 `source.actions.can_preview/can_scan/can_refresh/can_stream` 均为 `false`，避免前端误展示可用操作。
+- 光鸭登录态过期会稳定暴露 `auth_state=auth_expired`、`requires_reauthorization=true`、`health.reason=auth_expired` 和 `code=40062`，前端应对原 `source_id` 调用 `sms/restart` 重新授权。
+- 光鸭 `sms/restart` 不再要求前端提交手机号；后端使用原 source 绑定的光鸭手机号重发验证码，并在响应中返回 `phone_number_masked` 供展示。
 - 托管光鸭的 `StorageSource.config` 与健康检查响应不会暴露 localhost AList 地址或内部挂载路径。
 - 托管光鸭播放仍走 302，但后端会先访问 localhost AList `/d/...`，解析出最终云盘直链后再返回给前端，不暴露 AList 地址。
 - 运行时需启用 `CYBER_MANAGED_ALIST_ENABLED=true` 并配置本机 AList 地址和管理凭据。
@@ -367,6 +383,13 @@
 - 在线字幕原始下载、解压、嵌套压缩包和手动上传默认限制为 20MB，ZIP/TAR/7z 默认最多 200 个条目，归档内候选字幕累计默认最多 40MB；SubHD/SrtKu 下载、ZIP/GZip 解压均按限制流式读取，SrtKu 不再在 provider 内自行解压，7z 会先按条目元数据预检并只解压候选文件，超限返回 `413`。可通过 `CYBER_ONLINE_SUBTITLE_DOWNLOAD_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_EXTRACTED_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_NESTED_ARCHIVE_MAX_BYTES`、`CYBER_ONLINE_SUBTITLE_ARCHIVE_MAX_ENTRIES`、`CYBER_ONLINE_SUBTITLE_ARCHIVE_TOTAL_MAX_BYTES`、`CYBER_SUBTITLE_MANUAL_UPLOAD_MAX_BYTES` 调整，设为 `0` 可关闭对应限制；WebVTT 转换仍由 `CYBER_SUBTITLE_WEBVTT_CONVERSION_MAX_BYTES` 独立控制。
 - 搜索候选现在固定带 `downloads` 数组，前端可使用 `items[].downloads[].download_index` 调用下载或绑定；SubHD 只有默认入口 `0`。
 - Provider 下载运行时异常会收敛成 `502` 来源错误并返回可读 `msg`，不再统一落到泛化 `50061`。
+
+## 剧集详情猜你喜欢契约
+
+- `MovieSimple` 新增 `media_type` 与 `content_type`，由后端根据 TMDB ID、季元数据和资源季集信息推断 `movie/tv`，前端不再需要按入口猜测内容类型。
+- `/movies/{id}/recommendations` 是详情页唯一的猜你喜欢接口。传入 `season`/`target_season` 时，当前卡片按 `movie_id + season` 理解，只排除当前季，并优先返回同剧其他季。
+- season 推荐条目带 `recommendation_card_type=season`、`recommendation_card_id`、`season`、`season_card`；`id` 保持父级影片 UUID，前端列表 key 应使用 `recommendation_card_id`。
+- 当详情条目为电视剧时，影片级相似推荐会优先返回其他电视剧，再用电影候选补足数量。
 
 ## 手动元数据匹配防幽灵数据
 

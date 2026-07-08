@@ -104,6 +104,23 @@ def _coerce_bool(value, default=None):
     return value, False
 
 
+def _query_bool(name, default=False):
+    value, ok = _coerce_bool(request.args.get(name), default=default)
+    return bool(value), ok
+
+
+def _mark_source_auth_expired(source):
+    if not source or source.type != 'guangyapan':
+        return False
+    next_config = dict(source.config or {})
+    if str(next_config.get("auth_state") or "").strip().lower() == "auth_expired":
+        return False
+    next_config["auth_state"] = "auth_expired"
+    source.config = normalize_source_config('guangyapan', next_config)
+    db.session.commit()
+    return True
+
+
 def _normalize_storage_config(storage_type, config):
     """兼容旧测试/调用方的配置归一化入口。新逻辑实际委托 source_registry。"""
     try:
@@ -415,6 +432,13 @@ def _build_quark_uc_source_config(state, auth_state):
 
 def _scan_background_task(app, source_id=None, root_path=None, content_type=None, scrape_enabled=True, scraper_policy=None, account_id=None):
     with app.app_context():
+        if not account_id and source_id is not None:
+            source = (
+                StorageSource.query.execution_options(include_all_accounts=True)
+                .filter_by(id=source_id)
+                .first()
+            )
+            account_id = source.account_id if source else None
         with account_scope(account_id):
             try:
                 scanner_engine.scan(
@@ -431,16 +455,31 @@ def _scan_background_task(app, source_id=None, root_path=None, content_type=None
 
 @storage_bp.route('/storage/sources', methods=['GET'])
 def list_sources():
+    include_health, ok = _query_bool('include_health', default=False)
+    if not ok:
+        return api_error(code=40041, msg="Invalid query value: include_health should be boolean")
     sources = StorageSource.query.all()
-    return api_response(data=[source.to_dict() for source in sources])
+    data = []
+    for source in sources:
+        source_data = source.to_dict(include_health=include_health)
+        if include_health and source_data.get("requires_reauthorization"):
+            _mark_source_auth_expired(source)
+        data.append(source_data)
+    return api_response(data=data)
 
 
 @storage_bp.route('/storage/sources/<int:id>', methods=['GET'])
 def get_source(id):
+    include_health, ok = _query_bool('include_health', default=False)
+    if not ok:
+        return api_error(code=40041, msg="Invalid query value: include_health should be boolean")
     source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
-    return api_response(data=source.to_dict())
+    data = source.to_dict(include_health=include_health)
+    if include_health and data.get("requires_reauthorization"):
+        _mark_source_auth_expired(source)
+    return api_response(data=data)
 
 
 @storage_bp.route('/storage/sources/<int:id>/health', methods=['GET'])
@@ -448,7 +487,10 @@ def get_source_health(id):
     source = get_account_scoped(StorageSource, id)
     if not source:
         return api_error(code=40402, msg="Source not found", http_status=404)
-    return api_response(data=source.to_dict(include_health=True))
+    data = source.to_dict(include_health=True)
+    if data.get("requires_reauthorization"):
+        _mark_source_auth_expired(source)
+    return api_response(data=data)
 
 
 @storage_bp.route('/storage/provider-types', methods=['GET'])
@@ -570,10 +612,6 @@ def restart_managed_guangyapan_sms():
     if error_response:
         return error_response
 
-    phone_number = (payload.get('phone_number') or '').strip()
-    if not phone_number:
-        return api_error(code=40001, msg="Missing required field: phone_number")
-
     source_config = source.config or {}
     root_path = (
         payload.get('root_path')
@@ -589,6 +627,9 @@ def restart_managed_guangyapan_sms():
     old_storage_deleted = False
     try:
         client = _managed_client(ManagedAListClient, source.id)
+        if not old_storage_id:
+            return api_error(code=40061, msg="Managed GuangYaPan source has no AList storage id")
+        phone_number = client.get_guangyapan_phone_number(old_storage_id)
         storage_state = client.create_guangyapan_storage(
             phone_number=phone_number,
             root_path=root_path,
@@ -609,6 +650,7 @@ def restart_managed_guangyapan_sms():
             "verification_restarted": True,
             "verification_sent": True,
             "auth_state": "sms_pending",
+            "phone_number_masked": storage_state.get("phone_number_masked") or source_config.get("phone_number_masked"),
             "replaced_alist_storage_id": old_storage_id,
             "old_alist_storage_deleted": old_storage_deleted,
             "source": source.to_dict(),
@@ -2260,9 +2302,10 @@ def scan_specific_source(id):
         return api_error(code=e.code, msg=e.msg)
 
     app = current_app._get_current_object()
+    account_id = get_current_account_id() or source.account_id
     thread = threading.Thread(
         target=_scan_background_task,
-        args=(app, id, root_path, content_type, scrape_enabled, scraper_policy, get_current_account_id()),
+        args=(app, id, root_path, content_type, scrape_enabled, scraper_policy, account_id),
     )
     thread.start()
     return api_response(
@@ -2298,6 +2341,8 @@ def browse_storage_source(id):
             **_build_browse_payload(items, target_path, dirs_only=dirs_only),
         })
     except StorageProviderError as e:
+        if e.code == 40062:
+            _mark_source_auth_expired(source)
         return api_error(code=e.code, msg=e.message)
     except Exception as e:
         err_msg = str(e)
@@ -2330,6 +2375,8 @@ def refresh_storage_source_directory(id):
             **_build_browse_payload(items, target_path, dirs_only=dirs_only),
         })
     except StorageProviderError as e:
+        if e.code == 40062:
+            _mark_source_auth_expired(source)
         return api_error(code=e.code, msg=e.message)
     except Exception as e:
         err_msg = str(e)

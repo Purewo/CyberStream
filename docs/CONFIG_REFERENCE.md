@@ -275,20 +275,32 @@ Super CDN API 超时默认 `20` 秒；非视频资产单文件上限默认 `1048
 #### `CYBER_UPDATE_MANIFEST_PATH`
 官方发布清单路径，默认 `DATA_DIR/update-manifest.json`。源码模式下 `DATA_DIR` 是仓库根目录，冻结模式下是 `%LOCALAPPDATA%\CyberStream\`。
 
-发布清单只保存公开发行信息和 CDN 下载 URL，不保存 CDN token，也不暴露上传/建桶控制面。参考模板：`backend/release/update-manifest.example.json`。
+发布清单只保存公开发行信息和受信下载 URL，不保存 CDN token，也不暴露上传/建桶控制面。运行时路径缺失时会回退读取仓库内置 `backend/release/update-manifest.json`。
 
 #### `CYBER_UPDATE_CDN_URL_PREFIXES`
-允许作为安装包下载地址返回的 CDN URL 前缀，多个前缀用逗号分隔。未配置该值且没有 `CYBER_SUPERCDN_URL` 时，更新检查接口不会返回任何下载项。
+允许作为安装包下载地址返回的 CDN URL 前缀，多个前缀用逗号分隔。托管模式下，官方 GitHub Release asset 前缀也会被视为受信手动下载源；非托管部署仍应通过该配置或 `CYBER_SUPERCDN_URL` 明确允许自己的下载源。
 
 示例：
 
 ```bash
 CYBER_UPDATE_DEFAULT_CHANNEL=stable
 CYBER_UPDATE_MANIFEST_PATH=update-manifest.json
-CYBER_UPDATE_CDN_URL_PREFIXES=https://qwk.ccwu.cc
+CYBER_UPDATE_CDN_URL_PREFIXES=https://qwk.ccwu.cc/a/cyberstream-releases
 ```
 
 对应接口：`GET /api/v1/system/update-check`。该接口公开只读，前端只消费版本和下载 URL；CDN 上传、建桶和清理流程由后端发布运维单独维护，不属于前端/OpenAPI 控制面。
+
+#### SuperCDN 发布安装包
+PC 托管版安装包发布使用独立 SuperCDN 更新桶，不复用海报/字幕资源桶。推荐桶配置：
+
+```bash
+CYBER_UPDATE_SUPERCDN_URL=https://qwk.ccwu.cc
+CYBER_UPDATE_SUPERCDN_BUCKET=cyberstream-releases
+CYBER_UPDATE_SUPERCDN_ROUTE_PROFILE=overseas_r2
+CYBER_UPDATE_SUPERCDN_TOKEN=<release-machine-only>
+```
+
+发布脚本 `pc/installer/scripts/publish_supercdn_release.py` 会创建允许 `archive` 类型的 `cyberstream-releases` 桶，把 lite setup 上传到版本化路径 `pc/v<release>/...`，并写入 `backend/release/update-manifest.json`。当前先走海外加速线 `overseas_r2`，没有 token 时可加 `--dry-run` 只生成发布计划。
 
 ### 2.10 反向代理与外部 URL 配置
 

@@ -195,6 +195,27 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("guangyapan", schemas["StorageSource"]["properties"]["type"]["enum"])
         self.assertIn("managed", schemas["StorageProviderCapabilities"]["properties"])
         self.assertIn("sms_login", schemas["StorageProviderCapabilities"]["properties"])
+        self.assertIn("auth_state", schemas["StorageSource"]["properties"])
+        self.assertIn("requires_reauthorization", schemas["StorageSource"]["properties"])
+        self.assertIn("can_reauthorize", schemas["StorageSourceActions"]["properties"])
+        self.assertIn("reauthorize", schemas["StorageSourceActions"]["properties"])
+        self.assertIn("auth_expired", schemas["ConfigGuangYaPan"]["properties"]["auth_state"]["enum"])
+        restart_request = schemas["ManagedGuangYaPanSmsRestartRequest"]
+        restart_data = schemas["ManagedGuangYaPanSmsRestartData"]
+        self.assertEqual(["source_id"], restart_request["required"])
+        self.assertNotIn("phone_number", restart_request["properties"])
+        self.assertIn("phone_number_masked", restart_data["properties"])
+
+        list_params = {
+            item["name"]
+            for item in paths["/api/v1/storage/sources"]["get"].get("parameters", [])
+        }
+        detail_params = {
+            item["name"]
+            for item in paths["/api/v1/storage/sources/{id}"]["get"].get("parameters", [])
+        }
+        self.assertIn("include_health", list_params)
+        self.assertIn("include_health", detail_params)
 
     def test_managed_tianyicloud_openapi_documents_runtime_contract(self):
         openapi = self._load_openapi()
@@ -405,6 +426,40 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("pending_review", schemas["MovieCatalogVisibility"]["properties"]["effective_status"]["enum"])
         self.assertIn("pending_review", schemas["MovieCatalogVisibilityUpdateRequest"]["properties"]["status"]["enum"])
         self.assertNotIn("published", schemas["MovieCatalogVisibilityUpdateRequest"]["properties"]["status"]["enum"])
+
+    def test_leaderboard_openapi_documents_runtime_contract(self):
+        openapi = self._load_openapi()
+        schemas = openapi["components"]["schemas"]
+        paths = openapi["paths"]
+
+        operation = paths["/api/v1/leaderboard"]["get"]
+        parameters = {param["name"]: param for param in operation["parameters"]}
+
+        self.assertEqual("getLeaderboard", operation["operationId"])
+        self.assertIn("type", parameters)
+        self.assertIn("window", parameters)
+        self.assertIn("page_size", parameters)
+        self.assertIn("LeaderboardResponse", schemas)
+        self.assertIn("LeaderboardMetric", schemas)
+        self.assertIn("LeaderboardItem", schemas)
+        self.assertIn("views", schemas["MovieSimple"]["properties"])
+        self.assertIn("play_count", schemas["MovieSimple"]["properties"])
+        self.assertIn("media_type", schemas["MovieSimple"]["properties"])
+        self.assertIn("content_type", schemas["MovieSimple"]["properties"])
+        self.assertIn("recommendation_card_type", schemas["MovieSimple"]["properties"])
+        self.assertIn("recommendation_card_id", schemas["MovieSimple"]["properties"])
+        self.assertIn("season", schemas["MovieSimple"]["properties"])
+        self.assertIn("season_card", schemas["MovieSimple"]["properties"])
+        self.assertNotIn("season_recommendations", schemas["MovieDetailed"]["allOf"][1]["properties"])
+        self.assertNotIn("SeasonRecommendation", schemas)
+        self.assertNotIn("season_context", schemas["MovieRecommendation"]["properties"]["strategy"]["enum"])
+        context_recommendation = paths["/api/v1/movies/{id}/recommendations"]["get"]
+        context_parameters = {param["name"]: param for param in context_recommendation["parameters"]}
+        self.assertIn("season", context_parameters)
+        self.assertIn("target_season", context_parameters)
+        self.assertIn("hot", schemas["LeaderboardMetric"]["properties"]["type"]["enum"])
+        self.assertIn("weekly", schemas["LeaderboardMetric"]["properties"]["window"]["enum"])
+        self.assertIn("metric_value", schemas["LeaderboardMetric"]["properties"])
 
     def test_image_cache_openapi_documents_status_and_preload_contract(self):
         openapi = self._load_openapi()
@@ -669,8 +724,10 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn("/api/v1/auth/logout", paths)
         self.assertIn("/api/v1/auth/me", paths)
         self.assertIn("/api/v1/auth/playback-ticket", paths)
+        self.assertNotIn("/api/v1/homepage/config", paths)
         self.assertIn("/api/v1/user/profile", paths)
         self.assertIn("/api/v1/user/preferences", paths)
+        self.assertIn("/api/v1/user/homepage/config", paths)
         self.assertIn("/api/v1/user/password", paths)
         self.assertIn("/api/v1/admin/users", paths)
         self.assertIn("/api/v1/admin/users/{user_id}", paths)

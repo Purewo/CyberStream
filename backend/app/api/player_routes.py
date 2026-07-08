@@ -5,6 +5,7 @@ from flask import Blueprint, Response, current_app, redirect, request, send_file
 from backend.app.api.helpers import get_json_object_payload
 from backend.app.extensions import db
 from backend.app.models import MediaResource
+from backend.app.providers.base import StorageProviderError
 from backend.app.providers.factory import provider_factory
 from backend.app.services.accounts import get_account_scoped
 from backend.app.services.audio_transcode import (
@@ -309,6 +310,9 @@ def stream_resource(id):
 
         return Response(stream_with_context(data_iter), status=status, headers=headers)
 
+    except StorageProviderError as e:
+        logger.warning("Stream storage provider rejected resource_id=%s code=%s error=%s", id, e.code, e.message)
+        return api_error(code=e.code, msg=e.message, http_status=400)
     except Exception as e:
         logger.exception("Unhandled stream error resource_id=%s error=%s", id, e)
         return Response("Internal Stream Error", status=500)
@@ -682,6 +686,11 @@ def transcode_resource_audio(id):
             finish_audio_transcode_diagnostics(diagnostic_id, reason=e.error_code)
         headers = {"Retry-After": "5"} if e.status_code == 429 else None
         return Response(str(e), status=e.status_code, headers=headers)
+    except StorageProviderError as e:
+        logger.warning("Audio transcode storage provider rejected resource_id=%s code=%s error=%s", id, e.code, e.message)
+        if "diagnostic_id" in locals():
+            finish_audio_transcode_diagnostics(diagnostic_id, reason=f"storage_provider_error:{e.code}")
+        return api_error(code=e.code, msg=e.message, http_status=400)
     except Exception as e:
         logger.exception("Unhandled audio transcode error resource_id=%s error=%s", id, e)
         if "diagnostic_id" in locals():

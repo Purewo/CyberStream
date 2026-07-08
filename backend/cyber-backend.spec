@@ -42,6 +42,7 @@ datas = [
     # docs_routes 运行时按 BASE_DIR/backend/openapi/ 读规范；冻结后 BASE_DIR
     # = sys._MEIPASS，所以这里路径必须保持相对仓库根的层级一致。
     (os.path.join(REPO_ROOT, "backend", "openapi"), "backend/openapi"),
+    (os.path.join(REPO_ROOT, "backend", "release"), "backend/release"),
     (os.path.join(REPO_ROOT, "docs"), "docs"),
     (
         os.path.join(REPO_ROOT, "backend", "app", "services", "online_subtitle_providers"),

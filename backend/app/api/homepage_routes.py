@@ -1,14 +1,19 @@
 from datetime import datetime
 
-from flask import Blueprint, request
+from flask import Blueprint, current_app
 from sqlalchemy.exc import IntegrityError
 
 from backend.app.api.helpers import get_history_map, get_json_object_payload
 from backend.app.api.library_helpers import apply_movie_filters, apply_public_movie_visibility_filter
 from backend.app.extensions import db
-from backend.app.models import HomepageSetting, Movie
+from backend.app.models import HomepageSetting, Movie, UserHomepageSetting
 from backend.app.services.accounts import get_account_scoped
-from backend.app.services.user_access import apply_current_user_movie_visibility_filter, can_current_user_access_movie_id
+from backend.app.services.playback_stats import attach_movie_play_counts
+from backend.app.services.user_access import (
+    apply_current_user_movie_visibility_filter,
+    can_current_user_access_movie_id,
+    current_user_id_for_personal_data,
+)
 from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
 
@@ -61,6 +66,26 @@ def _get_or_create_homepage_setting():
         if existing:
             return existing
         raise
+
+
+def _get_user_homepage_setting():
+    user_id = current_user_id_for_personal_data()
+    if user_id is None:
+        return None
+    return UserHomepageSetting.query.filter_by(user_id=user_id).order_by(UserHomepageSetting.id.asc()).first()
+
+
+def _hosted_personal_homepage_only():
+    return bool(current_app.config.get("HOSTED_MANAGED_MODE"))
+
+
+def _get_homepage_setting_for_render():
+    user_setting = _get_user_homepage_setting()
+    if user_setting:
+        return user_setting, False
+    if _hosted_personal_homepage_only():
+        return None, False
+    return _get_or_create_homepage_setting(), True
 
 
 def _upgrade_legacy_default_sections(setting):
@@ -223,7 +248,18 @@ def _normalize_sections(raw_sections, validate_movie_ids=True):
     ]
 
 
+def _ensure_current_user_can_use_config_movies(hero_movie_id, sections):
+    if hero_movie_id and not can_current_user_access_movie_id(hero_movie_id):
+        raise HomepageConfigError(f"movie is not visible: {hero_movie_id}")
+    for section in sections:
+        for movie_id in section["movie_ids"]:
+            if not can_current_user_access_movie_id(movie_id):
+                raise HomepageConfigError(f"movie is not visible: {movie_id}")
+
+
 def _get_enabled_sections(setting):
+    if not setting:
+        return []
     normalized_sections = _normalize_sections(setting.sections or [], validate_movie_ids=False)
     enabled_sections = [section for section in normalized_sections if section["enabled"]]
     return sorted(enabled_sections, key=lambda section: (section["sort_order"], section["key"]))
@@ -308,11 +344,14 @@ def _select_section_movies(section, used_ids, animation_section_enabled):
     return _select_latest_section_movies(section, used_ids, animation_section_enabled)
 
 
-def _select_hero_movie(setting):
-    if setting.hero_movie_id:
+def _select_hero_movie(setting, allow_auto_fallback=True):
+    if setting and setting.hero_movie_id:
         hero_movie = get_account_scoped(Movie, setting.hero_movie_id)
         if hero_movie and can_current_user_access_movie_id(hero_movie.id):
             return hero_movie, "custom"
+
+    if not allow_auto_fallback:
+        return None, None
 
     hero_movie = apply_current_user_movie_visibility_filter(apply_public_movie_visibility_filter(Movie.query)).filter(
         Movie.background_cover.isnot(None),
@@ -324,23 +363,26 @@ def _select_hero_movie(setting):
     return None, None
 
 
-def _serialize_config(setting):
-    return {
-        "hero_movie_id": setting.hero_movie_id,
-        "sections": _normalize_sections(setting.sections or [], validate_movie_ids=False),
-        "created_at": setting.created_at.isoformat() if setting.created_at else None,
-        "updated_at": setting.updated_at.isoformat() if setting.updated_at else None,
+def _serialize_config(setting, source=None):
+    data = {
+        "hero_movie_id": setting.hero_movie_id if setting else None,
+        "sections": _normalize_sections(setting.sections if setting else [], validate_movie_ids=False),
+        "created_at": setting.created_at.isoformat() if setting and setting.created_at else None,
+        "updated_at": setting.updated_at.isoformat() if setting and setting.updated_at else None,
     }
+    if source:
+        data["source"] = source
+    return data
 
 
 @homepage_bp.route('/homepage', methods=['GET'])
 def get_homepage():
-    setting = _get_or_create_homepage_setting()
+    setting, allow_auto_hero = _get_homepage_setting_for_render()
     sections = _get_enabled_sections(setting)
     animation_section_enabled = any(section["genre"] == "动画" for section in sections)
 
     used_ids = set()
-    hero_movie, hero_mode = _select_hero_movie(setting)
+    hero_movie, hero_mode = _select_hero_movie(setting, allow_auto_fallback=allow_auto_hero)
     if hero_movie:
         used_ids.add(hero_movie.id)
 
@@ -356,6 +398,7 @@ def get_homepage():
         all_movies.append(hero_movie)
     for _, movies in section_results:
         all_movies.extend(movies)
+    attach_movie_play_counts(all_movies)
     history_map = get_history_map([movie.id for movie in all_movies])
 
     hero_payload = {
@@ -382,26 +425,57 @@ def get_homepage():
     })
 
 
-@homepage_bp.route('/homepage/config', methods=['GET'])
-def get_homepage_config():
-    setting = _get_or_create_homepage_setting()
-    return api_response(data=_serialize_config(setting))
+@homepage_bp.route('/user/homepage/config', methods=['GET'])
+def get_user_homepage_config():
+    user_id = current_user_id_for_personal_data()
+    if user_id is None:
+        return api_error(code=40100, msg="Authentication required", http_status=401)
+
+    setting = _get_user_homepage_setting()
+    if setting:
+        return api_response(data=_serialize_config(setting, source="user"))
+
+    if _hosted_personal_homepage_only():
+        return api_response(data=_serialize_config(None, source="empty"))
+
+    fallback = _get_or_create_homepage_setting()
+    return api_response(data=_serialize_config(fallback, source="global"))
 
 
-@homepage_bp.route('/homepage/config', methods=['PATCH'])
-def update_homepage_config():
-    setting = _get_or_create_homepage_setting()
+@homepage_bp.route('/user/homepage/config', methods=['PATCH'])
+def update_user_homepage_config():
+    user_id = current_user_id_for_personal_data()
+    if user_id is None:
+        return api_error(code=40100, msg="Authentication required", http_status=401)
+
+    setting = _get_user_homepage_setting()
+    if not setting:
+        fallback = None if _hosted_personal_homepage_only() else _get_or_create_homepage_setting()
+        setting = UserHomepageSetting(
+            user_id=user_id,
+            hero_movie_id=fallback.hero_movie_id if fallback else None,
+            sections=_normalize_sections(fallback.sections if fallback else [], validate_movie_ids=False),
+        )
     payload = _get_json_payload()
 
     try:
+        next_hero_movie_id = setting.hero_movie_id
+        next_sections = _normalize_sections(setting.sections or [], validate_movie_ids=False)
         if "hero_movie_id" in payload:
-            setting.hero_movie_id = _normalize_hero_movie_id(payload.get("hero_movie_id"))
+            next_hero_movie_id = _normalize_hero_movie_id(payload.get("hero_movie_id"))
         if "sections" in payload:
-            setting.sections = _normalize_sections(payload.get("sections"), validate_movie_ids=True)
+            raw_sections = payload.get("sections")
+            if raw_sections is None and _hosted_personal_homepage_only():
+                next_sections = []
+            else:
+                next_sections = _normalize_sections(raw_sections, validate_movie_ids=True)
+        _ensure_current_user_can_use_config_movies(next_hero_movie_id, next_sections)
+        setting.hero_movie_id = next_hero_movie_id
+        setting.sections = next_sections
         setting.updated_at = datetime.utcnow()
     except HomepageConfigError as e:
         return api_error(code=40070, msg=str(e), http_status=400)
 
     db.session.add(setting)
     db.session.commit()
-    return api_response(data=_serialize_config(setting))
+    return api_response(data=_serialize_config(setting, source="user"))

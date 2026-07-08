@@ -103,6 +103,19 @@ class DocumentationRoutesTests(unittest.TestCase):
         )
         self.assertIn("schemas", payload["components"])
 
+    def test_catalog_openapi_module_includes_user_homepage_config(self):
+        client = self._create_client()
+
+        response = client.get("/api/v1/openapi/modules/catalog.json")
+
+        self.assertEqual(200, response.status_code)
+        paths = response.get_json()["paths"]
+        self.assertIn("/api/v1/homepage", paths)
+        self.assertIn("/api/v1/user/homepage/config", paths)
+        self.assertIn("/api/v1/leaderboard", paths)
+        self.assertNotIn("/api/v1/homepage/config", paths)
+        self.assertNotIn("/api/v1/user/preferences", paths)
+
     def test_openapi_module_json_is_pruned_raw_contract(self):
         client = self._create_client()
 

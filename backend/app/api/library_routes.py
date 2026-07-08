@@ -19,6 +19,7 @@ from backend.app.api.helpers import (
 )
 from backend.app.api.library_helpers import (
     attach_recommendation_payload,
+    apply_public_movie_visibility_filter,
     build_library_movie_id_context,
     build_movie_list_query,
     build_review_queue_query,
@@ -32,7 +33,15 @@ from backend.app.api.library_helpers import (
 from backend.app.db.database import scanner_adapter
 from backend.app.extensions import db
 from backend.app.metadata.rescrape import movie_metadata_rescrape_service
-from backend.app.models import Library, LibraryMovieMembership, MediaResource, Movie, MovieSeasonMetadata, StorageSource
+from backend.app.models import (
+    Library,
+    LibraryMovieMembership,
+    MediaResource,
+    Movie,
+    MovieSeasonMetadata,
+    ReviewSnapshotItem,
+    StorageSource,
+)
 from backend.app.providers.base import StorageProviderError
 from backend.app.providers.factory import provider_factory
 from backend.app.services.image_assets import (
@@ -50,15 +59,25 @@ from backend.app.services.episode_diagnostics import (
     EPISODE_DIAGNOSTIC_ISSUES,
     build_episode_diagnostics_summary,
     build_season_episode_diagnostics,
+    episode_numbers_for_resource,
+    format_episode_label,
 )
 from backend.app.services.media_path_cleaner import MediaPathCleaner
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.metadata_scraper import ScrapeContext, metadata_scraper
+from backend.app.services.playback_stats import (
+    attach_movie_play_counts,
+    movie_play_count_subquery,
+    normalize_playback_stat_window,
+    playback_stat_window_cutoff,
+)
 from backend.app.services.scanner import scanner_engine
 from backend.app.services.accounts import account_scope, get_account_scoped
 from backend.app.services.review_taxonomy import build_review_taxonomy
 from backend.app.services.resource_governance import (
     ResourceGovernanceValidationError,
+    RESOURCE_GOVERNANCE_ISSUES,
+    _collect_resource_governance,
     build_resource_governance_restore_plan,
     build_resource_governance_plan,
     build_resource_governance_items,
@@ -70,7 +89,30 @@ from backend.app.services.resource_governance import (
     normalize_resource_governance_live_check_payload,
     normalize_resource_governance_restore_payload,
 )
-from backend.app.services.user_access import clear_user_access_cache
+from backend.app.services.review_snapshots import (
+    ALL_REVIEW_SNAPSHOT_BUCKETS,
+    BUCKET_EPISODE_REVIEW,
+    BUCKET_METADATA_QUALITY,
+    BUCKET_OTHER_VIDEOS_ARCHIVE,
+    BUCKET_PENDING_REVIEW,
+    BUCKET_RESOURCE_GOVERNANCE,
+    attach_review_snapshot_meta,
+    get_review_snapshot_state,
+    issue_codes_text,
+    mark_review_snapshot_error,
+    mark_review_snapshot_rebuilding,
+    mark_review_snapshots_stale,
+    pagination_dict,
+    replace_review_snapshot,
+    review_snapshot_has_items,
+    review_snapshot_items_query,
+    review_snapshot_needs_rebuild,
+    review_snapshot_summaries_query,
+)
+from backend.app.services.user_access import (
+    apply_current_user_movie_visibility_filter,
+    clear_user_access_cache,
+)
 from backend.app.services.tmdb import scraper
 from backend.app.storage.source_registry import get_source_capabilities
 from backend.app.utils.genres import normalize_genres
@@ -202,12 +244,38 @@ MANUAL_MEDIA_TYPE_ALIASES = {
     '课程': 'tv',
 }
 
+LEADERBOARD_TYPES = {'hot', 'rated', 'new'}
+LEADERBOARD_TYPE_ALIASES = {
+    'hot': 'hot',
+    'views': 'hot',
+    'popular': 'hot',
+    'rated': 'rated',
+    'rating': 'rated',
+    'top_rated': 'rated',
+    'new': 'new',
+    'latest': 'new',
+    'newest': 'new',
+}
+LEADERBOARD_METRICS = {
+    'hot': 'views',
+    'rated': 'rating',
+    'new': 'added_at',
+}
+
 
 class MetadataValidationError(ValueError):
     def __init__(self, code, msg):
         super().__init__(msg)
         self.code = code
         self.msg = msg
+
+
+def _normalize_leaderboard_type(raw_type):
+    value = (raw_type or 'hot').strip().lower() if isinstance(raw_type, str) else 'hot'
+    normalized = LEADERBOARD_TYPE_ALIASES.get(value, value)
+    if normalized not in LEADERBOARD_TYPES:
+        raise MetadataValidationError(code=40093, msg="Invalid leaderboard type")
+    return normalized
 
 
 def _normalize_text_field(field, value):
@@ -1760,13 +1828,11 @@ def _annotate_metadata_candidates(candidates, query, year=None, media_type_hint=
 
 
 def _build_resource_label(resource, season, episode):
-    label_prefix = "Movie"
-    if season is not None and episode is not None:
-        label_prefix = f"S{season:02d}E{episode:02d}"
-    elif episode is not None:
-        label_prefix = f"EP{episode:02d}"
-    elif season is not None:
-        label_prefix = f"S{season:02d}"
+    label_prefix = format_episode_label(
+        season,
+        episode_numbers=episode_numbers_for_resource(resource),
+        episode=episode,
+    ) or "Movie"
 
     resolution = (resource.tech_specs or {}).get('resolution')
     if resolution:
@@ -3191,6 +3257,794 @@ def _build_metadata_work_items(query, page, page_size):
     }
 
 
+_REVIEW_SNAPSHOT_REBUILD_LOCK = threading.Lock()
+_REVIEW_SNAPSHOT_REBUILDING_KEYS = set()
+
+
+def _review_snapshot_sort_key(value, entity_id=None):
+    try:
+        timestamp_ms = int(value.timestamp() * 1000) if value else 0
+    except (AttributeError, OverflowError, ValueError):
+        timestamp_ms = 0
+    reverse_timestamp = max(0, 9999999999999 - timestamp_ms)
+    return f"{reverse_timestamp:013d}:{entity_id or ''}"
+
+
+def _review_snapshot_text(*values):
+    parts = []
+
+    def append(value):
+        if value is None:
+            return
+        if isinstance(value, dict):
+            for nested in value.values():
+                append(nested)
+            return
+        if isinstance(value, (list, tuple, set)):
+            for nested in value:
+                append(nested)
+            return
+        text = str(value).strip().lower()
+        if text:
+            parts.append(text)
+
+    for value in values:
+        append(value)
+    return "\n".join(parts)
+
+
+def _review_snapshot_summary(summary_key, count=0, payload=None):
+    return {
+        "summary_key": summary_key,
+        "count": count,
+        "payload": payload or {},
+    }
+
+
+def _review_snapshot_paginated_payload(query, page, page_size, *, order_by=None):
+    total = query.count()
+    if order_by is None:
+        order_by = (ReviewSnapshotItem.sort_key.asc(), ReviewSnapshotItem.id.asc())
+    rows = (
+        query.order_by(*order_by)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return [row.payload for row in rows], pagination_dict(total, page, page_size)
+
+
+def _resource_governance_issue_count(code, payloads):
+    if code == "duplicate_playback_resource":
+        return sum(max(0, len(item.get("resource_ids") or []) - 1) for item in payloads)
+    return len(payloads)
+
+
+def _resource_governance_snapshot_rows():
+    collected = _collect_resource_governance(live_check=False)
+    rows = []
+    for code in sorted(collected["items_by_issue"]):
+        for index, payload in enumerate(collected["items_by_issue"][code]):
+            resource = payload.get("resource") or {}
+            movie = payload.get("movie") or {}
+            source = resource.get("source") or {}
+            movie_id = payload.get("movie_id") or resource.get("movie_id") or movie.get("movie_id")
+            entity_id = (
+                resource.get("resource_id")
+                or movie.get("movie_id")
+                or payload.get("duplicate_key", {}).get("filename")
+                or f"{code}:{index}"
+            )
+            rows.append({
+                "entity_type": payload.get("issue_type") or "item",
+                "entity_id": entity_id,
+                "issue_code": code,
+                "issue_codes": [code],
+                "issue_codes_text": issue_codes_text([code]),
+                "severity": payload.get("severity"),
+                "source_id": source.get("id"),
+                "movie_id": movie_id,
+                "sort_key": f"{code}:{index:08d}:{entity_id}",
+                "search_text": _review_snapshot_text(payload),
+                "payload": payload,
+            })
+
+    live_stats = collected["live_stats"]
+    summaries = [
+        _review_snapshot_summary("totals", payload={
+            "movie_count": len(collected["movies"]),
+            "resource_count": len(collected["resources"]),
+            "storage_source_count": len(collected["sources"]),
+            "live_path_checked_count": live_stats["checked"],
+            "live_path_valid_count": live_stats["valid"],
+            "live_path_skipped_count": live_stats["skipped"],
+            "live_source_error_count": live_stats["source_error_count"],
+        }),
+    ]
+    return rows, summaries
+
+
+def _build_resource_governance_summary_from_snapshot(sample_size=3, live_check_limit=50):
+    if not _ensure_review_snapshot_bucket(BUCKET_RESOURCE_GOVERNANCE):
+        return build_resource_governance_summary(
+            live_check=False,
+            live_check_limit=live_check_limit,
+            sample_size=sample_size,
+        )
+
+    rows = review_snapshot_items_query(BUCKET_RESOURCE_GOVERNANCE).all()
+    payloads_by_issue = {}
+    for row in rows:
+        payloads_by_issue.setdefault(row.issue_code, []).append(row.payload)
+
+    issues = []
+    for code, payloads in sorted(
+        payloads_by_issue.items(),
+        key=lambda item: (-_resource_governance_issue_count(item[0], item[1]), item[0]),
+    ):
+        meta = RESOURCE_GOVERNANCE_ISSUES.get(code, {})
+        count = _resource_governance_issue_count(code, payloads)
+        issues.append({
+            "code": code,
+            "label": meta.get("label") or code,
+            "severity": meta.get("severity"),
+            "description": meta.get("description"),
+            "count": count,
+            "item_count": len(payloads),
+            "samples": payloads[:sample_size],
+        })
+
+    totals_summary = review_snapshot_summaries_query(BUCKET_RESOURCE_GOVERNANCE).filter_by(summary_key="totals").first()
+    base_totals = dict((totals_summary.payload or {}) if totals_summary else {})
+    issue_counts = {issue["code"]: issue["count"] for issue in issues}
+    actionable_issue_count = sum(
+        issue["count"]
+        for issue in issues
+        if issue["code"] != "live_check_skipped"
+    )
+    payload = {
+        "generated_at": datetime.utcnow().isoformat(),
+        "dry_run": True,
+        "live_check": False,
+        "selection": {
+            "live_check_limit": live_check_limit,
+            "sample_size": sample_size,
+        },
+        "totals": {
+            **base_totals,
+            "actionable_issue_count": actionable_issue_count,
+            "issue_code_counts": issue_counts,
+        },
+        "issues": issues,
+        "actions": [
+            {
+                "id": "validate_resource_paths",
+                "label": "验证资源路径",
+                "method": "GET",
+                "endpoint": "/api/v1/resources/governance-summary",
+                "payload": {
+                    "live_check": True,
+                    "live_check_limit": live_check_limit,
+                },
+            },
+            {
+                "id": "review_duplicate_resources",
+                "label": "复核重复资源",
+                "method": "GET",
+                "endpoint": "/api/v1/resources/governance-items?issue_code=duplicate_playback_resource",
+                "payload": None,
+            },
+            {
+                "id": "rescan_sources",
+                "label": "重新扫描存储源",
+                "method": "POST",
+                "endpoint": "/api/v1/scan",
+                "payload": None,
+            },
+        ],
+    }
+    return attach_review_snapshot_meta(payload, BUCKET_RESOURCE_GOVERNANCE)
+
+
+def _build_resource_governance_items_from_snapshot(issue_code=None, page=1, page_size=20):
+    if not _ensure_review_snapshot_bucket(BUCKET_RESOURCE_GOVERNANCE):
+        return build_resource_governance_items(
+            live_check=False,
+            issue_code=issue_code,
+            page=page,
+            page_size=page_size,
+        )
+
+    normalized_issue_code = (issue_code or "").strip()
+    query = review_snapshot_items_query(BUCKET_RESOURCE_GOVERNANCE)
+    if normalized_issue_code:
+        query = query.filter(ReviewSnapshotItem.issue_code == normalized_issue_code)
+
+    items, pagination = _review_snapshot_paginated_payload(
+        query,
+        page,
+        page_size,
+        order_by=(ReviewSnapshotItem.issue_code.asc(), ReviewSnapshotItem.sort_key.asc(), ReviewSnapshotItem.id.asc()),
+    )
+    totals_summary = review_snapshot_summaries_query(BUCKET_RESOURCE_GOVERNANCE).filter_by(summary_key="totals").first()
+    base_totals = dict((totals_summary.payload or {}) if totals_summary else {})
+    payload = {
+        "items": items,
+        "pagination": pagination,
+        "summary": {
+            "issue_code": normalized_issue_code or None,
+            "total_items": pagination["total_items"],
+            "live_check": False,
+            "live_path_checked_count": base_totals.get("live_path_checked_count", 0),
+            "live_path_skipped_count": base_totals.get("live_path_skipped_count", 0),
+        },
+    }
+    return attach_review_snapshot_meta(payload, BUCKET_RESOURCE_GOVERNANCE)
+
+
+def _metadata_overview_snapshot_rows():
+    movies = Movie.query.order_by(Movie.updated_at.desc(), Movie.id.asc()).all()
+    total_movies = len(movies)
+    source_group_counter = {}
+    review_priority_counter = {}
+    action_counter = {}
+    issue_counter = {}
+    issue_stats = {}
+    action_movie_ids = {action["id"]: set() for action in METADATA_QUALITY_ACTIONS}
+    issue_movie_count = 0
+    needs_attention_count = 0
+    placeholder_count = 0
+    local_only_count = 0
+    external_match_count = 0
+    low_confidence_resource_count = 0
+    fallback_resource_count = 0
+    locked_movie_count = 0
+    nfo_candidate_movie_count = 0
+    rows = []
+
+    for movie in movies:
+        snapshot = movie.get_metadata_snapshot()
+        state = snapshot["state"]
+        diagnostics = snapshot["diagnostics"]
+        actions = snapshot["actions"]
+        issues = snapshot["issues"]
+        source_group = state["source_group"]
+        review_priority = state["review_priority"]
+        primary_action = actions["primary_action"]
+        issue_codes = [issue.get("code") for issue in issues if issue.get("code")]
+
+        source_group_counter[source_group] = source_group_counter.get(source_group, 0) + 1
+        review_priority_counter[review_priority] = review_priority_counter.get(review_priority, 0) + 1
+        action_counter[primary_action] = action_counter.get(primary_action, 0) + 1
+
+        if state["needs_attention"]:
+            needs_attention_count += 1
+        if state["is_placeholder"]:
+            placeholder_count += 1
+        if state["is_local_only"]:
+            local_only_count += 1
+        if state["is_external_match"]:
+            external_match_count += 1
+        if diagnostics["low_confidence_resource_count"] > 0:
+            low_confidence_resource_count += diagnostics["low_confidence_resource_count"]
+        if diagnostics["fallback_resource_count"] > 0:
+            fallback_resource_count += diagnostics["fallback_resource_count"]
+        if diagnostics["has_locked_fields"]:
+            locked_movie_count += 1
+        if diagnostics["nfo_candidate_resource_count"] > 0:
+            nfo_candidate_movie_count += 1
+
+        if issue_codes:
+            issue_movie_count += 1
+        if set(issue_codes) & METADATA_BULK_REIDENTIFY_ISSUES:
+            action_movie_ids["bulk_reidentify"].add(movie.id)
+        if set(issue_codes) & (set(EPISODE_DIAGNOSTIC_ISSUES) | {"season_metadata_missing"}):
+            action_movie_ids["episode_review_queue"].add(movie.id)
+
+        for issue in issues:
+            code = issue.get("code")
+            if not code:
+                continue
+            issue_counter[code] = issue_counter.get(code, 0) + 1
+            stat = issue_stats.setdefault(code, {
+                "code": code,
+                "label": issue.get("label"),
+                "severity": issue.get("severity"),
+                "movie_count": 0,
+                "affected_count": 0,
+            })
+            stat["movie_count"] += 1
+            stat["affected_count"] += int(issue.get("count") or 1)
+            rows.append({
+                "entity_type": "movie",
+                "entity_id": f"{movie.id}:{code}",
+                "issue_code": code,
+                "issue_codes": issue_codes,
+                "issue_codes_text": issue_codes_text(issue_codes),
+                "severity": issue.get("severity"),
+                "status": state.get("recommended_action"),
+                "source_group": source_group,
+                "review_priority": review_priority,
+                "movie_id": movie.id,
+                "sort_key": _review_snapshot_sort_key(movie.updated_at, f"{movie.id}:{code}"),
+                "search_text": _review_snapshot_text(movie.title, movie.original_title, movie.year, movie.scraper_source, issue),
+                "payload": _build_metadata_quality_sample(movie, issue=issue, snapshot=snapshot),
+            })
+
+    def counter_to_items(counter):
+        return [
+            {"key": key, "count": count}
+            for key, count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+        ]
+
+    overview = {
+        "totals": {
+            "movie_count": total_movies,
+            "needs_attention_count": needs_attention_count,
+            "placeholder_count": placeholder_count,
+            "local_only_count": local_only_count,
+            "external_match_count": external_match_count,
+            "low_confidence_resource_count": low_confidence_resource_count,
+            "fallback_resource_count": fallback_resource_count,
+            "locked_movie_count": locked_movie_count,
+            "nfo_candidate_movie_count": nfo_candidate_movie_count,
+        },
+        "source_groups": counter_to_items(source_group_counter),
+        "review_priorities": counter_to_items(review_priority_counter),
+        "recommended_actions": counter_to_items(action_counter),
+        "issues": counter_to_items(issue_counter),
+    }
+
+    summaries = [_review_snapshot_summary("overview", payload=overview)]
+    summaries.append(_review_snapshot_summary("totals", payload={
+        "issue_movie_count": issue_movie_count,
+        "bulk_reidentify_movie_count": len(action_movie_ids["bulk_reidentify"]),
+        "episode_review_movie_count": len(action_movie_ids["episode_review_queue"]),
+    }))
+    for code, stat in issue_stats.items():
+        summaries.append(_review_snapshot_summary(f"issue:{code}", count=stat["movie_count"], payload=stat))
+    for action in METADATA_QUALITY_ACTIONS:
+        movie_count = len(action_movie_ids.get(action["id"], set()))
+        summaries.append(_review_snapshot_summary(f"action:{action['id']}", count=movie_count, payload={
+            **action,
+            "movie_count": movie_count,
+            "enabled": movie_count > 0,
+            "payload": {
+                "issue_codes": action["issue_codes"],
+                "limit": min(max(movie_count, 1), 20),
+            } if action["method"] == "POST" else None,
+        }))
+    return rows, summaries
+
+
+def _build_metadata_overview_from_snapshot():
+    if not _ensure_review_snapshot_bucket(BUCKET_METADATA_QUALITY):
+        return _build_metadata_overview()
+    row = review_snapshot_summaries_query(BUCKET_METADATA_QUALITY).filter_by(summary_key="overview").first()
+    payload = dict((row.payload or {}) if row else {})
+    return attach_review_snapshot_meta(payload, BUCKET_METADATA_QUALITY)
+
+
+def _build_metadata_quality_summary_from_snapshot(sample_size=3):
+    if not _ensure_review_snapshot_bucket(BUCKET_METADATA_QUALITY):
+        return _build_metadata_quality_summary(sample_size=sample_size)
+
+    summaries = {
+        row.summary_key: row
+        for row in review_snapshot_summaries_query(BUCKET_METADATA_QUALITY).all()
+    }
+    overview = dict((summaries.get("overview").payload or {}) if summaries.get("overview") else {})
+    totals = dict((summaries.get("totals").payload or {}) if summaries.get("totals") else {})
+    issue_summaries = [
+        row.payload
+        for key, row in summaries.items()
+        if key.startswith("issue:")
+    ]
+    issue_items = []
+    for issue in sorted(issue_summaries, key=lambda item: (-int(item.get("movie_count") or 0), item.get("code") or "")):
+        code = issue.get("code")
+        sample_rows = (
+            review_snapshot_items_query(BUCKET_METADATA_QUALITY)
+            .filter(ReviewSnapshotItem.issue_code == code)
+            .order_by(ReviewSnapshotItem.sort_key.asc(), ReviewSnapshotItem.id.asc())
+            .limit(sample_size)
+            .all()
+        )
+        issue_items.append({
+            **issue,
+            "samples": [row.payload for row in sample_rows],
+        })
+
+    actions = []
+    for action in METADATA_QUALITY_ACTIONS:
+        row = summaries.get(f"action:{action['id']}")
+        if row and row.payload:
+            actions.append(row.payload)
+            continue
+        actions.append({
+            **action,
+            "movie_count": 0,
+            "enabled": False,
+            "payload": None,
+        })
+
+    payload = {
+        "generated_at": datetime.utcnow().isoformat(),
+        "sample_size": sample_size,
+        "totals": {
+            **(overview.get("totals") or {}),
+            "issue_movie_count": totals.get("issue_movie_count", 0),
+            "bulk_reidentify_movie_count": totals.get("bulk_reidentify_movie_count", 0),
+            "episode_review_movie_count": totals.get("episode_review_movie_count", 0),
+        },
+        "source_groups": overview.get("source_groups") or [],
+        "review_priorities": overview.get("review_priorities") or [],
+        "recommended_actions": overview.get("recommended_actions") or [],
+        "issues": issue_items,
+        "actions": actions,
+    }
+    return attach_review_snapshot_meta(payload, BUCKET_METADATA_QUALITY)
+
+
+def _episode_review_snapshot_rows():
+    rows = []
+    issue_code_counts = {}
+    auto_update_count = 0
+    manual_suggestion_count = 0
+    warning_count = 0
+    for movie in Movie.query.order_by(Movie.updated_at.desc(), Movie.id.asc()).all():
+        if movie.is_manual_content():
+            continue
+        snapshot = movie.get_metadata_snapshot()
+        matching_issues = [
+            issue
+            for issue in snapshot["issues"]
+            if issue.get("code") in EPISODE_REVIEW_ISSUE_CODES
+        ]
+        if not matching_issues:
+            continue
+        item = _build_episode_review_queue_item(movie, snapshot=snapshot)
+        codes = [issue.get("code") for issue in item["metadata_issues"] if issue.get("code")]
+        rows.append({
+            "entity_type": "movie",
+            "entity_id": movie.id,
+            "issue_code": codes[0] if codes else None,
+            "issue_codes": codes,
+            "issue_codes_text": issue_codes_text(codes),
+            "severity": (item.get("metadata_state") or {}).get("review_priority"),
+            "status": "needs_attention",
+            "source_group": (item.get("metadata_state") or {}).get("source_group"),
+            "review_priority": (item.get("metadata_state") or {}).get("review_priority"),
+            "movie_id": movie.id,
+            "sort_key": _review_snapshot_sort_key(movie.updated_at, movie.id),
+            "search_text": _review_snapshot_text(movie.title, movie.original_title, movie.year, item["metadata_issues"]),
+            "payload": item,
+        })
+        auto_update_count += item["auto_update_count"]
+        manual_suggestion_count += item["manual_suggestion_count"]
+        warning_count += item["warning_count"]
+        for code in codes:
+            issue_code_counts[code] = issue_code_counts.get(code, 0) + 1
+
+    summaries = [
+        _review_snapshot_summary("totals", count=len(rows), payload={
+            "total_items": len(rows),
+            "issue_code_counts": issue_code_counts,
+            "auto_update_count": auto_update_count,
+            "manual_suggestion_count": manual_suggestion_count,
+            "warning_count": warning_count,
+        }),
+    ]
+    return rows, summaries
+
+
+def _build_episode_review_queue_from_snapshot(page=1, page_size=20, issue_code=None):
+    issue_code = (issue_code or "").strip()
+    if issue_code and issue_code not in EPISODE_REVIEW_ISSUE_CODES:
+        return {
+            "items": [],
+            "pagination": pagination_dict(0, page, page_size),
+            "summary": {
+                "total_items": 0,
+                "issue_code_counts": {},
+                "auto_update_count": 0,
+                "manual_suggestion_count": 0,
+                "warning_count": 0,
+            },
+        }
+    if not _ensure_review_snapshot_bucket(BUCKET_EPISODE_REVIEW):
+        return _build_episode_review_queue(page=page, page_size=page_size, issue_code=issue_code)
+
+    query = review_snapshot_items_query(BUCKET_EPISODE_REVIEW)
+    if issue_code:
+        query = query.filter(ReviewSnapshotItem.issue_codes_text.like(f"%|{issue_code}|%"))
+    items, pagination = _review_snapshot_paginated_payload(query, page, page_size)
+    if issue_code:
+        for item in items:
+            item["metadata_issues"] = [
+                issue for issue in item.get("metadata_issues") or [] if issue.get("code") == issue_code
+            ]
+    totals_row = review_snapshot_summaries_query(BUCKET_EPISODE_REVIEW).filter_by(summary_key="totals").first()
+    summary = dict((totals_row.payload or {}) if totals_row else {})
+    if issue_code:
+        summary = {
+            **summary,
+            "total_items": pagination["total_items"],
+            "issue_code_counts": {issue_code: pagination["total_items"]},
+        }
+    payload = {
+        "items": items,
+        "pagination": pagination,
+        "summary": {
+            "total_items": summary.get("total_items", pagination["total_items"]),
+            "issue_code_counts": summary.get("issue_code_counts") or {},
+            "auto_update_count": summary.get("auto_update_count", 0),
+            "manual_suggestion_count": summary.get("manual_suggestion_count", 0),
+            "warning_count": summary.get("warning_count", 0),
+        },
+    }
+    return attach_review_snapshot_meta(payload, BUCKET_EPISODE_REVIEW)
+
+
+def _other_video_resource_status(resource):
+    movie = resource.movie
+    if not movie:
+        return None
+    source_state = (movie.scraper_source or "").strip().upper()
+    visibility_status = Movie.normalize_catalog_visibility_status(movie.catalog_visibility_status) or Movie.CATALOG_VISIBILITY_AUTO
+    if visibility_status == Movie.CATALOG_VISIBILITY_PENDING_REVIEW:
+        return None
+    manual_source = source_state in Movie.MANUAL_CONTENT_SOURCES
+    non_attention_sources = Movie.get_metadata_non_attention_sources()
+    has_season_resources = movie.resources.filter(MediaResource.season.isnot(None)).count() > 0
+    needs_attention = (
+        resource.season is None
+        and not has_season_resources
+        and (
+            not movie.scraper_source
+            or source_state not in non_attention_sources
+        )
+    )
+    if needs_attention:
+        return "needs_attention"
+    if manual_source:
+        return "manual"
+    return None
+
+
+def _other_videos_snapshot_rows():
+    rows = []
+    manual_movie_ids = set()
+    resources = MediaResource.query.join(Movie).order_by(MediaResource.created_at.desc(), MediaResource.id.desc()).all()
+    for resource in resources:
+        status = _other_video_resource_status(resource)
+        if not status:
+            continue
+        item = _serialize_other_video_resource(resource)
+        if status == "manual" and resource.movie_id:
+            manual_movie_ids.add(resource.movie_id)
+        rows.append({
+            "entity_type": "resource",
+            "entity_id": resource.id,
+            "status": status,
+            "source_group": ((item.get("metadata_state") or {}).get("source_group")),
+            "review_priority": ((item.get("metadata_state") or {}).get("review_priority")),
+            "source_id": resource.source_id,
+            "movie_id": resource.movie_id,
+            "sort_key": _review_snapshot_sort_key(resource.created_at, resource.id),
+            "search_text": _review_snapshot_text(
+                resource.filename,
+                resource.path,
+                (resource.movie.title if resource.movie else None),
+                (resource.movie.original_title if resource.movie else None),
+                item,
+            ),
+            "payload": item,
+        })
+    summaries = [
+        _review_snapshot_summary("totals", count=len(rows), payload={
+            "total_items": len(rows),
+            "manual_movie_count": len(manual_movie_ids),
+        }),
+    ]
+    return rows, summaries
+
+
+def _build_other_videos_from_snapshot(page=1, page_size=20, keyword=None, source_id=None, needs_attention=None, include_manual=False):
+    if not _ensure_review_snapshot_bucket(BUCKET_OTHER_VIDEOS_ARCHIVE):
+        return None
+
+    query = review_snapshot_items_query(BUCKET_OTHER_VIDEOS_ARCHIVE)
+    if source_id:
+        query = query.filter(ReviewSnapshotItem.source_id == source_id)
+    if keyword:
+        query = query.filter(ReviewSnapshotItem.search_text.like(f"%{keyword.strip().lower()}%"))
+
+    if needs_attention is None:
+        statuses = ["needs_attention"]
+        if include_manual:
+            statuses.append("manual")
+        query = query.filter(ReviewSnapshotItem.status.in_(statuses))
+    elif needs_attention:
+        query = query.filter(ReviewSnapshotItem.status == "needs_attention")
+    elif include_manual:
+        query = query.filter(ReviewSnapshotItem.status == "manual")
+    else:
+        query = query.filter(ReviewSnapshotItem.id.is_(None))
+
+    items, pagination = _review_snapshot_paginated_payload(query, page, page_size)
+    payload = {
+        "items": items,
+        "pagination": pagination,
+        "summary": {
+            "total_items": pagination["total_items"],
+            "manual_movie_count": sum(1 for item in items if (item.get("movie_manual_content") or {}).get("is_manual")),
+        },
+        "actions": {
+            "create_manual_movie": {
+                "method": "POST",
+                "endpoint": "/api/v1/movies/manual",
+            },
+            "attach_resources": {
+                "method": "POST",
+                "endpoint": "/api/v1/movies/{movie_id}/resources/attach",
+            },
+        },
+    }
+    return attach_review_snapshot_meta(payload, BUCKET_OTHER_VIDEOS_ARCHIVE)
+
+
+def _pending_review_snapshot_rows():
+    visibility_status = db.func.coalesce(Movie.catalog_visibility_status, Movie.CATALOG_VISIBILITY_AUTO)
+    movies = (
+        Movie.query
+        .filter(visibility_status == Movie.CATALOG_VISIBILITY_PENDING_REVIEW)
+        .order_by(Movie.updated_at.desc(), Movie.id.asc())
+        .all()
+    )
+    rows = []
+    issue_counts = {}
+    source_group_counts = {}
+    review_priority_counts = {}
+    for movie in movies:
+        item = movie.to_metadata_work_item()
+        state = item.get("metadata_state") or {}
+        codes = state.get("issue_codes") or [
+            issue.get("code")
+            for issue in item.get("metadata_issues") or []
+            if issue.get("code")
+        ]
+        source_group = state.get("source_group")
+        review_priority = state.get("review_priority")
+        for code in codes:
+            issue_counts[code] = issue_counts.get(code, 0) + 1
+        if source_group:
+            source_group_counts[source_group] = source_group_counts.get(source_group, 0) + 1
+        if review_priority:
+            review_priority_counts[review_priority] = review_priority_counts.get(review_priority, 0) + 1
+        rows.append({
+            "entity_type": "movie",
+            "entity_id": movie.id,
+            "issue_code": codes[0] if codes else None,
+            "issue_codes": codes,
+            "issue_codes_text": issue_codes_text(codes),
+            "severity": review_priority,
+            "status": "pending_review",
+            "source_group": source_group,
+            "review_priority": review_priority,
+            "movie_id": movie.id,
+            "sort_key": _review_snapshot_sort_key(movie.updated_at, movie.id),
+            "search_text": _review_snapshot_text(movie.title, movie.original_title, movie.year, movie.scraper_source, codes),
+            "payload": item,
+        })
+    summaries = [
+        _review_snapshot_summary("totals", count=len(rows), payload={
+            "total_items": len(rows),
+            "issue_code_counts": issue_counts,
+            "source_group_counts": source_group_counts,
+            "review_priority_counts": review_priority_counts,
+        }),
+    ]
+    return rows, summaries
+
+
+def _build_pending_review_work_items_from_snapshot(page, page_size, *, metadata_source_group=None, metadata_review_priority=None, metadata_issue_code=None, keyword=None):
+    if not _ensure_review_snapshot_bucket(BUCKET_PENDING_REVIEW):
+        return None
+    query = review_snapshot_items_query(BUCKET_PENDING_REVIEW)
+    if metadata_source_group:
+        query = query.filter(ReviewSnapshotItem.source_group == metadata_source_group)
+    if metadata_review_priority:
+        query = query.filter(ReviewSnapshotItem.review_priority == metadata_review_priority)
+    if metadata_issue_code:
+        query = query.filter(ReviewSnapshotItem.issue_codes_text.like(f"%|{metadata_issue_code}|%"))
+    if keyword:
+        query = query.filter(ReviewSnapshotItem.search_text.like(f"%{keyword.strip().lower()}%"))
+    items, pagination = _review_snapshot_paginated_payload(query, page, page_size)
+    return attach_review_snapshot_meta({
+        "items": items,
+        "pagination": pagination,
+    }, BUCKET_PENDING_REVIEW)
+
+
+def _rebuild_review_snapshot_bucket(bucket):
+    mark_review_snapshot_rebuilding(bucket)
+    db.session.commit()
+    try:
+        if bucket == BUCKET_RESOURCE_GOVERNANCE:
+            rows, summaries = _resource_governance_snapshot_rows()
+        elif bucket == BUCKET_METADATA_QUALITY:
+            rows, summaries = _metadata_overview_snapshot_rows()
+        elif bucket == BUCKET_EPISODE_REVIEW:
+            rows, summaries = _episode_review_snapshot_rows()
+        elif bucket == BUCKET_OTHER_VIDEOS_ARCHIVE:
+            rows, summaries = _other_videos_snapshot_rows()
+        elif bucket == BUCKET_PENDING_REVIEW:
+            rows, summaries = _pending_review_snapshot_rows()
+        else:
+            raise ValueError(f"Unknown review snapshot bucket: {bucket}")
+        replace_review_snapshot(bucket, rows, summaries=summaries)
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        try:
+            mark_review_snapshot_error(bucket, e)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        logger.exception("Review snapshot rebuild failed bucket=%s error=%s", bucket, e)
+        return False
+
+
+def _schedule_review_snapshot_rebuild(buckets=None):
+    if current_app.config.get("TESTING"):
+        return False
+    selected = tuple(buckets or ALL_REVIEW_SNAPSHOT_BUCKETS)
+    app = current_app._get_current_object()
+    account_id = get_current_account_id()
+    scheduled = []
+    with _REVIEW_SNAPSHOT_REBUILD_LOCK:
+        for bucket in selected:
+            key = (account_id, bucket)
+            if key in _REVIEW_SNAPSHOT_REBUILDING_KEYS:
+                continue
+            _REVIEW_SNAPSHOT_REBUILDING_KEYS.add(key)
+            scheduled.append((key, bucket))
+    if not scheduled:
+        return False
+
+    def worker():
+        try:
+            with app.app_context():
+                with account_scope(account_id):
+                    for _key, bucket in scheduled:
+                        _rebuild_review_snapshot_bucket(bucket)
+        finally:
+            with _REVIEW_SNAPSHOT_REBUILD_LOCK:
+                for key, _bucket in scheduled:
+                    _REVIEW_SNAPSHOT_REBUILDING_KEYS.discard(key)
+
+    thread = threading.Thread(target=worker, name="review-snapshot-rebuild", daemon=True)
+    thread.start()
+    return True
+
+
+def _ensure_review_snapshot_bucket(bucket):
+    if review_snapshot_needs_rebuild(bucket):
+        return _rebuild_review_snapshot_bucket(bucket)
+    state = get_review_snapshot_state(bucket)
+    if state and state.stale and review_snapshot_has_items(bucket) and not state.rebuilding:
+        if current_app.config.get("TESTING"):
+            return _rebuild_review_snapshot_bucket(bucket)
+        _schedule_review_snapshot_rebuild([bucket])
+    return True
+
+
+def _mark_review_snapshots_stale_after_change(buckets=None):
+    mark_review_snapshots_stale(buckets or ALL_REVIEW_SNAPSHOT_BUCKETS)
+
+
 def _normalize_pending_review_publish_payload(payload):
     if not isinstance(payload, dict) or not payload:
         raise MetadataValidationError(code=40000, msg="No input data")
@@ -3621,7 +4475,21 @@ def _execute_metadata_batch_rescrape(items, progress_callback=None):
             logger.exception("Batch re-scrape failed movie_id=%s error=%s", movie.id, e)
             results.append(_build_metadata_batch_result(movie, error={"code": 50014, "msg": "Re-scrape failed"}))
 
+    if updated_movie_ids:
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
     db.session.commit()
+    if updated_movie_ids:
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
     if progress_callback:
         progress_callback(len(items), len(items), "Metadata batch re-scrape completed")
 
@@ -4108,7 +4976,7 @@ def get_global_filters():
 
 @library_bp.route('/metadata/overview', methods=['GET'])
 def get_metadata_overview():
-    return api_response(data=_build_metadata_overview())
+    return api_response(data=_build_metadata_overview_from_snapshot())
 
 
 @library_bp.route('/metadata/quality-summary', methods=['GET'])
@@ -4117,7 +4985,7 @@ def get_metadata_quality_summary():
         sample_size = _normalize_limited_int(request.args.get('sample_size'), 3, minimum=0, maximum=10, field_name="sample_size")
     except MetadataValidationError as e:
         return api_error(code=e.code, msg=e.msg)
-    return api_response(data=_build_metadata_quality_summary(sample_size=sample_size))
+    return api_response(data=_build_metadata_quality_summary_from_snapshot(sample_size=sample_size))
 
 
 @library_bp.route('/metadata/review-taxonomy', methods=['GET'])
@@ -4202,6 +5070,21 @@ def list_metadata_work_items():
     if raw_needs_attention is not None:
         needs_attention = raw_needs_attention.strip().lower() in ('1', 'true', 'yes')
 
+    if (
+        (effective_status or "").strip().lower() == Movie.CATALOG_VISIBILITY_PENDING_REVIEW
+        and raw_needs_attention is None
+    ):
+        snapshot_data = _build_pending_review_work_items_from_snapshot(
+            page,
+            page_size,
+            metadata_source_group=metadata_source_group,
+            metadata_review_priority=metadata_review_priority,
+            metadata_issue_code=metadata_issue_code,
+            keyword=keyword,
+        )
+        if snapshot_data is not None:
+            return api_response(data=snapshot_data)
+
     query = build_movie_list_query(
         keyword=keyword,
         metadata_source_group=metadata_source_group,
@@ -4223,8 +5106,20 @@ def publish_pending_review_movies():
             force=normalized["force"],
             note=normalized["note"],
         )
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         db.session.commit()
         clear_user_access_cache()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         return api_response(data=data, msg="Pending review movies published")
     except MetadataValidationError as e:
         db.session.rollback()
@@ -4249,8 +5144,16 @@ def backfill_pending_review_movies():
         if normalized["dry_run"]:
             return api_response(data=data, msg="Pending review backfill planned")
 
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_PENDING_REVIEW,
+        ])
         db.session.commit()
         clear_user_access_cache()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_PENDING_REVIEW,
+        ])
         return api_response(data=data, msg="Pending review backfill applied")
     except MetadataValidationError as e:
         db.session.rollback()
@@ -4270,7 +5173,7 @@ def list_episode_review_items():
         return api_error(code=e.code, msg=e.msg)
 
     issue_code = request.args.get('metadata_issue_code') or request.args.get('issue_code')
-    return api_response(data=_build_episode_review_queue(page=page, page_size=page_size, issue_code=issue_code))
+    return api_response(data=_build_episode_review_queue_from_snapshot(page=page, page_size=page_size, issue_code=issue_code))
 
 
 @library_bp.route('/featured', methods=['GET'])
@@ -4283,6 +5186,7 @@ def get_featured_content():
     custom_hero_id = "d208f4f6-9f09-4341-9898-ec388cea4c66"
 
     featured_movies = get_featured_movies(limit=limit, custom_hero_id=custom_hero_id)
+    attach_movie_play_counts(featured_movies)
     history_map = get_history_map([movie.id for movie in featured_movies])
     return api_response(data=[
         movie.to_detail_dict(user_history=history_map.get(movie.id))
@@ -4298,6 +5202,7 @@ def get_recommendations():
 
     recommendation_items = get_recommendation_items(limit=limit, strategy=strategy)
     movies = [item["movie"] for item in recommendation_items]
+    attach_movie_play_counts(movies)
     history_map = get_history_map([movie.id for movie in movies])
     return api_response(data=[
         attach_recommendation_payload(
@@ -4308,6 +5213,161 @@ def get_recommendations():
         )
         for index, item in enumerate(recommendation_items, start=1)
     ])
+
+
+def _parse_context_season():
+    raw_value = request.args.get("season", request.args.get("target_season"))
+    if raw_value is None:
+        return None
+    try:
+        season = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return season if season > 0 else None
+
+
+def _season_progress_ratio(season_card):
+    user_data = season_card.get("user_data") if isinstance(season_card, dict) else None
+    if not isinstance(user_data, dict):
+        return None
+    ratio = user_data.get("progress_ratio")
+    if ratio is not None:
+        try:
+            return min(max(float(ratio), 0), 1)
+        except (TypeError, ValueError):
+            return None
+    duration = user_data.get("duration") or user_data.get("duration_sec")
+    progress = user_data.get("progress") or user_data.get("position_sec")
+    if not duration:
+        return None
+    try:
+        return min(max(float(progress or 0) / float(duration), 0), 1)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _season_context_reason(season_card, current_season):
+    season = int(season_card.get("season") or 0)
+    ratio = _season_progress_ratio(season_card)
+    in_progress = ratio is not None and 0.03 <= ratio < 0.92
+    watched = ratio is not None and ratio >= 0.92
+
+    if season > current_season:
+        distance = season - current_season
+        if distance == 1:
+            return 1200, {
+                "code": "next_season",
+                "label": "Next season",
+                "detail": f"season {season}",
+                "weight": 180,
+            }
+        return 1100 - distance, {
+            "code": "later_season",
+            "label": "Later season",
+            "detail": f"season {season}",
+            "weight": max(120 - distance * 8, 60),
+        }
+    if in_progress:
+        return 1000, {
+            "code": "continue_season",
+            "label": "Continue season",
+            "detail": f"{round(ratio * 100)}% watched",
+            "weight": 140,
+        }
+    if not season_card.get("user_data"):
+        return 800 - season, {
+            "code": "unwatched_season",
+            "label": "Unwatched season",
+            "detail": f"season {season}",
+            "weight": 90,
+        }
+    if watched:
+        return 200 - season, {
+            "code": "completed_season",
+            "label": "Completed season",
+            "detail": f"{round((ratio or 0) * 100)}% watched",
+            "weight": 20,
+        }
+    return 500 - season, {
+        "code": "season_available",
+        "label": "Season available",
+        "detail": f"season {season}",
+        "weight": 60,
+    }
+
+
+def _build_season_recommendation_payloads(movie, movie_payload, current_season, limit):
+    if current_season is None or limit <= 0:
+        return []
+
+    season_cards = movie_payload.get("season_cards") or []
+    if len(season_cards) <= 1:
+        return []
+
+    ranked = []
+    for season_card in season_cards:
+        try:
+            season = int(season_card.get("season") or 0)
+        except (TypeError, ValueError):
+            continue
+        if season <= 0 or season == current_season:
+            continue
+        score, reason = _season_context_reason(season_card, current_season)
+        ranked.append((score, season, season_card, reason))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+
+    payloads = []
+    for score, season, season_card, reason in ranked[:limit]:
+        display_title = season_card.get("display_title") or season_card.get("title") or f"Season {season}"
+        payload = dict(movie_payload)
+        payload.update({
+            "title": f"{movie.title} {display_title}",
+            "movie_title": movie.title,
+            "movie_id": movie.id,
+            "recommendation_card_type": "season",
+            "recommendation_card_id": season_card.get("id") or f"{movie.id}:season:{season}",
+            "season": season,
+            "season_number": season,
+            "season_title": season_card.get("title"),
+            "season_display_title": display_title,
+            "season_card": season_card,
+            "poster_url": season_card.get("poster_url") or movie_payload.get("poster_url"),
+            "poster_source": season_card.get("poster_source"),
+            "primary_resource_id": season_card.get("primary_resource_id"),
+            "recommendation": {
+                "strategy": "context",
+                "rank": 0,
+                "score": round(float(score), 2),
+                "primary_reason": reason,
+                "reasons": [
+                    reason,
+                    {
+                        "code": "same_series_season",
+                        "label": "Same series season",
+                        "detail": movie.title,
+                    },
+                ],
+                "reason_text": reason["label"],
+                "signals": {
+                    "progress_ratio": round(float(_season_progress_ratio(season_card) or 0), 4),
+                    "quality_badge": movie_payload.get("quality_badge"),
+                    "resource_count": season_card.get("resource_count") or 0,
+                    "available_episode_count": season_card.get("available_episode_count") or 0,
+                    "episode_count": season_card.get("episode_count"),
+                },
+            },
+        })
+        payloads.append(payload)
+
+    return payloads
+
+
+def _mark_movie_recommendation_card(payload):
+    payload.setdefault("movie_id", payload.get("id"))
+    payload["recommendation_card_type"] = "movie"
+    payload["recommendation_card_id"] = str(payload.get("id"))
+    return payload
 
 
 @library_bp.route('/movies/<uuid:id>/recommendations', methods=['GET'])
@@ -4325,22 +5385,40 @@ def get_movie_context_recommendations(id):
             return api_error(code=40410, msg="Library not found", http_status=404)
         preferred_movie_ids = build_library_movie_id_context(library)["final_ids"]
 
+    current_season = _parse_context_season()
+    attach_movie_play_counts([movie])
+    anchor_history = get_history_map([movie.id]).get(movie.id)
+    season_payloads = _build_season_recommendation_payloads(
+        movie,
+        movie.to_simple_dict(user_history=anchor_history),
+        current_season,
+        limit,
+    )
+    remaining_limit = max(limit - len(season_payloads), 0)
+
     recommendation_items = get_context_recommendation_items(
         movie,
-        limit=limit,
+        limit=remaining_limit,
         preferred_movie_ids=preferred_movie_ids,
     )
     movies = [item["movie"] for item in recommendation_items]
+    attach_movie_play_counts(movies)
     history_map = get_history_map([movie.id for movie in movies])
-    return api_response(data=[
-        attach_recommendation_payload(
+    movie_payloads = [
+        _mark_movie_recommendation_card(attach_recommendation_payload(
             item["movie"].to_simple_dict(user_history=history_map.get(item["movie"].id)),
             item,
             strategy="context",
-            rank=index,
-        )
+            rank=index + len(season_payloads),
+        ))
         for index, item in enumerate(recommendation_items, start=1)
-    ])
+    ]
+
+    data = season_payloads + movie_payloads
+    for index, item in enumerate(data, start=1):
+        if isinstance(item.get("recommendation"), dict):
+            item["recommendation"]["rank"] = index
+    return api_response(data=data)
 
 
 # 临时注释：用于排查前端是否仍依赖旧接口 `/api/v1/genres`
@@ -4363,6 +5441,17 @@ def list_other_videos():
     needs_attention = None
     if raw_needs_attention is not None:
         needs_attention = raw_needs_attention.strip().lower() in {'1', 'true', 'yes'}
+
+    snapshot_data = _build_other_videos_from_snapshot(
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        source_id=source_id,
+        needs_attention=needs_attention,
+        include_manual=include_manual,
+    )
+    if snapshot_data is not None:
+        return api_response(data=snapshot_data)
 
     query = MediaResource.query.join(Movie)
     if source_id:
@@ -4475,8 +5564,10 @@ def create_manual_movie():
         )
         library_memberships = _upsert_manual_library_memberships(movie, normalized["library_ids"])
 
+        _mark_review_snapshots_stale_after_change()
         db.session.commit()
         clear_user_access_cache()
+        _schedule_review_snapshot_rebuild()
         return api_response(data={
             "movie": movie.to_detail_dict(),
             "manual_content": movie.get_manual_content_info(),
@@ -4535,6 +5626,7 @@ def list_movies():
 
     pagination = query.paginate(page=page, per_page=page_size, error_out=False)
     movies_items = pagination.items
+    attach_movie_play_counts(movies_items)
     history_map = get_history_map([movie.id for movie in movies_items])
 
     data = {
@@ -4547,12 +5639,98 @@ def list_movies():
     return api_response(data=data)
 
 
+@library_bp.route('/leaderboard', methods=['GET'])
+def get_leaderboard():
+    try:
+        leaderboard_type = _normalize_leaderboard_type(request.args.get('type', 'hot'))
+        leaderboard_window = normalize_playback_stat_window(request.args.get('window', 'weekly'))
+        page = request.args.get('page', 1, type=int) or 1
+        page_size = request.args.get('page_size', 15, type=int) or 15
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 50)
+    except MetadataValidationError as e:
+        return api_error(code=e.code, msg=e.msg)
+    except ValueError as e:
+        return api_error(code=40094, msg=str(e))
+
+    play_count_subquery = movie_play_count_subquery(window=leaderboard_window)
+    play_count_column = db.func.coalesce(play_count_subquery.c.play_count, 0).label("play_count")
+    query = db.session.query(Movie, play_count_column).outerjoin(
+        play_count_subquery,
+        play_count_subquery.c.movie_id == Movie.id,
+    )
+    query = apply_current_user_movie_visibility_filter(apply_public_movie_visibility_filter(query))
+
+    play_count_expr = db.func.coalesce(play_count_subquery.c.play_count, 0)
+    cutoff = playback_stat_window_cutoff(leaderboard_window)
+    if leaderboard_type == 'hot':
+        query = query.filter(play_count_expr > 0)
+        query = query.order_by(
+            play_count_expr.desc(),
+            db.func.coalesce(Movie.rating, 0).desc(),
+            Movie.added_at.desc(),
+            Movie.id.asc(),
+        )
+    elif leaderboard_type == 'rated':
+        if cutoff is not None:
+            query = query.filter(Movie.added_at >= cutoff)
+        query = query.order_by(
+            db.func.coalesce(Movie.rating, 0).desc(),
+            play_count_expr.desc(),
+            Movie.added_at.desc(),
+            Movie.id.asc(),
+        )
+    else:
+        if cutoff is not None:
+            query = query.filter(Movie.added_at >= cutoff)
+        query = query.order_by(
+            db.func.coalesce(Movie.added_at, Movie.updated_at).desc(),
+            db.func.coalesce(Movie.year, 0).desc(),
+            Movie.id.asc(),
+        )
+
+    pagination = query.paginate(page=page, per_page=page_size, error_out=False)
+    items = []
+    history_map = get_history_map([row[0].id for row in pagination.items])
+    metric_name = LEADERBOARD_METRICS[leaderboard_type]
+    for index, (movie, play_count) in enumerate(pagination.items, start=1 + (page - 1) * page_size):
+        play_count = int(play_count or 0)
+        setattr(movie, "_cyber_play_count", play_count)
+        payload = movie.to_simple_dict(user_history=history_map.get(movie.id))
+        metric_value = {
+            'hot': play_count,
+            'rated': float(movie.rating or 0),
+            'new': movie.added_at.isoformat() if movie.added_at else None,
+        }[leaderboard_type]
+        payload.update({
+            "rank": index,
+            "leaderboard": {
+                "type": leaderboard_type,
+                "window": leaderboard_window,
+                "metric_name": metric_name,
+                "metric_value": metric_value,
+            },
+        })
+        items.append(payload)
+
+    return api_response(data={
+        "items": items,
+        "pagination": build_pagination_meta(pagination, page, page_size),
+        "summary": {
+            "type": leaderboard_type,
+            "window": leaderboard_window,
+            "metric_name": metric_name,
+        },
+    })
+
+
 @library_bp.route('/movies/<uuid:id>', methods=['GET'])
 def get_movie_detail(id):
     movie = get_account_scoped(Movie, str(id))
     if not movie:
         return api_error(code=40401, msg="Movie not found", http_status=404)
 
+    attach_movie_play_counts([movie])
     user_history = get_movie_user_history(movie.id)
     return api_response(data=movie.to_detail_dict(user_history=user_history))
 
@@ -4579,7 +5757,17 @@ def update_movie_catalog_visibility(id):
         movie.catalog_visibility_status = status
         movie.catalog_visibility_note = note
         movie.catalog_visibility_updated_at = datetime.utcnow()
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         db.session.commit()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         logger.info(
             "Movie catalog visibility updated movie_id=%s status=%s force=%s",
             movie.id,
@@ -4885,10 +6073,16 @@ def get_resource_governance_summary():
     except MetadataValidationError as e:
         return api_error(code=e.code, msg=e.msg)
 
-    return api_response(data=build_resource_governance_summary(
-        live_check=live_check,
-        live_check_limit=live_check_limit,
+    if live_check:
+        return api_response(data=build_resource_governance_summary(
+            live_check=live_check,
+            live_check_limit=live_check_limit,
+            sample_size=sample_size,
+        ))
+
+    return api_response(data=_build_resource_governance_summary_from_snapshot(
         sample_size=sample_size,
+        live_check_limit=live_check_limit,
     ))
 
 
@@ -4909,9 +6103,16 @@ def list_resource_governance_items():
         return api_error(code=e.code, msg=e.msg)
 
     issue_code = request.args.get("issue_code") or request.args.get("resource_issue_code")
-    return api_response(data=build_resource_governance_items(
-        live_check=live_check,
-        live_check_limit=live_check_limit,
+    if live_check:
+        return api_response(data=build_resource_governance_items(
+            live_check=live_check,
+            live_check_limit=live_check_limit,
+            issue_code=issue_code,
+            page=page,
+            page_size=page_size,
+        ))
+
+    return api_response(data=_build_resource_governance_items_from_snapshot(
         issue_code=issue_code,
         page=page,
         page_size=page_size,
@@ -4937,7 +6138,7 @@ def start_resource_governance_cleanup_job():
     app = current_app._get_current_object()
 
     def target(job_id):
-        return execute_resource_governance_actions(
+        result = execute_resource_governance_actions(
             payload,
             progress_callback=lambda current, total, message: job_manager.update_progress(
                 job_id,
@@ -4946,6 +6147,10 @@ def start_resource_governance_cleanup_job():
                 message=message,
             ),
         )
+        _mark_review_snapshots_stale_after_change()
+        db.session.commit()
+        _schedule_review_snapshot_rebuild()
+        return result
 
     job = job_manager.start(
         app,
@@ -5008,7 +6213,7 @@ def start_resource_governance_restore_job():
     app = current_app._get_current_object()
 
     def target(job_id):
-        return execute_resource_governance_restore_actions(
+        result = execute_resource_governance_restore_actions(
             payload,
             progress_callback=lambda current, total, message: job_manager.update_progress(
                 job_id,
@@ -5017,6 +6222,10 @@ def start_resource_governance_restore_job():
                 message=message,
             ),
         )
+        _mark_review_snapshots_stale_after_change()
+        db.session.commit()
+        _schedule_review_snapshot_rebuild()
+        return result
 
     job = job_manager.start(
         app,
@@ -5063,9 +6272,10 @@ def sync_movie_resources(id):
 
     targets = target_result["targets"]
     app = current_app._get_current_object()
+    account_id = get_current_account_id() or movie.account_id
     thread = threading.Thread(
         target=_movie_resource_sync_background_task,
-        args=(app, movie.id, movie.title, targets, options, get_current_account_id()),
+        args=(app, movie.id, movie.title, targets, options, account_id),
     )
     thread.start()
 
@@ -5150,8 +6360,10 @@ def attach_movie_resources(id):
             movie.catalog_visibility_note = _normalize_optional_text_field('note', payload.get('note'))
         movie.updated_at = datetime.utcnow()
 
+        _mark_review_snapshots_stale_after_change()
         db.session.commit()
         clear_user_access_cache()
+        _schedule_review_snapshot_rebuild()
         return api_response(data={
             "movie": movie.to_detail_dict(),
             "manual_content": movie.get_manual_content_info(),
@@ -5232,7 +6444,19 @@ def update_movie_detail(id):
             logger.info("Movie metadata unchanged movie_id=%s fields=%s", movie.id, ','.join(unchanged_fields))
             return api_response(data=movie.to_detail_dict(), msg="Movie metadata unchanged")
 
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         db.session.commit()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         logger.info(
             "Movie metadata updated movie_id=%s fields=%s locked=%s unlocked=%s",
             movie.id,
@@ -5313,7 +6537,19 @@ def refresh_movie_metadata(id):
         _repair_resource_episode_metadata(movie, meta_data)
         if movie.apply_pending_review_default(previously_visible=previously_visible):
             updated_fields.append("catalog_visibility_status")
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         db.session.commit()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         logger.info(
             "Movie metadata refreshed movie_id=%s tmdb_id=%s fields=%s unlocked=%s merged=%s",
             movie.id,
@@ -5357,7 +6593,19 @@ def re_scrape_movie_metadata(id):
         updated_fields = applied["updated_fields"]
         season_result = applied["season_result"]
         merge_result = applied["merge_result"]
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         db.session.commit()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         logger.info(
             "Movie metadata re-scraped movie_id=%s tmdb_id=%s scrape_layer=%s scrape_strategy=%s resources=%s merged=%s",
             movie.id,
@@ -5595,7 +6843,9 @@ def update_resource_metadata(id):
         if not updated_fields:
             return api_response(data=resource.to_dict(include_subtitle_discovery=True), msg="Resource metadata unchanged")
 
+        _mark_review_snapshots_stale_after_change()
         db.session.commit()
+        _schedule_review_snapshot_rebuild()
         logger.info("Resource metadata updated resource_id=%s fields=%s", resource.id, ','.join(updated_fields))
         return api_response(data=resource.to_dict(include_subtitle_discovery=True), msg="Resource metadata updated")
     except Exception as e:
@@ -5654,7 +6904,9 @@ def update_movie_resources_metadata(id):
         if not updated_resources:
             return api_response(data=_build_movie_resource_groups(movie), msg="Resource metadata unchanged")
 
+        _mark_review_snapshots_stale_after_change()
         db.session.commit()
+        _schedule_review_snapshot_rebuild()
         logger.info(
             "Movie resources metadata updated movie_id=%s resources=%s",
             movie.id,
@@ -5705,7 +6957,15 @@ def update_movie_season_metadata(id, season):
         if season_metadata.is_empty():
             db.session.delete(season_metadata)
 
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+        ])
         db.session.commit()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+        ])
         logger.info(
             "Season metadata updated movie_id=%s season=%s fields=%s",
             movie.id,
@@ -5807,7 +7067,19 @@ def match_movie_metadata(id):
         _repair_resource_episode_metadata(movie, meta_data)
         if movie.apply_pending_review_default(previously_visible=previously_visible):
             updated_fields.append("catalog_visibility_status")
+        _mark_review_snapshots_stale_after_change([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         db.session.commit()
+        _schedule_review_snapshot_rebuild([
+            BUCKET_METADATA_QUALITY,
+            BUCKET_EPISODE_REVIEW,
+            BUCKET_OTHER_VIDEOS_ARCHIVE,
+            BUCKET_PENDING_REVIEW,
+        ])
         logger.info(
             "Movie metadata matched movie_id=%s tmdb_id=%s fields=%s unlocked=%s merged=%s",
             movie.id,
@@ -5839,7 +7111,19 @@ def match_movie_metadata(id):
                 _repair_resource_episode_metadata(target_movie, meta_data)
                 if target_movie.apply_pending_review_default(previously_visible=previously_visible):
                     updated_fields.append("catalog_visibility_status")
+                _mark_review_snapshots_stale_after_change([
+                    BUCKET_METADATA_QUALITY,
+                    BUCKET_EPISODE_REVIEW,
+                    BUCKET_OTHER_VIDEOS_ARCHIVE,
+                    BUCKET_PENDING_REVIEW,
+                ])
                 db.session.commit()
+                _schedule_review_snapshot_rebuild([
+                    BUCKET_METADATA_QUALITY,
+                    BUCKET_EPISODE_REVIEW,
+                    BUCKET_OTHER_VIDEOS_ARCHIVE,
+                    BUCKET_PENDING_REVIEW,
+                ])
                 logger.info(
                     "Movie metadata matched after integrity merge movie_id=%s tmdb_id=%s fields=%s",
                     target_movie.id,

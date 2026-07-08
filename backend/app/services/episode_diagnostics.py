@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+import re
 
 
 EPISODE_DIAGNOSTIC_ISSUES = {
@@ -23,6 +24,12 @@ EPISODE_DIAGNOSTIC_ISSUES = {
 }
 
 
+_MULTI_EPISODE_PATTERN = re.compile(
+    r'(?i)(?<![A-Z0-9])S(?P<season>\d{1,2})[\s._-]*E(?P<first>\d{1,3})'
+    r'(?P<tail>(?:(?:[\s._-]*E|[\s._-]*-[\s._-]*E?)\d{1,3})+)'
+)
+
+
 def normalize_expected_episode_count(value):
     try:
         expected = int(value) if value is not None else None
@@ -31,23 +38,125 @@ def normalize_expected_episode_count(value):
     return expected if expected and expected > 0 else None
 
 
+def _normalize_episode_number(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if 1 <= number <= 200 else None
+
+
+def _dedupe_episode_numbers(values):
+    numbers = []
+    seen = set()
+    for value in values:
+        number = _normalize_episode_number(value)
+        if number is None or number in seen:
+            continue
+        seen.add(number)
+        numbers.append(number)
+    return sorted(numbers)
+
+
+def _declared_episode_numbers_from_specs(specs):
+    if not isinstance(specs, dict):
+        return []
+
+    candidates = []
+    for key in ("episode_numbers", "episodes"):
+        raw_value = specs.get(key)
+        if isinstance(raw_value, (list, tuple, set)):
+            candidates.extend(raw_value)
+
+    analysis = specs.get("analysis") if isinstance(specs.get("analysis"), dict) else {}
+    path_cleaning = analysis.get("path_cleaning") if isinstance(analysis.get("path_cleaning"), dict) else {}
+    raw_value = path_cleaning.get("episode_numbers")
+    if isinstance(raw_value, (list, tuple, set)):
+        candidates.extend(raw_value)
+
+    return _dedupe_episode_numbers(candidates)
+
+
+def extract_multi_episode_numbers(text, season=None):
+    match = _MULTI_EPISODE_PATTERN.search(str(text or ""))
+    if not match:
+        return []
+
+    matched_season = _normalize_episode_number(match.group("season"))
+    expected_season = _normalize_episode_number(season)
+    if expected_season is not None and matched_season != expected_season:
+        return []
+
+    numbers = [_normalize_episode_number(match.group("first"))]
+    tail = match.group("tail") or ""
+    numbers.extend(
+        _normalize_episode_number(item.group("episode"))
+        for item in re.finditer(
+            r'(?i)(?:[\s._-]*E|[\s._-]*-[\s._-]*E?)(?P<episode>\d{1,3})',
+            tail,
+        )
+    )
+    numbers = _dedupe_episode_numbers(numbers)
+    if len(numbers) == 2 and "-" in tail and numbers[0] < numbers[1]:
+        return list(range(numbers[0], numbers[1] + 1))
+    return numbers
+
+
+def episode_numbers_for_resource(resource):
+    declared_numbers = _declared_episode_numbers_from_specs(getattr(resource, "tech_specs", None))
+    if declared_numbers:
+        return declared_numbers
+
+    season = getattr(resource, "season", None)
+    filename_numbers = []
+    for text in (getattr(resource, "filename", None), getattr(resource, "path", None)):
+        filename_numbers = extract_multi_episode_numbers(text, season=season)
+        if filename_numbers:
+            break
+    if filename_numbers:
+        return filename_numbers
+
+    episode = _normalize_episode_number(getattr(resource, "episode", None))
+    return [episode] if episode is not None else []
+
+
+def format_episode_label(season, episode_numbers=None, episode=None):
+    numbers = _dedupe_episode_numbers(episode_numbers or [])
+    if not numbers and episode is not None:
+        number = _normalize_episode_number(episode)
+        if number is not None:
+            numbers = [number]
+
+    if season is not None and numbers:
+        season_number = int(season)
+        if len(numbers) == 1:
+            return f"S{season_number:02d}E{numbers[0]:02d}"
+        if numbers == list(range(numbers[0], numbers[-1] + 1)):
+            return f"S{season_number:02d}E{numbers[0]:02d}-E{numbers[-1]:02d}"
+        suffix = "+".join(f"E{number:02d}" for number in numbers)
+        return f"S{season_number:02d}{suffix}"
+    if numbers:
+        if len(numbers) == 1:
+            return f"EP{numbers[0]:02d}"
+        if numbers == list(range(numbers[0], numbers[-1] + 1)):
+            return f"EP{numbers[0]:02d}-EP{numbers[-1]:02d}"
+        return "+".join(f"EP{number:02d}" for number in numbers)
+    if season is not None:
+        return f"S{int(season):02d}"
+    return None
+
+
 def build_season_episode_diagnostics(resources, expected_episode_count=None):
     episode_resources = defaultdict(list)
     unnumbered_resource_ids = []
 
     for resource in resources:
-        if getattr(resource, "episode", None) is None:
+        episode_numbers = episode_numbers_for_resource(resource)
+        if not episode_numbers:
             unnumbered_resource_ids.append(resource.id)
             continue
-        try:
-            episode = int(resource.episode)
-        except (TypeError, ValueError):
-            unnumbered_resource_ids.append(resource.id)
-            continue
-        if episode <= 0:
-            unnumbered_resource_ids.append(resource.id)
-            continue
-        episode_resources[episode].append(resource.id)
+        for episode in episode_numbers:
+            episode_resources[episode].append(resource.id)
 
     available_episode_numbers = sorted(episode_resources.keys())
     duplicate_episode_candidates = [

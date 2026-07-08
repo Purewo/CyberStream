@@ -46,6 +46,9 @@ SQLITE_COLUMN_PATCHES = {
     "homepage_settings": {
         "account_id": "ALTER TABLE homepage_settings ADD COLUMN account_id VARCHAR(36)",
     },
+    "user_homepage_settings": {
+        "account_id": "ALTER TABLE user_homepage_settings ADD COLUMN account_id VARCHAR(36)",
+    },
     "user_achievements": {
         "account_id": "ALTER TABLE user_achievements ADD COLUMN account_id VARCHAR(36)",
     },
@@ -69,6 +72,10 @@ SQLITE_COLUMN_PATCHES = {
     },
     "user_subtitle_settings": {
         "account_id": "ALTER TABLE user_subtitle_settings ADD COLUMN account_id VARCHAR(36)",
+    },
+    "review_snapshot_items": {
+        "source_group": "ALTER TABLE review_snapshot_items ADD COLUMN source_group VARCHAR(40)",
+        "review_priority": "ALTER TABLE review_snapshot_items ADD COLUMN review_priority VARCHAR(40)",
     },
     "users": {
         "password_changed_at": "ALTER TABLE users ADD COLUMN password_changed_at DATETIME",
@@ -163,6 +170,52 @@ SQLITE_INDEX_PATCHES = {
             "ddl": "CREATE INDEX IF NOT EXISTS ix_audit_logs_outcome ON audit_logs (outcome)",
         },
     ],
+    "review_snapshot_states": [
+        {
+            "name": "uq_review_snapshot_state_account_bucket",
+            "ddl": "CREATE UNIQUE INDEX IF NOT EXISTS uq_review_snapshot_state_account_bucket ON review_snapshot_states (account_id, bucket)",
+        },
+        {
+            "name": "ix_review_snapshot_states_bucket",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_states_bucket ON review_snapshot_states (bucket)",
+        },
+    ],
+    "review_snapshot_items": [
+        {
+            "name": "ix_review_snapshot_item_account_bucket_sort",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_item_account_bucket_sort ON review_snapshot_items (account_id, bucket, sort_key)",
+        },
+        {
+            "name": "ix_review_snapshot_item_account_bucket_issue",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_item_account_bucket_issue ON review_snapshot_items (account_id, bucket, issue_code)",
+        },
+        {
+            "name": "ix_review_snapshot_item_account_bucket_status",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_item_account_bucket_status ON review_snapshot_items (account_id, bucket, status)",
+        },
+        {
+            "name": "ix_review_snapshot_item_account_bucket_source",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_item_account_bucket_source ON review_snapshot_items (account_id, bucket, source_id)",
+        },
+        {
+            "name": "ix_review_snapshot_item_account_bucket_source_group",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_item_account_bucket_source_group ON review_snapshot_items (account_id, bucket, source_group)",
+        },
+        {
+            "name": "ix_review_snapshot_item_account_bucket_review_priority",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_item_account_bucket_review_priority ON review_snapshot_items (account_id, bucket, review_priority)",
+        },
+    ],
+    "review_snapshot_summaries": [
+        {
+            "name": "uq_review_snapshot_summary_account_bucket_key",
+            "ddl": "CREATE UNIQUE INDEX IF NOT EXISTS uq_review_snapshot_summary_account_bucket_key ON review_snapshot_summaries (account_id, bucket, summary_key)",
+        },
+        {
+            "name": "ix_review_snapshot_summary_account_bucket",
+            "ddl": "CREATE INDEX IF NOT EXISTS ix_review_snapshot_summary_account_bucket ON review_snapshot_summaries (account_id, bucket)",
+        },
+    ],
 }
 
 for _account_table in (
@@ -173,6 +226,7 @@ for _account_table in (
     "user_library_rules",
     "audit_logs",
     "homepage_settings",
+    "user_homepage_settings",
     "movies",
     "history",
     "user_achievements",
@@ -181,6 +235,9 @@ for _account_table in (
     "maintenance_jobs",
     "movie_metadata_locks",
     "movie_season_metadata",
+    "review_snapshot_states",
+    "review_snapshot_items",
+    "review_snapshot_summaries",
     "resource_subtitles",
     "resource_subtitle_settings",
     "user_subtitle_settings",
@@ -217,6 +274,21 @@ SQLITE_TABLE_PATCHES = {
             created_at DATETIME,
             updated_at DATETIME,
             PRIMARY KEY (id),
+            FOREIGN KEY(hero_movie_id) REFERENCES movies (id)
+        )
+    """,
+    "user_homepage_settings": """
+        CREATE TABLE user_homepage_settings (
+            id INTEGER NOT NULL,
+            account_id VARCHAR(36),
+            user_id INTEGER NOT NULL,
+            hero_movie_id VARCHAR(36),
+            sections JSON NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_user_homepage_settings_account_user UNIQUE (account_id, user_id),
+            FOREIGN KEY(user_id) REFERENCES users (id),
             FOREIGN KEY(hero_movie_id) REFERENCES movies (id)
         )
     """,
@@ -357,6 +429,65 @@ SQLITE_TABLE_PATCHES = {
             PRIMARY KEY (id),
             CONSTRAINT uq_user_preferences_user_id UNIQUE (user_id),
             FOREIGN KEY(user_id) REFERENCES users (id)
+        )
+    """,
+    "review_snapshot_states": """
+        CREATE TABLE review_snapshot_states (
+            id INTEGER NOT NULL,
+            account_id VARCHAR(36),
+            bucket VARCHAR(60) NOT NULL,
+            revision VARCHAR(80) NOT NULL,
+            rebuilding BOOLEAN NOT NULL,
+            stale BOOLEAN NOT NULL,
+            item_count INTEGER NOT NULL,
+            error TEXT,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_review_snapshot_state_account_bucket UNIQUE (account_id, bucket),
+            FOREIGN KEY(account_id) REFERENCES accounts (id)
+        )
+    """,
+    "review_snapshot_items": """
+        CREATE TABLE review_snapshot_items (
+            id INTEGER NOT NULL,
+            account_id VARCHAR(36),
+            bucket VARCHAR(60) NOT NULL,
+            entity_type VARCHAR(30) NOT NULL,
+            entity_id VARCHAR(80) NOT NULL,
+            issue_code VARCHAR(80),
+            issue_codes JSON NOT NULL,
+            issue_codes_text TEXT NOT NULL,
+            severity VARCHAR(20),
+            status VARCHAR(40),
+            source_group VARCHAR(40),
+            review_priority VARCHAR(40),
+            source_id INTEGER,
+            movie_id VARCHAR(36),
+            sort_key VARCHAR(120) NOT NULL,
+            search_text TEXT NOT NULL,
+            payload JSON NOT NULL,
+            revision VARCHAR(80) NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(account_id) REFERENCES accounts (id)
+        )
+    """,
+    "review_snapshot_summaries": """
+        CREATE TABLE review_snapshot_summaries (
+            id INTEGER NOT NULL,
+            account_id VARCHAR(36),
+            bucket VARCHAR(60) NOT NULL,
+            summary_key VARCHAR(100) NOT NULL,
+            count INTEGER NOT NULL,
+            payload JSON NOT NULL,
+            revision VARCHAR(80) NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT uq_review_snapshot_summary_account_bucket_key UNIQUE (account_id, bucket, summary_key),
+            FOREIGN KEY(account_id) REFERENCES accounts (id)
         )
     """,
     "user_achievements": """

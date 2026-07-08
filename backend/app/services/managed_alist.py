@@ -345,6 +345,16 @@ class ManagedAListClient:
         suffix = uuid.uuid4().hex[:12]
         return posixpath.join(self.mount_prefix, "guangyapan", suffix)
 
+    def get_guangyapan_phone_number(self, storage_id):
+        storage = self.get_storage(storage_id)
+        if storage.get("driver") != "GuangYaPan":
+            raise ManagedAListError("Managed AList storage is not GuangYaPan", code=40061)
+        addition = self._addition(storage)
+        phone_number = str(addition.get("phone_number") or "").strip()
+        if not phone_number:
+            raise ManagedAListError("Managed GuangYaPan source has no bound phone number", code=40061)
+        return phone_number
+
     def create_guangyapan_storage(self, phone_number, root_path="", captcha_token=""):
         mount_path = self._new_mount_path()
         addition = {

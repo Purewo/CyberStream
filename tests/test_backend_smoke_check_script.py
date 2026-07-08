@@ -1508,26 +1508,6 @@ class FakeSmokeClient:
         if path == "/api/v1/featured":
             detail = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
             return {"data": [detail]}
-        if path == "/api/v1/homepage/config":
-            return {
-                "data": {
-                    "hero_movie_id": None,
-                    "sections": [
-                        {
-                            "key": "action",
-                            "title": "动作",
-                            "genre": "动作",
-                            "mode": "latest",
-                            "limit": 15,
-                            "movie_ids": [],
-                            "enabled": True,
-                            "sort_order": 0,
-                        },
-                    ],
-                    "created_at": "2026-06-07T00:00:00",
-                    "updated_at": "2026-06-07T00:00:01",
-                },
-            }
         if path == "/api/v1/homepage":
             hero = FakeSmokeClient.get_json(self, "/api/v1/movies/movie-1", query=query)["data"]
             section_item = FakeSmokeClient.get_json(self, "/api/v1/movies", query=query)["data"]["items"][0].copy()
@@ -2143,7 +2123,6 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
                 "subtitle_settings",
                 "audio_transcode_diagnostics",
                 "featured",
-                "homepage_config",
                 "homepage",
                 "recommendations",
                 "movie_context_recommendations",
@@ -3310,21 +3289,6 @@ class BackendSmokeCheckScriptTests(unittest.TestCase):
         featured = next(item for item in results if item.name == "featured")
         self.assertFalse(featured.ok)
         self.assertIn("detail_missing=backdrop_asset_url", featured.detail)
-
-    def test_homepage_config_fails_when_section_shape_is_broken(self):
-        class BrokenHomepageConfigClient(FakeSmokeClient):
-            def get_json(self, path, query=None):
-                payload = super().get_json(path, query=query)
-                if path == "/api/v1/homepage/config":
-                    del payload["data"]["sections"][0]["movie_ids"]
-                return payload
-
-        with patch.object(self.module, "SmokeClient", BrokenHomepageConfigClient):
-            results = self.module.run_checks(self._args())
-
-        config = next(item for item in results if item.name == "homepage_config")
-        self.assertFalse(config.ok)
-        self.assertIn("config_section_0_missing=movie_ids", config.detail)
 
     def test_homepage_fails_when_section_shape_is_broken(self):
         class BrokenHomepageClient(FakeSmokeClient):

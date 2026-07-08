@@ -260,6 +260,54 @@ class PlaybackTicketTests(unittest.TestCase):
         self.assertEqual(400, invalid.status_code)
         self.assertEqual(40090, invalid.get_json()["code"])
 
+    def test_user_ticket_authenticates_user_homepage_config_without_cookie(self):
+        app = self.create_app()
+        _resource, ticket_data = self._issue_user_ticket(app)
+        client = app.test_client()
+        config = {
+            "hero_movie_id": None,
+            "sections": [{
+                "key": "ticket_sci_fi",
+                "title": "票据科幻",
+                "genre": "科幻",
+                "mode": "latest",
+                "limit": 4,
+                "movie_ids": [],
+                "enabled": True,
+                "sort_order": 0,
+            }],
+        }
+
+        initial = client.get(
+            "/api/v1/user/homepage/config",
+            query_string={"ticket": ticket_data["ticket"]},
+        )
+        saved = client.patch(
+            "/api/v1/user/homepage/config",
+            query_string={"ticket": ticket_data["ticket"]},
+            json=config,
+        )
+        loaded = client.get(
+            "/api/v1/user/homepage/config",
+            query_string={"ticket": ticket_data["ticket"]},
+        )
+        invalid = client.patch(
+            "/api/v1/user/homepage/config",
+            query_string={"ticket": ticket_data["ticket"]},
+            json={"sections": "not-an-array"},
+        )
+
+        self.assertEqual(200, initial.status_code)
+        self.assertEqual("global", initial.get_json()["data"]["source"])
+        self.assertEqual(200, saved.status_code, saved.get_data(as_text=True))
+        self.assertEqual("user", saved.get_json()["data"]["source"])
+        self.assertEqual("票据科幻", saved.get_json()["data"]["sections"][0]["title"])
+        self.assertEqual(200, loaded.status_code)
+        self.assertEqual("user", loaded.get_json()["data"]["source"])
+        self.assertEqual("票据科幻", loaded.get_json()["data"]["sections"][0]["title"])
+        self.assertEqual(400, invalid.status_code)
+        self.assertEqual(40070, invalid.get_json()["code"])
+
     def test_invalid_and_expired_tickets_return_40130(self):
         app = self.create_app()
         resource, ticket_data = self._issue_user_ticket(app)

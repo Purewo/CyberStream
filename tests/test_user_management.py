@@ -15,12 +15,14 @@ from backend.app.models import (
     AccountMembership,
     AuditLog,
     History,
+    HomepageSetting,
     Library,
     LibrarySource,
     MediaResource,
     Movie,
     StorageSource,
     User,
+    UserHomepageSetting,
     UserLibraryRule,
     UserSubtitleSetting,
 )
@@ -88,6 +90,29 @@ class UserManagementTests(unittest.TestCase):
         db.session.add(resource)
         db.session.commit()
         return movie, resource
+
+    def _homepage_movie(
+        self,
+        title,
+        *,
+        category=None,
+        cover=None,
+        background_cover=None,
+        visibility_status=None,
+    ):
+        movie = Movie(
+            tmdb_id=f"homepage/{title}",
+            title=title,
+            original_title=title,
+            cover=cover if cover is not None else f"https://img.example/{title}.jpg",
+            background_cover=background_cover,
+            category=category or ["科幻"],
+            scraper_source="TMDB",
+            catalog_visibility_status=visibility_status or Movie.CATALOG_VISIBILITY_AUTO,
+        )
+        db.session.add(movie)
+        db.session.commit()
+        return movie
 
     def _library(self, name, source, root_path):
         library = Library(name=name, slug=name.lower())
@@ -283,6 +308,11 @@ class UserManagementTests(unittest.TestCase):
                 library_id=default_library.id,
                 source_id=source_data["id"],
                 root_path="/",
+            ).first()
+        )
+        self.assertIsNone(
+            HomepageSetting.query.execution_options(include_all_accounts=True).filter_by(
+                account_id=account_id,
             ).first()
         )
 
@@ -936,6 +966,165 @@ class UserManagementTests(unittest.TestCase):
 
         self._login(client, "alice")
         self.assertEqual({"theme": {"themeName": "NOIR"}}, client.get("/api/v1/user/preferences").get_json()["data"])
+
+    def test_user_homepage_config_overrides_global_and_is_isolated_by_user(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        self._user("alice")
+        self._user("bob")
+        global_hero = self._homepage_movie(
+            "Global Hero",
+            category=["科幻"],
+            background_cover="https://img.example/global-backdrop.jpg",
+        )
+        global_movie = self._homepage_movie("Global Pick", category=["动作"])
+        alice_hero = self._homepage_movie(
+            "Alice Hero",
+            category=["科幻"],
+            background_cover="https://img.example/alice-backdrop.jpg",
+        )
+        alice_movie = self._homepage_movie("Alice Pick", category=["科幻"])
+        db.session.add(HomepageSetting(
+            hero_movie_id=global_hero.id,
+            sections=[{
+                "key": "global_action",
+                "title": "全局动作",
+                "genre": "动作",
+                "mode": "custom",
+                "limit": 4,
+                "movie_ids": [global_movie.id],
+                "enabled": True,
+                "sort_order": 0,
+            }],
+        ))
+        db.session.commit()
+
+        self.assertEqual(401, client.get("/api/v1/user/homepage/config").status_code)
+
+        self._login(client, "alice")
+        initial = client.get("/api/v1/user/homepage/config")
+        self.assertEqual(200, initial.status_code)
+        initial_data = initial.get_json()["data"]
+        self.assertEqual("global", initial_data["source"])
+        self.assertEqual(global_hero.id, initial_data["hero_movie_id"])
+
+        saved = client.patch("/api/v1/user/homepage/config", json={
+            "hero_movie_id": alice_hero.id,
+            "sections": [{
+                "key": "alice_sci_fi",
+                "title": "Alice 科幻",
+                "genre": "科幻",
+                "mode": "custom",
+                "limit": 4,
+                "movie_ids": [alice_movie.id],
+                "enabled": True,
+                "sort_order": 0,
+            }],
+        })
+        self.assertEqual(200, saved.status_code, saved.get_data(as_text=True))
+        self.assertEqual("user", saved.get_json()["data"]["source"])
+        self.assertEqual(1, UserHomepageSetting.query.count())
+
+        alice_homepage = client.get("/api/v1/homepage").get_json()["data"]
+        self.assertEqual(alice_hero.id, alice_homepage["hero"]["movie"]["id"])
+        self.assertEqual("Alice 科幻", alice_homepage["sections"][0]["title"])
+        self.assertEqual([alice_movie.id], [item["id"] for item in alice_homepage["sections"][0]["items"]])
+        global_config = HomepageSetting.query.first()
+        self.assertEqual(global_hero.id, global_config.hero_movie_id)
+        client.post("/api/v1/auth/logout")
+
+        self._login(client, "bob")
+        bob_config = client.get("/api/v1/user/homepage/config").get_json()["data"]
+        self.assertEqual("global", bob_config["source"])
+        bob_homepage = client.get("/api/v1/homepage").get_json()["data"]
+        self.assertEqual(global_hero.id, bob_homepage["hero"]["movie"]["id"])
+        self.assertEqual("全局动作", bob_homepage["sections"][0]["title"])
+        self.assertEqual([global_movie.id], [item["id"] for item in bob_homepage["sections"][0]["items"]])
+        client.post("/api/v1/auth/logout")
+
+        self._login(client, "alice")
+        alice_config = client.get("/api/v1/user/homepage/config").get_json()["data"]
+        self.assertEqual("user", alice_config["source"])
+        self.assertEqual(alice_hero.id, alice_config["hero_movie_id"])
+
+    def test_hosted_homepage_has_no_global_fallback(self):
+        app = self.create_enabled_app(HOSTED_MANAGED_MODE=True)
+        client = app.test_client()
+        self._user("alice")
+
+        global_hero = self._homepage_movie(
+            "Global Hero",
+            category=["科幻"],
+            background_cover="https://img.example/global-backdrop.jpg",
+        )
+        db.session.add(HomepageSetting(
+            hero_movie_id=global_hero.id,
+            sections=[{
+                "key": "global_action",
+                "title": "全局动作",
+                "genre": "动作",
+                "mode": "custom",
+                "limit": 4,
+                "movie_ids": [],
+                "enabled": True,
+                "sort_order": 0,
+            }],
+        ))
+        db.session.commit()
+
+        self._login(client, "alice")
+
+        config_response = client.get("/api/v1/user/homepage/config")
+        self.assertEqual(200, config_response.status_code)
+        config = config_response.get_json()["data"]
+        self.assertEqual("empty", config["source"])
+        self.assertIsNone(config["hero_movie_id"])
+        self.assertEqual([], config["sections"])
+
+        homepage_response = client.get("/api/v1/homepage")
+        self.assertEqual(200, homepage_response.status_code)
+        homepage = homepage_response.get_json()["data"]
+        self.assertIsNone(homepage["hero"]["movie"])
+        self.assertEqual([], homepage["sections"])
+
+        global_response = client.get("/api/v1/homepage/config")
+        self.assertIn(global_response.status_code, (403, 404))
+
+        saved = client.patch("/api/v1/user/homepage/config", json={})
+        self.assertEqual(200, saved.status_code)
+        self.assertEqual("user", saved.get_json()["data"]["source"])
+        self.assertEqual([], saved.get_json()["data"]["sections"])
+
+    def test_user_homepage_config_rejects_invisible_movies(self):
+        app = self.create_enabled_app()
+        client = app.test_client()
+        self._user("alice")
+        hidden = self._homepage_movie(
+            "Hidden",
+            category=["科幻"],
+            visibility_status=Movie.CATALOG_VISIBILITY_HIDDEN,
+        )
+
+        self._login(client, "alice")
+        hero_response = client.patch("/api/v1/user/homepage/config", json={"hero_movie_id": hidden.id})
+        section_response = client.patch("/api/v1/user/homepage/config", json={
+            "sections": [{
+                "key": "hidden",
+                "title": "隐藏",
+                "genre": "科幻",
+                "mode": "custom",
+                "limit": 4,
+                "movie_ids": [hidden.id],
+                "enabled": True,
+                "sort_order": 0,
+            }],
+        })
+
+        self.assertEqual(400, hero_response.status_code)
+        self.assertEqual(40070, hero_response.get_json()["code"])
+        self.assertEqual(400, section_response.status_code)
+        self.assertEqual(40070, section_response.get_json()["code"])
+        self.assertEqual(0, UserHomepageSetting.query.count())
 
     def test_clear_history_bulk_delete_is_scoped_by_account(self):
         self.create_enabled_app(MULTI_TENANT_ENABLED=True)

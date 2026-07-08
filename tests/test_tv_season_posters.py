@@ -336,6 +336,55 @@ class TVSeasonPosterTests(unittest.TestCase):
         self.assertEqual([1, 2], diagnostics["alternate_episode_numbers"])
         self.assertEqual("complete", data["summary"]["episode_diagnostics"]["coverage_status"])
 
+    def test_multi_episode_file_covers_each_episode_number(self):
+        movie = Movie(
+            tmdb_id="tv/multi-episode",
+            title="连播剧集",
+            original_title="Multi Episode",
+            year=2026,
+            cover="https://image.tmdb.org/t/p/w500/series.jpg",
+            scraper_source="TMDB",
+        )
+        db.session.add(movie)
+        db.session.commit()
+
+        db.session.add(MovieSeasonMetadata(movie_id=movie.id, season=1, title="第一季", episode_count=3))
+        combined = MediaResource(
+            movie_id=movie.id,
+            path="shows/Multi.Episode.S01E01E02.1080p.mkv",
+            filename="Multi.Episode.S01E01E02.1080p.mkv",
+            season=1,
+            episode=1,
+        )
+        db.session.add_all([
+            combined,
+            MediaResource(
+                movie_id=movie.id,
+                path="shows/Multi.Episode.S01E03.1080p.mkv",
+                filename="Multi.Episode.S01E03.1080p.mkv",
+                season=1,
+                episode=3,
+            ),
+        ])
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/movies/{movie.id}/seasons")
+
+        self.assertEqual(200, response.status_code)
+        season = response.get_json()["data"]["items"][0]
+        diagnostics = season["episode_diagnostics"]
+        self.assertEqual("ok", diagnostics["status"])
+        self.assertEqual("complete", diagnostics["coverage_status"])
+        self.assertEqual([1, 2, 3], diagnostics["available_episode_numbers"])
+        self.assertEqual([], diagnostics["missing_episode_numbers"])
+        self.assertEqual(3, diagnostics["available_episode_count"])
+
+        card = movie.get_season_cards()[0]
+        self.assertEqual(2, card["resource_count"])
+        self.assertEqual(3, card["available_episode_count"])
+        self.assertEqual([1, 2, 3], card["episode_numbers"])
+        self.assertEqual("S01E01-E02", combined.get_episode_label())
+
     def test_future_episodes_do_not_require_review_until_aired(self):
         movie = Movie(
             tmdb_id="tv/future-episode",

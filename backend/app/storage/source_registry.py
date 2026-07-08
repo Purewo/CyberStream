@@ -406,7 +406,7 @@ SOURCE_TYPE_DEFINITIONS = {
                 'type': 'string',
                 'required': False,
                 'default': 'sms_pending',
-                'description': '短信认证状态：sms_pending 或 ready',
+                'description': '短信认证状态：sms_pending、ready 或 auth_expired',
             },
             {
                 'name': 'phone_number_masked',

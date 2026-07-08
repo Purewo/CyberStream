@@ -1,6 +1,5 @@
 import logging
 import threading
-from collections import Counter
 
 from flask import Blueprint, current_app, request
 
@@ -9,6 +8,7 @@ from backend.app.api.library_helpers import (
     apply_movie_filters,
     apply_public_movie_visibility_filter,
     attach_recommendation_payload,
+    build_filter_options_from_rows,
     build_library_movie_id_context,
     get_recommendation_items_from_query,
     normalize_recommendation_strategy,
@@ -28,6 +28,8 @@ from backend.app.services.favorites import (
 from backend.app.services.metadata_policy import ScraperPolicyError, normalize_scraper_policy_payload
 from backend.app.services.scanner import scanner_engine
 from backend.app.services.accounts import account_scope, get_account_scoped
+from backend.app.services.filter_options_cache import get_cached_filter_payload, normalize_filter_includes
+from backend.app.services.playback_stats import attach_movie_play_counts
 from backend.app.services.user_access import (
     apply_current_user_movie_visibility_filter,
     clear_user_access_cache,
@@ -36,7 +38,6 @@ from backend.app.services.user_access import (
 from backend.app.services.vault import VaultAccessError, require_vault_unlocked
 from backend.app.security import get_current_account_id, is_admin_request
 from backend.app.storage.source_registry import get_source_capabilities
-from backend.app.utils.genres import normalize_genres
 from backend.app.utils.response import api_error, api_response
 
 logger = logging.getLogger(__name__)
@@ -276,7 +277,9 @@ def _get_library_movies(library, order_by=None, limit=None):
     if limit is not None:
         query = query.limit(limit)
 
-    return query.all(), context
+    movies = query.all()
+    attach_movie_play_counts(movies)
+    return movies, context
 
 
 def _serialize_library_movie(movie, membership_map, user_history=None, detail=False):
@@ -887,6 +890,20 @@ def get_favorite_library_recommendations():
     ])
 
 
+def _build_library_filter_options(library, includes):
+    query, _ = _build_library_movie_query(library)
+    if query is None:
+        return {key: [] for key in includes}
+    rows = query.with_entities(Movie.category, Movie.year, Movie.country).all()
+    return build_filter_options_from_rows(rows, includes)
+
+
+def _build_favorite_library_filter_options(includes):
+    query, _membership_map = _favorite_query_and_memberships()
+    rows = query.with_entities(Movie.category, Movie.year, Movie.country).all()
+    return build_filter_options_from_rows(rows, includes)
+
+
 @libraries_bp.route('/libraries/<int:id>/filters', methods=['GET'])
 def get_library_filters(id):
     library, error_response = _get_library_or_404(id)
@@ -894,37 +911,13 @@ def get_library_filters(id):
         return error_response
 
     include_param = request.args.get('include')
-    includes = include_param.split(',') if include_param else ['genres', 'years', 'countries']
-    query, _ = _build_library_movie_query(library)
-    if query is None:
-        return api_response(data={key: [] for key in includes})
-
-    movies = query.all()
-    data = {}
-
-    if 'genres' in includes:
-        counter = Counter()
-        for movie in movies:
-            categories = movie.category or []
-            if isinstance(categories, list):
-                for category in normalize_genres(categories):
-                    counter[category] += 1
-        data['genres'] = [{"name": name, "slug": name, "count": count} for name, count in counter.most_common()]
-
-    if 'years' in includes:
-        counter = Counter()
-        for movie in movies:
-            if movie.year is not None:
-                counter[movie.year] += 1
-        data['years'] = [{"year": year, "count": count} for year, count in sorted(counter.items(), key=lambda item: item[0], reverse=True)]
-
-    if 'countries' in includes:
-        counter = Counter()
-        for movie in movies:
-            if movie.country:
-                counter[movie.country] += 1
-        data['countries'] = [{"name": name, "code": name, "count": count} for name, count in counter.most_common()]
-
+    includes = normalize_filter_includes(include_param, default=['genres', 'years', 'countries'])
+    data = get_cached_filter_payload(
+        "library_filters",
+        includes,
+        lambda: _build_library_filter_options(library, includes),
+        extra_key=str(id),
+    )
     return api_response(data=data)
 
 
@@ -935,26 +928,13 @@ def get_favorite_library_filters():
         return error_response
 
     include_param = request.args.get('include')
-    includes = include_param.split(',') if include_param else ['genres', 'years', 'countries']
-    query, _membership_map = _favorite_query_and_memberships()
-    movies = query.all()
-    data = {}
-
-    if 'genres' in includes:
-        counter = Counter()
-        for movie in movies:
-            for category in normalize_genres(movie.category or []):
-                counter[category] += 1
-        data['genres'] = [{"name": name, "slug": name, "count": count} for name, count in counter.most_common()]
-
-    if 'years' in includes:
-        counter = Counter(movie.year for movie in movies if movie.year is not None)
-        data['years'] = [{"year": year, "count": count} for year, count in sorted(counter.items(), reverse=True)]
-
-    if 'countries' in includes:
-        counter = Counter(movie.country for movie in movies if movie.country)
-        data['countries'] = [{"name": name, "code": name, "count": count} for name, count in counter.most_common()]
-
+    includes = normalize_filter_includes(include_param, default=['genres', 'years', 'countries'])
+    data = get_cached_filter_payload(
+        "favorite_library_filters",
+        includes,
+        lambda: _build_favorite_library_filter_options(includes),
+        extra_key="favorites",
+    )
     return api_response(data=data)
 
 
@@ -978,6 +958,7 @@ def trigger_library_scan(id):
         return api_error(code=42900, msg='Scanner is already running', http_status=429)
 
     app = current_app._get_current_object()
-    thread = threading.Thread(target=_scan_library_background_task, args=(app, id, refresh, get_current_account_id()))
+    account_id = get_current_account_id() or library.account_id
+    thread = threading.Thread(target=_scan_library_background_task, args=(app, id, refresh, account_id))
     thread.start()
     return api_response(msg='Library scan task accepted', http_status=202)

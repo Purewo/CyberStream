@@ -67,7 +67,12 @@ class ManualContentRoutesTests(unittest.TestCase):
 
         queue_response = self.client.get("/api/v1/other-videos?keyword=电路&page_size=20")
         self.assertEqual(200, queue_response.status_code)
-        queue_ids = [item["resource_id"] for item in queue_response.get_json()["data"]["items"]]
+        queue_data = queue_response.get_json()["data"]
+        self.assertIn("revision", queue_data)
+        self.assertIn("updated_at", queue_data)
+        self.assertFalse(queue_data["rebuilding"])
+        self.assertFalse(queue_data["stale"])
+        queue_ids = [item["resource_id"] for item in queue_data["items"]]
         self.assertIn(resource.id, queue_ids)
 
         create_response = self.client.post(

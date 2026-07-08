@@ -21,6 +21,9 @@ migration = importlib.import_module(
 preferences_migration = importlib.import_module(
     "migrations.versions.20260624_01_user_preferences"
 )
+user_homepage_migration = importlib.import_module(
+    "migrations.versions.20260624_02_user_homepage_settings"
+)
 
 
 class HostedMultitenantMigrationTests(unittest.TestCase):
@@ -163,6 +166,23 @@ class HostedMultitenantMigrationTests(unittest.TestCase):
 
         self.assertIn("user_preferences", tables)
         self.assertIn(("user_id",), unique_columns)
+
+    def test_user_homepage_settings_migration_is_idempotent_after_current_model_create_all(self):
+        engine = self._legacy_engine()
+
+        self._upgrade(engine)
+        self._run_migration(engine, preferences_migration)
+        self._run_migration(engine, user_homepage_migration)
+
+        with engine.begin() as connection:
+            tables = set(inspect(connection).get_table_names())
+            unique_columns = {
+                tuple(item["column_names"])
+                for item in inspect(connection).get_unique_constraints("user_homepage_settings")
+            }
+
+        self.assertIn("user_homepage_settings", tables)
+        self.assertIn(("account_id", "user_id"), unique_columns)
 
     def test_upgrade_refuses_legacy_data_without_owner_user(self):
         engine = self._legacy_engine(include_owner=False)

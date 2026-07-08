@@ -6,6 +6,11 @@ from datetime import datetime
 
 from backend.app.extensions import db
 from backend.app.models import History, LibraryMovieMembership, LibrarySource, Movie, MediaResource
+from backend.app.services.filter_options_cache import (
+    build_filter_options_from_rows,
+    get_cached_filter_payload,
+    normalize_filter_includes,
+)
 from backend.app.services.accounts import get_account_scoped
 from backend.app.services.user_access import apply_current_user_movie_visibility_filter
 from backend.app.services.user_access import current_user_id_for_personal_data
@@ -110,51 +115,17 @@ def apply_public_movie_visibility_filter(query):
     )
 
 
-def get_filter_options(includes):
-    """按 include 列表返回全局筛选字典。"""
+def _build_global_filter_options(includes):
     data = {}
+    basic_includes = [include for include in includes if include in {"genres", "years", "countries"}]
 
-    if 'genres' in includes:
-        movies = apply_current_user_movie_visibility_filter(
-            apply_public_movie_visibility_filter(db.session.query(Movie.category))
-        ).all()
-        counter = Counter()
-        for movie in movies:
-            categories = movie[0]
-            if categories and isinstance(categories, list):
-                for category in normalize_genres(categories):
-                    counter[category] += 1
-
-        data['genres'] = [
-            {"name": name, "slug": name, "count": count}
-            for name, count in counter.most_common()
-        ]
-
-    if 'years' in includes:
+    if basic_includes:
         query = apply_current_user_movie_visibility_filter(
-            apply_public_movie_visibility_filter(db.session.query(Movie.year, db.func.count(Movie.id)))
-        ) \
-            .filter(Movie.year.isnot(None)) \
-            .group_by(Movie.year) \
-            .order_by(Movie.year.desc())
-        data['years'] = [{"year": row[0], "count": row[1]} for row in query.all()]
-
-    if 'countries' in includes:
-        query = apply_current_user_movie_visibility_filter(
-            apply_public_movie_visibility_filter(db.session.query(Movie.country, db.func.count(Movie.id)))
-        ) \
-            .filter(Movie.country.isnot(None)) \
-            .filter(Movie.country != "") \
-            .group_by(Movie.country)
-
-        countries = []
-        for row in query.all():
-            name = row[0]
-            count = row[1]
-            countries.append({"name": name, "code": name, "count": count})
-
-        countries.sort(key=lambda item: item['count'], reverse=True)
-        data['countries'] = countries
+            apply_public_movie_visibility_filter(
+                db.session.query(Movie.category, Movie.year, Movie.country)
+            )
+        )
+        data.update(build_filter_options_from_rows(query.all(), basic_includes))
 
     if 'metadata_source_groups' in includes:
         data['metadata_source_groups'] = _build_metadata_source_group_filters()
@@ -166,6 +137,16 @@ def get_filter_options(includes):
         data['metadata_issue_codes'] = _build_metadata_issue_code_filters()
 
     return data
+
+
+def get_filter_options(includes):
+    """按 include 列表返回全局筛选字典。"""
+    normalized_includes = normalize_filter_includes(includes)
+    return get_cached_filter_payload(
+        "global_filters",
+        normalized_includes,
+        lambda: _build_global_filter_options(normalized_includes),
+    )
 
 
 def _build_metadata_source_group_filters():
@@ -614,6 +595,10 @@ def _context_same_genre_count(anchor_genres, candidate):
     return len(set(anchor_genres) & candidate_genres)
 
 
+def _context_same_media_type(anchor_movie, candidate):
+    return anchor_movie.get_media_type() == candidate.get_media_type()
+
+
 def _normalize_movie_id_set(movie_ids):
     if not movie_ids:
         return set()
@@ -647,6 +632,7 @@ def _select_context_recommendation_items(anchor_movie, candidates, limit, anchor
 
     anchor_family_key = build_title_family_key(anchor_movie)
     anchor_genres = normalize_genres(anchor_movie.category or [])
+    anchor_media_type = anchor_movie.get_media_type()
     scored = _rank_recommendation_candidates(candidates, len(candidates), strategy='default')
     selected = []
     selected_ids = set()
@@ -689,6 +675,28 @@ def _select_context_recommendation_items(anchor_movie, candidates, limit, anchor
             "Same series",
             lambda _movie: anchor_family_key,
             180,
+        )
+
+    if anchor_media_type == "tv":
+        same_media_type = [
+            item
+            for item in scored
+            if item["movie"].id not in selected_ids and _context_same_media_type(anchor_movie, item["movie"])
+        ]
+        same_media_type.sort(
+            key=lambda item: (
+                _context_same_genre_count(anchor_genres, item["movie"]),
+                item["recommendation"]["score"],
+                item["movie"].rating or 0,
+            ),
+            reverse=True,
+        )
+        add_group(
+            same_media_type,
+            "same_media_type",
+            "Same content type",
+            lambda movie: movie.get_media_type(),
+            120,
         )
 
     same_genre = [

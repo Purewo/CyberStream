@@ -90,6 +90,12 @@ class ResourceGovernanceTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         data = response.get_json()["data"]
+        self.assertIn("revision", data)
+        self.assertIn("updated_at", data)
+        self.assertIn("rebuilding", data)
+        self.assertIn("stale", data)
+        self.assertFalse(data["rebuilding"])
+        self.assertFalse(data["stale"])
         self.assertTrue(data["dry_run"])
         issues = {item["code"]: item for item in data["issues"]}
         self.assertEqual(1, issues["duplicate_playback_resource"]["item_count"])

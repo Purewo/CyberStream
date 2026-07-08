@@ -55,6 +55,16 @@ class HomepageRoutesTests(unittest.TestCase):
         db.session.commit()
         return movie
 
+    def _set_homepage_config(self, hero_movie_id=None, sections=None):
+        setting = HomepageSetting.query.order_by(HomepageSetting.id.asc()).first()
+        if not setting:
+            setting = HomepageSetting()
+        setting.hero_movie_id = hero_movie_id
+        setting.sections = sections if sections is not None else []
+        db.session.add(setting)
+        db.session.commit()
+        return setting
+
     def test_default_homepage_creates_four_default_sections(self):
         response = self.client.get("/api/v1/homepage")
         payload = response.get_json()
@@ -80,53 +90,47 @@ class HomepageRoutesTests(unittest.TestCase):
         ))
         db.session.commit()
 
-        response = self.client.get("/api/v1/homepage/config")
+        response = self.client.get("/api/v1/homepage")
         sections = response.get_json()["data"]["sections"]
 
         self.assertEqual([15, 15, 15, 15], [section["limit"] for section in sections])
 
-    def test_config_patch_and_get_roundtrip(self):
+    def test_homepage_uses_seeded_global_config(self):
         hero = self._movie("Hero", ["科幻"], background_cover="https://img.example/hero.jpg")
+        section_movie = self._movie("Section Movie", ["科幻"])
+        self._set_homepage_config(hero.id, [{
+            "key": "sci_fi_custom",
+            "title": "科幻精选",
+            "genre": "Sci-Fi",
+            "mode": "custom",
+            "limit": 4,
+            "movie_ids": [section_movie.id],
+            "enabled": True,
+            "sort_order": 0,
+        }])
 
-        response = self.client.patch("/api/v1/homepage/config", json={
-            "hero_movie_id": hero.id,
-            "sections": [{
-                "key": "sci_fi_custom",
-                "title": "科幻精选",
-                "genre": "Sci-Fi",
-                "mode": "custom",
-                "limit": 4,
-                "movie_ids": [hero.id],
-                "enabled": True,
-                "sort_order": 0,
-            }],
-        })
-        self.assertEqual(200, response.status_code)
+        response = self.client.get("/api/v1/homepage")
+        data = response.get_json()["data"]
 
-        config_response = self.client.get("/api/v1/homepage/config")
-        config = config_response.get_json()["data"]
-
-        self.assertEqual(hero.id, config["hero_movie_id"])
-        self.assertEqual("科幻精选", config["sections"][0]["title"])
-        self.assertEqual("科幻", config["sections"][0]["genre"])
-        self.assertEqual([hero.id], config["sections"][0]["movie_ids"])
+        self.assertEqual(hero.id, data["hero"]["movie"]["id"])
+        self.assertEqual("科幻精选", data["sections"][0]["title"])
+        self.assertEqual("科幻", data["sections"][0]["genre"])
+        self.assertEqual([section_movie.id], [item["id"] for item in data["sections"][0]["items"]])
 
     def test_custom_section_does_not_auto_fill_when_under_limit(self):
         custom_movie = self._movie("Manual Sci-Fi", ["科幻"])
         self._movie("Auto Sci-Fi", ["科幻"], added_offset=10)
 
-        self.client.patch("/api/v1/homepage/config", json={
-            "sections": [{
-                "key": "sci_fi",
-                "title": "科幻",
-                "genre": "科幻",
-                "mode": "custom",
-                "limit": 4,
-                "movie_ids": [custom_movie.id],
-                "enabled": True,
-                "sort_order": 0,
-            }],
-        })
+        self._set_homepage_config(sections=[{
+            "key": "sci_fi",
+            "title": "科幻",
+            "genre": "科幻",
+            "mode": "custom",
+            "limit": 4,
+            "movie_ids": [custom_movie.id],
+            "enabled": True,
+            "sort_order": 0,
+        }])
 
         response = self.client.get("/api/v1/homepage")
         items = response.get_json()["data"]["sections"][0]["items"]
@@ -138,18 +142,15 @@ class HomepageRoutesTests(unittest.TestCase):
         hero = self._movie("Hero Sci-Fi", ["科幻"], added_offset=20, background_cover="https://img.example/hero.jpg")
         other = self._movie("Other Sci-Fi", ["科幻"], added_offset=10)
 
-        self.client.patch("/api/v1/homepage/config", json={
-            "hero_movie_id": hero.id,
-            "sections": [{
-                "key": "sci_fi",
-                "title": "科幻",
-                "genre": "科幻",
-                "mode": "latest",
-                "limit": 4,
-                "enabled": True,
-                "sort_order": 0,
-            }],
-        })
+        self._set_homepage_config(hero.id, [{
+            "key": "sci_fi",
+            "title": "科幻",
+            "genre": "科幻",
+            "mode": "latest",
+            "limit": 4,
+            "enabled": True,
+            "sort_order": 0,
+        }])
 
         response = self.client.get("/api/v1/homepage")
         data = response.get_json()["data"]
@@ -163,28 +164,26 @@ class HomepageRoutesTests(unittest.TestCase):
         animated_action = self._movie("Animated Action", ["动画", "动作"], added_offset=20)
         pure_action = self._movie("Pure Action", ["动作"], added_offset=10)
 
-        self.client.patch("/api/v1/homepage/config", json={
-            "sections": [
-                {
-                    "key": "action",
-                    "title": "动作",
-                    "genre": "动作",
-                    "mode": "latest",
-                    "limit": 4,
-                    "enabled": True,
-                    "sort_order": 0,
-                },
-                {
-                    "key": "animation",
-                    "title": "动画",
-                    "genre": "动画",
-                    "mode": "latest",
-                    "limit": 4,
-                    "enabled": True,
-                    "sort_order": 1,
-                },
-            ],
-        })
+        self._set_homepage_config(sections=[
+            {
+                "key": "action",
+                "title": "动作",
+                "genre": "动作",
+                "mode": "latest",
+                "limit": 4,
+                "enabled": True,
+                "sort_order": 0,
+            },
+            {
+                "key": "animation",
+                "title": "动画",
+                "genre": "动画",
+                "mode": "latest",
+                "limit": 4,
+                "enabled": True,
+                "sort_order": 1,
+            },
+        ])
 
         response = self.client.get("/api/v1/homepage")
         sections = response.get_json()["data"]["sections"]
@@ -201,17 +200,15 @@ class HomepageRoutesTests(unittest.TestCase):
         self._movie("Medium Review Action", ["动作"], added_offset=15, scraper_source="NFO_LOCAL")
         self._movie("High Review Action", ["动作"], added_offset=10, scraper_source="LOCAL_FALLBACK")
 
-        self.client.patch("/api/v1/homepage/config", json={
-            "sections": [{
-                "key": "action",
-                "title": "动作",
-                "genre": "动作",
-                "mode": "latest",
-                "limit": 3,
-                "enabled": True,
-                "sort_order": 0,
-            }],
-        })
+        self._set_homepage_config(sections=[{
+            "key": "action",
+            "title": "动作",
+            "genre": "动作",
+            "mode": "latest",
+            "limit": 3,
+            "enabled": True,
+            "sort_order": 0,
+        }])
 
         response = self.client.get("/api/v1/homepage")
         items = response.get_json()["data"]["sections"][0]["items"]
@@ -238,50 +235,21 @@ class HomepageRoutesTests(unittest.TestCase):
         ))
         db.session.commit()
 
-        self.client.patch("/api/v1/homepage/config", json={
-            "sections": [{
-                "key": "animation",
-                "title": "动画",
-                "genre": "动画",
-                "mode": "latest",
-                "limit": 15,
-                "enabled": True,
-                "sort_order": 0,
-            }],
-        })
-
+        self._set_homepage_config(sections=[{
+            "key": "animation",
+            "title": "动画",
+            "genre": "动画",
+            "mode": "latest",
+            "limit": 15,
+            "enabled": True,
+            "sort_order": 0,
+        }])
         response = self.client.get("/api/v1/homepage")
         item = response.get_json()["data"]["sections"][0]["items"][0]
 
         self.assertEqual(movie.id, item["id"])
         self.assertEqual([], item["season_cards"])
         self.assertEqual(2, item["season_count"])
-
-    def test_config_validation_rejects_invalid_values(self):
-        missing_movie_response = self.client.patch("/api/v1/homepage/config", json={
-            "hero_movie_id": "missing-movie",
-        })
-        self.assertEqual(400, missing_movie_response.status_code)
-
-        invalid_mode_response = self.client.patch("/api/v1/homepage/config", json={
-            "sections": [{
-                "key": "bad",
-                "genre": "动作",
-                "mode": "random",
-                "limit": 4,
-            }],
-        })
-        self.assertEqual(400, invalid_mode_response.status_code)
-
-        invalid_limit_response = self.client.patch("/api/v1/homepage/config", json={
-            "sections": [{
-                "key": "bad",
-                "genre": "动作",
-                "mode": "latest",
-                "limit": 0,
-            }],
-        })
-        self.assertEqual(400, invalid_limit_response.status_code)
 
 
 if __name__ == "__main__":

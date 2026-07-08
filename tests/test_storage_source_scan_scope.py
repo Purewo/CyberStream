@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import sys
 import unittest
 from unittest.mock import patch
@@ -12,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.metadata.types import EntityMetadataContext, MetadataResolution
-from backend.app.models import Library, LibrarySource, StorageSource
+from backend.app.models import Account, Library, LibrarySource, StorageSource
 from backend.app.services.scanner import CyberScanner
 
 
@@ -124,6 +125,38 @@ class StorageSourceScanScopeTests(unittest.TestCase):
         scanner_mock.scan.assert_called_once_with(
             self.source.id,
             root_path="剧集/美剧",
+            content_type=None,
+            scrape_enabled=True,
+            scraper_policy={},
+            lock_acquired=True,
+        )
+
+    def test_scan_source_route_falls_back_to_source_account_scope(self):
+        account = Account(name="Source Account", slug="source-account")
+        db.session.add(account)
+        db.session.flush()
+        self.source.account_id = account.id
+        db.session.commit()
+        scoped_accounts = []
+
+        @contextmanager
+        def capture_account_scope(account_id):
+            scoped_accounts.append(account_id)
+            yield
+
+        with patch("backend.app.api.storage_routes.get_current_account_id", return_value=None), \
+             patch("backend.app.api.storage_routes.account_scope", capture_account_scope), \
+             patch("backend.app.api.storage_routes.threading.Thread", _ImmediateThread), \
+             patch("backend.app.api.storage_routes.scanner_engine") as scanner_mock:
+            scanner_mock.try_start_scan.return_value = True
+
+            response = self.client.post(f"/api/v1/storage/sources/{self.source.id}/scan")
+
+        self.assertEqual(202, response.status_code)
+        self.assertEqual([account.id], scoped_accounts)
+        scanner_mock.scan.assert_called_once_with(
+            self.source.id,
+            root_path="",
             content_type=None,
             scrape_enabled=True,
             scraper_policy={},

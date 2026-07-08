@@ -49,6 +49,7 @@ class FakeManagedSession:
         if not url.endswith("/api/admin/storage/get"):
             raise AssertionError(url)
         addition = {
+            "phone_number": "+861380001234",
             "verification_id": "sms-request",
             "access_token": "access" if self.updated else "",
             "refresh_token": "refresh" if self.updated else "",
@@ -89,6 +90,7 @@ class ManagedAListClientTests(unittest.TestCase):
 
         self.assertEqual(77, started["storage_id"])
         self.assertEqual("+********1234", started["phone_number_masked"])
+        self.assertEqual("+861380001234", client.get_guangyapan_phone_number(started["storage_id"]))
         self.assertEqual("/cyberstream/guangyapan/test", verified["mount_path"])
         self.assertTrue(session.updated)
 

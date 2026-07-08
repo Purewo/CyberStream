@@ -175,6 +175,8 @@ def build_history_item(history_record):
     playback_payload = _history_playback_payload(history_record, resource)
 
     movie_payload = resource.movie.to_simple_dict(include_season_cards=False)
+    movie_payload["views"] = history_record.view_count
+    movie_payload["play_count"] = history_record.view_count
     movie_payload["series_poster_url"] = playback_payload.get("series_poster_url")
     movie_payload["poster_source"] = playback_payload.get("poster_source")
     if playback_payload.get("poster_url"):

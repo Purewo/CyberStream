@@ -18,6 +18,7 @@ class FakeManagedAListClient:
     created_requests = []
     verified_requests = []
     deleted_storage_ids = []
+    bound_phone_numbers = {76: "+861380001234", 77: "+861380001234"}
 
     def __init__(self):
         pass
@@ -27,6 +28,10 @@ class FakeManagedAListClient:
         cls.created_requests = []
         cls.verified_requests = []
         cls.deleted_storage_ids = []
+        cls.bound_phone_numbers = {76: "+861380001234", 77: "+861380001234"}
+
+    def get_guangyapan_phone_number(self, storage_id):
+        return self.bound_phone_numbers[int(storage_id)]
 
     def create_guangyapan_storage(self, phone_number, root_path="", captcha_token=""):
         self.created_requests.append({
@@ -101,6 +106,7 @@ class ManagedGuangYaPanRouteTests(unittest.TestCase):
         self.assertFalse(source_data["actions"]["can_preview"])
         self.assertFalse(source_data["actions"]["can_scan"])
         self.assertFalse(source_data["actions"]["can_stream"])
+        self.assertFalse(source_data["actions"]["can_reauthorize"])
 
         source = StorageSource.query.first()
         self.assertEqual("guangyapan", source.type)
@@ -133,7 +139,6 @@ class ManagedGuangYaPanRouteTests(unittest.TestCase):
                 "/api/v1/storage/managed/guangyapan/sms/restart",
                 json={
                     "source_id": source_id,
-                    "phone_number": "+861380001234",
                     "captcha_token": "captcha",
                 },
             )
@@ -143,6 +148,7 @@ class ManagedGuangYaPanRouteTests(unittest.TestCase):
         self.assertTrue(payload["data"]["verification_restarted"])
         self.assertTrue(payload["data"]["verification_sent"])
         self.assertEqual("sms_pending", payload["data"]["auth_state"])
+        self.assertEqual("*******1234", payload["data"]["phone_number_masked"])
         self.assertEqual(source_id, payload["data"]["source"]["id"])
         self.assertEqual("sms_pending", payload["data"]["source"]["config"]["auth_state"])
         self.assertFalse(payload["data"]["source"]["actions"]["can_scan"])
@@ -187,6 +193,7 @@ class ManagedGuangYaPanRouteTests(unittest.TestCase):
         self.assertTrue(payload["data"]["source"]["actions"]["can_preview"])
         self.assertTrue(payload["data"]["source"]["actions"]["can_scan"])
         self.assertTrue(payload["data"]["source"]["actions"]["can_stream"])
+        self.assertFalse(payload["data"]["source"]["actions"]["can_reauthorize"])
         refreshed = db.session.get(StorageSource, source.id)
         self.assertEqual("ready", refreshed.config["auth_state"])
         self.assertEqual(
@@ -231,18 +238,21 @@ class ManagedGuangYaPanRouteTests(unittest.TestCase):
         db.session.add(source)
         db.session.commit()
 
-        with patch(
-            "backend.app.providers.managed_alist.AListProvider.check_connection",
-            return_value={
-                "status": "online",
-                "reason": "ok",
-                "message": "alist reachable",
-                "base_url": "http://127.0.0.1:5244",
-                "root": "/cyberstream/guangyapan/fake",
-                "platform": "alist",
-                "site_title": "AList",
-                "version": "dev",
-            },
+        with (
+            patch("backend.app.providers.managed_alist.AListProvider.list_items", return_value=[]),
+            patch(
+                "backend.app.providers.managed_alist.AListProvider.check_connection",
+                return_value={
+                    "status": "online",
+                    "reason": "ok",
+                    "message": "alist reachable",
+                    "base_url": "http://127.0.0.1:5244",
+                    "root": "/cyberstream/guangyapan/fake",
+                    "platform": "alist",
+                    "site_title": "AList",
+                    "version": "dev",
+                },
+            ),
         ):
             response = self.client.get(f"/api/v1/storage/sources/{source.id}/health")
 
@@ -252,6 +262,133 @@ class ManagedGuangYaPanRouteTests(unittest.TestCase):
         self.assertNotIn("base_url", health)
         self.assertNotIn("root", health)
         self.assertNotIn("platform", health)
+
+    def test_health_reports_persisted_auth_expired_with_reauthorize_action(self):
+        source = StorageSource(
+            name="光鸭测试",
+            type="guangyapan",
+            config={
+                "alist_storage_id": 77,
+                "mount_path": "/cyberstream/guangyapan/fake",
+                "auth_state": "auth_expired",
+                "phone_number_masked": "*******1234",
+                "cloud_root_path": "/",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        response = self.client.get(f"/api/v1/storage/sources/{source.id}/health")
+        data = response.get_json()["data"]
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("auth_expired", data["auth_state"])
+        self.assertTrue(data["requires_reauthorization"])
+        self.assertEqual("offline", data["health"]["status"])
+        self.assertEqual("auth_expired", data["health"]["reason"])
+        self.assertEqual("reauthorize", data["health"]["action"])
+        self.assertFalse(data["actions"]["can_preview"])
+        self.assertFalse(data["actions"]["can_scan"])
+        self.assertFalse(data["actions"]["can_refresh"])
+        self.assertFalse(data["actions"]["can_stream"])
+        self.assertTrue(data["actions"]["can_reauthorize"])
+        self.assertEqual(
+            "/api/v1/storage/managed/guangyapan/sms/restart",
+            data["actions"]["reauthorize"]["endpoint"],
+        )
+        self.assertEqual(["source_id"], data["actions"]["reauthorize"]["required_fields"])
+        self.assertEqual({"source_id": source.id}, data["actions"]["reauthorize"]["body"])
+
+    def test_runtime_auth_expiry_is_reported_and_persisted(self):
+        source = StorageSource(
+            name="光鸭测试",
+            type="guangyapan",
+            config={
+                "alist_storage_id": 77,
+                "mount_path": "/cyberstream/guangyapan/fake",
+                "auth_state": "ready",
+                "phone_number_masked": "*******1234",
+                "cloud_root_path": "/",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        with patch(
+            "backend.app.providers.managed_alist.AListProvider.list_items",
+            side_effect=ValueError("token expired"),
+        ):
+            response = self.client.get(f"/api/v1/storage/sources/{source.id}/health")
+
+        data = response.get_json()["data"]
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("auth_expired", data["auth_state"])
+        self.assertTrue(data["requires_reauthorization"])
+        self.assertEqual("auth_expired", data["health"]["reason"])
+        self.assertEqual(
+            "auth_expired",
+            db.session.get(StorageSource, source.id).config["auth_state"],
+        )
+
+    def test_browse_returns_auth_expired_error_and_persists_state(self):
+        source = StorageSource(
+            name="光鸭测试",
+            type="guangyapan",
+            config={
+                "alist_storage_id": 77,
+                "mount_path": "/cyberstream/guangyapan/fake",
+                "auth_state": "ready",
+                "phone_number_masked": "*******1234",
+                "cloud_root_path": "/",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        with patch(
+            "backend.app.providers.managed_alist.AListProvider.list_items",
+            side_effect=ValueError("登录已过期，请重新登录"),
+        ):
+            response = self.client.get(f"/api/v1/storage/sources/{source.id}/browse")
+
+        payload = response.get_json()
+        self.assertEqual(400, response.status_code)
+        self.assertEqual(40062, payload["code"])
+        self.assertIn("reauthorize", payload["msg"])
+        self.assertEqual(
+            "auth_expired",
+            db.session.get(StorageSource, source.id).config["auth_state"],
+        )
+
+    def test_source_list_can_include_runtime_health(self):
+        source = StorageSource(
+            name="光鸭测试",
+            type="guangyapan",
+            config={
+                "alist_storage_id": 77,
+                "mount_path": "/cyberstream/guangyapan/fake",
+                "auth_state": "ready",
+                "phone_number_masked": "*******1234",
+                "cloud_root_path": "/",
+            },
+        )
+        db.session.add(source)
+        db.session.commit()
+
+        with patch(
+            "backend.app.providers.managed_alist.AListProvider.list_items",
+            side_effect=ValueError("invalid token"),
+        ):
+            response = self.client.get("/api/v1/storage/sources?include_health=true")
+
+        data = response.get_json()["data"][0]
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("auth_expired", data["health"]["reason"])
+        self.assertTrue(data["requires_reauthorization"])
+
+        invalid = self.client.get("/api/v1/storage/sources?include_health=maybe")
+        self.assertEqual(400, invalid.status_code)
+        self.assertEqual(40041, invalid.get_json()["code"])
 
 
 if __name__ == "__main__":

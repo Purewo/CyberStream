@@ -15,6 +15,7 @@ from backend.app import create_app
 from backend.app.extensions import db
 from backend.app.api.player_routes import _guess_video_mime_type
 from backend.app.models import MediaResource, Movie, StorageSource
+from backend.app.providers.base import StorageProviderError
 from backend.app.services.subtitles import clear_subtitle_discovery_cache, discover_resource_subtitles
 
 
@@ -223,6 +224,23 @@ class ExternalPlaybackRouteTests(unittest.TestCase):
         self.assertEqual(502, response.status_code)
         self.assertEqual(b"Unsafe stream redirect URL", response.data)
         self.assertNotIn("Location", response.headers)
+
+    def test_stream_returns_storage_provider_error_code(self):
+        resource = self._resource()
+
+        with patch(
+            "backend.app.api.player_routes.provider_factory.get_provider",
+            side_effect=StorageProviderError(
+                "GuangYaPan source has not completed SMS verification",
+                code=40061,
+            ),
+        ):
+            response = self.client.get(f"/api/v1/resources/{resource.id}/stream")
+
+        self.assertEqual(400, response.status_code)
+        payload = response.get_json()
+        self.assertEqual(40061, payload["code"])
+        self.assertEqual("GuangYaPan source has not completed SMS verification", payload["msg"])
 
     def test_subtitle_redirect_blocks_private_provider_url(self):
         resource = self._resource()

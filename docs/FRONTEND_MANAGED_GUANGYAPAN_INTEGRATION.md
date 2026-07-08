@@ -39,10 +39,11 @@ GET /api/v1/storage/capabilities
 
 ## 状态机
 
-托管光鸭来源只有两个前端需要关心的状态：
+托管光鸭来源有三个前端需要关心的状态：
 
 - `sms_pending`：已发送验证码，等待用户提交短信验证码。不要展示浏览、扫描、绑定资源库、播放入口。
 - `ready`：短信验证完成，可以按普通存储源浏览、绑定资源库、扫描和播放。
+- `auth_expired`：已登录过，但上游光鸭凭证失效。不要展示浏览、扫描、刷新、播放入口，应提示用户对原挂载点重新授权。
 
 以 `source.config.auth_state` 和 `source.actions` 为准。`sms_pending` 时后端会返回：
 
@@ -61,6 +62,59 @@ GET /api/v1/storage/capabilities
 ```
 
 `ready` 后这些 action 会按能力恢复为可用。
+
+如果后端在运行时检测到光鸭登录态过期，会返回：
+
+```json
+{
+  "auth_state": "auth_expired",
+  "requires_reauthorization": true,
+  "health": {
+    "status": "offline",
+    "reason": "auth_expired",
+    "message": "GuangYaPan authorization expired; please reauthorize",
+    "action": "reauthorize",
+    "reauthorize": {
+      "method": "POST",
+      "endpoint": "/api/v1/storage/managed/guangyapan/sms/restart"
+    }
+  },
+  "actions": {
+    "can_preview": false,
+    "can_scan": false,
+    "can_refresh": false,
+    "can_stream": false,
+    "can_reauthorize": true,
+    "reauthorize": {
+      "method": "POST",
+      "endpoint": "/api/v1/storage/managed/guangyapan/sms/restart",
+      "required_fields": ["source_id"],
+      "body": {
+        "source_id": 3
+      }
+    }
+  }
+}
+```
+
+前端可以通过以下任一信号判断需要提示重新授权：
+
+- `source.requires_reauthorization === true`
+- `source.auth_state === "auth_expired"` 或 `source.config.auth_state === "auth_expired"`
+- `source.health.reason === "auth_expired"`
+- 浏览/刷新等操作返回 `code=40062`
+
+列表页如需一次性拿到实时过期状态，可以调用：
+
+```http
+GET /api/v1/storage/sources?include_health=true
+```
+
+单个挂载点详情也支持：
+
+```http
+GET /api/v1/storage/sources/{id}?include_health=true
+```
 
 ## 发送短信验证码
 
@@ -128,16 +182,15 @@ Content-Type: application/json
 
 ```json
 {
-  "source_id": 3,
-  "phone_number": "+861380001234"
+  "source_id": 3
 }
 ```
 
 - `source_id` / `id` 必填，必须是已有 `guangyapan` 来源。
-- `phone_number` 必填。后端只保存脱敏手机号，重新登录时必须重新提交明文手机号。
+- 不要提交 `phone_number`。后端会读取该 source 原绑定的光鸭手机号发送验证码，避免误授权到其他账号。
 - `root_path` / `cloud_root_path` 可选；不传则沿用当前 `source.config.cloud_root_path`。
 
-成功后仍返回同一个 `source.id`，`auth_state=sms_pending`，前端继续调用 `sms/verify` 提交验证码。资源索引和媒体库绑定不会被重建。
+成功后仍返回同一个 `source.id`，`auth_state=sms_pending`，并返回 `phone_number_masked` 供展示；前端继续调用 `sms/verify` 提交验证码。资源索引和媒体库绑定不会被重建。
 
 ## 校验短信验证码
 
@@ -242,10 +295,11 @@ DELETE /api/v1/storage/sources/{id}
 
 | code | HTTP | 场景 | 前端建议 |
 | --- | --- | --- | --- |
-| `40001` | 400 | 缺少 `phone_number`、`source_id` 或 `verify_code` | 表单提示必填 |
+| `40001` | 400 | 首次授权缺少 `phone_number`，或缺少 `source_id` / `verify_code` | 表单提示必填 |
 | `40036` | 400 | `source_id` 不是整数 | 前端参数 bug，修正调用 |
 | `40060` | 400 | 后端未启用托管 AList 或缺少 AList 管理凭据 | 提示服务端未配置，交给后端处理 |
 | `40061` | 400 | 来源不是托管光鸭、状态不正确或内部挂载缺失 | 重新拉取来源列表，必要时删除后重试 |
+| `40062` | 400 | 光鸭登录态已过期 | 对原 `source.id` 调用 `sms/restart`，提示用户重新短信授权 |
 | `40402` | 404 | `source_id` 不存在 | 重新拉取来源列表 |
 | `50260` | 502 | localhost AList 或光鸭账号接口失败，包括短信发送/验证码校验被上游拒绝 | 显示后端返回的 `msg`，允许重试 |
 | `50016` | 500 | 发送短信流程非预期异常 | 提示稍后重试并上报 |
@@ -256,7 +310,7 @@ DELETE /api/v1/storage/sources/{id}
 ```json
 {
   "code": 40001,
-  "msg": "Missing required field: phone_number",
+  "msg": "Missing required field: source_id",
   "trace_id": "1779888583",
   "data": null
 }
@@ -265,7 +319,7 @@ DELETE /api/v1/storage/sources/{id}
 ## 前端接入清单
 
 - 光鸭首次挂载走 `storage/managed/guangyapan/sms/start`，已有来源重新登录走 `sms/restart`，验证码提交走 `sms/verify`；不要走普通 AList 表单。
-- UI 只要求手机号、短信验证码；`captcha_token` 只有后端确认需要时再加。
+- 首次授权 UI 要求手机号；重新授权只传原 `source_id`，验证码页展示后端返回的 `phone_number_masked`。
 - 只保存 `source.id`、`source.config.auth_state`、`source.actions` 和脱敏手机号展示字段。
 - `auth_state !== "ready"` 时禁用浏览、扫描、绑定和播放。
 - 播放逻辑保持现有 CyberStream 资源播放入口，不直接访问 AList。

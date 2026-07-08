@@ -180,13 +180,14 @@ def create_account_for_user(
     if not default_library:
         default_library = _create_default_library(account)
 
-    homepage = (
-        HomepageSetting.query.execution_options(include_all_accounts=True)
-        .filter_by(account_id=account.id)
-        .first()
-    )
-    if not homepage:
-        db.session.add(HomepageSetting(account_id=account.id, sections=_default_homepage_sections()))
+    if not current_app.config.get("HOSTED_MANAGED_MODE"):
+        homepage = (
+            HomepageSetting.query.execution_options(include_all_accounts=True)
+            .filter_by(account_id=account.id)
+            .first()
+        )
+        if not homepage:
+            db.session.add(HomepageSetting(account_id=account.id, sections=_default_homepage_sections()))
 
     account.settings = {
         **(account.settings or {}),

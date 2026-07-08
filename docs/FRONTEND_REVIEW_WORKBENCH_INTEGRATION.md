@@ -60,6 +60,15 @@ GET /api/v1/metadata/work-items
 GET /api/v1/metadata/work-items?metadata_issue_code=poster_missing
 ```
 
+代托管后端 1.22.0 起，工作台默认读取后端物化快照，响应会额外带：
+
+- `revision`：当前快照版本。
+- `updated_at`：快照更新时间。
+- `rebuilding`：后台正在刷新快照时为 `true`。
+- `stale`：已有旧快照但数据源已变更、等待刷新时为 `true`。
+
+前端切 tab 时不要主动触发全量重算；直接分页读取这些接口。`rebuilding=true` 或 `stale=true` 时继续展示旧结果，并给轻提示即可。
+
 前端不要根据 `scraper_source` 自己判断问题标签，应该使用：
 
 - `metadata_issues[].code`
@@ -109,6 +118,8 @@ POST /api/v1/resources/governance/restore/plan
 POST /api/v1/resources/governance/restore/jobs
 ```
 
+默认 `live_check=false` 的汇总和列表读资源治理快照；`live_check=true` 仍然是实时回源检查，可能慢，适合放在显式按钮或后台 job 中。
+
 资源治理只处理文件和索引问题，例如：
 
 - `detached_source_resource`
@@ -130,6 +141,8 @@ GET /api/v1/other-videos
 POST /api/v1/movies/manual
 POST /api/v1/movies/{movie_id}/resources/attach
 ```
+
+`GET /api/v1/other-videos` 也读取工作台快照并支持 `keyword/source_id/needs_attention/include_manual` 过滤；返回同样带 `revision/updated_at/rebuilding/stale`。
 
 适合自建课程、录屏、爬虫视频和其他不适合自动刮削的内容。
 

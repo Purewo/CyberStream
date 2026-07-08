@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from tests.path_cleaner_test_utils import PROJECT_ROOT
@@ -132,6 +132,48 @@ class HistoryRoutesTests(unittest.TestCase):
         detail = detail_response.get_json()["data"]
         self.assertEqual(resource.id, detail["user_data"]["resource_id"])
         self.assertNotIn("is_played", detail["user_data"])
+
+    def test_report_progress_only_increments_view_count_for_new_playback_session(self):
+        _, resource = self._movie_with_resource()
+
+        first_response = self.client.post("/api/v1/user/history", json={
+            "resource_id": resource.id,
+            "position_sec": 12,
+            "total_duration": 600,
+            "device_id": "browser",
+            "device_name": "Chrome",
+        })
+        self.assertEqual(200, first_response.status_code)
+
+        history = History.query.filter_by(resource_id=resource.id).first()
+        self.assertEqual(1, history.view_count)
+
+        history.last_watched = datetime.utcnow() - timedelta(minutes=31)
+        db.session.commit()
+
+        second_response = self.client.post("/api/v1/user/history", json={
+            "resource_id": resource.id,
+            "position_sec": 8,
+            "total_duration": 600,
+            "device_id": "browser",
+            "device_name": "Chrome",
+        })
+        self.assertEqual(200, second_response.status_code)
+
+        history = History.query.filter_by(resource_id=resource.id).first()
+        self.assertEqual(2, history.view_count)
+
+        third_response = self.client.post("/api/v1/user/history", json={
+            "resource_id": resource.id,
+            "position_sec": 120,
+            "total_duration": 600,
+            "device_id": "browser",
+            "device_name": "Chrome",
+        })
+        self.assertEqual(200, third_response.status_code)
+
+        history = History.query.filter_by(resource_id=resource.id).first()
+        self.assertEqual(2, history.view_count)
 
     def test_resource_groups_return_user_data_without_is_played(self):
         movie, resource = self._movie_with_resource(season=1, episode=1)

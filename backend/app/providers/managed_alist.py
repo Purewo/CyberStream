@@ -14,9 +14,67 @@ def _config_value(key, default=None):
 class GuangYaPanProvider(AListProvider):
     """CyberStream-managed GuangYaPan source backed by a localhost AList mount."""
 
+    AUTH_EXPIRED_CODE = 40062
+    AUTH_EXPIRED_REASON = "auth_expired"
+    AUTH_EXPIRED_MESSAGE = "GuangYaPan authorization expired; please reauthorize"
+    REAUTHORIZE_ENDPOINT = "/api/v1/storage/managed/guangyapan/sms/restart"
+
+    @classmethod
+    def _is_auth_expired_error(cls, error):
+        text = str(error or "").lower()
+        markers = (
+            "api error 401",
+            "http error 401",
+            "unauthorized",
+            "authorization",
+            "login expired",
+            "auth expired",
+            "token expired",
+            "token is invalid",
+            "invalid token",
+            "refresh token",
+            "access token",
+            "登录过期",
+            "登陆过期",
+            "登录失效",
+            "登陆失效",
+            "凭证失效",
+            "授权过期",
+            "授权失效",
+            "认证失败",
+            "重新登录",
+            "重新登陆",
+        )
+        return any(marker in text for marker in markers)
+
+    @classmethod
+    def _auth_expired_health(cls, error=None):
+        data = {
+            "status": "offline",
+            "reason": cls.AUTH_EXPIRED_REASON,
+            "message": cls.AUTH_EXPIRED_MESSAGE,
+            "action": "reauthorize",
+            "reauthorize": {
+                "method": "POST",
+                "endpoint": cls.REAUTHORIZE_ENDPOINT,
+            },
+            "path": "/",
+            "path_exists": False,
+        }
+        if error:
+            data["error"] = str(error)
+        return data
+
+    @classmethod
+    def _raise_auth_expired_if_needed(cls, error):
+        if cls._is_auth_expired_error(error):
+            raise StorageProviderError(cls.AUTH_EXPIRED_MESSAGE, code=cls.AUTH_EXPIRED_CODE) from error
+
     def __init__(self, config):
         source_config = dict(config or {})
         auth_state = str(source_config.get("auth_state") or "").strip().lower()
+        if auth_state == "auth_expired":
+            raise StorageProviderError(self.AUTH_EXPIRED_MESSAGE, code=self.AUTH_EXPIRED_CODE)
         if auth_state and auth_state != "ready":
             raise StorageProviderError("GuangYaPan source has not completed SMS verification", code=40061)
         if not bool(_config_value("MANAGED_ALIST_ENABLED", False)):
@@ -48,10 +106,37 @@ class GuangYaPanProvider(AListProvider):
         }
         super().__init__(runtime_config, platform="alist")
 
+    def list_items(self, relative_path):
+        try:
+            return super().list_items(relative_path)
+        except Exception as exc:
+            self._raise_auth_expired_if_needed(exc)
+            raise
+
+    def refresh_directory(self, relative_path):
+        try:
+            return super().refresh_directory(relative_path)
+        except Exception as exc:
+            self._raise_auth_expired_if_needed(exc)
+            raise
+
     def check_connection(self):
+        try:
+            self.list_items("")
+        except StorageProviderError as exc:
+            if exc.code == self.AUTH_EXPIRED_CODE:
+                return self._auth_expired_health(exc.message)
+        except Exception as exc:
+            if self._is_auth_expired_error(exc):
+                return self._auth_expired_health(exc)
+
         result = super().check_connection()
         for internal_field in ("base_url", "root", "platform", "site_title", "version"):
             result.pop(internal_field, None)
+        if result.get("status") != "online":
+            error = result.get("error") or result.get("message")
+            if self._is_auth_expired_error(error):
+                return self._auth_expired_health(error)
         if result.get("status") == "online":
             result["message"] = "GuangYaPan reachable"
         return result
