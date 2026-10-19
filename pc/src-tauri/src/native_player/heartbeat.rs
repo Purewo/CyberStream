@@ -3,7 +3,7 @@
 // PC 原生窗口期间 webview 不可见、不再走 userService.reportHistory，
 // 由这里在独立线程上每 10s POST /api/v1/user/history。契约和前端
 // `frontend/src/api/user.ts:79-94` 一致：
-//   - 不带 Authorization、不带 Cookie；后端用 device_id 模式识别用户
+//   - 不带 Cookie；登录模式用短期播放票据，免登录模式用 device_id
 //   - body: { resource_id, position_sec, total_duration, device_id,
 //           device_name, session_id }
 //
@@ -60,6 +60,7 @@ pub fn spawn(
     device_name: String,
     session_id: String,
     initial: ProgressSnapshot,
+    ticket: Option<String>,
 ) -> HeartbeatHandle {
     let stop = Arc::new(AtomicBool::new(false));
     let snap = Arc::new(Mutex::new(initial));
@@ -78,7 +79,13 @@ pub fn spawn(
                 }
             };
 
-            let url = format!("{}/api/v1/user/history", api_base.trim_end_matches('/'));
+            // 代托管模式：心跳线程拿不到 WebView cookie，靠 ?ticket=... 过认证
+            // （ticket 是 user 级，validate 后后端按票主 user_id 记历史）。
+            // 单 token / 自部署模式 ticket 为 None，URL 不拼，后端走 device_id。
+            let mut url = format!("{}/api/v1/user/history", api_base.trim_end_matches('/'));
+            if let Some(t) = ticket.as_deref().filter(|t| !t.is_empty()) {
+                url = format!("{url}?ticket={}", urlencode(t));
+            }
 
             // 主循环：每 10s 一次。退出标志检查间隔细一点（500ms），让
             // 用户关窗口后心跳能尽快结束。
@@ -110,6 +117,30 @@ pub fn spawn(
     }
 }
 
+impl Drop for HeartbeatHandle {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.join.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// 最小 URL 百分号编码——ticket 是后端生成的 opaque 串（base64url / hex），
+/// 只对非 unreserved 字符转义。与 online_subs 同款，避免拉 url crate。
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 fn post_once(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -137,15 +168,11 @@ fn post_once(
     match client.post(url).json(&body).send() {
         Ok(resp) => {
             if !resp.status().is_success() {
-                log::warn!(
-                    "heartbeat POST {} returned {}",
-                    url,
-                    resp.status()
-                );
+                log::warn!("heartbeat POST returned {}", resp.status());
             }
         }
         Err(e) => {
-            log::warn!("heartbeat POST failed: {e}");
+            log::warn!("heartbeat POST failed: {}", e.without_url());
         }
     }
 }

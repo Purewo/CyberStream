@@ -86,6 +86,19 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
             .and_then(|s| s.parse::<i32>().ok())
             .map(|n| ((n - 1).max(0) as usize) / 30)
             .unwrap_or(0);
+        // 播放票据：代托管模式下 HUD 内的在线字幕 worker 拼到请求 URL 上过认证。
+        state.playback_ticket = opts.playback_ticket.clone();
+
+        // 设置面板：三个非零默认（derive(Default) 给的 0/空是错的，会让首帧面板
+        // 显示 0 且不下发正确默认）。其余 brightness/contrast/saturation/gamma/
+        // sub_delay/audio_delay 默认 0/0.0 即对。
+        state.sub_font_size = 55.0;
+        state.sub_scale = 1.0;
+        state.sub_border_size = 3.0;
+        state.sub_back_color = "#00000000".into();
+        state.sub_border_style = "outline-and-shadow".into();
+        state.sub_pos = 100;
+        state.sub_color = "#FFFFFF".to_string();
 
         // 启动心跳线程：webview 给了 device_id + api_base 才发，否则跳过
         // （比如 Rust 直接 cargo run 跑 PoC 时 PlayOptions 是空的）。
@@ -108,6 +121,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                 "CyberStream PC (Native Player)".into(),
                 session,
                 initial,
+                opts.playback_ticket.clone(),
             ))
         } else {
             None
@@ -116,7 +130,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
         // Kick off playback.
         player.command(&["loadfile", &opts.url])?;
 
-        let mut last_event_drain = Instant::now();
+        let mut last_event_drain = Instant::now().checked_sub(Duration::from_millis(20)).unwrap_or_else(Instant::now);
         let mut last_mouse_pos = (0.0_f32, 0.0_f32);
         // 当前修饰键状态。每帧从 GetAsyncKeyState 拉，避免错过任何 keyup
         // / 焦点切换导致的"卡住按下态"。同时拷贝给 egui，用来识别 Ctrl+A/
@@ -341,7 +355,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                 } else {
                     false
                 };
-                if !in_panel && !in_bottom {
+                if !in_panel && !in_bottom && !hud.popup_open() && !state.online_search_open {
                     win.toggle_fullscreen();
                     state.fullscreen = win.is_fullscreen();
                 }
@@ -454,6 +468,12 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                 }
             }
             for action in actions {
+                if let Some((name, value)) = action.setting_property() {
+                    if let Err(error) = player.set_property_str(name, &value) {
+                        state.last_error = Some(format!("设置未生效：{error}"));
+                    }
+                    continue;
+                }
                 match &action {
                     crate::native_player::controller::Action::ToggleFullscreen => {
                         win.toggle_fullscreen();
@@ -480,6 +500,18 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                         }
                         // 新资源重新走「自动选字幕」流程；老资源决定不带过去。
                         state.auto_subtitle_done = false;
+                        state.preview_subtitles.clear();
+                        state.pending_delete_sid = None;
+                        // Old workers retain the previous Arc; they cannot publish
+                        // a previous episode's search results into the new panel.
+                        state.online_search_state = Default::default();
+                        state.online_search_open = false;
+                        state.ab_loop_a = None;
+                        state.ab_loop_b = None;
+                        let _ = player.set_property_str("ab-loop-a", "no");
+                        let _ = player.set_property_str("ab-loop-b", "no");
+                        // 用户主动换源 = 重试播放，清掉上一次的加载失败横幅。
+                        state.last_error = None;
                         action.apply(player.handle());
                     }
                     crate::native_player::controller::Action::SwitchQuality { url } => {
@@ -487,6 +519,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                         // 记下切档前的 time_pos 作为 start，loadfile 后 mpv 从该位置
                         // 续播。current_resource_id 不变（还是同一资源），进度快照
                         // 不清零——避免心跳把进度倒回 0。
+                        state.last_error = None;
                         let pos = state.time_pos.max(0.0);
                         // 切回原文件（url == 当前资源原始 url）时，current_quality_url
                         // 归 None，让清晰度菜单正确高亮「原画」行；否则记成对应转码档。
@@ -538,6 +571,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                                     opts.api_base.clone(),
                                     rid,
                                     state.online_search_query.clone(),
+                                    state.playback_ticket.clone(),
                                     std::sync::Arc::clone(&state.online_search_state),
                                 );
                             }
@@ -554,6 +588,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                                     opts.api_base.clone(),
                                     rid,
                                     q.clone(),
+                                    state.playback_ticket.clone(),
                                     std::sync::Arc::clone(&state.online_search_state),
                                 );
                             }
@@ -570,6 +605,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                                     rid,
                                     candidate_id.clone(),
                                     label.clone(),
+                                    state.playback_ticket.clone(),
                                     std::sync::Arc::clone(&state.online_search_state),
                                     preview_tx.clone(),
                                 );
@@ -587,6 +623,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                                     rid,
                                     candidate_id.clone(),
                                     label.clone(),
+                                    state.playback_ticket.clone(),
                                     std::sync::Arc::clone(&state.online_search_state),
                                     bind_tx.clone(),
                                 );
@@ -612,6 +649,7 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                                     opts.api_base.clone(),
                                     rid,
                                     sid.clone(),
+                                    state.playback_ticket.clone(),
                                     std::sync::Arc::clone(&state.online_search_state),
                                     delete_tx.clone(),
                                 );
@@ -631,6 +669,44 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                             ),
                         }
                     }
+                    // ─────────── 设置面板 · A-B 复读：读 state.time_pos，直接设属性 ───────────
+                    crate::native_player::controller::Action::SetAbLoopA => {
+                        let pos = state.time_pos.max(0.0);
+                        if let Err(error) = player.set_property_str("ab-loop-a", &format!("{pos:.3}")) {
+                            state.last_error = Some(format!("设置未生效：{error}"));
+                        }
+                    }
+                    crate::native_player::controller::Action::SetAbLoopB => {
+                        let pos = state.time_pos.max(0.0);
+                        if let Err(error) = player.set_property_str("ab-loop-b", &format!("{pos:.3}")) {
+                            state.last_error = Some(format!("设置未生效：{error}"));
+                        }
+                    }
+                    crate::native_player::controller::Action::ClearAbLoop => {
+                        state.ab_loop_a = None;
+                        state.ab_loop_b = None;
+                        let _ = player.set_property_str("ab-loop-a", "no");
+                        let _ = player.set_property_str("ab-loop-b", "no");
+                    }
+                    // ─────────── 设置面板 · 截图：异步派发（磁盘编码 IO，避免卡渲染）───────────
+                    crate::native_player::controller::Action::Screenshot => {
+                        // "subtitles" 模式：含字幕、不含 OSD/HUD。
+                        dispatch_mpv_command_async(
+                            player.handle(),
+                            vec!["screenshot".into(), "subtitles".into()],
+                        );
+                    }
+                    // ─────────── 设置面板 · 睡眠定时器：只写 state，到点触发在每帧 tick ───────────
+                    crate::native_player::controller::Action::SetSleepTimer { minutes, kind } => {
+                        state.sleep_deadline = Some(
+                            std::time::Instant::now()
+                                + std::time::Duration::from_secs(minutes * 60),
+                        );
+                        state.sleep_kind = *kind;
+                    }
+                    crate::native_player::controller::Action::CancelSleepTimer => {
+                        state.sleep_deadline = None;
+                    }
                     _ => action.apply(player.handle()),
                 }
             }
@@ -639,6 +715,9 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
             // 主循环消化。预览：mpv sub-add <tmp_path> select；同时把这条 PreviewSub
             // 记进 state，HUD 字幕菜单第三段「在线 · 临时预览」据此渲染。
             while let Ok(p) = preview_rx.try_recv() {
+                if state.current_resource_id.as_deref() != Some(p.resource_id.as_str()) {
+                    continue;
+                }
                 // 临时文件路径是本地，握手快，但仍统一走异步派发以避免大字
                 // 幕文件加载阻塞主循环。
                 dispatch_mpv_command_async(
@@ -676,10 +755,9 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
             // 如果之前有同候选的临时预览条目，把它从 preview_subtitles 剔除——
             // 已绑定的字幕走「已绑定」段渲染，不再保留临时预览。
             while let Ok(b) = bind_rx.try_recv() {
-                if let (Some(rid), Some(movie)) =
-                    (state.current_resource_id.clone(), state.movie.as_mut())
-                {
-                    if let Some(r) = movie.resources.iter_mut().find(|r| r.id == rid) {
+                if let Some(movie) = state.movie.as_mut() {
+                    if let Some(r) = movie.resources.iter_mut().find(|r| r.id == b.resource_id) {
+                        r.subtitles.retain(|sub| sub.id != b.subtitle_id);
                         r.subtitles.push(crate::native_player::meta::SubtitleMeta {
                             id: b.subtitle_id.clone(),
                             url: b.url.clone(),
@@ -687,8 +765,18 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                             display_name: b.display_name.clone(),
                             format: b.format.clone(),
                             is_default: false,
+                            // 刚绑定的在线字幕：source 必为 online_bound；其余元信息
+                            // BindReady 没回，置 None——下次切集后端 playback.subtitles
+                            // 会带全（provider_name/language 等）。
+                            language: None,
+                            source: Some("online_bound".to_string()),
+                            provider_name: None,
+                            web_player_supported: None,
                         });
                     }
+                }
+                if state.current_resource_id.as_deref() != Some(b.resource_id.as_str()) {
+                    continue;
                 }
                 // bind 走的是后端 URL，候选 id 我们手里有的最直接来源是 worker
                 // 当时附带的 cid—— 但 BindReady 现在只回 subtitle 字段没回 cid。
@@ -711,11 +799,9 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
             // 已删字幕的 url 卡住。失败的时候只清 pending 态、保留字幕条目让用户重试。
             while let Ok(d) = delete_rx.try_recv() {
                 if d.ok {
-                    let removed_url = if let (Some(rid), Some(movie)) =
-                        (state.current_resource_id.clone(), state.movie.as_mut())
-                    {
+                    let removed_url = if let Some(movie) = state.movie.as_mut() {
                         if let Some(r) =
-                            movie.resources.iter_mut().find(|r| r.id == rid)
+                            movie.resources.iter_mut().find(|r| r.id == d.resource_id)
                         {
                             // 找到要删的条目并取出 url 之后再 retain，免得 retain 之
                             // 后还要再扫一遍。
@@ -732,6 +818,9 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                     } else {
                         None
                     };
+                    if state.current_resource_id.as_deref() != Some(d.resource_id.as_str()) {
+                        continue;
+                    }
                     // mpv `sub-remove` 接 sid（数字），但我们手里没有数字——track-list
                     // 里能反查：external_filename == removed_url 的 sub track 即对应轨。
                     if let Some(url) = removed_url {
@@ -774,6 +863,22 @@ pub fn run_player_blocking(opts: PlayOptions) -> Result<(), String> {
                         duration_sec: state.duration,
                     });
                     last_heartbeat_push = Instant::now();
+                }
+            }
+
+            // 睡眠定时器：到点暂停或退出。Instant 单调钟，查询极廉价，60Hz 直接查无害。
+            if let Some(deadline) = state.sleep_deadline {
+                if std::time::Instant::now() >= deadline {
+                    match state.sleep_kind {
+                        crate::native_player::controller::SleepKind::Pause => {
+                            let _ = player.set_property_str("pause", "yes");
+                            state.paused = true;
+                        }
+                        crate::native_player::controller::SleepKind::Quit => {
+                            win.request_close();
+                        }
+                    }
+                    state.sleep_deadline = None;
                 }
             }
 
@@ -831,6 +936,19 @@ unsafe fn drain_mpv_events(player: &MpvPlayer, state: &mut PlayerState) -> bool 
             if id == mp::MPV_EVENT_PROPERTY_CHANGE {
                 state.apply_property_change(ev);
             }
+            // END_FILE(reason=ERROR)：加载失败（401/404/断网/解码失败）。即使
+            // keep-open=yes，错误退出也会发这个事件（keep-open 只阻止正常 EOF）。
+            // 读 error code 转可读文案塞进 state.last_error，HUD 画失败横幅，
+            // 把"黑屏无反馈"变成用户可见的提示。代托管模式 mpv 无 cookie 导致
+            // /stream 401 是最高频来源。reason=EOF/STOP/QUIT/REDIRECT 不算失败。
+            if id == mp::MPV_EVENT_END_FILE {
+                let ef = (*ev).data as *const mp::mpv_event_end_file;
+                if !ef.is_null() && (*ef).reason == mp::MPV_END_FILE_REASON_ERROR {
+                    let detail = mp::err_string((*ef).error);
+                    log::warn!("[native_player] load failed: reason=ERROR error={detail}");
+                    state.last_error = Some(format!("加载失败：{detail}"));
+                }
+            }
             if id == mp::MPV_EVENT_LOG_MESSAGE {
                 let lm = (*ev).data as *const mp::mpv_event_log_message;
                 if !lm.is_null() {
@@ -840,7 +958,7 @@ unsafe fn drain_mpv_events(player: &MpvPlayer, state: &mut PlayerState) -> bool 
                         .to_string_lossy();
                     let text = std::ffi::CStr::from_ptr((*lm).text)
                         .to_string_lossy();
-                    eprint!("[mpv {level} {prefix}] {text}");
+                    eprint!("[mpv {level} {prefix}] {}", redact_media_log(&text));
                 }
             }
             // 注意：mpv 在 keep-open=yes 模式下不会发 END_FILE 事件——它停在
@@ -891,6 +1009,11 @@ pub struct PlayOptions {
     /// runs (we need device_id + api_base before we'll spawn the thread).
     #[serde(default)]
     pub session_id: Option<String>,
+    /// 播放票据（代托管模式）。前端 ensureTicket() 换来的短期票据，HUD 内
+    /// 发起的在线字幕搜索 / 下载 / 绑定（online_subs，独立线程拿不到 cookie）
+    /// 拼到 ?ticket=... 上过认证。空 = 非代托管 / 未登录，请求不带票。
+    #[serde(default)]
+    pub playback_ticket: Option<String>,
 }
 
 /// Tauri command. Spawns the player on a dedicated thread so the async
@@ -899,11 +1022,8 @@ pub struct PlayOptions {
 #[tauri::command]
 pub async fn open_pc_player(options: PlayOptions) -> Result<(), String> {
     eprintln!(
-        "[native_player] open_pc_player invoked: url={}, current_resource_id={:?}, device_id={}, api_base={}, headers_len={}, has_movie={}",
-        options.url,
+        "[native_player] open_pc_player invoked: current_resource_id={:?}, headers_len={}, has_movie={}",
         options.current_resource_id,
-        options.device_id,
-        options.api_base,
         options.headers.len(),
         options.movie.is_some(),
     );
@@ -918,39 +1038,51 @@ pub async fn open_pc_player(options: PlayOptions) -> Result<(), String> {
     rx.await.map_err(|e| format!("native player worker dropped: {e}"))?
 }
 
-/// 跨线程派发 mpv 命令的 helper。
-///
-/// 背景：libmpv 文档明确 mpv_command 是跨线程安全的。但 sub-add 在
-/// mpv 内部会同步打开外挂字幕的 stream（包括 https TLS 握手），URL 不
-/// 通时会卡到 network-timeout（默认 30s）。如果在 GL 主线程调用，主循环
-/// 这段时间没法 render → 画面冻在最后一帧、声音继续 → 「先有声后有画
-/// 30+ 秒」用户体感（实测 50G HDR Remux 复现稳定）。
-///
-/// 策略：把 sub-add / sub-remove 这类「mpv 内部要做 IO」的命令派到
-/// detach 线程上去执行；GL 主循环立刻继续 render。失败用 eprintln 打到
-/// stderr，不阻塞 UI（用户也无感——已经播起来了）。
+/// mpv owns queued commands and their copied arguments. No detached thread may
+/// retain this raw handle after the window closes and MpvPlayer is destroyed.
 fn dispatch_mpv_command_async(handle: *mut mp::mpv_handle, args: Vec<String>) {
-    // raw 指针不 Send；Rust 2021 字段级闭包捕获即使包了 newtype 也可能
-    // 只捕获里层 *mut。最稳的办法：把指针转成 usize（Send），线程里再
-    // 还原。mpv 文档保证 mpv_command 跨线程安全，多线程同时调用同一
-    // handle 也可以（mpv 内部加锁），这里转换是安全的。
-    let handle_addr = handle as usize;
-    std::thread::spawn(move || {
-        let h = handle_addr as *mut mp::mpv_handle;
-        let owned: Vec<std::ffi::CString> = args
-            .iter()
-            .map(|s| std::ffi::CString::new(s.as_str()).unwrap_or_default())
-            .collect();
-        let mut ptrs: Vec<*const std::os::raw::c_char> =
-            owned.iter().map(|c| c.as_ptr()).collect();
-        ptrs.push(std::ptr::null());
-        unsafe {
-            let r = mp::mpv_command(h, ptrs.as_mut_ptr());
-            if r < 0 {
-                eprintln!("[native_player] async mpv_command {args:?} failed: {}", mp::err_string(r));
-            }
+    let Ok(owned) = args.iter().map(|s| std::ffi::CString::new(s.as_str())).collect::<Result<Vec<_>, _>>() else {
+        log::warn!("native player rejected a command with a NUL argument");
+        return;
+    };
+    let mut ptrs: Vec<_> = owned.iter().map(|c| c.as_ptr()).collect();
+    ptrs.push(std::ptr::null());
+    let result = unsafe { mp::mpv_command_async(handle, 0, ptrs.as_mut_ptr()) };
+    if result < 0 {
+        log::warn!("native player async command failed: {}", mp::err_string(result));
+    }
+}
+
+fn redact_media_log(text: &str) -> String {
+    text.split_inclusive(char::is_whitespace).map(|part| {
+        if part.contains("://") || part.contains("ticket=") {
+            let ending = part.trim_start_matches(|c: char| !c.is_whitespace());
+            format!("[redacted-url]{ending}")
+        } else {
+            part.to_string()
         }
-    });
+    }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logs_never_include_ticket_or_media_url() {
+        let safe = redact_media_log("Failed https://media.example/path?ticket=secret-data HTTP 401\n");
+        assert_eq!(safe, "Failed [redacted-url] HTTP 401\n");
+        assert!(!safe.contains("secret-data"));
+    }
+
+    #[test]
+    fn queued_commands_do_not_outlive_destroyed_handle() {
+        for _ in 0..3 {
+            let player = unsafe { MpvPlayer::create() }.unwrap();
+            dispatch_mpv_command_async(player.handle(), vec!["set".into(), "pause".into(), "yes".into()]);
+            drop(player);
+        }
+    }
 }
 
 /// Restore the OpenGL state mpv expects before each render() call.

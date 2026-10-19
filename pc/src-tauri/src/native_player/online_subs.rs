@@ -22,6 +22,7 @@ pub fn spawn_search(
     api_base: String,
     resource_id: String,
     keyword: String,
+    ticket: Option<String>,
     state: Arc<Mutex<OnlineSubState>>,
 ) {
     if let Ok(mut g) = state.lock() {
@@ -42,11 +43,12 @@ pub fn spawn_search(
                 api_base.trim_end_matches('/'),
                 resource_id
             );
+            let url = append_ticket(&url, ticket.as_deref());
             let req = client.get(&url).query(&[("keyword", keyword.as_str())]);
             let resp = match req.send() {
                 Ok(r) => r,
                 Err(e) => {
-                    fail(&state, format!("请求失败: {e}"));
+                    fail(&state, format!("请求失败: {}", e.without_url()));
                     return;
                 }
             };
@@ -57,7 +59,7 @@ pub fn spawn_search(
             let json: serde_json::Value = match resp.json() {
                 Ok(j) => j,
                 Err(e) => {
-                    fail(&state, format!("解析 JSON: {e}"));
+                    fail(&state, format!("解析 JSON: {}", e.without_url()));
                     return;
                 }
             };
@@ -77,6 +79,7 @@ pub fn spawn_preview(
     resource_id: String,
     candidate_id: String,
     label: String,
+    ticket: Option<String>,
     state: Arc<Mutex<OnlineSubState>>,
     on_ready: std::sync::mpsc::Sender<PreviewReady>,
 ) {
@@ -88,7 +91,7 @@ pub fn spawn_preview(
     std::thread::Builder::new()
         .name("cyberstream-online-sub-preview".into())
         .spawn(move || {
-            let result = do_download(&api_base, &resource_id, &candidate_id);
+            let result = do_download(&api_base, &resource_id, &candidate_id, ticket.as_deref());
             // 不论成败，先清掉 busy 标志
             let outcome = match result {
                 Ok(bytes) => match write_temp_subtitle(&candidate_id, &bytes) {
@@ -120,6 +123,7 @@ pub fn spawn_preview(
                     g.last_message = Some(msg);
                 }
                 let _ = on_ready.send(PreviewReady {
+                    resource_id,
                     candidate_id: cid_for_clear,
                     path,
                 });
@@ -136,6 +140,7 @@ pub fn spawn_bind(
     resource_id: String,
     candidate_id: String,
     label: String,
+    ticket: Option<String>,
     state: Arc<Mutex<OnlineSubState>>,
     on_ready: std::sync::mpsc::Sender<BindReady>,
 ) {
@@ -147,7 +152,7 @@ pub fn spawn_bind(
     std::thread::Builder::new()
         .name("cyberstream-online-sub-bind".into())
         .spawn(move || {
-            let result = do_bind(&api_base, &resource_id, &candidate_id);
+            let result = do_bind(&api_base, &resource_id, &candidate_id, ticket.as_deref());
             let outcome = match result {
                 Ok(bind) => {
                     if let Ok(mut g) = state.lock() {
@@ -176,12 +181,14 @@ pub fn spawn_bind(
 
 #[derive(Debug)]
 pub struct PreviewReady {
+    pub resource_id: String,
     pub candidate_id: String,
     pub path: String,
 }
 
 #[derive(Debug)]
 pub struct BindReady {
+    pub resource_id: String,
     pub subtitle_id: String,
     pub url: String,
     pub label: Option<String>,
@@ -194,6 +201,7 @@ pub struct BindReady {
 /// 还是只清 pending_delete_sid 状态行 + 弹一条错误消息。
 #[derive(Debug)]
 pub struct DeleteReady {
+    pub resource_id: String,
     pub subtitle_id: String,
     pub ok: bool,
     pub message: Option<String>,
@@ -207,6 +215,7 @@ pub fn spawn_delete(
     api_base: String,
     resource_id: String,
     subtitle_id: String,
+    ticket: Option<String>,
     state: Arc<Mutex<OnlineSubState>>,
     on_ready: std::sync::mpsc::Sender<DeleteReady>,
 ) {
@@ -216,7 +225,7 @@ pub fn spawn_delete(
     std::thread::Builder::new()
         .name("cyberstream-online-sub-delete".into())
         .spawn(move || {
-            let result = do_delete(&api_base, &resource_id, &subtitle_id);
+            let result = do_delete(&api_base, &resource_id, &subtitle_id, ticket.as_deref());
             let (ok, msg) = match result {
                 Ok(()) => (true, None),
                 Err(e) => (false, Some(e)),
@@ -229,6 +238,7 @@ pub fn spawn_delete(
                 });
             }
             let _ = on_ready.send(DeleteReady {
+                resource_id,
                 subtitle_id,
                 ok,
                 message: msg,
@@ -241,6 +251,34 @@ pub fn spawn_delete(
 
 fn build_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
     crate::proxy::build_http_client(20)
+}
+
+/// 代托管模式拼播放票：worker 跑在独立线程，拿不到 WebView 的 HttpOnly
+/// cookie，所以靠 ?ticket=... 过后端认证（与前端 appendTicket 对齐）。
+/// ticket 为 None（单 token / 本地模式）时原样返回 url。
+fn append_ticket(url: &str, ticket: Option<&str>) -> String {
+    match ticket {
+        Some(t) if !t.is_empty() && !url.contains("ticket=") => {
+            let sep = if url.contains('?') { '&' } else { '?' };
+            format!("{url}{sep}ticket={}", urlencode(t))
+        }
+        _ => url.to_string(),
+    }
+}
+
+/// 最小 URL 百分号编码——票据是后端生成的 opaque 串（通常 base64url / hex），
+/// 只对非 unreserved 字符转义，避免拉 url crate。
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 fn fail(state: &Arc<Mutex<OnlineSubState>>, msg: String) {
@@ -270,29 +308,51 @@ fn parse_candidates(v: &serde_json::Value) -> Vec<OnlineCandidate> {
         if candidate_id.is_empty() {
             continue;
         }
+        // 来源：后端候选用 provider_name（"SubHD"/"SrtKu"）；旧字段兜底。
         let source = item
-            .get("source")
+            .get("provider_name")
+            .or_else(|| item.get("source"))
             .or_else(|| item.get("provider"))
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string();
-        let language = item
-            .get("language")
-            .and_then(|l| {
-                if l.is_string() {
-                    l.as_str().map(|s| s.to_string())
+        // language：后端返回数组（_normalize_languages），也可能是字符串/对象。
+        // 统一拍成 "简体, English" 这样的可读串。
+        let language = item.get("language").and_then(|l| match l {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Array(arr) => {
+                let parts: Vec<String> = arr
+                    .iter()
+                    .filter_map(|v| match v {
+                        serde_json::Value::String(s) => Some(s.clone()),
+                        serde_json::Value::Object(_) => v
+                            .get("label")
+                            .or_else(|| v.get("name"))
+                            .or_else(|| v.get("code"))
+                            .and_then(|x| x.as_str())
+                            .map(|s| s.to_string()),
+                        _ => None,
+                    })
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if parts.is_empty() {
+                    None
                 } else {
-                    l.get("name")
-                        .or_else(|| l.get("code"))
-                        .and_then(|x| x.as_str())
-                        .map(|s| s.to_string())
+                    Some(parts.join(", "))
                 }
-            })
-            .or_else(|| {
-                item.get("lang")
-                    .and_then(|x| x.as_str())
-                    .map(|s| s.to_string())
-            });
+            }
+            serde_json::Value::Object(_) => l
+                .get("label")
+                .or_else(|| l.get("name"))
+                .or_else(|| l.get("code"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
+            _ => None,
+        }).or_else(|| {
+            item.get("lang")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        });
         let format = item
             .get("format")
             .and_then(|x| x.as_str())
@@ -311,44 +371,81 @@ fn parse_candidates(v: &serde_json::Value) -> Vec<OnlineCandidate> {
                 let l = language.clone().unwrap_or_else(|| "?".into());
                 format!("{source} · {l}")
             });
+        // 详细信息字段（仿详情页字幕管理的元信息 chip）。后端 search 候选
+        // 已带这些；数字/字符串混用，统一取成可读字符串，缺失为 None。
+        let as_str_field = |keys: &[&str]| -> Option<String> {
+            for k in keys {
+                if let Some(val) = item.get(*k) {
+                    let s = match val {
+                        serde_json::Value::String(s) => s.trim().to_string(),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        _ => String::new(),
+                    };
+                    if !s.is_empty() {
+                        return Some(s);
+                    }
+                }
+            }
+            None
+        };
+        let download_number = as_str_field(&["download_number", "download_count"]);
+        let uploader = as_str_field(&["uploader"]);
+        let rating = as_str_field(&["quality", "rating"]);
+        let file_size = as_str_field(&["file_size"]);
         out.push(OnlineCandidate {
             candidate_id,
             label,
             source,
             language,
             format,
+            download_number,
+            uploader,
+            rating,
+            file_size,
         });
     }
     out
 }
 
-fn do_download(api_base: &str, resource_id: &str, candidate_id: &str) -> Result<Vec<u8>, String> {
+fn do_download(
+    api_base: &str,
+    resource_id: &str,
+    candidate_id: &str,
+    ticket: Option<&str>,
+) -> Result<Vec<u8>, String> {
     let client = build_client().map_err(|e| e.to_string())?;
     let url = format!(
         "{}/api/v1/resources/{}/subtitles/online/download",
         api_base.trim_end_matches('/'),
         resource_id
     );
+    let url = append_ticket(&url, ticket);
     let resp = client
         .post(&url)
         .json(&serde_json::json!({ "candidate_id": candidate_id }))
         .send()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.without_url().to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
     resp.bytes()
         .map(|b| b.to_vec())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.without_url().to_string())
 }
 
-fn do_bind(api_base: &str, resource_id: &str, candidate_id: &str) -> Result<BindReady, String> {
+fn do_bind(
+    api_base: &str,
+    resource_id: &str,
+    candidate_id: &str,
+    ticket: Option<&str>,
+) -> Result<BindReady, String> {
     let client = build_client().map_err(|e| e.to_string())?;
     let url = format!(
         "{}/api/v1/resources/{}/subtitles/online/bind",
         api_base.trim_end_matches('/'),
         resource_id
     );
+    let url = append_ticket(&url, ticket);
     let resp = client
         .post(&url)
         .json(&serde_json::json!({
@@ -356,11 +453,11 @@ fn do_bind(api_base: &str, resource_id: &str, candidate_id: &str) -> Result<Bind
             "confirm": true
         }))
         .send()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.without_url().to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
-    let v: serde_json::Value = resp.json().map_err(|e| e.to_string())?;
+    let v: serde_json::Value = resp.json().map_err(|e| e.without_url().to_string())?;
     // 后端 envelope: { data: { subtitle: ResourceSubtitleItem } } 或 data.subtitle 直挂。
     // 字段：subtitle.id / subtitle.url / subtitle.label / subtitle.format
     let sub = v
@@ -378,7 +475,7 @@ fn do_bind(api_base: &str, resource_id: &str, candidate_id: &str) -> Result<Bind
         .and_then(|x| x.as_str())
         .ok_or_else(|| "缺少 subtitle.url".to_string())?
         .to_string();
-    let absolute_url = resolve_absolute(api_base, &raw_url);
+    let absolute_url = authenticated_subtitle_url(api_base, &raw_url, ticket);
     let label = sub
         .get("label")
         .or_else(|| sub.get("filename"))
@@ -393,6 +490,7 @@ fn do_bind(api_base: &str, resource_id: &str, candidate_id: &str) -> Result<Bind
         .and_then(|x| x.as_str())
         .map(|s| s.to_string());
     Ok(BindReady {
+        resource_id: resource_id.to_string(),
         subtitle_id: id,
         url: absolute_url,
         label,
@@ -401,7 +499,12 @@ fn do_bind(api_base: &str, resource_id: &str, candidate_id: &str) -> Result<Bind
     })
 }
 
-fn do_delete(api_base: &str, resource_id: &str, subtitle_id: &str) -> Result<(), String> {
+fn do_delete(
+    api_base: &str,
+    resource_id: &str,
+    subtitle_id: &str,
+    ticket: Option<&str>,
+) -> Result<(), String> {
     let client = build_client().map_err(|e| e.to_string())?;
     let url = format!(
         "{}/api/v1/resources/{}/subtitles/{}",
@@ -409,7 +512,8 @@ fn do_delete(api_base: &str, resource_id: &str, subtitle_id: &str) -> Result<(),
         resource_id,
         subtitle_id,
     );
-    let resp = client.delete(&url).send().map_err(|e| e.to_string())?;
+    let url = append_ticket(&url, ticket);
+    let resp = client.delete(&url).send().map_err(|e| e.without_url().to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -424,12 +528,35 @@ fn resolve_absolute(api_base: &str, url: &str) -> String {
         return url.to_string();
     }
     let host = api_base.trim_end_matches('/');
-    if let Some(rest) = url.strip_prefix("/api/") {
-        format!("{host}/{rest}")
-    } else if url.starts_with('/') {
+    if url.starts_with('/') {
         format!("{host}{url}")
     } else {
         format!("{host}/{url}")
+    }
+}
+
+fn authenticated_subtitle_url(api_base: &str, raw_url: &str, ticket: Option<&str>) -> String {
+    let absolute = resolve_absolute(api_base, raw_url);
+    let same_origin = reqwest::Url::parse(api_base).ok().zip(reqwest::Url::parse(&absolute).ok())
+        .map(|(base, target)| base.origin() == target.origin()).unwrap_or(false);
+    if same_origin { append_ticket(&absolute, ticket) } else { absolute }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bound_subtitle_keeps_api_path_and_authenticates_same_origin() {
+        assert_eq!(authenticated_subtitle_url("https://backend.example:884", "/api/v1/resources/r/stream?subtitle_id=s", Some("short ticket")),
+            "https://backend.example:884/api/v1/resources/r/stream?subtitle_id=s&ticket=short%20ticket");
+        assert_eq!(authenticated_subtitle_url("https://backend.example:884/", "api/v1/subtitle", None),
+            "https://backend.example:884/api/v1/subtitle");
+    }
+
+    #[test]
+    fn bound_subtitle_does_not_send_ticket_to_other_origin() {
+        assert_eq!(authenticated_subtitle_url("https://backend.example:884", "https://cdn.example/sub.vtt", Some("private")), "https://cdn.example/sub.vtt");
     }
 }
 
@@ -442,7 +569,7 @@ fn write_temp_subtitle(candidate_id: &str, bytes: &[u8]) -> std::io::Result<Stri
     let mut dir = std::env::temp_dir();
     dir.push("cyberstream-pc-subs");
     std::fs::create_dir_all(&dir)?;
-    dir.push(format!("{safe}.srt"));
+    dir.push(format!("{safe}-{}.srt", uuid::Uuid::new_v4()));
     {
         let mut f = std::fs::File::create(&dir)?;
         f.write_all(bytes)?;

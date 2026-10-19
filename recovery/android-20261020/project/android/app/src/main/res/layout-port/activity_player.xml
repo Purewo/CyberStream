@@ -1,0 +1,524 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#080A0E">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/portrait_video_container"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/player_portrait_video_height"
+            android:background="#000000">
+
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/media_player_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#000000"
+                android:keepScreenOn="true"
+                app:controller_layout_id="@layout/cyber_player_controls"
+                app:resize_mode="fit"
+                app:show_buffering="when_playing"
+                app:show_timeout="3000" />
+
+            <androidx.media3.ui.SubtitleView
+                android:id="@+id/external_subtitle_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clickable="false"
+                android:focusable="false"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp" />
+
+            <View
+                android:id="@+id/player_gesture_surface"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_marginTop="52dp"
+                android:layout_marginBottom="48dp"
+                android:background="@android:color/transparent"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/seek_gesture_overlay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:background="@drawable/player_seek_gesture_background"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:minWidth="132dp"
+                android:paddingStart="16dp"
+                android:paddingTop="11dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="11dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/adjustment_gesture_overlay"
+                android:layout_width="142dp"
+                android:layout_height="62dp"
+                android:layout_gravity="center_vertical|start"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/player_seek_gesture_background"
+                android:gravity="center_vertical"
+                android:orientation="vertical"
+                android:paddingStart="13dp"
+                android:paddingTop="9dp"
+                android:paddingEnd="13dp"
+                android:paddingBottom="9dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:id="@+id/adjustment_gesture_icon"
+                        android:layout_width="19dp"
+                        android:layout_height="19dp"
+                        android:contentDescription="亮度"
+                        android:src="@drawable/ic_player_brightness"
+                        android:tint="#FF5BE7FF" />
+
+                    <TextView
+                        android:id="@+id/adjustment_gesture_label"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:fontFamily="sans-serif-medium"
+                        android:includeFontPadding="false"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <ProgressBar
+                    android:id="@+id/adjustment_gesture_progress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="3dp"
+                    android:layout_marginTop="6dp"
+                    android:indeterminate="false"
+                    android:max="100"
+                    android:progressBackgroundTint="#35FFFFFF"
+                    android:progressTint="#FF5BE7FF" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="58dp"
+            android:background="#FF11151C"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <Button
+                android:id="@+id/quality_button"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/player_quality_chip"
+                android:backgroundTint="@null"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:minWidth="0dp"
+                android:paddingStart="3dp"
+                android:paddingEnd="3dp"
+                android:stateListAnimator="@null"
+                android:text="画质"
+                android:textAllCaps="false"
+                android:textColor="#FF5BE7FF"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/subtitle_button"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/player_control_chip"
+                android:backgroundTint="@null"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:minWidth="0dp"
+                android:paddingStart="3dp"
+                android:paddingEnd="3dp"
+                android:stateListAnimator="@null"
+                android:text="字幕"
+                android:textAllCaps="false"
+                android:textColor="#F2FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/audio_button"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/player_control_chip"
+                android:backgroundTint="@null"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:minWidth="0dp"
+                android:paddingStart="3dp"
+                android:paddingEnd="3dp"
+                android:stateListAnimator="@null"
+                android:text="音轨"
+                android:textAllCaps="false"
+                android:textColor="#F2FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/settings_button"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/player_control_chip"
+                android:backgroundTint="@null"
+                android:drawableStart="@drawable/ic_player_settings"
+                android:drawablePadding="3dp"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:stateListAnimator="@null"
+                android:text="设置"
+                android:textAllCaps="false"
+                android:textColor="#F2FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/orientation_button"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_margin="3dp"
+                android:layout_weight="1"
+                android:background="@drawable/player_quality_chip"
+                android:backgroundTint="@null"
+                android:drawableStart="@drawable/ic_player_landscape"
+                android:drawablePadding="3dp"
+                android:fontFamily="sans-serif-medium"
+                android:includeFontPadding="false"
+                android:minWidth="0dp"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:stateListAnimator="@null"
+                android:text="全屏"
+                android:textAllCaps="false"
+                android:textColor="#FF5BE7FF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/source_button"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#FF0B0E13">
+
+            <LinearLayout
+                android:id="@+id/portrait_episode_section"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:paddingStart="16dp"
+                android:paddingTop="15dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="选集"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="20sp" />
+
+                    <TextView
+                        android:id="@+id/portrait_episode_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#8FFFFFFF"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <HorizontalScrollView
+                    android:id="@+id/portrait_season_scroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:clipToPadding="false"
+                    android:fillViewport="false"
+                    android:overScrollMode="never"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/portrait_season_tabs"
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
+                <ScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:clipToPadding="false"
+                    android:fillViewport="true"
+                    android:overScrollMode="never"
+                    android:paddingTop="8dp">
+
+                    <GridLayout
+                        android:id="@+id/portrait_episode_grid"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:alignmentMode="alignMargins"
+                        android:columnCount="5"
+                        android:orientation="horizontal"
+                        android:useDefaultMargins="false" />
+                </ScrollView>
+            </LinearLayout>
+
+            <ScrollView
+                android:id="@+id/portrait_movie_section"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:overScrollMode="never"
+                android:paddingStart="16dp"
+                android:paddingTop="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="24dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="当前片源"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="20sp" />
+
+                    <HorizontalScrollView
+                        android:id="@+id/portrait_movie_sources_scroll"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="8dp"
+                        android:clipToPadding="false"
+                        android:overScrollMode="never"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:id="@+id/portrait_movie_sources"
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal" />
+                    </HorizontalScrollView>
+
+                    <LinearLayout
+                        android:id="@+id/portrait_movie_technical"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </ScrollView>
+        </FrameLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/player_error_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#B8000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:padding="24dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="@dimen/player_error_card_width"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/player_side_panel_background"
+            android:orientation="vertical"
+            android:paddingStart="24dp"
+            android:paddingTop="22dp"
+            android:paddingEnd="24dp"
+            android:paddingBottom="22dp">
+
+            <TextView
+                android:id="@+id/player_error_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="无法播放此文件"
+                android:textColor="#FFFFFFFF"
+                android:textSize="21sp" />
+
+            <TextView
+                android:id="@+id/player_error_message"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:lineSpacingMultiplier="1.15"
+                android:textColor="#BFFFFFFF"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="20dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/player_error_retry"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/player_cellular_warning_once"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="重试"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/player_error_exit"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/player_cellular_warning_always"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="退出播放"
+                    android:textAllCaps="false"
+                    android:textColor="#FF111318"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <View
+        android:id="@+id/side_panel_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#7A000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/side_panel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="bottom"
+        android:layout_marginTop="112dp"
+        android:background="@drawable/player_bottom_sheet_background"
+        android:clickable="true"
+        android:elevation="24dp"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingStart="22dp"
+        android:paddingTop="16dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="18dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="42dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="8dp"
+            android:background="#38FFFFFF" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/side_panel_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:textColor="#FFFFFFFF"
+                android:textSize="20sp" />
+
+            <ImageButton
+                android:id="@+id/side_panel_close"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="关闭面板"
+                android:padding="11dp"
+                android:src="@drawable/ic_player_close"
+                android:tint="#D9FFFFFF" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="5dp"
+            android:layout_marginBottom="11dp"
+            android:background="#1FFFFFFF" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:overScrollMode="never">
+
+            <LinearLayout
+                android:id="@+id/side_panel_items"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+    </LinearLayout>
+</FrameLayout>

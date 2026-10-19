@@ -1,0 +1,3745 @@
+{
+  "session": "C:/Users/28788/.codex/sessions/2026/07/10/rollout-2026-07-10T05-28-16-019f48c8-07b3-77c2-91ef-4deb1b6da6f7.jsonl",
+  "files": [
+    {
+      "file": "capacitor.config.ts",
+      "bytes": 878,
+      "sha256": "d742e3e832a32fb93a09f70a075b5272d8da3802ef331a6cff6a28b455d7f620",
+      "lines": 26
+    },
+    {
+      "file": "tailwind.config.cjs",
+      "bytes": 320,
+      "sha256": "a5dc38fc8b76dbb3f2a4aa9384295c977ef5df69e2bae965b8569af7b6ed7be8",
+      "lines": 15
+    },
+    {
+      "file": "src/styles/tailwind.css",
+      "bytes": 339,
+      "sha256": "9ba52d3963bfcb5b1ec6fbb2c73dddffa81f0c2a793718397e9a5f8ae47031d1",
+      "lines": 11
+    },
+    {
+      "file": "index.html",
+      "bytes": 293,
+      "sha256": "89b8c245a20d35087720dd70fc817bbbad210e70895cd17a9c28f21983111e44",
+      "lines": 13
+    },
+    {
+      "file": "postcss.config.cjs",
+      "bytes": 83,
+      "sha256": "fa650b380adfabb151a0b352f7135e107e6352345f899060f1c5c231228f94bf",
+      "lines": 7
+    },
+    {
+      "file": "src/index.tsx",
+      "bytes": 382,
+      "sha256": "29dc76dc7217471a78918c5c2644a27ff8fbc3643f480e8fda76a41793f65ade",
+      "lines": 17
+    },
+    {
+      "file": "src/platform/index.ts",
+      "bytes": 3821,
+      "sha256": "8dcb6491b08ee1b4f354cbfeca064029bf7570f5e3032d1b774cb9ef6d454421",
+      "lines": 102
+    },
+    {
+      "file": "src/platform/android.ts",
+      "bytes": 2747,
+      "sha256": "64592955da0f12b327de0790cbf173435ce021c931e3847bd823c79b92c56bed",
+      "lines": 84
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "bytes": 3787,
+      "sha256": "9683fdb5751165fc251e22e28e9419446f764cdf0d35eba7d203509729f6f975",
+      "lines": 140
+    },
+    {
+      "file": "src/platform/nativePlayer.ts",
+      "bytes": 11793,
+      "sha256": "36d1d079eebda882cfe5d67598c56946d99a0036562b46a1fea453de99f3021f",
+      "lines": 279
+    },
+    {
+      "file": "src/utils/index.ts",
+      "bytes": 9021,
+      "sha256": "de3b2adfec7be758e6590ad83023646e3792bfa2adadc2bbfec3524d927b98d2",
+      "lines": 81
+    },
+    {
+      "file": "android/build.gradle",
+      "bytes": 706,
+      "sha256": "461fa7d6e27c2d4eae84496c6335850e7e245cc66a7e3087b9ee9808afb19778",
+      "lines": 31
+    },
+    {
+      "file": "android/app/build.gradle",
+      "bytes": 5575,
+      "sha256": "86e02a1ad19d4f1a43fb9d86648c078e0e3930a8631eff8149256fc45d0ab376",
+      "lines": 131
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/CyberPlayerPlugin.kt",
+      "bytes": 5601,
+      "sha256": "ac369b9e62e366fcf7cc046380db67fc69950e21a9af20924f49fb05c6acb4da",
+      "lines": 165
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "bytes": 177994,
+      "sha256": "c7ffb816ab525d41bfdc350240af3cf4d57d48ebe078cd46fe67cb8416365262",
+      "lines": 4128
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "bytes": 9984,
+      "sha256": "a4c28c49f5ae3cb103aca73f24c86a5d1fcc1c306cd2abec3ed4b77c519905e5",
+      "lines": 260
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/MainActivity.kt",
+      "bytes": 299,
+      "sha256": "81c02727cf71fae7da1151ef0ac563aae29cd94a7190dbe767513bd8d4d4bac7",
+      "lines": 12
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "bytes": 1637,
+      "sha256": "cfb7c1e01618dc3f06638643a90b74db17d0aed1f7885cfed4a48beb3e19f664",
+      "lines": 42
+    },
+    {
+      "file": "src/App.tsx",
+      "bytes": 45280,
+      "sha256": "8473302e58f666dc47fde29e4df7eb06f8504bde057f65fe407ba0a0389873c3",
+      "lines": 962
+    },
+    {
+      "file": "src/features/MovieDetail.tsx",
+      "bytes": 52851,
+      "sha256": "e64947fab180f39e1bc4591eec1b6ab14775af9ac736ae50fbdda8ae50f81f71",
+      "lines": 963
+    },
+    {
+      "file": "src/features/Profile.tsx",
+      "bytes": 181802,
+      "sha256": "64e95379db758a6d9a86e223a1bdc3f9595fb3fb63167eb42eaa0c6f1ba710a3",
+      "lines": 4149
+    },
+    {
+      "file": "src/api/system.ts",
+      "bytes": 9387,
+      "sha256": "c3611a0ecb810f5559811706bd748ad40851298195f37f33f02948d05e14d493",
+      "lines": 232
+    },
+    {
+      "file": "android/app/src/test/java/com/getcapacitor/myapp/ExampleUnitTest.java",
+      "bytes": 402,
+      "sha256": "ef6a24c181ca4b95af26da114960d5d77a8ce54a12b08cba47e0e105e6bd8da6",
+      "lines": 19
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java",
+      "bytes": 1230,
+      "sha256": "3ea747e7518729331250717bebdeef52626694d7653b32a23ce6e8d7b847d45e",
+      "lines": 34
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "bytes": 44988,
+      "sha256": "51c2115599322932067f72b89fd8c5e2a5adaeea9646b0a08f0ff09dca62a323",
+      "lines": 992
+    },
+    {
+      "file": "android/.gitignore",
+      "bytes": 1809,
+      "sha256": "3b335386126242fb5ea47fb61e50ea9e4a65cd076a8349129ca116de143a123d",
+      "lines": 105
+    },
+    {
+      "file": "fetch_openapi.mjs",
+      "bytes": 1766,
+      "sha256": "8b3170a25fe628bc068072c3b8e0f6b69672209568ff1c8244870e2a3791c4f1",
+      "lines": 55
+    },
+    {
+      "file": "package.json",
+      "bytes": 1216,
+      "sha256": "59894a7a2af59b0005f17fbd497c3f2c4592bb5aab621a6876834c74d0a7d095",
+      "lines": 44
+    },
+    {
+      "file": "android/app/src/main/assets/THIRD_PARTY_NOTICES.txt",
+      "bytes": 969,
+      "sha256": "b23b5bc040f6a53d3eaba333c85a5c5adafdc3deed6691bc75244a4c04686d8a",
+      "lines": 34
+    },
+    {
+      "file": "android/FFMPEG_BUILD.md",
+      "bytes": 2786,
+      "sha256": "10d16e5bb50b1327210996fa34bd0d7cc3a8c577aea5d7ce0aeb173c441599a7",
+      "lines": 74
+    },
+    {
+      "file": "android/app/src/main/assets/licenses/FFmpeg-LGPL-2.1.txt",
+      "bytes": 26526,
+      "sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe",
+      "lines": 503
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/FfmpegExtensionSmokeTest.kt",
+      "bytes": 1645,
+      "sha256": "d3ad4f562890abb862dd2012d3fbb94e6bdb761aaa084d6a3bb95cd9d6d1b9f0",
+      "lines": 40
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/AudioFormatPlaybackTest.kt",
+      "bytes": 5441,
+      "sha256": "679ee24273b2efd089f9a8d95d62d0c7d6544b2a52b1203f7791b4e8b491735a",
+      "lines": 121
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_back.xml",
+      "bytes": 372,
+      "sha256": "39f6664cf020800325cd048344bbd6e978dc21e22f045d03ef2070f2bf9c7204",
+      "lines": 11
+    },
+    {
+      "file": "android/app/src/main/res/layout/cyber_player_controls.xml",
+      "bytes": 9884,
+      "sha256": "911977b73e75c8262870ecc079c8beb127872662fdd306594f7c15a143115ea7",
+      "lines": 250
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_gradient_bottom.xml",
+      "bytes": 261,
+      "sha256": "32e71d8856bc85e7e37d0d102633ca9f193289137aa08743e639c7ba8aed9147",
+      "lines": 8
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_control_chip.xml",
+      "bytes": 571,
+      "sha256": "5a83ca8e4d9e2484141d18ef96d6de080693bef41786f669d38753c5d457fa26",
+      "lines": 17
+    },
+    {
+      "file": "android/app/src/main/res/values-sw600dp/player_dimens.xml",
+      "bytes": 614,
+      "sha256": "37d8ee7b4368a5c7e00f1c2a3fae4dc53898d7400ac57d1905bd99cffa89785b",
+      "lines": 13
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_panel_item_selected.xml",
+      "bytes": 280,
+      "sha256": "3b31e4ee3497a0a12744126788d3f6692a77050761487ac6e3672c29151d600e",
+      "lines": 7
+    },
+    {
+      "file": "android/app/src/main/res/values/player_dimens.xml",
+      "bytes": 614,
+      "sha256": "85300992acc91f0b2727da5e3ddacb25907e24171a5701caa9c96b71d629fb82",
+      "lines": 13
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_quality_chip.xml",
+      "bytes": 640,
+      "sha256": "47fbabf805e642f2e38aa1da48e1387dde1bd27813f248cc7edaed971e0f4356",
+      "lines": 18
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_gradient_top.xml",
+      "bytes": 262,
+      "sha256": "022e10f93e0184c8214ee6278ed3748bc1168a11d37d8a1feddce1595321a099",
+      "lines": 8
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_close.xml",
+      "bytes": 432,
+      "sha256": "bada4788236ffe060d3d5a8f337bb3e29772583965cd89c262535fe3743348d4",
+      "lines": 11
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_panel_item_background.xml",
+      "bytes": 502,
+      "sha256": "39001d6b2d548fe12a2e1877de13b5b55f05b9fc7f23cfcdefd85cfe4f197bd4",
+      "lines": 16
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_panel_item.xml",
+      "bytes": 1896,
+      "sha256": "9b1500d061647a7f14f8a1789731c7da1339bdc203383fcb4bfe310181e8680f",
+      "lines": 56
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_side_panel_background.xml",
+      "bytes": 274,
+      "sha256": "32cbab76a70ef5fe7f4147af6e3ae7cae5cc47b1e9c2fa552900fbff8cc8c215",
+      "lines": 8
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_seek_gesture_background.xml",
+      "bytes": 280,
+      "sha256": "86b2cc332683dcf3d5c66e326c5ef93d25ff0a34d642bb8a083539fa3088900e",
+      "lines": 7
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/cyber_player_controls.xml",
+      "bytes": 4088,
+      "sha256": "d66c51d00edb1495537bb7ce0e87e49a6d82a2a874f5bba3cef4c1e6671ac1a9",
+      "lines": 116
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_portrait.xml",
+      "bytes": 412,
+      "sha256": "067f85ed7297e4e325655e38ae7703dd45b3c708e257e4bdf2a289edea3d61c2",
+      "lines": 9
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_landscape.xml",
+      "bytes": 398,
+      "sha256": "82039b27765384e2a0a680a0964257f6cf2f971f8a603ef4bee6cb3029f485f4",
+      "lines": 9
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_previous.xml",
+      "bytes": 322,
+      "sha256": "a087250536117b5115b2cb5bc2c1f798939bdf6a3c49530553790af198c3c066",
+      "lines": 9
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_episode_chip.xml",
+      "bytes": 571,
+      "sha256": "89807a384ca3e39fc762ba68e884c270328614034785d07f1925134f97f34052",
+      "lines": 17
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_episode_chip_selected.xml",
+      "bytes": 280,
+      "sha256": "032e8b6b547cbb285c73f32fdf67f0a9dd6d48a6540111c9ea64534f429644d9",
+      "lines": 7
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/activity_player.xml",
+      "bytes": 21836,
+      "sha256": "d0940b28c5080186f0ac592af9f931e28406fecbebb684a5d5ef781850dac235",
+      "lines": 525
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_next.xml",
+      "bytes": 324,
+      "sha256": "e30dfc0e649104331ebdb7f6cea36707066b932ada3f47a75709774f38b06947",
+      "lines": 9
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_season_chip_selected.xml",
+      "bytes": 280,
+      "sha256": "e2d4cb804eca5d75e6e6053273e39b28837ae91285cacca358f190b981482b38",
+      "lines": 7
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_volume.xml",
+      "bytes": 517,
+      "sha256": "1325f01f9920f332a261aaf718e67b4e134202a94ef3eac384f90ca2917b7f25",
+      "lines": 11
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_brightness.xml",
+      "bytes": 457,
+      "sha256": "ede036115d6370e64ebb990193cb05ced7e692a2ac0473f81391be6e7ee6385b",
+      "lines": 11
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_season_chip.xml",
+      "bytes": 571,
+      "sha256": "780c4ec239cda21ceec0faf3a6fe998b331ee51aa60d37c44d4c814e0a0379b4",
+      "lines": 17
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_technical_card.xml",
+      "bytes": 280,
+      "sha256": "85c84e3cca4a841a99b4401d8e979d4d0542a3cce86634fbecb64eed3ebc1559",
+      "lines": 7
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_bottom_sheet_background.xml",
+      "bytes": 272,
+      "sha256": "2cde6b4c6c86792e30affd4a1875b56a144e48416ca64b4f46b9baab53ae689b",
+      "lines": 8
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player_host.xml",
+      "bytes": 262,
+      "sha256": "8eb911c0c2371a755f47af1c452a688c526a7ab2e62a088159fbe87e0548e022",
+      "lines": 7
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_episodes.xml",
+      "bytes": 511,
+      "sha256": "483c0e394e493b76132fd6f010af2802b0975747fecab6175a7ce24e1e8f35ce",
+      "lines": 15
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_settings.xml",
+      "bytes": 1152,
+      "sha256": "5ed4026cc2676a6ff6a7f939a67c859dbb1886c6d690d5d71ba979cee660fae2",
+      "lines": 15
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_warning_once.xml",
+      "bytes": 502,
+      "sha256": "412d4dee77bcf128908eab9d12f2b19e018362a171033e29260e921a20a3c873",
+      "lines": 16
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_poster_placeholder.xml",
+      "bytes": 381,
+      "sha256": "c1f54034e489dad967f6c6d173508e9a0adcce5cc3dca388b21869c373d6e47c",
+      "lines": 13
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_warning_exit.xml",
+      "bytes": 502,
+      "sha256": "63a4e2575b2f3a04b298f5dfae3d5a33333f81eeb2fef6b3ca9926d46f2e1b38",
+      "lines": 16
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_warning_always.xml",
+      "bytes": 502,
+      "sha256": "a05f9df0b77b2656ae403c16be0d77dba89ff19bac58daece110669b9d827b04",
+      "lines": 16
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_cellular_warning.xml",
+      "bytes": 5262,
+      "sha256": "cda009b2a7a6359fb7f72db3f5291a0a31c876ff637dfd808450974d5b761156",
+      "lines": 124
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_online_subtitle_search.xml",
+      "bytes": 3703,
+      "sha256": "17c9aac5e582afa80873d2d6534dd97b0da2db29fd0baf4c588c96108267e1a8",
+      "lines": 100
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_online_subtitle_input.xml",
+      "bytes": 980,
+      "sha256": "3338bb88abb7fd212e1be8589601dace1d70ae150952aaa203d8264257e37174",
+      "lines": 28
+    },
+    {
+      "file": "src/api/playbackTicket.ts",
+      "bytes": 2743,
+      "sha256": "2779b8799b075b1be5512f42c35a7cade906375bbb2ff0b47a772360743e4c33",
+      "lines": 71
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_online_subtitle_candidate.xml",
+      "bytes": 2397,
+      "sha256": "108b4550df314a76f3914f37a051c34174e6073fcc51b142eff49f18a7a4709f",
+      "lines": 67
+    }
+  ],
+  "audit": [
+    {
+      "file": "capacitor.config.ts",
+      "time": "2026-07-09T21:51:26.900Z",
+      "line": 261,
+      "callId": "exec-1311a71e-126b-4ccb-b54e-154b94b78eb1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "96ea4ac531bef632f9c14a663c16a0dfb3507360c5ec115aa7ce9281834dff2c"
+    },
+    {
+      "file": "tailwind.config.cjs",
+      "time": "2026-07-09T21:51:26.900Z",
+      "line": 261,
+      "callId": "exec-1311a71e-126b-4ccb-b54e-154b94b78eb1",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "a5dc38fc8b76dbb3f2a4aa9384295c977ef5df69e2bae965b8569af7b6ed7be8"
+    },
+    {
+      "file": "src/styles/tailwind.css",
+      "time": "2026-07-09T21:51:26.900Z",
+      "line": 261,
+      "callId": "exec-1311a71e-126b-4ccb-b54e-154b94b78eb1",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "cc1a7ad0d019ddb1d32d0ecb588ba0ac26ce41d8625dd6c366348b25f83a28ec"
+    },
+    {
+      "file": "index.html",
+      "time": "2026-07-09T21:51:26.900Z",
+      "line": 261,
+      "callId": "exec-1311a71e-126b-4ccb-b54e-154b94b78eb1",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "postcss.config.cjs",
+      "time": "2026-07-09T21:51:26.900Z",
+      "line": 261,
+      "callId": "exec-1311a71e-126b-4ccb-b54e-154b94b78eb1",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "fa650b380adfabb151a0b352f7135e107e6352345f899060f1c5c231228f94bf"
+    },
+    {
+      "file": "src/index.tsx",
+      "time": "2026-07-09T21:51:26.900Z",
+      "line": 261,
+      "callId": "exec-1311a71e-126b-4ccb-b54e-154b94b78eb1",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/platform/index.ts",
+      "time": "2026-07-09T21:57:02.303Z",
+      "line": 348,
+      "callId": "exec-9258ec3d-5d0f-4721-8822-47ce55cb3ae3",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8dcb6491b08ee1b4f354cbfeca064029bf7570f5e3032d1b774cb9ef6d454421"
+    },
+    {
+      "file": "src/platform/android.ts",
+      "time": "2026-07-09T21:57:02.303Z",
+      "line": 348,
+      "callId": "exec-9258ec3d-5d0f-4721-8822-47ce55cb3ae3",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "64592955da0f12b327de0790cbf173435ce021c931e3847bd823c79b92c56bed"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-09T21:57:02.303Z",
+      "line": 348,
+      "callId": "exec-9258ec3d-5d0f-4721-8822-47ce55cb3ae3",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "41a383910833ce7e60b8a12f18c0b14eae31d97d1d57e7a7ed7da09e0d822337"
+    },
+    {
+      "file": "src/platform/nativePlayer.ts",
+      "time": "2026-07-09T21:57:02.303Z",
+      "line": 348,
+      "callId": "exec-9258ec3d-5d0f-4721-8822-47ce55cb3ae3",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "36d1d079eebda882cfe5d67598c56946d99a0036562b46a1fea453de99f3021f"
+    },
+    {
+      "file": "src/styles/tailwind.css",
+      "time": "2026-07-09T21:57:02.303Z",
+      "line": 348,
+      "callId": "exec-9258ec3d-5d0f-4721-8822-47ce55cb3ae3",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "863234a942a3ce7fff3edffa247915dbef616054f3547bb13214af3aa7e132f7"
+    },
+    {
+      "file": "src/utils/index.ts",
+      "time": "2026-07-09T21:57:02.303Z",
+      "line": 348,
+      "callId": "exec-9258ec3d-5d0f-4721-8822-47ce55cb3ae3",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "de3b2adfec7be758e6590ad83023646e3792bfa2adadc2bbfec3524d927b98d2"
+    },
+    {
+      "file": "android/build.gradle",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "461fa7d6e27c2d4eae84496c6335850e7e245cc66a7e3087b9ee9808afb19778"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4818f1fb1f6310e708919cfb6f1ef43ee28fd2b835accfa9b05fdd1a98bd7abc"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/CyberPlayerPlugin.kt",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "6f3ab83ab5da268ef9031ba6b5dbcd3f4712aca594870f7e74c7954b67c8ed02"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "ea8f9882977e25d83e7c353de96b9bdcae7c5f956823857752f8e9cc3db77a73"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/MainActivity.java",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "4a44a4754388efa3b8268b10f8cc77fea9c96f843fa9e7fce6bbe8b9feaad0f3"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/MainActivity.kt",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "ac309792efc16b48dcb23425b5edf02f5167c5464f070bddf73cced433628836"
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "time": "2026-07-09T22:00:21.679Z",
+      "line": 379,
+      "callId": "exec-b6c9575d-a1b7-4b6c-9fea-7fa256011b56",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0f52580d0ffc7d0a186a8019c0b493fae7670a5cc99f83fe7f7d2b446f5a559e"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T22:01:36.887Z",
+      "line": 386,
+      "callId": "exec-3f5f08f3-e30c-4930-a396-b799dba0c65e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5cb365786c9fbe6a5a501bb83c891869d0c5ecae4f82ba66834b83323b389fe2"
+    },
+    {
+      "file": "src/features/MovieDetail.tsx",
+      "time": "2026-07-09T22:02:11.164Z",
+      "line": 399,
+      "callId": "exec-1673f8dd-2da6-4201-bb43-3a884ff9bb26",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e64947fab180f39e1bc4591eec1b6ab14775af9ac736ae50fbdda8ae50f81f71"
+    },
+    {
+      "file": "src/styles/tailwind.css",
+      "time": "2026-07-09T22:02:57.669Z",
+      "line": 417,
+      "callId": "exec-b5ea2d3e-abb1-4686-a7f4-23cc3398f30a",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9ba52d3963bfcb5b1ec6fbb2c73dddffa81f0c2a793718397e9a5f8ae47031d1"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-09T22:05:02.142Z",
+      "line": 443,
+      "callId": "exec-cbfe5f92-398e-405a-9643-17f43d4b5568",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "49339f46c576f6e511eb535f0c745ae1bd4247a81dff152d235cf26ac7d96bbf"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/MainActivity.kt",
+      "time": "2026-07-09T22:09:40.125Z",
+      "line": 507,
+      "callId": "exec-0349b3f7-1757-4e38-8e68-5203dad156cd",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "81c02727cf71fae7da1151ef0ac563aae29cd94a7190dbe767513bd8d4d4bac7"
+    },
+    {
+      "file": "capacitor.config.ts",
+      "time": "2026-07-09T22:09:40.125Z",
+      "line": 507,
+      "callId": "exec-0349b3f7-1757-4e38-8e68-5203dad156cd",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9b3369ec0e117df2d28d57792c2990af3de8264ce0a1c4188c88bda9e2a6666b"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T22:21:34.297Z",
+      "line": 631,
+      "callId": "exec-d0dfcbec-9a7b-459d-9f2a-fa12235675fb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8c1e8629f4ad340324226ea1900960b992034217be983ae3a4ea1f60d3827c54"
+    },
+    {
+      "file": "src/features/Profile.tsx",
+      "time": "2026-07-09T22:22:19.004Z",
+      "line": 647,
+      "callId": "exec-46feed5d-ee66-43d8-8dcd-ee4b96dc7868",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/features/Profile.tsx",
+      "time": "2026-07-09T22:22:34.135Z",
+      "line": 652,
+      "callId": "exec-8181a6da-bf6c-49bf-a2f2-0aee500d8bf8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "64e95379db758a6d9a86e223a1bdc3f9595fb3fb63167eb42eaa0c6f1ba710a3"
+    },
+    {
+      "file": "src/api/system.ts",
+      "time": "2026-07-09T22:28:47.769Z",
+      "line": 802,
+      "callId": "exec-c4ba9f52-4545-40ab-81c5-8d09824732fb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c3611a0ecb810f5559811706bd748ad40851298195f37f33f02948d05e14d493"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T22:43:53.462Z",
+      "line": 998,
+      "callId": "exec-50bc6653-1254-4cea-b5c3-eb186fde7d17",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "966867309287e929cd6067477a1696eec5d9d20817a8d2e057fb1fc8b26820a4"
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "time": "2026-07-09T22:44:00.530Z",
+      "line": 1003,
+      "callId": "exec-a07f581a-58cf-4c46-b154-5e2ab3b01c21",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0c862a46798b37cee7dab716c2ba4200ef5a73694ee275dc181811aba957c75b"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T22:45:02.297Z",
+      "line": 1029,
+      "callId": "exec-30c48d74-30a0-4140-8087-261e25593e20",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "01c76877afcc0137d1457d38df2b220985df9aa81f1a4a206f0497fa91e9e511"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T22:57:41.602Z",
+      "line": 1148,
+      "callId": "exec-e3a4f323-80a9-4c85-ba4e-09084c1dca06",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1ae5dea49447907e1940fee4c38c8ff4cb6eaecc7d41f9ae760fd90084ea25ce"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T22:58:00.392Z",
+      "line": 1153,
+      "callId": "exec-9ac653f5-fe4b-4e40-b8d3-e7649ed64caa",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6a366514f7d69b83c7846c7b7409b16e207a56e7c5f5088205c84c914a60e1e8"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-09T22:58:44.585Z",
+      "line": 1168,
+      "callId": "exec-07f05f2f-e83b-41cd-a4cd-5c220f6d5250",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "7337731ba3a5e14345002fbfa1048416f9f6cb1a5b5caf4d2d189d1760b024eb"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:03:12.124Z",
+      "line": 1235,
+      "callId": "exec-cee4b72f-43b7-4125-b913-0f88aa4875dd",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "37d79d5e8cb61eec4cb023c4ad14d23e5ae2cc0a65f05a0675cd66d1cbd3f6f9"
+    },
+    {
+      "file": "src/features/Profile.tsx",
+      "time": "2026-07-09T23:09:37.895Z",
+      "line": 1356,
+      "callId": "exec-c0a9d074-46db-4249-b2fa-e9474378a185",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "README.md",
+      "time": "2026-07-09T23:15:03.328Z",
+      "line": 1430,
+      "callId": "exec-7f922c28-a82e-4654-ade6-0d212e1ff644",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Baseline absent"
+    },
+    {
+      "file": "README.md",
+      "time": "2026-07-09T23:15:14.545Z",
+      "line": 1435,
+      "callId": "exec-9f48d7c4-55f5-447f-865e-10532a11f289",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Baseline absent"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-09T23:26:11.546Z",
+      "line": 1596,
+      "callId": "exec-a66eaf00-f460-494b-a549-02dd03b3e01d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c84a2534ecb666628607378c0b8bccc74a113521c2c789186ab39c7d6911c2e5"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T23:27:01.933Z",
+      "line": 1606,
+      "callId": "exec-88ae89a9-6820-42a1-866d-a2a286ba8a62",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 5 locations"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T23:27:25.362Z",
+      "line": 1611,
+      "callId": "exec-d6bd863c-ae6c-4c28-abd0-a55bf541e8f7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e30de433de75a9b43b6212f95da90c0b50064899b6e978f7201b6cb5d7c3e996"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/CyberPlayerPlugin.kt",
+      "time": "2026-07-09T23:27:51.050Z",
+      "line": 1616,
+      "callId": "exec-56177700-e8ba-46df-a6df-c92f7f5bb974",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f2aa0384ad493c888f14e4ec71238e7abdf05307f7405c235fb1619c90e24595"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:28:32.095Z",
+      "line": 1623,
+      "callId": "exec-a4c3059d-6dc3-4d8f-9192-a26b179971ae",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1d45156aa81b55ece51e02ffa5ca5e9e973d77e74ec5a31d7010e20bf05286b1"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/CyberPlayerPlugin.kt",
+      "time": "2026-07-09T23:34:17.561Z",
+      "line": 1704,
+      "callId": "exec-395614fe-c3a4-4768-a9f0-0cb42e0cd912",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4af336d043518ca0050ef728cc9c04dbc0fe85bfcfc30568cbfb0c41387e7b67"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-09T23:34:17.561Z",
+      "line": 1704,
+      "callId": "exec-395614fe-c3a4-4768-a9f0-0cb42e0cd912",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "af725bb6f3d9222cb4c8a2f2050a5c7e81248529554494eefe777172c15249c6"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:34:30.730Z",
+      "line": 1709,
+      "callId": "exec-c531b36c-36a5-4919-b014-e0524510c7c0",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "a7097ba17a64f94e517622379eedba266fbec5d83b706ad34d40b1990d40e4b9"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:34:38.331Z",
+      "line": 1714,
+      "callId": "exec-59d34b35-5f8a-4ec3-b2ae-4804c06eb931",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "7bba86a1ad840bd6f1d7411687f9cf898b651154d3aa4b440133fbb9f4e6e7b5"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:34:53.427Z",
+      "line": 1719,
+      "callId": "exec-f5bcc137-10e4-4f36-ae9b-37bf6943ab77",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4c48300700d7c2d12245bf1a75223590a6b1ea4f53da5556217cbf46d5f8a68c"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:35:50.490Z",
+      "line": 1729,
+      "callId": "exec-c326ac3a-2a02-411b-90df-fcc293d05d0e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e640137cb570b28b5af5c88ccbcd24efefdaf47878d88ff26f2e4f81aec2b4f8"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:35:57.477Z",
+      "line": 1734,
+      "callId": "exec-01d1b5ca-01a4-445e-bb9d-96b1441fad34",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "80129f78a9e9bf2d8153125fcc7b9e9bc7ab101cbcc574bbd6342c25aaaadd67"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:36:14.936Z",
+      "line": 1743,
+      "callId": "exec-2fdebf1e-1fb2-4c2d-b854-b44921776d09",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "97662449ec30e47f81855df7e148cb40e84d7e735b8220603d231bc7542504f4"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:38:28.275Z",
+      "line": 1788,
+      "callId": "exec-da6c121f-556e-48b1-a0b8-980513a78f0d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e285c4543232f550aa6ad673ea3c1c6e79a1af779e9759c780f08a4bca79b473"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T23:38:28.275Z",
+      "line": 1788,
+      "callId": "exec-da6c121f-556e-48b1-a0b8-980513a78f0d",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-09T23:39:20.225Z",
+      "line": 1805,
+      "callId": "exec-e940735c-fe5a-423d-bff0-e078b4f1aeed",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:45:07.866Z",
+      "line": 1827,
+      "callId": "exec-39b742e6-0b6e-4fe6-b5dc-2e8c6b1ac068",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8484c372d8dd21d6edf2bb8b5857d9cd6b92d7235ff8043090dc8ccf1bc8354e"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-09T23:45:43.354Z",
+      "line": 1840,
+      "callId": "exec-4e53e360-ebf8-4d75-b42e-a971e73f9e71",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ba26eb4b501ad0ffc9b7745ad236c95924d82ffdf9921064286bb217af206764"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T00:29:27.779Z",
+      "line": 2257,
+      "callId": "exec-f0f65a2f-abfd-4792-b41d-48cf52e523ea",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "24d3367201e777466f0f855a71bb02a395fa9c743f72d616f86b68bd4986660d"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/CyberPlayerPlugin.kt",
+      "time": "2026-07-10T00:29:27.779Z",
+      "line": 2257,
+      "callId": "exec-f0f65a2f-abfd-4792-b41d-48cf52e523ea",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "79243329d9fcb5f407c654544ad4997aa76a9320ea95de9580d0191503054aef"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T00:30:48.772Z",
+      "line": 2267,
+      "callId": "exec-ea6f6c3e-aef2-47fd-a97f-39bda1f95ad6",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T00:31:13.428Z",
+      "line": 2276,
+      "callId": "exec-58f9ab47-713d-4031-8f52-1f8c509ffdd1",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T00:32:13.860Z",
+      "line": 2285,
+      "callId": "exec-46466966-9091-49ad-b319-18a01a343eae",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/features/Profile.tsx",
+      "time": "2026-07-10T00:32:49.217Z",
+      "line": 2294,
+      "callId": "exec-47e28d30-b04e-4154-907b-aa1a5b4b2096",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/features/Profile.tsx",
+      "time": "2026-07-10T00:33:01.590Z",
+      "line": 2299,
+      "callId": "exec-a951a4e9-89df-4636-93c2-7b216f85d713",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/res/xml/file_paths.xml",
+      "time": "2026-07-10T00:33:47.536Z",
+      "line": 2308,
+      "callId": "exec-da55432d-6fd8-498f-a51b-c63f57db5d0f",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "time": "2026-07-10T00:33:47.536Z",
+      "line": 2308,
+      "callId": "exec-da55432d-6fd8-498f-a51b-c63f57db5d0f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "abc3b72d6042ff8935135bb1059b182cf79d3cfac98d4013ce0cee7c0ca34d25"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T00:35:44.952Z",
+      "line": 2331,
+      "callId": "exec-36236e95-4668-4b28-8fc8-5616d083dcac",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "26e6ed2a673b4b09001f888cabbaefd46f3376370239634fba3d082ccaf5fb62"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-10T00:35:44.952Z",
+      "line": 2331,
+      "callId": "exec-36236e95-4668-4b28-8fc8-5616d083dcac",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "71b666374169d48382268270d078eda8e90e4be2cb86aef07f665130db826104"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T00:35:44.952Z",
+      "line": 2331,
+      "callId": "exec-36236e95-4668-4b28-8fc8-5616d083dcac",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8e704954625f3721e0734d6894780acc9ed559492b0cedec1a2516f5fe2deeb2"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T00:36:04.488Z",
+      "line": 2338,
+      "callId": "exec-411decc5-e65c-43be-92f9-39edb59d3d53",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8473302e58f666dc47fde29e4df7eb06f8504bde057f65fe407ba0a0389873c3"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T00:36:04.488Z",
+      "line": 2338,
+      "callId": "exec-411decc5-e65c-43be-92f9-39edb59d3d53",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "372191faaf50681dba948fab34ded130f6174b3679bcf3112e0faa8a4e8bf658"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T00:37:00.209Z",
+      "line": 2349,
+      "callId": "exec-34a5c5fb-a3fe-4aa7-bc5e-e3e51aee0f64",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8c8a412d6469547dace5d718ada70a56c9a52a0ef1b2a491535185ffc8d451c4"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T00:37:17.415Z",
+      "line": 2354,
+      "callId": "exec-07435e4e-331c-4b29-a4ea-c76deb3d62b2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "17e0c9ddc37bfbb319fbbf66afd54e0410ef69defdd1bc7736f398f80b232e3c"
+    },
+    {
+      "file": "android/app/src/test/java/com/getcapacitor/myapp/ExampleUnitTest.java",
+      "time": "2026-07-10T00:51:44.051Z",
+      "line": 2563,
+      "callId": "exec-280acff4-0c17-4ec6-b72c-e7554fb4d101",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ef6a24c181ca4b95af26da114960d5d77a8ce54a12b08cba47e0e105e6bd8da6"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java",
+      "time": "2026-07-10T00:51:44.051Z",
+      "line": 2563,
+      "callId": "exec-280acff4-0c17-4ec6-b72c-e7554fb4d101",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4dabd837c502c78e784658f09073bbcbf4a82fe3e483b7d334797cf8604696ca"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T00:51:44.051Z",
+      "line": 2563,
+      "callId": "exec-280acff4-0c17-4ec6-b72c-e7554fb4d101",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "57a68926b74f64830658b73fb873f94db1938f79a4eee65892e5968f1f0ce6a0"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T00:52:46.914Z",
+      "line": 2587,
+      "callId": "exec-e007fb78-af4c-4e14-a19c-6c1132297ace",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "90f4ad5707fb8305f0987f626180c1e6b64def83e088aad78fe6e45d58ca3e5f"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T00:54:56.503Z",
+      "line": 2617,
+      "callId": "exec-e50ab93e-2648-4484-bd00-a8ead92d5a9e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "63915a519fa8146ea1ab5880c42b9ac749dd8b09af9e11ce1656684f2a84d985"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T00:57:14.472Z",
+      "line": 2649,
+      "callId": "exec-dfd15b48-fb99-4c25-84a8-81a05b4a65a5",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b214ae0960e6558f420e1df22c60938bb82779075437968259d0c0faf428eabb"
+    },
+    {
+      "file": "README.md",
+      "time": "2026-07-10T01:00:59.294Z",
+      "line": 2709,
+      "callId": "exec-19213658-4788-4688-aca4-9da5314f9b37",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Baseline absent"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T01:08:38.652Z",
+      "line": 2816,
+      "callId": "exec-448a7a31-6378-4c54-892a-347934035689",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "bc909eadb0d1cbfa5961cac71dc09ec17a7e315418e8a4de22fe82fd52694c1e"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/CyberPlayerPlugin.kt",
+      "time": "2026-07-10T01:08:38.652Z",
+      "line": 2816,
+      "callId": "exec-448a7a31-6378-4c54-892a-347934035689",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d5352dd7e9735b9852e8b33719e0ab41e2ab36c8a47aaa10639295af2009087c"
+    },
+    {
+      "file": "README.md",
+      "time": "2026-07-10T01:10:47.556Z",
+      "line": 2842,
+      "callId": "exec-fc5d25ab-6ccb-449c-b0c8-37777afe0222",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Baseline absent"
+    },
+    {
+      "file": "android/.gitignore",
+      "time": "2026-07-10T01:10:47.556Z",
+      "line": 2842,
+      "callId": "exec-fc5d25ab-6ccb-449c-b0c8-37777afe0222",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3b335386126242fb5ea47fb61e50ea9e4a65cd076a8349129ca116de143a123d"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T01:10:47.556Z",
+      "line": 2842,
+      "callId": "exec-fc5d25ab-6ccb-449c-b0c8-37777afe0222",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e6f5ca4125e7bdcb090c9078889e44c35affbc0a9e7ecaeed6f4003612890628"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java",
+      "time": "2026-07-10T01:10:47.556Z",
+      "line": 2842,
+      "callId": "exec-fc5d25ab-6ccb-449c-b0c8-37777afe0222",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "bdc5ab8711412eb8a97c8ff0da14cd2189548811f67d7a72956b53802c09b68e"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T01:13:02.532Z",
+      "line": 2871,
+      "callId": "exec-7de2da54-7208-4fd6-935f-3bed51e76e89",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e305f1efc2643d0c62764151d81753e7fb02be89cda49016d01d11b772de51cf"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T01:14:24.740Z",
+      "line": 2888,
+      "callId": "exec-0beaa482-7149-49f5-950c-e84d37ed9b0d",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T01:14:37.323Z",
+      "line": 2895,
+      "callId": "exec-eb68eb43-b0cc-4b1f-a40c-e2a78d55d83a",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "efb6d2ba8d12dabd148dc1689c7f4d5ec3175b8293cde57cedaafe5b11490fce"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T01:15:26.629Z",
+      "line": 2904,
+      "callId": "exec-0d9e0941-f2aa-45cb-a6df-38ab03f4244e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5b05b6cddaed794eadcc15367e65a6f74294ed9126eb819af2cac3d521ff105f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T01:16:13.669Z",
+      "line": 2917,
+      "callId": "exec-2077f0d3-0184-4049-8b6e-ca5a2d665a8c",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "00aec845e3842f46408aae132b895997bdd8a30c1a90be6182f599b6a6ca6b44"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java",
+      "time": "2026-07-10T01:22:33.590Z",
+      "line": 3022,
+      "callId": "exec-6f5e4462-f2fa-48f7-b1a3-c84dbde076bb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5025a5f4528fe241f33d7fee0821003df60c8cff92975b78ca3c4ee819fa4345"
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "time": "2026-07-10T01:26:42.647Z",
+      "line": 3070,
+      "callId": "exec-b15a46ec-62fb-47d1-a438-91e86390a407",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "107bc1a12a0641e0fd890649cf19601c31bf1ddafba0d8dbf4674a7d04c278af"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java",
+      "time": "2026-07-10T01:36:47.640Z",
+      "line": 3098,
+      "callId": "exec-d52cab6a-089b-453c-b979-e1ef06173c0d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3ea747e7518729331250717bebdeef52626694d7653b32a23ce6e8d7b847d45e"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T05:50:24.166Z",
+      "line": 3151,
+      "callId": "exec-7868489d-9292-4af8-a648-0bf5283809a8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3e2f41e56f9a7dc3d96e868158d9f7b0060b3ff198ead6576e4d6bcf7d575f0c"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T05:51:41.691Z",
+      "line": 3171,
+      "callId": "exec-6b75e1cb-13a0-4732-853e-cb03de1f02a9",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "40d04428c73ec36e9a80090093cb0e57b5447295d008c858285f251a2548397c"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T05:54:00.472Z",
+      "line": 3208,
+      "callId": "exec-744e1fb2-59b9-4de6-bb09-bf360dd74fb9",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0c80fe906fa86536c7d83acebdb7ca50c38b18b3ad8b5ec5ab976f57d8ae3978"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T06:20:13.102Z",
+      "line": 3544,
+      "callId": "exec-7e6823f3-2780-4bc6-acd0-ced19c69fcb8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c728de2f8dbcd13d52a6139382c97af41a11eabc61e0685cd11ae18f6115fa2e"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T06:34:44.919Z",
+      "line": 3657,
+      "callId": "exec-d5597c83-0138-4caf-b2ba-d3c6633e1746",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e87fc3c85d1af316e4a3685e5b03f732e9995f0cc36d2d7f3307edac8b96fdbb"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T06:35:13.153Z",
+      "line": 3662,
+      "callId": "exec-dbff6ea1-6906-454a-b3f7-f1a40ae545e1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0c69ce9f9eb6f849fb62014cd79bbffefd3a7cadd0d0df4f75481c06da54cdc3"
+    },
+    {
+      "file": "capacitor.config.ts",
+      "time": "2026-07-10T07:45:37.705Z",
+      "line": 3923,
+      "callId": "exec-71aa5240-62b6-411f-ade3-4635cdabfce1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d742e3e832a32fb93a09f70a075b5272d8da3802ef331a6cff6a28b455d7f620"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T07:45:37.705Z",
+      "line": 3923,
+      "callId": "exec-71aa5240-62b6-411f-ade3-4635cdabfce1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ee7b0f4d7e1bb8faf2f0fc13bf3c2e65c5a01b13d7a2229befcc09f4f4621646"
+    },
+    {
+      "file": "fetch_openapi.mjs",
+      "time": "2026-07-10T08:52:28.893Z",
+      "line": 4106,
+      "callId": "exec-7ad86a5e-fb5a-496d-8c90-badb23aa4647",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "8b3170a25fe628bc068072c3b8e0f6b69672209568ff1c8244870e2a3791c4f1"
+    },
+    {
+      "file": "package.json",
+      "time": "2026-07-10T08:52:28.893Z",
+      "line": 4106,
+      "callId": "exec-7ad86a5e-fb5a-496d-8c90-badb23aa4647",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/CyberPlayerPlugin.kt",
+      "time": "2026-07-10T09:06:01.647Z",
+      "line": 4235,
+      "callId": "exec-ac1d1320-17f5-4a4a-a7b0-3f4e4f0a1af4",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ac369b9e62e366fcf7cc046380db67fc69950e21a9af20924f49fb05c6acb4da"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T09:06:01.647Z",
+      "line": 4235,
+      "callId": "exec-ac1d1320-17f5-4a4a-a7b0-3f4e4f0a1af4",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-10T09:06:01.647Z",
+      "line": 4235,
+      "callId": "exec-ac1d1320-17f5-4a4a-a7b0-3f4e4f0a1af4",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f49764757c9f8ae412c2a8d6519a87ffc28e109f693f19e2ddd9c880a7253103"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T09:11:28.841Z",
+      "line": 4260,
+      "callId": "exec-35b0800e-4a5e-4f89-b3b7-97b387588877",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6f0d047dac5b91f319bbc82ea5884ed275f60fc9b214b9f5e101b6e63a291de0"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T09:11:28.841Z",
+      "line": 4260,
+      "callId": "exec-35b0800e-4a5e-4f89-b3b7-97b387588877",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "98f570a4e88ad04660cd6ae1c7f4fe616047f752264b03c38b128c2ab0f77d91"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T09:11:28.841Z",
+      "line": 4260,
+      "callId": "exec-35b0800e-4a5e-4f89-b3b7-97b387588877",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "95c6889b35d6e1a3544c49200d105d9c2b4aad891d2d0e4ec16a93b7b2061d03"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T09:12:23.221Z",
+      "line": 4273,
+      "callId": "exec-20bf4ae9-325f-46c5-b81e-7b1729fd928d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "20793c66dd1cfc04fd3586c27f38ce94df910299255976e7a6d559f74ee1a705"
+    },
+    {
+      "file": "android/app/src/main/assets/THIRD_PARTY_NOTICES.txt",
+      "time": "2026-07-10T09:58:53.699Z",
+      "line": 4771,
+      "callId": "exec-a6a80de1-090b-47b4-8e08-f952ffbafcf7",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "b23b5bc040f6a53d3eaba333c85a5c5adafdc3deed6691bc75244a4c04686d8a"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T09:58:53.699Z",
+      "line": 4771,
+      "callId": "exec-a6a80de1-090b-47b4-8e08-f952ffbafcf7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d2b0075c2a38b137cf4dd015eef31e16671fff6a1dfdb4e48ed4f620d2144072"
+    },
+    {
+      "file": "android/FFMPEG_BUILD.md",
+      "time": "2026-07-10T09:58:53.699Z",
+      "line": 4771,
+      "callId": "exec-a6a80de1-090b-47b4-8e08-f952ffbafcf7",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "10d16e5bb50b1327210996fa34bd0d7cc3a8c577aea5d7ce0aeb173c441599a7"
+    },
+    {
+      "file": "android/app/src/main/assets/licenses/FFmpeg-LGPL-2.1.txt",
+      "time": "2026-07-10T10:00:18.444Z",
+      "line": 4784,
+      "callId": "exec-65230292-3bb5-4ff6-a9fd-00dc2c2954a6",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T10:01:24.472Z",
+      "line": 4799,
+      "callId": "exec-dd1561bf-e7df-46ab-8553-5ecdd968c74a",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "62111cc98e7ed1bb160db646de9a751d792eafe82cc193148d9ee164b13a8bd7"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/FfmpegExtensionSmokeTest.kt",
+      "time": "2026-07-10T10:02:35.433Z",
+      "line": 4817,
+      "callId": "exec-c3f4ee95-380c-426f-beb8-2ae18ba6d044",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "b82a5716585e2cc15b4ea3bfeb38cefd0613d0a30a1d77c178f0ad68b0949519"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/FfmpegExtensionSmokeTest.kt",
+      "time": "2026-07-10T10:06:39.447Z",
+      "line": 4878,
+      "callId": "exec-2c27b7bd-fc91-4fd2-bea2-774c1754ba93",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c2e532f64777c334e18ca7915ec78a36f615d705a4d615101860bd117370627e"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/FfmpegExtensionSmokeTest.kt",
+      "time": "2026-07-10T10:07:18.099Z",
+      "line": 4890,
+      "callId": "exec-6d274709-a984-4014-a21e-8a61db67dd62",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d3ad4f562890abb862dd2012d3fbb94e6bdb761aaa084d6a3bb95cd9d6d1b9f0"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/AudioFormatPlaybackTest.kt",
+      "time": "2026-07-10T10:10:14.090Z",
+      "line": 4924,
+      "callId": "exec-375c837f-527f-447d-9536-64d9776b7aa4",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "2e7e745ead516555683042f70ec904f64f29fd732fe8f2622492a517d07bc98f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T10:10:14.090Z",
+      "line": 4924,
+      "callId": "exec-375c837f-527f-447d-9536-64d9776b7aa4",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6b7aa5a16bdd376a9283e35f00ca89d951bd81577d1dea86ac39d333f14a2605"
+    },
+    {
+      "file": "android/app/src/debug/AndroidManifest.xml",
+      "time": "2026-07-10T10:12:01.196Z",
+      "line": 4946,
+      "callId": "exec-46133e2c-4a04-4341-aa10-3bf017d5b385",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "66fa414b624edd1fdeaa2f75aee68c2f47f34aaeb1a339ec8aa32abb9ecb326d"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/AudioFormatPlaybackTest.kt",
+      "time": "2026-07-10T10:17:08.973Z",
+      "line": 5023,
+      "callId": "exec-1f674b2b-dac3-4c4d-82b2-ddc20d0cb9e8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "a0e05202aa3b2a9f2e46c3f8f95e934de79f3407f51aea432ad2881bd3852690"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T10:22:39.332Z",
+      "line": 5133,
+      "callId": "exec-9d06355a-48dc-481d-934b-7f9cd01e2cd1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5d7c8f8ec3f7d13c21f74690543b7a4cbf7703f9b9094cf9c52cc61c6771fe77"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T10:22:39.332Z",
+      "line": 5133,
+      "callId": "exec-9d06355a-48dc-481d-934b-7f9cd01e2cd1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d6411b97c03159d7b1abe07fb832d570abd1fdd804065bd27282ec76dc5ebb22"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T10:22:57.304Z",
+      "line": 5138,
+      "callId": "exec-093d89fa-2a18-4ff5-b0e5-b65daab447fb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4b1a734ecbcdc6aa7369f303a3a1e1172fc64dd9a551d749e72379a374c3d7d9"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T10:25:29.250Z",
+      "line": 5169,
+      "callId": "exec-7161e0b7-d4cf-48bb-a001-1e1e9bbc482b",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "bb16ae6315db48b0a03f5917474ec36f6e25f8da742654a3ed522949e9ef8c8a"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T14:15:02.911Z",
+      "line": 5304,
+      "callId": "exec-54615f4e-406d-4c41-98ee-ad96f3984379",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b9c0bf6e8e58548cdafc707a9b2e00a8f92a2511b77a0799fa4a36796c4ca7ea"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T14:15:02.911Z",
+      "line": 5304,
+      "callId": "exec-54615f4e-406d-4c41-98ee-ad96f3984379",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ed57cf8b47fe8018b025656a6a833451b232d8f8af3581552bb5b233551e611f"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T14:15:02.911Z",
+      "line": 5304,
+      "callId": "exec-54615f4e-406d-4c41-98ee-ad96f3984379",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6783e96b1db276662f9d07976506c8e964e39bf492dcf04c467c81fda7138f69"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T14:15:02.911Z",
+      "line": 5304,
+      "callId": "exec-54615f4e-406d-4c41-98ee-ad96f3984379",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "37900b98924e1283bf136fb7f0ba3844cde9b782aebde7e8ba20e8ae1ae50acf"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T14:19:11.878Z",
+      "line": 5370,
+      "callId": "exec-b1a9ef63-bd6c-424e-816b-130c7fd64b20",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "dc094c78b695ae80d3600f4205a2a294d7f29be1b7ec1ac4b1a1565d4336e17f"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_back.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "39f6664cf020800325cd048344bbd6e978dc21e22f045d03ef2070f2bf9c7204"
+    },
+    {
+      "file": "android/app/src/main/res/layout/cyber_player_controls.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "8edf1487b26dcf2bbd291c27655a06397303aa11aeb0cf85afbbd1b74699112f"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_gradient_bottom.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "32e71d8856bc85e7e37d0d102633ca9f193289137aa08743e639c7ba8aed9147"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_control_chip.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "5a83ca8e4d9e2484141d18ef96d6de080693bef41786f669d38753c5d457fa26"
+    },
+    {
+      "file": "android/app/src/main/res/values-sw600dp/player_dimens.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "39402fdbb076f95a4460dd8ad6bad869b6754386b2d7ee40ba24c2f5d0afb6be"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_panel_item_selected.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "3b31e4ee3497a0a12744126788d3f6692a77050761487ac6e3672c29151d600e"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "e5afcda1a3616f28a6b87dd88fd90df1a004194b7ca8104748ecab0d56086305"
+    },
+    {
+      "file": "android/app/src/main/res/values/player_dimens.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "98d38949f743f13bb337aaf2ccf1e0a9cf7f90b08a1d2b0df39f326edf35a6c3"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_quality_chip.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "47fbabf805e642f2e38aa1da48e1387dde1bd27813f248cc7edaed971e0f4356"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_gradient_top.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "022e10f93e0184c8214ee6278ed3748bc1168a11d37d8a1feddce1595321a099"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_close.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "bada4788236ffe060d3d5a8f337bb3e29772583965cd89c262535fe3743348d4"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_panel_item_background.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "39001d6b2d548fe12a2e1877de13b5b55f05b9fc7f23cfcdefd85cfe4f197bd4"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_panel_item.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "9b1500d061647a7f14f8a1789731c7da1339bdc203383fcb4bfe310181e8680f"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_side_panel_background.xml",
+      "time": "2026-07-10T15:01:44.499Z",
+      "line": 5512,
+      "callId": "exec-5fcb1dc0-a968-4581-b45b-b796c307ad29",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "32cbab76a70ef5fe7f4147af6e3ae7cae5cc47b1e9c2fa552900fbff8cc8c215"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T15:02:55.143Z",
+      "line": 5521,
+      "callId": "exec-96087f86-d6ce-4666-b5a4-22676c8d4edb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "02a7fe424ca60e9c6061c0779e9b2ea8caca467cb32caba9bb677428622495ba"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T15:03:09.458Z",
+      "line": 5526,
+      "callId": "exec-cc06a86f-fdca-4681-8b10-9aa1bf1e2522",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9a3d9889e007029271a3069870c681ab3ca106ae05212ecc5b1fdf162e4d9ebc"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T15:04:37.319Z",
+      "line": 5535,
+      "callId": "exec-ea1238ce-15cc-4b10-a486-1f654f6acf82",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "26343e4918edd901ea554797564817a15a23306cdc42866655b40bbc36720733"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T15:07:53.372Z",
+      "line": 5541,
+      "callId": "exec-0c889d29-ca85-4636-b087-3b4ea1f4c945",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8a787eea6e87aaa25cb5be7f644e2702fc0f42ad140c2313127903eb40e2d4d4"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T15:08:31.523Z",
+      "line": 5550,
+      "callId": "exec-f68707cb-1418-4a39-923b-476fbb89d043",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0d43230bf7ccf270b8e9d0e07818009011f073d85e01921b96277f97d6d22367"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T15:08:31.523Z",
+      "line": 5550,
+      "callId": "exec-f68707cb-1418-4a39-923b-476fbb89d043",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "db491fcc18dfd9fd7cfd22f6ac39e6030a37a141822e190d0ce333c53376642a"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T15:10:38.903Z",
+      "line": 5571,
+      "callId": "exec-3e8aee95-b408-443c-a80e-8ec917d2cb71",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "634f0d6f3bbc04071cf60b53f44c4252f50730842217200e3f39ee1230c619bb"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerVisualPreviewTest.kt",
+      "time": "2026-07-10T15:12:50.023Z",
+      "line": 5597,
+      "callId": "exec-0f205ee7-5f3e-46a8-b18f-e3d0c6449837",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "42c6c083aea176422f7c2f3f0c72f1eab684a1424c9406dda81aa1301f81c9d8"
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "time": "2026-07-10T15:19:23.737Z",
+      "line": 5647,
+      "callId": "exec-f36be357-e177-4067-a42d-3d304df62f70",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "495388eaaf62b963846e9c5797be887ef7c7b7a3670558a0f37cc1c339a02eb1"
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "time": "2026-07-10T15:22:18.162Z",
+      "line": 5668,
+      "callId": "exec-00a0b378-79d3-4642-aa23-bb829bb1c758",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "107bc1a12a0641e0fd890649cf19601c31bf1ddafba0d8dbf4674a7d04c278af"
+    },
+    {
+      "file": "android/app/src/debug/java/com/purewo/cyberstream/PlayerPreviewActivity.kt",
+      "time": "2026-07-10T15:22:18.162Z",
+      "line": 5668,
+      "callId": "exec-00a0b378-79d3-4642-aa23-bb829bb1c758",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "b5eeb50847ed537cb2fe621aa5139c4a1f72791ad728f7c785583f327270dc8b"
+    },
+    {
+      "file": "android/app/src/debug/AndroidManifest.xml",
+      "time": "2026-07-10T15:22:18.162Z",
+      "line": 5668,
+      "callId": "exec-00a0b378-79d3-4642-aa23-bb829bb1c758",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "7ced1166c198b553b8cfe7928cedc240ac3bd83e22c9b185fc14b89f5d2d304f"
+    },
+    {
+      "file": "android/app/src/debug/java/com/purewo/cyberstream/PlayerPreviewActivity.kt",
+      "time": "2026-07-10T15:34:17.568Z",
+      "line": 5733,
+      "callId": "exec-c6341224-244a-4b08-9f34-a6f813856dfb",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerVisualPreviewTest.kt",
+      "time": "2026-07-10T15:34:17.568Z",
+      "line": 5733,
+      "callId": "exec-c6341224-244a-4b08-9f34-a6f813856dfb",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T15:34:17.568Z",
+      "line": 5733,
+      "callId": "exec-c6341224-244a-4b08-9f34-a6f813856dfb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "313bef42fea013bb2f4f8d35976b55dbe21f5a083116c4d32605c102d9649950"
+    },
+    {
+      "file": "android/app/src/debug/AndroidManifest.xml",
+      "time": "2026-07-10T15:34:17.568Z",
+      "line": 5733,
+      "callId": "exec-c6341224-244a-4b08-9f34-a6f813856dfb",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/main/res/layout/cyber_player_controls.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "fbcc954c1ac90eb12bca412671e0cbd4a8304c085914389af9484159c87ad36e"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_seek_gesture_background.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "86b2cc332683dcf3d5c66e326c5ef93d25ff0a34d642bb8a083539fa3088900e"
+    },
+    {
+      "file": "android/app/src/main/res/values/player_dimens.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9935226f3ac482513a3bccd7c6f90cde5a345b19e1dfe6da17af088ff8f4725c"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3539ce6b26a8b769ecbe9721343b4a64c855545f0ecd931fd6318cf86750fde5"
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/cyber_player_controls.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "3e772996be8d9d3f5fc0f7013dc61285f510875bed6e7f8ad78c96532388f4d7"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_portrait.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "067f85ed7297e4e325655e38ae7703dd45b3c708e257e4bdf2a289edea3d61c2"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_landscape.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "82039b27765384e2a0a680a0964257f6cf2f971f8a603ef4bee6cb3029f485f4"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_previous.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "a087250536117b5115b2cb5bc2c1f798939bdf6a3c49530553790af198c3c066"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_episode_chip.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "89807a384ca3e39fc762ba68e884c270328614034785d07f1925134f97f34052"
+    },
+    {
+      "file": "android/app/src/main/res/values-sw600dp/player_dimens.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "aaad82a5ae471290d7746dd8b5ca9caae90c0a062740a4d7926188c09d59940c"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_episode_chip_selected.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "032e8b6b547cbb285c73f32fdf67f0a9dd6d48a6540111c9ea64534f429644d9"
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/activity_player.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "79c84e8152fd884ae29a4eee7aee7e2e042f8614848480d481884a41d0178ed8"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_next.xml",
+      "time": "2026-07-10T16:12:46.205Z",
+      "line": 5803,
+      "callId": "exec-5a893b81-1d08-4411-9aad-9c8a26373dd2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "e30dfc0e649104331ebdb7f6cea36707066b932ada3f47a75709774f38b06947"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T16:17:18.490Z",
+      "line": 5817,
+      "callId": "exec-7863fb70-9fa3-4740-92c2-f26c193916fd",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4e53fecc088baf29d9d056dc04c9665d9917758363549ffec384617c4691c97f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T16:18:46.513Z",
+      "line": 5822,
+      "callId": "exec-74d00744-30d5-4e43-892f-ec0032981f43",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "cef6892c861e30e0256fd5c2f0663c7e8e1bf2c4f8bb6f82705ad6d42f4a7c7a"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T16:23:30.771Z",
+      "line": 5831,
+      "callId": "exec-ac9a3055-7c35-4fad-bc2f-a20b3ebcc01d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "72d404ab1d43197485f7492004851c9974560e5a59fa869ae700831948384adc"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T16:25:39.599Z",
+      "line": 5836,
+      "callId": "exec-4767ee89-5038-47e8-9c2c-4daffdf98dbf",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e7ef5df7a8d1c241ce892b7e6b302bb6ca9eda61509b2c8cd28486241d01358b"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T16:29:37.210Z",
+      "line": 5845,
+      "callId": "exec-0fe19715-1115-4fb5-be2b-1ea3c26e8363",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "28e59f65eb105e220f84d74d8466e67e2767b4f0cc18cfed0bf93c4bb8e73ddb"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T16:29:37.210Z",
+      "line": 5845,
+      "callId": "exec-0fe19715-1115-4fb5-be2b-1ea3c26e8363",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3ba43ade3746755a30be4f3ca909ebb3121561c9a0cb472ea525a884cababef8"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T16:36:27.575Z",
+      "line": 5860,
+      "callId": "exec-26a4702e-6127-436e-8fd1-30a2dbff45b7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f0ec1c86e77d5c2abf250d4cb2692b5900eb574402c7ac1369c8b9effbe0b05e"
+    },
+    {
+      "file": "android/app/src/debug/java/com/purewo/cyberstream/PlayerPreviewActivity.kt",
+      "time": "2026-07-10T16:46:24.026Z",
+      "line": 5879,
+      "callId": "exec-5d01433e-d7f6-4f08-8b50-c2e9d924e15b",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "3112d95fa5e61df6a7f2338ec336a48f4e973b64aa4a16139fad738d629884df"
+    },
+    {
+      "file": "android/app/src/debug/AndroidManifest.xml",
+      "time": "2026-07-10T16:46:24.026Z",
+      "line": 5879,
+      "callId": "exec-5d01433e-d7f6-4f08-8b50-c2e9d924e15b",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "7ced1166c198b553b8cfe7928cedc240ac3bd83e22c9b185fc14b89f5d2d304f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T17:14:34.166Z",
+      "line": 5938,
+      "callId": "exec-77a40f47-d01d-4998-bafc-9a9879e46ef8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8d8be176dbf67dbb7e8b3acd3680c478017d18367f46638cec97ba2e3cc44c4a"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T17:16:33.258Z",
+      "line": 5942,
+      "callId": "exec-1830fff8-470d-4bf6-a0ac-cdee3fa8728f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c998771d2f3d40dfe394fe837842f4b58527eb1c3360064dd6d5d8abd22150f4"
+    },
+    {
+      "file": "android/app/src/debug/AndroidManifest.xml",
+      "time": "2026-07-10T17:26:21.271Z",
+      "line": 6004,
+      "callId": "exec-f7b0f4b5-442e-4ec6-aabd-0979eb6e5d26",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/debug/java/com/purewo/cyberstream/PlayerPreviewActivity.kt",
+      "time": "2026-07-10T17:26:21.271Z",
+      "line": 6004,
+      "callId": "exec-f7b0f4b5-442e-4ec6-aabd-0979eb6e5d26",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T17:26:21.271Z",
+      "line": 6004,
+      "callId": "exec-f7b0f4b5-442e-4ec6-aabd-0979eb6e5d26",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f2a103348cbac3a11390d704eaf5a548ac0e96579f36227013e54a4f28105b62"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T17:27:26.531Z",
+      "line": 6016,
+      "callId": "exec-3913acad-596a-4725-af8d-579fee110f2e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "eb8990c49e8d349b655bb30ba5ecbfe748a1fb54ef4a8a5b5367650f277cca99"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-10T17:59:35.613Z",
+      "line": 6141,
+      "callId": "exec-ba50656c-ec1b-4a78-992c-ebc171a5b049",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9b7e08700ea7d934bdfbdd93690274285d903f5e698ad090f4bc34a98ec96239"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T17:59:35.613Z",
+      "line": 6141,
+      "callId": "exec-ba50656c-ec1b-4a78-992c-ebc171a5b049",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:00:28.360Z",
+      "line": 6146,
+      "callId": "exec-37deacf9-9304-4877-8c7d-5726944ed8d4",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "beb4dea396e4368e258a979c00d70f82f27533298cec63c845682f69412361e2"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:01:08.085Z",
+      "line": 6151,
+      "callId": "exec-99c02e38-cd39-40b7-8f1c-3f6b2dfc5286",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0d849d888ee2053b39b82344e1c0c1a7a2eed0f3c5ad51f2448d73943f9bdf35"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:01:54.993Z",
+      "line": 6156,
+      "callId": "exec-5e6d5a3c-2628-42ac-8c21-c987fc2ba130",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f47167c7295972c11d226e2c0e5883153228e70db591d811bdb91e3c55eb42dd"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:03:02.754Z",
+      "line": 6162,
+      "callId": "exec-15755e72-3868-4592-a0c5-950e9c5e39cb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "89398f6d177995086867058e9d868004f524d793c252b7ad14ad5ec6f5ace2b0"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:03:16.489Z",
+      "line": 6167,
+      "callId": "exec-e28a2176-4266-49f6-93b8-2bc4c6c5de08",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "2bb55ec71efd9992fadb1d80673a6ef3ce1c909c9251e5f6914c32f0688aea82"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:04:23.366Z",
+      "line": 6176,
+      "callId": "exec-33cebbf2-914a-4a2c-a099-2bbcfabd6a6e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "bbd173e8e0ed4de629c9f1eb08b7488adcea4c0698e3b86266791bd7cd437543"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:04:54.998Z",
+      "line": 6181,
+      "callId": "exec-a0f1f35b-1edd-46c0-bd1d-040511898c55",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6f8d37e5f3c9904483aaacb0eb1175a0ab8f4808498deb39ce0bc42606ae0a13"
+    },
+    {
+      "file": "android/app/src/main/res/layout/cyber_player_controls.xml",
+      "time": "2026-07-10T18:05:38.114Z",
+      "line": 6190,
+      "callId": "exec-191c7091-5772-4285-84fc-f745e9d6e0b2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b5c4eb7d7d0dc8b2191f6a6c5929e8767680da3a5496d149836be5f8df07b53e"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_season_chip_selected.xml",
+      "time": "2026-07-10T18:06:53.393Z",
+      "line": 6195,
+      "callId": "exec-1afd9ba5-0d42-4cb9-95db-5fffc72f9ad8",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "e2d4cb804eca5d75e6e6053273e39b28837ae91285cacca358f190b981482b38"
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/activity_player.xml",
+      "time": "2026-07-10T18:06:53.393Z",
+      "line": 6195,
+      "callId": "exec-1afd9ba5-0d42-4cb9-95db-5fffc72f9ad8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5aec40e5d576290405b9db3cfeab6931f94938842c4234894e91b94568ee57f6"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_volume.xml",
+      "time": "2026-07-10T18:06:53.393Z",
+      "line": 6195,
+      "callId": "exec-1afd9ba5-0d42-4cb9-95db-5fffc72f9ad8",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "1325f01f9920f332a261aaf718e67b4e134202a94ef3eac384f90ca2917b7f25"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T18:06:53.393Z",
+      "line": 6195,
+      "callId": "exec-1afd9ba5-0d42-4cb9-95db-5fffc72f9ad8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "de08398b59608b623f96ce1b192c528dc933ff05ed482b637c5f776194238f7a"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_brightness.xml",
+      "time": "2026-07-10T18:06:53.393Z",
+      "line": 6195,
+      "callId": "exec-1afd9ba5-0d42-4cb9-95db-5fffc72f9ad8",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "ede036115d6370e64ebb990193cb05ced7e692a2ac0473f81391be6e7ee6385b"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_season_chip.xml",
+      "time": "2026-07-10T18:06:53.393Z",
+      "line": 6195,
+      "callId": "exec-1afd9ba5-0d42-4cb9-95db-5fffc72f9ad8",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "780c4ec239cda21ceec0faf3a6fe998b331ee51aa60d37c44d4c814e0a0379b4"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:07:54.613Z",
+      "line": 6212,
+      "callId": "exec-3d136cb6-0475-4340-8e4e-f09776ebe113",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c209518e9ca0d9e35d6a8041cbdde6324cea4661d70811f04fabd1929bb8b209"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T18:10:21.864Z",
+      "line": 6233,
+      "callId": "exec-95c8e93b-b90a-4712-90d1-b2b173e2061e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ad950d51f66828b95455c5e985c73ae3a8e4ca6dd7855a530f52a1a9fd51770c"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T18:10:31.696Z",
+      "line": 6238,
+      "callId": "exec-7d29840a-73c3-4db6-be27-64383d349be8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "be87d80144b8cecf2d89c4a472b9b3bc8afddd5ad6f4cd7d26f14ff74f441f20"
+    },
+    {
+      "file": "android/app/src/debug/AndroidManifest.xml",
+      "time": "2026-07-10T18:14:02.316Z",
+      "line": 6280,
+      "callId": "exec-cb91a34b-f169-4865-b764-c019077f5b04",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "7ced1166c198b553b8cfe7928cedc240ac3bd83e22c9b185fc14b89f5d2d304f"
+    },
+    {
+      "file": "android/app/src/debug/java/com/purewo/cyberstream/PlayerPreviewActivity.kt",
+      "time": "2026-07-10T18:14:02.316Z",
+      "line": 6280,
+      "callId": "exec-cb91a34b-f169-4865-b764-c019077f5b04",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "848f5f132d18e01b88d5dc956ade7ba5d699caca42b9ba116067be2116c2c171"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T18:32:26.556Z",
+      "line": 6356,
+      "callId": "exec-4c906f2d-6740-4f75-a451-e03f5d82a3f7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8cb84f7666ef0a9033abd1247377b24170aa8487bf2170c6ec5b6c175964b9fb"
+    },
+    {
+      "file": "android-ui-season-land.xml",
+      "time": "2026-07-10T18:33:40.722Z",
+      "line": 6367,
+      "callId": "exec-97d24489-4270-451b-b750-5cf8b056e4a7",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/debug/java/com/purewo/cyberstream/PlayerPreviewActivity.kt",
+      "time": "2026-07-10T18:33:40.722Z",
+      "line": 6367,
+      "callId": "exec-97d24489-4270-451b-b750-5cf8b056e4a7",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android-ui-season-land2.xml",
+      "time": "2026-07-10T18:33:40.722Z",
+      "line": 6367,
+      "callId": "exec-97d24489-4270-451b-b750-5cf8b056e4a7",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/debug/AndroidManifest.xml",
+      "time": "2026-07-10T18:33:40.722Z",
+      "line": 6367,
+      "callId": "exec-97d24489-4270-451b-b750-5cf8b056e4a7",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T18:36:44.975Z",
+      "line": 6388,
+      "callId": "exec-0b2dd8a7-4dac-4cab-bb01-777de7cbbd65",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1737b287ca2ab36590f37c383edefc7bc74d9cc8d1060cc3c1f73d676a6bbcff"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T19:58:30.252Z",
+      "line": 6662,
+      "callId": "exec-bc3f06ba-9286-4f56-a07c-88788034cf61",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-10T19:58:30.252Z",
+      "line": 6662,
+      "callId": "exec-bc3f06ba-9286-4f56-a07c-88788034cf61",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0a75a7bd6f2632968517c83d7cab4615361142faa56a5bf951c91117c046966a"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_technical_card.xml",
+      "time": "2026-07-10T20:01:24.626Z",
+      "line": 6685,
+      "callId": "exec-a5fbeec7-655a-4fda-9c86-e074dcff7882",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "85c84e3cca4a841a99b4401d8e979d4d0542a3cce86634fbecb64eed3ebc1559"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_bottom_sheet_background.xml",
+      "time": "2026-07-10T20:01:24.626Z",
+      "line": 6685,
+      "callId": "exec-a5fbeec7-655a-4fda-9c86-e074dcff7882",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "2cde6b4c6c86792e30affd4a1875b56a144e48416ca64b4f46b9baab53ae689b"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player_host.xml",
+      "time": "2026-07-10T20:01:24.626Z",
+      "line": 6685,
+      "callId": "exec-a5fbeec7-655a-4fda-9c86-e074dcff7882",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "8eb911c0c2371a755f47af1c452a688c526a7ab2e62a088159fbe87e0548e022"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_episodes.xml",
+      "time": "2026-07-10T20:01:24.626Z",
+      "line": 6685,
+      "callId": "exec-a5fbeec7-655a-4fda-9c86-e074dcff7882",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "483c0e394e493b76132fd6f010af2802b0975747fecab6175a7ce24e1e8f35ce"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/ic_player_settings.xml",
+      "time": "2026-07-10T20:01:24.626Z",
+      "line": 6685,
+      "callId": "exec-a5fbeec7-655a-4fda-9c86-e074dcff7882",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "5ed4026cc2676a6ff6a7f939a67c859dbb1886c6d690d5d71ba979cee660fae2"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T20:02:55.728Z",
+      "line": 6690,
+      "callId": "exec-85244438-77f2-4528-b539-ef27aa6622d8",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "2d851d2eae63b5a614588629d7cef08b7b0c163852a463b34fe656806a6fec42"
+    },
+    {
+      "file": "android/app/src/main/res/layout/cyber_player_controls.xml",
+      "time": "2026-07-10T20:02:55.728Z",
+      "line": 6690,
+      "callId": "exec-85244438-77f2-4528-b539-ef27aa6622d8",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "911977b73e75c8262870ecc079c8beb127872662fdd306594f7c15a143115ea7"
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/activity_player.xml",
+      "time": "2026-07-10T20:04:48.816Z",
+      "line": 6695,
+      "callId": "exec-473a7681-2b1a-41ad-9db1-261b288b9061",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "1015cf3b873517dadfa6f3af8b8a6c70c85b06e16993ff5d8576b1a7746f895c"
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/cyber_player_controls.xml",
+      "time": "2026-07-10T20:04:48.816Z",
+      "line": 6695,
+      "callId": "exec-473a7681-2b1a-41ad-9db1-261b288b9061",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "d66c51d00edb1495537bb7ce0e87e49a6d82a2a874f5bba3cef4c1e6671ac1a9"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:05:25.082Z",
+      "line": 6702,
+      "callId": "exec-7a07e7f8-5208-4230-bc4f-d690f2b07eb8",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8ba26e84831d62f7c46465d5e606a234c2950e14265df549b99a655f562b26fd"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:06:12.056Z",
+      "line": 6707,
+      "callId": "exec-8ca92da5-c0c4-41dc-9bc6-8f6cf03e958d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "edef4546182972ce19fd1ffb514a70dd7865bdd6688646da7102ff76961ccf29"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:06:57.851Z",
+      "line": 6712,
+      "callId": "exec-5df3d71e-08ad-45df-b079-153607f8ab6e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "506ea326709cda8ae7186a5d1fdae4d313fae6f1ef9551e546442d517f1ae3fc"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:07:06.388Z",
+      "line": 6717,
+      "callId": "exec-702f500b-45ef-41d3-b06f-978862047d87",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "a06d20eddba367ba09cedf7aa3b8427e2a95e67031d0b4dc3d0de9227bc5fc3e"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:07:32.352Z",
+      "line": 6722,
+      "callId": "exec-0e135c2f-110a-4397-bd93-f80425af63b9",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b31d5728c497aa253a4f409c2a060a6f12d67133d87dbbe485279dc0631ddf7f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:08:06.715Z",
+      "line": 6727,
+      "callId": "exec-4efc3b3e-88db-4d0d-93f5-e318717e7b8d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "da3a0d5ef02d2b47b56b4b5ff86f2a304967c95928c915d0b57c3b8e042f313b"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:08:39.984Z",
+      "line": 6732,
+      "callId": "exec-40743062-8414-48f1-a8a3-859a77d8b1e6",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8790b8c0465c59c2d56c428b20d7765bfb51832d9a20ec4614eb238f96a5ad8d"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:09:12.013Z",
+      "line": 6737,
+      "callId": "exec-252c55cf-81f7-4de0-93b2-31fd1b3454ae",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "dd26613dca25f5ca5fbef5cef22ac7e6752de9ac2a7869a00cda5e943997d0f7"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:09:19.982Z",
+      "line": 6742,
+      "callId": "exec-db7c728c-3588-4b67-85df-3f0253da3e79",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b63f82b27af2c5350823714ac94e9befefdcb73a78fd696f8f6605ed664b5707"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:11:00.023Z",
+      "line": 6747,
+      "callId": "exec-23471c94-0f15-49b3-ae12-d6828cb5e586",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8f5189ec943b225a2bc7e08b4cf6e42407a3728a49a637b36d95a235d0c1c1c6"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:11:19.167Z",
+      "line": 6752,
+      "callId": "exec-92ceb18d-6f7b-4f98-aa98-7313b9e3beb2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ca550451187c5aaf919f058f346af1f0cc6917e3deaae1e067ea7564dfc5b129"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:11:48.397Z",
+      "line": 6757,
+      "callId": "exec-00088409-3ea9-4038-81c7-added134ff98",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "2a6feb615cb8078c21091a903773f1e2bf9c36721248aff093dca2efa527e200"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:12:54.060Z",
+      "line": 6762,
+      "callId": "exec-281fa160-efe9-4bc4-ba1d-1e293cbd55b1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "313015a6d55a8f4562f94a462eb6d76d13b1f0264d80a5e94989f06f19749a70"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:13:02.946Z",
+      "line": 6767,
+      "callId": "exec-c481f8ba-a259-45e0-a5c2-5673456e54f5",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "7379de96cb7a51ddac5e42093f1468d9d9b8b9efdace35e8522bbd14700f4d1e"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:13:58.890Z",
+      "line": 6789,
+      "callId": "exec-56ede378-3b91-4787-9d02-9cb2072e73d2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1e5754dfb838d9c3569dad19daea9d711a23b4d5237bb3d5588d06da68988d54"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:15:01.099Z",
+      "line": 6805,
+      "callId": "exec-919e6072-4136-4771-ac12-e71a249d22d6",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1998db80ea1b815112c3741f02c5c126a39146ddbb0b72874916e3692d1e240b"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:15:41.080Z",
+      "line": 6812,
+      "callId": "exec-7d03644f-ca1f-4923-a444-4d69c6140694",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0e76741f1648127db45b190c2236adb362193f52561a62897c2564cc88327c00"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T20:23:08.277Z",
+      "line": 6820,
+      "callId": "exec-7bd1b95f-c3e3-4da1-b057-71f89a5dace6",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "37a6a2a1e0ff4be6a605250387e1a2e84c4639486a8aef68a537caea1880a185"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:27:18.564Z",
+      "line": 6879,
+      "callId": "exec-cf579eca-f9be-47bf-8e97-cc16361bdc05",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b028407985fed3761c43f2c6fda1e88f1814b44bb53b9566cec6d2eeec4a654a"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T20:27:18.564Z",
+      "line": 6879,
+      "callId": "exec-cf579eca-f9be-47bf-8e97-cc16361bdc05",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9fbe7eb1ebf639bd023c5586a857502bad3bc392ed1906ceaa95ea7f7909be3d"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerVisualPreviewTest.kt",
+      "time": "2026-07-10T20:30:03.446Z",
+      "line": 6913,
+      "callId": "exec-7746f096-1f70-4d92-9195-6a8197516af2",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "9e8c47e9d020b15f020b6bd6d942bd73b66a6ad70446c6c90e513a25f362548f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:32:18.339Z",
+      "line": 6953,
+      "callId": "exec-4a54e949-a86b-4626-95b9-80b42b978841",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ab2bf0d2ec73c4a1eed618aa53ee69b26937a0bfca4d5f8da3b117b4fac0bbdc"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-10T20:36:34.030Z",
+      "line": 7015,
+      "callId": "exec-df421fbb-1314-4fa4-94e3-d371586c2172",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5676dd4089801acab096dd2467f9a40ac060e6b3d6bec3cb4bc126fe32b2532d"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:36:34.030Z",
+      "line": 7015,
+      "callId": "exec-df421fbb-1314-4fa4-94e3-d371586c2172",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "94febf17d419720aa410922bd640586638b29586387f30defff7be116f4503a8"
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/activity_player.xml",
+      "time": "2026-07-10T20:36:34.030Z",
+      "line": 7015,
+      "callId": "exec-df421fbb-1314-4fa4-94e3-d371586c2172",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "41dd83c7d1c93f3b7d27d1c8d2d361fe7aeda6e554b50fb67f92e20c38f14f0d"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T20:36:56.749Z",
+      "line": 7020,
+      "callId": "exec-39464148-9944-4c17-b130-0f0765dab1e6",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c15ae4ec94db4fe807c2b8228ede98136af6037b132433933c2f987139c0ba9a"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T20:36:56.749Z",
+      "line": 7020,
+      "callId": "exec-39464148-9944-4c17-b130-0f0765dab1e6",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "dda03a68c0fd95cccb89f5d1a050d08eaed38bc486a58d26ff4e8c3ca3365c71"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerVisualPreviewTest.kt",
+      "time": "2026-07-10T20:39:07.129Z",
+      "line": 7048,
+      "callId": "exec-c39674a4-0bb4-460c-b5d7-2d3b53eb333c",
+      "type": "delete",
+      "status": "deleted-by-history"
+    },
+    {
+      "file": "index.html",
+      "time": "2026-07-10T20:43:46.322Z",
+      "line": 7129,
+      "callId": "exec-51e8c76b-d10f-4d5c-b009-d4a98a54e22e",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T20:48:32.628Z",
+      "line": 7226,
+      "callId": "exec-ac3f87bc-c15e-4fa7-95cd-22b2418afe60",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f5cae1249671ea6bd9d78cf9223d954920f5f2d27dd6803a5b6f678b7d068963"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-10T21:18:16.415Z",
+      "line": 7475,
+      "callId": "exec-89f163ea-5e31-42c6-a405-5e3ac71eb022",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "24ec4f41525eb013c12650f10b9b8606210e4c09c307bdd16528318f163d800b"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-10T21:18:16.415Z",
+      "line": 7475,
+      "callId": "exec-89f163ea-5e31-42c6-a405-5e3ac71eb022",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_warning_once.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "412d4dee77bcf128908eab9d12f2b19e018362a171033e29260e921a20a3c873"
+    },
+    {
+      "file": "android/app/src/main/res/values-sw600dp/player_dimens.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f2a0a56967f4ccb60be24cd5a65b4abe763eadef656eb7f32ed09c00613d2d3e"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "50178d730fb1b28f1d5fe8e409d21b1cfc1e2ccf84ff0d49d5a7cdd2c97f896f"
+    },
+    {
+      "file": "android/app/src/main/AndroidManifest.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "cfb7c1e01618dc3f06638643a90b74db17d0aed1f7885cfed4a48beb3e19f664"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_poster_placeholder.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "c1f54034e489dad967f6c6d173508e9a0adcce5cc3dca388b21869c373d6e47c"
+    },
+    {
+      "file": "android/app/src/main/res/values/player_dimens.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e928fbf50ebffdeb6c703177d7b9976d6fb51568e46303f23ee4157d709e999c"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_warning_exit.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "63a4e2575b2f3a04b298f5dfae3d5a33333f81eeb2fef6b3ca9926d46f2e1b38"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_cellular_warning_always.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "a05f9df0b77b2656ae403c16be0d77dba89ff19bac58daece110669b9d827b04"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_cellular_warning.xml",
+      "time": "2026-07-10T21:19:27.864Z",
+      "line": 7481,
+      "callId": "exec-c20dcdc9-dc93-4eb2-81cc-4f33d17fb581",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "c6b4103483253ed45b6e617f90376223eb37b33d9fac28f3eded2d4433f687ae"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T21:20:14.512Z",
+      "line": 7488,
+      "callId": "exec-66948c08-8dfb-489e-a857-f2647db14621",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "96a652edef07dd8c9d23cddaf219f5b1316f9398f2afd9613bedb4b4b4617a66"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T21:21:03.660Z",
+      "line": 7494,
+      "callId": "exec-2e7ac1dc-ffad-48e6-a9b6-9bedc1e19b39",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "2876e03bd600349a4269b112ec726f14453865a647f4c0d34eadd8b4ec5bda61"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T21:21:39.787Z",
+      "line": 7505,
+      "callId": "exec-2862c078-820f-4489-bd3d-e3be2de7503d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "641a16989a3c0da1325572c45891be5d11920b39a07087c71040297396cb1ced"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T21:22:15.506Z",
+      "line": 7510,
+      "callId": "exec-04238bec-8c37-4298-b86b-2c1182cd50b9",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "a4de2f616e2ea37bab298efaa4d09614c927d777344bb6116d762cc0ac474bdf"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-10T21:22:33.303Z",
+      "line": 7515,
+      "callId": "exec-eeca003c-8dbe-4710-9b25-b8ce4e83f668",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3b07fb7607609ebb0a97ced6ca23eb8a016262adf14c4d33a629587013ea7604"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/AudioFormatPlaybackTest.kt",
+      "time": "2026-07-10T21:22:55.764Z",
+      "line": 7524,
+      "callId": "exec-4656ed5b-9fd3-4919-944b-14fdcb8395de",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "679ee24273b2efd089f9a8d95d62d0c7d6544b2a52b1203f7791b4e8b491735a"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-10T21:23:57.833Z",
+      "line": 7541,
+      "callId": "exec-96a0c523-5cd2-4626-be37-eb488d85a9fc",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6732e5d260ff18e018d4b5ac86aee39c8b1d2770ef8940afff1de5da111507a8"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-11T05:44:49.947Z",
+      "line": 7589,
+      "callId": "exec-738d417d-e83a-4536-8e5f-fbafa649fa6f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4e60c583ca079060dc8ff379de77265ed3d2ef50c60575fd174915543352826a"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-11T05:45:06.018Z",
+      "line": 7594,
+      "callId": "exec-243277e6-4d3f-45fd-8361-2f65216d0ea1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5a8413adad5c8c719882bb7a035707d70a52cf19c4bf1af567be7f9558dcedb0"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-11T05:48:59.281Z",
+      "line": 7628,
+      "callId": "exec-193ca879-bdc1-4077-be35-527fe9fe77b9",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f809acffcb96c8b85c07f6fcecc8871f3f8cbd21f044b433db1dc0c1f570fc41"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-11T05:52:47.113Z",
+      "line": 7678,
+      "callId": "exec-b55d6f28-e7eb-4d99-a1f1-92138846f7ce",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "300935d97834c700b3051a28ddafff205b206dd6b93fb9a2deed421de363dcf2"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-11T08:51:11.175Z",
+      "line": 7938,
+      "callId": "exec-2efce2fb-a1b9-49d8-a945-86a6d0a4b31f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f47e92e303d03924f9a07fc763c59702d196de5911ff60a8ded329fed80aa77f"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-11T08:51:11.175Z",
+      "line": 7938,
+      "callId": "exec-2efce2fb-a1b9-49d8-a945-86a6d0a4b31f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "90df283cd09369c9c5975b411ffb8a15d8ad377dd7ed7837d3642a5cc1f99d50"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-11T08:51:11.175Z",
+      "line": 7938,
+      "callId": "exec-2efce2fb-a1b9-49d8-a945-86a6d0a4b31f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b118bdecd578e701b6d8cb93d9cf1717331d19f1fe71fbf639971436cede9381"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-11T08:51:11.175Z",
+      "line": 7938,
+      "callId": "exec-2efce2fb-a1b9-49d8-a945-86a6d0a4b31f",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-11T08:51:11.175Z",
+      "line": 7938,
+      "callId": "exec-2efce2fb-a1b9-49d8-a945-86a6d0a4b31f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d3dc93b09ce9ca26ce6616574153d645a5251591e69d7147b48d804c92ddad23"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_cellular_warning.xml",
+      "time": "2026-07-11T08:51:11.175Z",
+      "line": 7938,
+      "callId": "exec-2efce2fb-a1b9-49d8-a945-86a6d0a4b31f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "cda009b2a7a6359fb7f72db3f5291a0a31c876ff637dfd808450974d5b761156"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-11T08:51:38.886Z",
+      "line": 7943,
+      "callId": "exec-fd74abb6-785a-4910-a96e-972d581b9fc6",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "bbe82754b767b45e8e563f74ffd968149d451ec696ca2a01ddf184fffd518c8e"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-11T08:51:38.886Z",
+      "line": 7943,
+      "callId": "exec-fd74abb6-785a-4910-a96e-972d581b9fc6",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0cddf77c94f1b7e2435e767729024b1818274f4b6979c54b822761a6b41aaa7b"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-11T09:08:19.124Z",
+      "line": 8065,
+      "callId": "exec-c9e09d9e-ee6d-4d18-a81a-16a3197fd2a2",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f8df58b161d23edab705e3175b890c93d5b666b992955c1861401e3a602dfcf9"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-11T10:06:21.587Z",
+      "line": 8236,
+      "callId": "exec-4fe4f937-d0bf-47f2-b71e-51fdc42cbd4a",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c669ae8467f73a9dfe59e83a29b95dcc8f92978b062f459add4ab8395c68e099"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-11T10:06:21.587Z",
+      "line": 8236,
+      "callId": "exec-4fe4f937-d0bf-47f2-b71e-51fdc42cbd4a",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-11T10:15:48.268Z",
+      "line": 8294,
+      "callId": "exec-940e4b49-48c5-4e36-a3ca-da1a8d24dd0b",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-11T10:15:48.268Z",
+      "line": 8294,
+      "callId": "exec-940e4b49-48c5-4e36-a3ca-da1a8d24dd0b",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8cae42c58ed1a6027a6137036fbcd8f615146bb7129144ff0d36859d7fc1bdb9"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-15T14:41:55.241Z",
+      "line": 8612,
+      "callId": "exec-92ac48c9-e65e-499d-84fa-0b0211d23a48",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d5f0f00d512458cdc0c8ee925daafd00fe644ce67d689044e9dd310d01b7ac96"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-15T14:41:55.241Z",
+      "line": 8612,
+      "callId": "exec-92ac48c9-e65e-499d-84fa-0b0211d23a48",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-15T14:41:55.241Z",
+      "line": 8612,
+      "callId": "exec-92ac48c9-e65e-499d-84fa-0b0211d23a48",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "125bbad53993071825a966118470c8cb5f79cc82f58b9707cd5f2060dd1d8814"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_online_subtitle_search.xml",
+      "time": "2026-07-15T14:43:37.044Z",
+      "line": 8617,
+      "callId": "exec-565d2768-16ea-4ad4-8a52-122d9aa8f924",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "84ee1591a5aded904898724faa2e0da09cd352ae39204d5eb458cbe6b736bada"
+    },
+    {
+      "file": "android/app/src/main/res/drawable/player_online_subtitle_input.xml",
+      "time": "2026-07-15T14:43:37.044Z",
+      "line": 8617,
+      "callId": "exec-565d2768-16ea-4ad4-8a52-122d9aa8f924",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "3338bb88abb7fd212e1be8589601dace1d70ae150952aaa203d8264257e37174"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-15T14:44:46.296Z",
+      "line": 8622,
+      "callId": "exec-6e942245-23cd-4507-9a6b-b3fdba520197",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d325aeff183699d4609ede2a4f6a22577669b3d62a911fe8db0fcd1ad35d2f93"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-15T14:47:28.145Z",
+      "line": 8631,
+      "callId": "exec-eec49993-18f8-48f7-b2fa-5834b1da4107",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "adee9cf877e3d0194597f1b63022014487d6497df2f2aa00f56d410c4abe95cc"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-15T14:49:14.329Z",
+      "line": 8637,
+      "callId": "exec-2ddf5777-b37d-4b4e-ba4b-e6ee9ca09810",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c8bb4143b5b0798482f0208ee853b63554c583c501ea9081f50c15340a08f555"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-15T14:51:42.223Z",
+      "line": 8642,
+      "callId": "exec-e733f889-2d0d-4039-92ee-7eab9fd3874e",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3cc6433793df494210e92ae509e63a16d20f2399952cf30dba1649ac634d1398"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-15T14:53:04.723Z",
+      "line": 8647,
+      "callId": "exec-722777d5-21a4-43bf-9293-1ba48d7444fc",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9012b6862e8407862579fa0c8961fbff7b51d62683d25edd777c6a681475ce2c"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-15T15:00:50.661Z",
+      "line": 8671,
+      "callId": "exec-bbbe163d-41e9-4057-8681-dc7b7293e2bb",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "0ee9010429358b94e4e806842a13198e22beac912c3bc357271f8b7cc26d1602"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-15T16:49:27.301Z",
+      "line": 9192,
+      "callId": "exec-17348cf4-e459-47c9-95e9-acae9fd6caa7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8c3f2d6786915af29603f3eab4d966cec7f93f9c0f915a165f6232e940f0eee7"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-15T16:49:27.301Z",
+      "line": 9192,
+      "callId": "exec-17348cf4-e459-47c9-95e9-acae9fd6caa7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1286fa1048954601ced8a0c12885c40dd65e05e7f958c21785918943933d19f6"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-15T16:49:27.301Z",
+      "line": 9192,
+      "callId": "exec-17348cf4-e459-47c9-95e9-acae9fd6caa7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "40df4d9e1d4931e9611219525ab9fc70c5206615d0eca4e7114c0d57009ae341"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T02:18:53.126Z",
+      "line": 9277,
+      "callId": "exec-d3b0bf5d-e5d1-4632-9f5e-78d9cadce256",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6b0e1d7e81191a2b1a9ed440d8099c3f0ec7a804509597d4fd4979b3e0716514"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T02:27:19.586Z",
+      "line": 9308,
+      "callId": "exec-9dedcff1-5be0-4925-8f04-f7c99796cc5d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c4432486cde82fe86f1bd8146797a5b464d602a0357d7d65eadb1949cce38ecd"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T03:03:58.269Z",
+      "line": 9431,
+      "callId": "exec-53b0bfe7-1f7b-469b-b7c6-664dbcd45ba4",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "8f873dc513375df9b2e36471fbc21655a90e4e9fbf08f597302c0d268db69159"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-16T03:03:58.269Z",
+      "line": 9431,
+      "callId": "exec-53b0bfe7-1f7b-469b-b7c6-664dbcd45ba4",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "7853df51c521c638b498db6f05f21746859c08581767b3790c1098596e9fa8f4"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T03:16:29.995Z",
+      "line": 9472,
+      "callId": "exec-6ac44a0e-e641-41ba-b67a-ffab57593201",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "65a7e08f9c2677c5e3839f6c34305457cfd240d8957781de859b75be4bda25d0"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T03:17:05.799Z",
+      "line": 9477,
+      "callId": "exec-6f532214-09d0-4e27-8bd6-3e69de6d4267",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "6f14d2d41c5914953d214e3541c013ecb0ea1695beeb475890538cec5f2c644c"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T03:18:34.913Z",
+      "line": 9482,
+      "callId": "exec-7d502abc-7f58-4723-82ea-7c1f2f35d259",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "972540cd9e568f325b078a9bb6ae1c914baeedca91e20a52b4d43678d532bc74"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T03:21:11.008Z",
+      "line": 9491,
+      "callId": "exec-12d7b14c-46c1-4477-9158-340c8067ad58",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "33dd676f4a36ac3621c706a9c52ae7cbf38bdb94ac6d58d04e7b12e064d64eaa"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T03:35:32.600Z",
+      "line": 9533,
+      "callId": "exec-545b46f5-8c21-4361-8061-7b9ac906107a",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f258d7798ab362cc540fd05944daad68f6ea92c0d34f41fcc183eec4c126c714"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T03:38:48.156Z",
+      "line": 9545,
+      "callId": "exec-a96463d8-744b-4123-885e-6694d5f1a546",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "237ded5d144ac02806e847470dc63c5197c86a5d47c87d61f6e6ed8ce1daeda9"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T03:40:55.960Z",
+      "line": 9554,
+      "callId": "exec-cea50a88-d9e3-48b7-9e74-cd219d71f179",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ad0dbdc74b5a51589c0920343e5dd3c17db9d4d0065e8fad56bb1d33a07df8b2"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T03:45:06.744Z",
+      "line": 9570,
+      "callId": "exec-22939fa9-1afd-4bc5-8aea-f0d69d64c822",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "dfb365343d12ab4a1703824a64f29f3503cf742869dff574b42880f0b0462681"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T03:45:06.744Z",
+      "line": 9570,
+      "callId": "exec-22939fa9-1afd-4bc5-8aea-f0d69d64c822",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f2edc68ad7dbf00cadea4664525df893c889630c08912d627746300670eb7de6"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T03:51:18.204Z",
+      "line": 9595,
+      "callId": "exec-531c9ab9-456c-4847-b3ef-21a04ecfd9a0",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "328e8b71f81a63f1d5f509b8e164f4eb8fa24b24ddb4d7466c1eeb2aa07ff2d0"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:27:52.685Z",
+      "line": 9858,
+      "callId": "exec-35a17880-eda9-412d-b804-1e570d28429f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "eb6f03639d6a5f9b528a51d1da26b129eb48d3ec73b4be1094af6444ae0eb618"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:28:10.267Z",
+      "line": 9863,
+      "callId": "exec-2d5a9c18-dd4c-47cf-ae44-aa5c503bf697",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "2f1ab0137b59bff0945d15fa078fb87e188b3a3a81451aeaccfbb44fb1c4cda5"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_online_subtitle_search.xml",
+      "time": "2026-07-16T04:29:02.459Z",
+      "line": 9869,
+      "callId": "exec-39335aa5-a2c5-4489-8856-441c8c3bba72",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "620293279bb84e28f7e0b7b6a833f7cd278370792f91d1fad6a2a83db28abbc9"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:29:02.459Z",
+      "line": 9869,
+      "callId": "exec-39335aa5-a2c5-4489-8856-441c8c3bba72",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1865fd48a85f635604210e8a55130a887638f369911139a10cf7c834385837b7"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-16T04:29:02.459Z",
+      "line": 9869,
+      "callId": "exec-39335aa5-a2c5-4489-8856-441c8c3bba72",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/api/playbackTicket.ts",
+      "time": "2026-07-16T04:29:02.459Z",
+      "line": 9869,
+      "callId": "exec-39335aa5-a2c5-4489-8856-441c8c3bba72",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:29:36.933Z",
+      "line": 9874,
+      "callId": "exec-52637b90-3535-48e0-8a0b-1a681e730f7f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e4fe1fa0bdc671374fa5cf4b7e3784a10a16304b99bcc3fb43e0fa4186524813"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:29:57.985Z",
+      "line": 9879,
+      "callId": "exec-3e57e87e-6ea4-4225-b011-36f9996c1d76",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1ea68cfc6705be3176e85a77586d2ee71c11ec730d6684a04bced0f84e525639"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:31:44.421Z",
+      "line": 9896,
+      "callId": "exec-116fffc0-1645-4af6-afad-d7d846fd6a24",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "7ef43d6129d9e77ccd320a20bb1bf3c57c74a1d1680a47568f34947c69e10155"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_online_subtitle_search.xml",
+      "time": "2026-07-16T04:32:37.567Z",
+      "line": 9902,
+      "callId": "exec-aa53c35a-4bc2-4366-a614-42a7e36d8e07",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e07337ec5286de91117df174431188096ea27b4c1994bfdc931614a494ad3695"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T04:32:37.567Z",
+      "line": 9902,
+      "callId": "exec-aa53c35a-4bc2-4366-a614-42a7e36d8e07",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1c932d9153525051497eabf70d25bc688bc0f340421099dd15721715b178f341"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:40:05.497Z",
+      "line": 9954,
+      "callId": "exec-91e35fbf-0a3b-4054-95fa-e7f61623c09d",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "b51ada3d2cea70ba92a00ff56b3aa26425c99640ec5adc0f1fcccb1a4206db89"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:40:23.042Z",
+      "line": 9959,
+      "callId": "exec-047d1975-b228-4904-a6e4-0a8051032853",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "44d529389785ae2d815ae0d040061da7585d1e346703d874d862dbff5ec0ab9f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:43:20.611Z",
+      "line": 9975,
+      "callId": "exec-5c426abe-f2ef-4077-b354-917972c375fd",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "829eb341ec75e6963c4d3e0e42661b3fffd027a0448fdf4d6083563852af73bd"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:45:48.924Z",
+      "line": 9989,
+      "callId": "exec-ca3ce8dc-1006-42e8-8a07-5cad72b6c850",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d3dc5fb8ea8fc9166d01872e660123b0020af7cc40001aa1fecc25895058399f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T04:46:01.463Z",
+      "line": 9994,
+      "callId": "exec-b3ab66c2-5df0-4eda-91da-45d8a13ef322",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f25fda128f74b0836ae77046f006baab7d3018356acbae982942f793296cdb55"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-16T04:51:25.232Z",
+      "line": 10035,
+      "callId": "exec-652cc626-74d0-4e4c-a170-1b9877d0e624",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3f4ed3a875db40619822a0e9757dd674ccf98d41681df44e92e0e351667ea9e3"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-16T16:00:52.541Z",
+      "line": 10887,
+      "callId": "exec-84e93968-f6bf-49ab-97ca-102cded8df0f",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "android/app/src/main/res/layout/activity_player.xml",
+      "time": "2026-07-16T16:12:28.801Z",
+      "line": 10911,
+      "callId": "exec-59a81c27-9bd2-4f32-ae69-159bda260a68",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "a4c28c49f5ae3cb103aca73f24c86a5d1fcc1c306cd2abec3ed4b77c519905e5"
+    },
+    {
+      "file": "android/app/src/main/res/values-sw600dp/player_dimens.xml",
+      "time": "2026-07-16T16:12:28.801Z",
+      "line": 10911,
+      "callId": "exec-59a81c27-9bd2-4f32-ae69-159bda260a68",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "37d8ee7b4368a5c7e00f1c2a3fae4dc53898d7400ac57d1905bd99cffa89785b"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_online_subtitle_candidate.xml",
+      "time": "2026-07-16T16:12:28.801Z",
+      "line": 10911,
+      "callId": "exec-59a81c27-9bd2-4f32-ae69-159bda260a68",
+      "type": "add",
+      "status": "restored-add",
+      "sha256": "108b4550df314a76f3914f37a051c34174e6073fcc51b142eff49f18a7a4709f"
+    },
+    {
+      "file": "android/app/src/main/res/values/player_dimens.xml",
+      "time": "2026-07-16T16:12:28.801Z",
+      "line": 10911,
+      "callId": "exec-59a81c27-9bd2-4f32-ae69-159bda260a68",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c445421da097a4c928bbb693306362414fed3ceadc494111ea7d35af490a04dd"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:14:06.883Z",
+      "line": 10916,
+      "callId": "exec-e62f80d6-13bf-4501-8d12-3163fcd8037b",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "5d0b6ed8169a19952370a74137a614d71ea6435dabcf7b18e3d469c6658d9013"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:20:02.236Z",
+      "line": 10928,
+      "callId": "exec-7eb1c1ea-b5b3-4129-9016-b6d76ff74a4b",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "1651223240e2f59ef3fd74120db29298e54ae9d6085e9bc792e31c6ecd8d1483"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:22:18.370Z",
+      "line": 10933,
+      "callId": "exec-00e867d0-b74e-497f-8f2b-8c6df90daff3",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "fa28c57b220752d28df870485517643248f2dd0658c4135d7f34bb9fa1eefe36"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:24:24.243Z",
+      "line": 10938,
+      "callId": "exec-eec1b8ff-8f61-48f1-a4d8-003b0027f7ea",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e8144f43faeba10e7e90f4f9c78e7cf0ca12ca0fcba54a368631af5247f5ce67"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:26:05.594Z",
+      "line": 10943,
+      "callId": "exec-7ff671b6-fc22-49b4-8adc-23e0363f3146",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "64980e40663cca7fb246c647729cae88be5a86e2b2e33ec53b1e9a87b6ba917f"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:27:47.673Z",
+      "line": 10948,
+      "callId": "exec-c36f6bab-c884-43a0-9100-4538ca1494fc",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "f6930e7263265c7f33cf5e8dd3bf28cde9c436345eeae454c13e5d7247db3d9a"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-16T16:29:44.164Z",
+      "line": 10953,
+      "callId": "exec-be61f4f3-837c-4a9d-8909-03f584906143",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/platform/androidPlayer.ts",
+      "time": "2026-07-16T16:29:44.164Z",
+      "line": 10953,
+      "callId": "exec-be61f4f3-837c-4a9d-8909-03f584906143",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "9683fdb5751165fc251e22e28e9419446f764cdf0d35eba7d203509729f6f975"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:36:07.915Z",
+      "line": 10966,
+      "callId": "exec-55aaf832-fc4b-40fe-97bb-cae36fe85257",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "3833ae1f0a99387043d975f085b1897618f16dc61de0c9daee06de5e176d39ca"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:37:59.067Z",
+      "line": 10971,
+      "callId": "exec-dfbd4202-70e2-4a20-85c5-a3c3b68a9c6c",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "464f44eb83b0ead2dcb2945c6220f238aee637600108fa0f78745edd82fc553c"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:39:51.609Z",
+      "line": 10976,
+      "callId": "exec-9e440c47-c4e1-4c93-b5db-5efe5acdfe32",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "917ef4f68e9520c763cf12353977f4413666b1d6ae3c2b55af978ae5ffe8d30d"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:41:36.317Z",
+      "line": 10981,
+      "callId": "exec-f8fb6338-2738-420f-ad05-d1bb4ad904ed",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "4f45b47a32d355cd079d420b8287fef82805355cad0c4a7f71095a5f79265f5e"
+    },
+    {
+      "file": "android/app/src/main/res/layout-port/activity_player.xml",
+      "time": "2026-07-16T16:44:58.846Z",
+      "line": 10991,
+      "callId": "exec-90929c79-7168-465e-9d48-b0629fdb0fe7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "d0940b28c5080186f0ac592af9f931e28406fecbebb684a5d5ef781850dac235"
+    },
+    {
+      "file": "android/app/src/main/res/values/player_dimens.xml",
+      "time": "2026-07-16T16:44:58.846Z",
+      "line": 10991,
+      "callId": "exec-90929c79-7168-465e-9d48-b0629fdb0fe7",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "85300992acc91f0b2727da5e3ddacb25907e24171a5701caa9c96b71d629fb82"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:46:27.385Z",
+      "line": 10996,
+      "callId": "exec-ec3ed435-405f-4856-9efe-62e2c857b990",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "ffdb267e538fa30301c688320b8deb7bf262ea0b2551e037def7ce05058316e5"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T16:59:24.423Z",
+      "line": 11031,
+      "callId": "exec-f99abd51-e61d-49c9-836f-32dc630fcc73",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "e6118c786d5392caf1c82066bdda9efe7db5f80975e2d11d66eb35fa8eb3102a"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-16T17:08:23.517Z",
+      "line": 11056,
+      "callId": "exec-2b12d9a8-2a61-4f28-9d50-f1e78c7ee0a1",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "09652b9709304bc03df2c3970cc1bb6af349c90093b4821699a19972a0e3385a"
+    },
+    {
+      "file": "android/app/src/androidTest/java/com/purewo/cyberstream/PlayerActivitySmokeTest.kt",
+      "time": "2026-07-16T17:10:03.851Z",
+      "line": 11061,
+      "callId": "exec-372ae00c-1ef9-4361-8a51-d0bc3e12f59f",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "51c2115599322932067f72b89fd8c5e2a5adaeea9646b0a08f0ff09dca62a323"
+    },
+    {
+      "file": "android/app/build.gradle",
+      "time": "2026-07-17T05:11:25.598Z",
+      "line": 11277,
+      "callId": "exec-75444f56-d67d-4508-8c6f-29ecdc5cc2be",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "86e02a1ad19d4f1a43fb9d86648c078e0e3930a8631eff8149256fc45d0ab376"
+    },
+    {
+      "file": "android/app/src/main/java/com/purewo/cyberstream/PlayerActivity.kt",
+      "time": "2026-07-17T05:12:16.191Z",
+      "line": 11285,
+      "callId": "exec-fb090b0f-ea16-4fa5-976e-9bc0a189e76b",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "c7ffb816ab525d41bfdc350240af3cf4d57d48ebe078cd46fe67cb8416365262"
+    },
+    {
+      "file": "android/app/src/main/res/layout/player_online_subtitle_search.xml",
+      "time": "2026-07-17T05:12:16.191Z",
+      "line": 11285,
+      "callId": "exec-fb090b0f-ea16-4fa5-976e-9bc0a189e76b",
+      "type": "update",
+      "status": "replayed-update",
+      "sha256": "17c9aac5e582afa80873d2d6534dd97b0da2db29fd0baf4c588c96108267e1a8"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-17T05:13:19.589Z",
+      "line": 11296,
+      "callId": "exec-3b4ec0a9-358d-4262-a4e2-13787219b87e",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-17T05:14:04.171Z",
+      "line": 11301,
+      "callId": "exec-833c1a1a-6863-4891-9c15-672c8be75bf9",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    },
+    {
+      "file": "src/App.tsx",
+      "time": "2026-07-17T05:14:29.193Z",
+      "line": 11306,
+      "callId": "exec-7756713f-49c2-4001-adf2-6268cd6fcc5d",
+      "type": "update",
+      "status": "needs-baseline-or-merge",
+      "reason": "Context matches 0 locations"
+    }
+  ]
+}

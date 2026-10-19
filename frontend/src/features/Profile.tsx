@@ -20,7 +20,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { MovieCard } from "../components/movies/Cards";
-import { Movie, UserSettings, Achievement, AchievementSummary, HomepageUserPrefs, Library } from "../types";
+import { Movie, UserSettings, Achievement, AchievementSummary, HomepageUserPrefs, Library, StorageSource } from "../types";
 import { THEMES, API_BASE, FILTERS } from "../constants";
 import { formatBytes, toast } from "../utils";
 import { platform } from "../platform";
@@ -1592,6 +1592,26 @@ const AddSourceButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
   );
 };
 
+const storageSourceNeedsReauthorization = (source: StorageSource) => {
+  const reason = String(source.health?.reason || '').toLowerCase();
+  return Boolean(source.requires_reauthorization) || reason === 'auth_expired';
+};
+
+const storageSourceHealthText = (source: StorageSource) => {
+  if (storageSourceNeedsReauthorization(source)) {
+    return '光鸭登录已过期，请重新授权';
+  }
+  return source.health?.message || source.health?.reason || '';
+};
+
+const maskPhoneNumber = (phoneNumber: string) => {
+  const value = phoneNumber.trim();
+  if (!value) return '绑定手机号';
+  if (value.length <= 4) return value;
+  const prefixLength = Math.min(3, Math.max(1, value.length - 4));
+  return `${value.slice(0, prefixLength)}******${value.slice(-4)}`;
+};
+
 export const ProfilePage: React.FC<ProfilePageProps> = ({
   settings,
   setSettings,
@@ -1648,6 +1668,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     pendingMsg: string;
   } | null>(null);
   const reloginPollTimerRef = useRef<number | null>(null);
+  const [smsReloginState, setSmsReloginState] = useState<{
+    sourceId: number;
+    sourceName: string;
+    maskedPhone: string;
+    phoneNumber: string;
+    code: string;
+    busy: boolean;
+    sent: boolean;
+    needsPhone: boolean;
+    error?: string;
+  } | null>(null);
 
   // 取消重新登录：清 timer + 关 modal。pollLoop 里用 reloginState 做 cancellation
   // sentinel——modal 关闭后 setReloginState(null)，下一次 poll 看到 null 直接退出。
@@ -1743,6 +1774,133 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       pendingMsg: '请用 App 扫描二维码',
     }));
     reloginPollTimerRef.current = window.setTimeout(() => pollReloginLoop(slug, sourceId), 2500);
+  };
+
+  const closeSmsReloginModal = () => {
+    setSmsReloginState(null);
+  };
+
+  const requestGuangyapanReloginSms = async (
+    sourceId: number,
+    sourceName: string,
+    phoneNumber: string = '',
+  ) => {
+    setSmsReloginState((prev) => prev && prev.sourceId === sourceId ? ({
+      ...prev,
+      busy: true,
+      error: undefined,
+    }) : ({
+      sourceId,
+      sourceName,
+      maskedPhone: '',
+      phoneNumber,
+      code: '',
+      busy: true,
+      sent: false,
+      needsPhone: false,
+      error: undefined,
+    }));
+    const { storageService } = await import('../api');
+    const trimmedPhone = phoneNumber.trim();
+    const res = await storageService.restartGuangyapanSms(
+      sourceId,
+      trimmedPhone ? { phoneNumber: trimmedPhone } : {},
+    );
+    if (!res.ok) {
+      const msg = res.msg || '重新发送验证码失败';
+      const needsPhone =
+        res.code === 40001 ||
+        /phone_number|手机号|手机/.test(msg);
+      if (needsPhone) {
+        setSmsReloginState((prev) => prev && ({
+          ...prev,
+          busy: false,
+          sent: false,
+          needsPhone: true,
+          error: '请重新输入光鸭手机号后发送验证码',
+        }));
+        return;
+      }
+      toast.error(msg);
+      closeSmsReloginModal();
+      return;
+    }
+    const source = res.data?.source || {};
+    const maskedPhone =
+      source?.config?.phone_number_masked ||
+      res.data?.phone_number_masked ||
+      maskPhoneNumber(trimmedPhone);
+    setSmsReloginState((prev) => prev && ({
+      ...prev,
+      maskedPhone,
+      phoneNumber: trimmedPhone,
+      busy: false,
+      sent: true,
+      needsPhone: false,
+      error: undefined,
+    }));
+    toast.success('验证码已发送');
+  };
+
+  const handleStartGuangyapanRelogin = async (
+    sourceId: number,
+    sourceName: string,
+  ) => {
+    setSmsReloginState({
+      sourceId,
+      sourceName,
+      maskedPhone: '',
+      phoneNumber: '',
+      code: '',
+      busy: true,
+      sent: false,
+      needsPhone: false,
+      error: undefined,
+    });
+    await requestGuangyapanReloginSms(sourceId, sourceName);
+  };
+
+  const handleSendGuangyapanReloginSms = async () => {
+    if (!smsReloginState || smsReloginState.busy) return;
+    const phoneNumber = smsReloginState.phoneNumber.trim();
+    if (smsReloginState.needsPhone && !phoneNumber) {
+      setSmsReloginState((prev) => prev && ({
+        ...prev,
+        error: '请填写光鸭手机号',
+      }));
+      return;
+    }
+    await requestGuangyapanReloginSms(
+      smsReloginState.sourceId,
+      smsReloginState.sourceName,
+      phoneNumber,
+    );
+  };
+
+  const handleVerifyGuangyapanRelogin = async () => {
+    if (!smsReloginState || smsReloginState.busy) return;
+    const code = smsReloginState.code.trim();
+    if (!code) {
+      toast.error('请填写验证码');
+      return;
+    }
+    setSmsReloginState((prev) => prev && ({ ...prev, busy: true }));
+    const { storageService } = await import('../api');
+    const res = await storageService.verifyGuangyapanSms(smsReloginState.sourceId, code);
+    if (!res.ok) {
+      toast.error(res.msg || '验证码校验失败');
+      setSmsReloginState((prev) => prev && ({ ...prev, busy: false }));
+      return;
+    }
+    const authState = res.data?.auth_state;
+    if (authState !== 'ready') {
+      toast.error(`挂载未就绪 (${authState ?? 'unknown'})`);
+      setSmsReloginState((prev) => prev && ({ ...prev, busy: false }));
+      return;
+    }
+    toast.success('光鸭云盘重新授权成功，挂载点已恢复');
+    closeSmsReloginModal();
+    await loadResources();
   };
 
   // 手动刷新存储源根目录缓存：调 /v1/storage/sources/{id}/refresh，底层让 alist
@@ -1892,7 +2050,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       const { storageService } = await import("../api");
       const [ptypes, sources] = await Promise.all([
         storageService.getProviderTypes(),
-        storageService.getSources(),
+        storageService.getSources({ includeHealth: true }),
       ]);
       setProviderTypes(ptypes);
 
@@ -1900,7 +2058,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setStorageSources(
         sources.map((s: any) => ({
           ...s,
-          health: { status: "checking", reason: "连接测试中..." },
+          health: s.health || { status: "checking", reason: "连接测试中..." },
         })),
       );
 
@@ -2726,7 +2884,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
                   {/* Status Badge */}
-                  {res.health?.status === "online" ? (
+                  {storageSourceNeedsReauthorization(res) ? (
+                    <div
+                      className="absolute top-2 right-2 text-[9px] text-amber-400 flex items-center gap-1 font-['Rajdhani'] tracking-widest border border-amber-500/40 bg-amber-500/10 rounded-full px-2 py-0.5 shadow-[0_0_8px_rgba(245,158,11,0.25)] z-20"
+                      title="光鸭登录已过期，请重新授权"
+                    >
+                      <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse"></div>{" "}
+                      登录过期
+                    </div>
+                  ) : res.health?.status === "online" ? (
                     <div className="absolute top-2 right-2 text-[9px] text-green-500 flex items-center gap-1 font-['Rajdhani'] tracking-widest border border-green-500/30 bg-green-500/10 rounded-full px-2 py-0.5 shadow-[0_0_8px_rgba(34,197,94,0.2)] z-20">
                       <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>{" "}
                       在线
@@ -2808,19 +2974,30 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   </div>
 
                   <div className="flex-1 relative z-10">
-                    {res.health?.reason &&
-                      res.health.status !== "online" &&
-                      !["ok", "success"].includes(
-                        res.health.reason.toLowerCase(),
-                      ) && (
+                    {storageSourceHealthText(res) &&
+                      (storageSourceNeedsReauthorization(res) ||
+                        (res.health?.status !== "online" &&
+                          !["ok", "success"].includes(
+                            String(res.health?.reason || '').toLowerCase(),
+                          ))) && (
                         <div
-                          className="text-[9px] text-red-500 mb-2 truncate bg-red-500/10 border border-red-500/20 px-1.5 py-1 rounded-md w-full font-['Rajdhani'] flex items-center gap-1"
-                          title={res.health.reason}
+                          className={`text-[9px] mb-2 truncate px-1.5 py-1 rounded-md w-full font-['Rajdhani'] flex items-center gap-1 ${
+                            storageSourceNeedsReauthorization(res)
+                              ? 'text-amber-300 bg-amber-500/10 border border-amber-500/30'
+                              : 'text-red-500 bg-red-500/10 border border-red-500/20'
+                          }`}
+                          title={storageSourceHealthText(res)}
                         >
-                          <span className="shrink-0 w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/50 flex items-center justify-center text-[7px] font-bold">
+                          <span
+                            className={`shrink-0 w-2.5 h-2.5 rounded-full flex items-center justify-center text-[7px] font-bold ${
+                              storageSourceNeedsReauthorization(res)
+                                ? 'bg-amber-500/20 border border-amber-500/50'
+                                : 'bg-red-500/20 border border-red-500/50'
+                            }`}
+                          >
                             !
                           </span>
-                          <span className="truncate">{res.health.reason}</span>
+                          <span className="truncate">{storageSourceHealthText(res)}</span>
                         </div>
                       )}
 
@@ -2863,6 +3040,22 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-amber-500/50 text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10 hover:shadow-[0_0_15px_rgba(245,158,11,0.4)] transition-all duration-300 group/btn"
                       >
                         <QrCode
+                          size={14}
+                          className="group-hover/btn:scale-110 transition-transform"
+                        />
+                      </button>
+                    )}
+                    {res.type === 'guangyapan' && (
+                      <button
+                        title={
+                          storageSourceNeedsReauthorization(res)
+                            ? '光鸭登录已过期，请重新短信授权'
+                            : '重新发送光鸭短信验证码授权，不会重建挂载点'
+                        }
+                        onClick={() => handleStartGuangyapanRelogin(res.id, res.name || res.display_name || '光鸭云盘')}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/50 border border-white/5 hover:border-amber-500/50 text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10 hover:shadow-[0_0_15px_rgba(245,158,11,0.4)] transition-all duration-300 group/btn"
+                      >
+                        <KeyRound
                           size={14}
                           className="group-hover/btn:scale-110 transition-transform"
                         />
@@ -3820,6 +4013,129 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
             <p className="text-[10px] text-gray-600 font-['Rajdhani'] mt-3 leading-relaxed">
               账号在其他设备登录会顶号导致 token 失效。重新扫码不会破坏资源索引和专辑绑定，源 ID 保持不变。
+            </p>
+          </div>
+        </div>
+      )}
+
+      {smsReloginState && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div
+            className="relative bg-[#0a0a12] rounded-xl p-6 w-[420px] max-w-[92vw]"
+            style={{ border: '1px solid rgba(245, 158, 11, 0.65)', boxShadow: '0 0 30px rgba(245, 158, 11, 0.2)' }}
+          >
+            <button
+              onClick={closeSmsReloginModal}
+              className="absolute top-3 right-3 text-gray-500 hover:text-amber-400 transition-colors"
+              title="关闭"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-base font-['Orbitron'] font-bold text-amber-400 tracking-widest mb-1 flex items-center gap-2">
+              <KeyRound size={16} /> 光鸭重新授权
+            </h3>
+            <p className="text-[11px] text-gray-500 font-['Rajdhani'] mb-4 truncate">
+              「{smsReloginState.sourceName}」 · Source #{smsReloginState.sourceId}
+            </p>
+
+            <div className="bg-black/40 border border-amber-500/30 rounded-lg p-4 flex flex-col gap-3">
+              {smsReloginState.sent ? (
+                <>
+                  <div className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 flex items-center gap-2">
+                    <Check size={14} />
+                    验证码已发送至 <span className="font-mono font-bold">{smsReloginState.maskedPhone || '绑定手机号'}</span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-['Orbitron'] tracking-widest text-gray-500 mb-1.5 uppercase">
+                      短信验证码
+                    </label>
+                    <input
+                      type="text"
+                      value={smsReloginState.code}
+                      onChange={(e) =>
+                        setSmsReloginState((prev) => prev && ({
+                          ...prev,
+                          code: e.target.value.replace(/\s+/g, ''),
+                        }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleVerifyGuangyapanRelogin();
+                      }}
+                      placeholder="收到的验证码"
+                      autoFocus
+                      inputMode="numeric"
+                      disabled={smsReloginState.busy}
+                      className="w-full bg-black/40 border border-amber-500/30 hover:border-amber-500/60 focus:border-amber-400 focus:bg-black/60 focus:shadow-[0_0_15px_rgba(245,158,11,0.2)] rounded-lg p-2.5 text-base text-white focus:outline-none transition-all font-mono tracking-[0.3em] text-center disabled:opacity-60"
+                    />
+                  </div>
+                  {smsReloginState.error && (
+                    <div className="text-[11px] text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                      {smsReloginState.error}
+                    </div>
+                  )}
+                  <button
+                    onClick={handleVerifyGuangyapanRelogin}
+                    disabled={smsReloginState.busy || !smsReloginState.code.trim()}
+                    className="w-full py-2.5 rounded-lg bg-amber-500/20 border border-amber-500 text-amber-300 hover:bg-amber-500 hover:text-black hover:shadow-[0_0_20px_rgba(245,158,11,0.35)] text-sm font-['Orbitron'] font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {smsReloginState.busy ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <KeyRound size={16} />
+                    )}
+                    验证并恢复挂载
+                  </button>
+                </>
+              ) : smsReloginState.busy ? (
+                <div className="min-h-[132px] flex flex-col items-center justify-center gap-3 text-amber-300 font-['Rajdhani']">
+                  <Loader2 size={28} className="animate-spin" />
+                  正在发送验证码...
+                </div>
+              ) : (
+                <>
+                  {smsReloginState.needsPhone && (
+                    <div>
+                      <label className="block text-[10px] font-['Orbitron'] tracking-widest text-gray-500 mb-1.5 uppercase">
+                        光鸭手机号
+                      </label>
+                      <input
+                        type="tel"
+                        value={smsReloginState.phoneNumber}
+                        onChange={(e) =>
+                          setSmsReloginState((prev) => prev && ({
+                            ...prev,
+                            phoneNumber: e.target.value,
+                            error: undefined,
+                          }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSendGuangyapanReloginSms();
+                        }}
+                        placeholder="+8613800001234"
+                        autoFocus
+                        className="w-full bg-black/40 border border-amber-500/30 hover:border-amber-500/60 focus:border-amber-400 focus:bg-black/60 focus:shadow-[0_0_15px_rgba(245,158,11,0.2)] rounded-lg p-2.5 text-sm text-white focus:outline-none transition-all font-mono"
+                      />
+                    </div>
+                  )}
+                  {smsReloginState.error && (
+                    <div className="text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                      {smsReloginState.error}
+                    </div>
+                  )}
+                  <button
+                    onClick={handleSendGuangyapanReloginSms}
+                    disabled={smsReloginState.busy || (smsReloginState.needsPhone && !smsReloginState.phoneNumber.trim())}
+                    className="w-full py-2.5 rounded-lg bg-amber-500/20 border border-amber-500 text-amber-300 hover:bg-amber-500 hover:text-black hover:shadow-[0_0_20px_rgba(245,158,11,0.35)] text-sm font-['Orbitron'] font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <KeyRound size={16} />
+                    发送验证码
+                  </button>
+                </>
+              )}
+            </div>
+
+            <p className="text-[10px] text-gray-600 font-['Rajdhani'] mt-3 leading-relaxed">
+              重新授权不会破坏资源索引和专辑绑定，源 ID 保持不变。
             </p>
           </div>
         </div>

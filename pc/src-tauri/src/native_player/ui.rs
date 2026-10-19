@@ -47,6 +47,7 @@ mod icons {
     pub const AUDIO: &str = "\u{E8D6}";      // Audio
     pub const SPEED: &str = "\u{EC4A}";      // Speed (FastForward 兜底备选)
     pub const DELETE: &str = "\u{E74D}";     // Delete (垃圾桶)
+    pub const SETTINGS: &str = "\u{E713}";   // Settings (齿轮)
 }
 
 pub struct Hud {
@@ -255,6 +256,12 @@ impl Hud {
         self.last_panel_visible
     }
 
+    /// Popup buttons must consume rapid repeat clicks instead of toggling video fullscreen.
+    pub fn popup_open(&self) -> bool {
+        self.ctx.data(|data| ["pc_settings_panel_open", "pc_subtitle_panel_open", "pc_audio_panel_open"]
+            .iter().any(|key| data.get_temp::<bool>(egui::Id::new(*key)).unwrap_or(false)))
+    }
+
     /// Free GL resources before the GL context goes away.
     pub fn destroy(mut self) {
         self.painter.destroy();
@@ -293,6 +300,50 @@ fn draw_ui(
     // from_rgba_premultiplied 写 (255,255,255,12) 这种 R/G/B 远大于 alpha 的值，
     // egui 会按非法预乘色去 blend，结果是「整面板亮成纯白」。
     let panel_bg = Color32::from_rgba_unmultiplied(10, 12, 16, 245);
+
+    // 加载失败横幅：mpv 报 END_FILE(ERROR) 时 state.last_error 有值（401/404/
+    // 断网等）。独立 Area 居中浮在视频上，不受 hud_visible / 全屏隐藏影响——
+    // 失败信息要常驻直到用户换源重试（SwitchResource/SwitchQuality 时清空）。
+    // 解决「加载失败黑屏无任何反馈」，代托管 mpv 无 cookie 401 是最高频来源。
+    if let Some(err) = state.last_error.as_deref() {
+        let red = Color32::from_rgb(0xef, 0x44, 0x44);
+        egui::Area::new(egui::Id::new("load_error_banner"))
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -40.0))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                egui::Frame {
+                    fill: Color32::from_rgba_unmultiplied(20, 8, 8, 235),
+                    stroke: egui::Stroke::new(1.4, red),
+                    corner_radius: egui::CornerRadius::same(10),
+                    inner_margin: egui::Margin::symmetric(20, 16),
+                    shadow: egui::epaint::Shadow::NONE,
+                    ..Default::default()
+                }
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("播放失败")
+                                .color(red)
+                                .size(15.0)
+                                .strong(),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(err)
+                                .color(Color32::from_gray(210))
+                                .size(12.0),
+                        );
+                        ui.add_space(2.0);
+                        ui.label(
+                            egui::RichText::new("可在右侧重新选择资源 / 清晰度重试")
+                                .color(Color32::from_gray(140))
+                                .size(11.0),
+                        );
+                    });
+                });
+            });
+    }
+
 
     // 右侧详情面板：窗口模式常驻；全屏时仅在鼠标靠右才显示。
     let screen_w = ctx.screen_rect().width();
@@ -480,7 +531,7 @@ fn draw_ui(
                     actions.push(Action::SetVolume(vol));
                 }
 
-                // 右对齐：字幕 / 音轨 / 倍速 / 全屏
+                // 右对齐：设置 / 字幕 / 音轨 / 全屏（倍速已并入设置面板）
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let fs_glyph = if state.fullscreen {
                         icons::BACK_TO_WINDOW
@@ -495,7 +546,7 @@ fn draw_ui(
                         || actions.push(Action::ToggleFullscreen),
                     );
                     ui.add_space(6.0);
-                    draw_speed_menu(ui, state, actions, cyan);
+                    draw_settings_menu(ui, state, actions, cyan);
                     ui.add_space(6.0);
                     draw_audio_menu(ui, state, actions, cyan);
                     ui.add_space(6.0);
@@ -998,7 +1049,7 @@ fn draw_chip_button(
     cyan: Color32,
     active: bool,
     on_click: impl FnOnce(),
-) {
+) -> egui::Response {
     // 自己 measure label 长度后 allocate；icon-only 时强制最小宽 36px 让它
     // 看着不像孤伶伶的小方块。font 走 14px——比纯文字稍大一点，PUA 图标
     // 在小字号下细节会糊。
@@ -1094,6 +1145,7 @@ fn draw_chip_button(
     if resp.clicked() {
         on_click();
     }
+    resp
 }
 
 /// 圆角矩形的双色描边：上边 + 左/右上半段 用 top 颜色；下边 + 左/右下半段 用 bot 颜色。
@@ -1438,9 +1490,7 @@ fn draw_candidate_row(
         shadow: egui::epaint::Shadow::NONE,
     };
     frame.show(ui, |ui| {
-        // 用 right_to_left 整行布局：先把按钮塞进右侧、claim 它们要的宽度，
-        // 剩下的空间留给左侧 vertical 文本块。这样长文件名 wrap 时不会
-        // 跑到按钮下面 / 跟按钮重叠。
+        // 右侧预览/绑定按钮先占位（right_to_left），剩余宽度给左侧标题 + chip 排。
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.scope(|ui| {
@@ -1472,53 +1522,113 @@ fn draw_candidate_row(
                     }
                     if busy {
                         ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new("处理中…")
-                                .color(cyan)
-                                .size(11.0),
-                        );
+                        ui.label(egui::RichText::new("处理中…").color(cyan).size(11.0));
                     }
 
-                    // 余下宽度给左侧文本块。allocate_ui_with_layout 在
-                    // right_to_left 当前 cursor 之后留出"剩下的空间"给子 ui。
                     ui.add_space(8.0);
-                    let remain = ui.available_width().max(120.0);
+                    let remain = ui.available_width().max(160.0);
                     ui.allocate_ui_with_layout(
                         egui::vec2(remain, 0.0),
                         egui::Layout::top_down(egui::Align::LEFT),
                         |ui| {
-                            // 强制 wrap 到容器宽度，否则长 release name 单行
-                            // 撑开 horizontal 的总宽，把按钮顶出去。
+                            // 标题（强制 wrap，长 release 名不挤按钮）。
                             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                             ui.label(
                                 egui::RichText::new(&item.label)
-                                    .color(Color32::from_gray(230))
+                                    .color(Color32::from_gray(232))
                                     .size(12.5)
                                     .strong(),
                             );
-                            let mut meta_parts: Vec<String> = Vec::new();
+                            ui.add_space(5.0);
+                            // 元信息 chip 排，仿网页版字幕管理：
+                            //   来源站点(紫蓝) · 格式(灰) · 上传者(灰) · ↓下载数(灰)
+                            //   · ⭐质量(灰) · 大小(灰)
+                            let mut chips: Vec<(String, ChipTone)> = Vec::new();
                             if !item.source.is_empty() {
-                                meta_parts.push(item.source.clone());
+                                chips.push((item.source.clone(), ChipTone::Source));
                             }
-                            if let Some(lang) = &item.language {
-                                meta_parts.push(lang.clone());
+                            if let Some(lang) = item.language.as_deref().filter(|s| !s.is_empty()) {
+                                chips.push((lang.to_string(), ChipTone::Lang));
                             }
-                            if let Some(fmt) = &item.format {
-                                meta_parts.push(fmt.to_uppercase());
+                            if let Some(fmt) = item.format.as_deref().filter(|s| !s.is_empty()) {
+                                chips.push((fmt.to_uppercase(), ChipTone::Neutral));
                             }
-                            if !meta_parts.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(meta_parts.join(" · "))
-                                        .color(Color32::from_gray(150))
-                                        .size(11.0),
-                                );
+                            if let Some(up) = item.uploader.as_deref().filter(|s| !s.is_empty()) {
+                                chips.push((format!("👤 {up}"), ChipTone::Neutral));
                             }
+                            if let Some(dl) =
+                                item.download_number.as_deref().filter(|s| !s.is_empty())
+                            {
+                                chips.push((format!("↓ {dl}"), ChipTone::Neutral));
+                            }
+                            if let Some(q) = item.rating.as_deref().filter(|s| !s.is_empty()) {
+                                chips.push((format!("⭐ {q}"), ChipTone::Neutral));
+                            }
+                            if let Some(sz) = item.file_size.as_deref().filter(|s| !s.is_empty()) {
+                                chips.push((sz.to_string(), ChipTone::Neutral));
+                            }
+                            paint_chip_flow(ui, &chips);
                         },
                     );
                 });
             });
         });
     });
+}
+
+/// 在当前 top_down ui 里画一排会自动换行的 meta chip（width 由 ui 可用宽决定）。
+/// 用于候选行/字幕行的元信息展示。手动排版：累计 x，超宽换行。
+fn paint_chip_flow(ui: &mut egui::Ui, chips: &[(String, ChipTone)]) {
+    if chips.is_empty() {
+        return;
+    }
+    let avail = ui.available_width().max(80.0);
+    let chip_h = 17.0;
+    let gap = 5.0;
+    let line_gap = 4.0;
+    let font = egui::FontId::proportional(10.5);
+    // 预算总高度：先按宽度模拟换行，算需要几行。
+    let ctx = ui.ctx().clone();
+    let mut rows = 1usize;
+    let mut x = 0.0_f32;
+    let mut widths: Vec<f32> = Vec::with_capacity(chips.len());
+    for (text, _) in chips {
+        let tw = ctx
+            .fonts(|f| f.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE))
+            .size()
+            .x;
+        let w = tw + 12.0;
+        widths.push(w);
+        if x + w > avail && x > 0.0 {
+            rows += 1;
+            x = 0.0;
+        }
+        x += w + gap;
+    }
+    let total_h = rows as f32 * chip_h + (rows.saturating_sub(1)) as f32 * line_gap;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(avail, total_h), egui::Sense::hover());
+    let painter = ui.painter();
+    let mut cx = rect.left();
+    let mut cy = rect.top() + chip_h / 2.0;
+    for (i, (text, tone)) in chips.iter().enumerate() {
+        let w = widths[i];
+        if cx + w > rect.right() && cx > rect.left() {
+            cx = rect.left();
+            cy += chip_h + line_gap;
+        }
+        let (bg, fg) = chip_colors(*tone);
+        let crect =
+            egui::Rect::from_min_size(egui::pos2(cx, cy - chip_h / 2.0), egui::vec2(w, chip_h));
+        painter.rect_filled(crect, egui::CornerRadius::same(3), bg);
+        painter.text(
+            egui::pos2(cx + 6.0, cy),
+            egui::Align2::LEFT_CENTER,
+            text,
+            font.clone(),
+            fg,
+        );
+        cx += w + gap;
+    }
 }
 
 /// 字幕下拉：列表 = 「关闭字幕」 + 当前 resource 的 subtitles[] + mpv 内置的
@@ -1530,23 +1640,14 @@ fn draw_subtitle_menu(
     actions: &mut Vec<Action>,
     cyan: Color32,
 ) {
-    use egui::menu;
     let label = subtitle_button_label(state);
-    // 触发按钮放在 scope 里 + install_chip_style，让样式跟旁边手画的 chip
-    // 完全一致；scope 退出后 style 自动还原，不影响下拉里 menu_row 的渲染。
-    ui.scope(|ui| {
-        install_chip_style(ui, cyan);
-        let _ = menu::menu_button(ui, pill_text(&label, cyan, false), |ui| {
-        ui.set_min_width(280.0);
-
-        // 「当前正在播放哪条字幕」靠 mpv 的 selected 字段反查：
-        //   - kind==sub && selected=true 的轨就是当前轨
-        //   - external==true 时，external_filename 就是当初 sub-add 用的 URL/路径，
-        //     拿它去匹配「已绑定」段的 SubtitleMeta.url 或「临时预览」段的
-        //     PreviewSub.tmp_path
-        //   - external==false 时直接用 track.id 匹配「内嵌」段
-        // mpv `sid` 属性也存了号，但外挂字幕在切集 / 反复 sub-add 后 sid 会跳，
-        // external_filename 是稳定的字符串匹配，更可靠。
+    let close_panel = |ui: &mut egui::Ui| {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::new("pc_subtitle_panel_open"), false));
+    };
+    cyber_popup_panel(ui, cyan, "pc_subtitle_panel_open", &label, 380.0, |ui| {
+        // 「当前正在播放哪条字幕」靠 mpv 的 selected 字段反查（见旧实现注释）：
+        // external 轨用 external_filename 匹配 url/tmp_path；内嵌轨用 track.id。
         let active_sub_track = state
             .tracks
             .iter()
@@ -1554,244 +1655,222 @@ fn draw_subtitle_menu(
         let active_external_path = active_sub_track
             .filter(|t| t.external)
             .and_then(|t| t.external_filename.as_deref());
-        let active_internal_id = active_sub_track
-            .filter(|t| !t.external)
-            .map(|t| t.id);
-        // mpv 把 sid 设成 "no" 是「关闭字幕」的真值；track-list 没显式标这个。
+        let active_internal_id = active_sub_track.filter(|t| !t.external).map(|t| t.id);
         let off_active = matches!(state.current_sid.as_deref(), Some("no"))
             || active_sub_track.is_none();
 
-        // 「关闭字幕」放在最顶上，不进 ScrollArea —— 用户最常用的"关掉一切
-        // 字幕"应该常驻可见，不会被几十条内嵌 sub 推到下面。
-        if menu_row(ui, "关闭字幕", off_active, cyan).clicked() {
+        // 「关闭字幕」常驻顶部（不进 ScrollArea 内的分段，但这里整体已在
+        // popup 的 ScrollArea 里，直接画即可）。
+        if cyber_list_row(ui, "关闭字幕", off_active, cyan).clicked() {
             actions.push(Action::SetSubtitle(None));
-            ui.close();
+            close_panel(ui);
+        }
+        ui.add_space(4.0);
+
+        // 段 1：在线 · 已绑定 ————————————————————————
+        let bound: Vec<_> = state
+            .current_resource()
+            .map(|r| r.subtitles.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        if !bound.is_empty() {
+            cyber_section_title(ui, "已绑定", "BOUND", cyan);
+            for sub in bound {
+                let display = sub
+                    .display_name
+                    .clone()
+                    .or_else(|| sub.label.clone())
+                    .or_else(|| sub.format.clone())
+                    .unwrap_or_else(|| sub.id.clone());
+                let active = active_external_path.map(|p| p == sub.url).unwrap_or(false);
+                let pending = state.pending_delete_sid.as_deref() == Some(sub.id.as_str());
+                ui.push_id(&sub.id, |ui| {
+                    if pending {
+                        // 二次确认：整行红框 + 「确定 / 取消」，沿用旧 helper。
+                        let (row, confirm, cancel) =
+                            menu_row_confirm_delete(ui, &display, cyan);
+                        if confirm.clicked() {
+                            actions.push(Action::ConfirmDeleteSubtitle(sub.id.clone()));
+                        } else if cancel.clicked() || row.clicked() {
+                            actions.push(Action::CancelDeleteSubtitle);
+                        }
+                    } else {
+                        let chips = sub_meta_chips(
+                            sub.source.as_deref(),
+                            sub.provider_name.as_deref(),
+                            sub.language.as_deref(),
+                            sub.format.as_deref(),
+                            sub.web_player_supported,
+                        );
+                        let (row, del) = cyber_sub_row(
+                            ui,
+                            &display,
+                            &chips,
+                            active,
+                            cyan,
+                            Some((icons::DELETE, true)),
+                        );
+                        let row = row.on_hover_text(&display);
+                        if del.map(|d| d.clicked()).unwrap_or(false) {
+                            actions.push(Action::RequestDeleteSubtitle(sub.id.clone()));
+                        } else if row.clicked() {
+                            actions.push(Action::SetSubtitle(Some(sub.url.clone())));
+                            close_panel(ui);
+                        }
+                    }
+                });
+                ui.add_space(4.0);
+            }
         }
 
-        // 中段（三段：已绑定 → 内嵌 → 临时预览）放进 ScrollArea —— 蓝光原盘
-        // 内嵌可能有 30+ 条多语种字幕，没滚动条会撑过屏幕，下面的「搜索在线
-        // 字幕」按钮被推到屏幕外。max_height 540 给屏幕留底部安全距，配合
-        // auto_shrink([false,true]) 让不满 540 时自动收紧。
-        egui::ScrollArea::vertical()
-            .max_height(540.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                // 段 1：在线 · 已绑定 ——————————————————————————
-                // 来源：state.movie.resources[i].subtitles[]，是后端持久化的字幕。
-                // 显示顺序优先因为这是用户主动选过的「认准的」字幕，下次切集
-                // 也还在；放最上面让用户最快找到。
-                // 行内挂一个 ✕ 按钮 → 进二次确认态；二次确认时整行换成
-                // 「确定 / 取消」红框。删除走 DELETE /resources/{id}/subtitles/{sid}。
-                let bound: Vec<_> = state
-                    .current_resource()
-                    .map(|r| r.subtitles.iter().collect::<Vec<_>>())
-                    .unwrap_or_default();
-                if !bound.is_empty() {
-                    section_header(ui, "在线字幕 · 已绑定", cyan);
-                    for sub in bound {
-                        // 后端 1.21+ 给的 display_name 是 release 标题（去扩展名），
-                        // 比 label（"Chinese Simplified+English ASS (SubHD)"）和
-                        // filename（带 hash 后缀）都更可读。优先用它。
-                        let display = sub
-                            .display_name
-                            .clone()
-                            .or_else(|| sub.label.clone())
-                            .or_else(|| sub.format.clone())
-                            .unwrap_or_else(|| sub.id.clone());
-                        let active = active_external_path
-                            .map(|p| p == sub.url)
-                            .unwrap_or(false);
-                        let pending = state
-                            .pending_delete_sid
-                            .as_deref()
-                            == Some(sub.id.as_str());
-                        if pending {
-                            // 二次确认行：整行红框 + 「确定 / 取消」。整行点击
-                            // = 取消（按钮命中优先，所以即便按钮在行 rect 里，
-                            // 不会重复触发）。
-                            let (row, confirm, cancel) = menu_row_confirm_delete(
-                                ui, &display, cyan,
-                            );
-                            if confirm.clicked() {
-                                actions.push(Action::ConfirmDeleteSubtitle(
-                                    sub.id.clone(),
-                                ));
-                            } else if cancel.clicked() {
-                                actions.push(Action::CancelDeleteSubtitle);
-                            } else if row.clicked() {
-                                actions.push(Action::CancelDeleteSubtitle);
-                            }
-                        } else {
-                            let (row, del) = menu_row_with_danger_button(
-                                ui,
-                                &display,
-                                active,
-                                cyan,
-                                icons::DELETE,
-                            );
-                            let row = row.on_hover_text(&display);
-                            if del.clicked() {
-                                actions.push(Action::RequestDeleteSubtitle(
-                                    sub.id.clone(),
-                                ));
-                            } else if row.clicked() {
-                                actions.push(Action::SetSubtitle(Some(
-                                    sub.url.clone(),
-                                )));
-                                ui.close();
-                            }
-                        }
-                    }
-                }
-
-                // 段 2：内嵌 ————————————————————————————————
-                // 来源：mpv track-list 里 kind=="sub" 且 external=false 的轨。
-                // 蓝光 / mkv 自带的字幕全在这里。
-                let internal: Vec<_> = state
-                    .tracks
-                    .iter()
-                    .filter(|t| t.kind == "sub" && !t.external)
-                    .collect();
-                if !internal.is_empty() {
-                    section_header(ui, "内嵌字幕", cyan);
-                    for t in internal {
-                        let display = t
-                            .title
-                            .clone()
-                            .or_else(|| t.lang.clone())
-                            .unwrap_or_else(|| format!("内嵌 #{}", t.id));
-                        let active = active_internal_id == Some(t.id);
-                        let resp = menu_row(ui, &display, active, cyan)
-                            .on_hover_text(&display);
-                        if resp.clicked() {
-                            actions.push(Action::SetSubtitleTrack(t.id));
-                            ui.close();
-                        }
-                    }
-                }
-
-                // 段 3：在线 · 临时预览 —————————————————————————
-                // 来源：state.preview_subtitles —— 用户在「搜索在线字幕」面板
-                // 里点过预览的候选。生命周期 = 当前播放器进程；切集 / 退出后
-                // 丢弃。空时整段不渲染（包括 header），免得平白多一条空标题。
-                // 当前正在预览的那一行右侧挂个「绑定」小按钮 —— 用户觉得字幕
-                // 合适直接绑定持久化，不用再翻搜索面板。
-                if !state.preview_subtitles.is_empty() {
-                    section_header(ui, "在线字幕 · 临时预览", cyan);
-                    for prev in &state.preview_subtitles {
-                        let active = active_external_path
-                            .map(|p| p == prev.tmp_path)
-                            .unwrap_or(false);
-                        if active {
-                            // 正在播 = 才有「绑定」按钮（其它预览条目说明已经
-                            // 被切走，再绑定意味着自动切回它，太突兀；先要求
-                            // 用户点中→预览→播 → 看合适→绑定，路径单一）。
-                            let (row, btn) = menu_row_with_button(
-                                ui,
-                                &prev.label,
-                                true,
-                                cyan,
-                                "绑定",
-                            );
-                            let row = row.on_hover_text(&prev.label);
-                            if btn.clicked() {
-                                actions.push(Action::BindOnlineSubtitle {
-                                    candidate_id: prev.candidate_id.clone(),
-                                    label: prev.label.clone(),
-                                });
-                                ui.close();
-                            } else if row.clicked() {
-                                // 已经在播这条字幕，再点等同于"无操作"——但保
-                                // 留让 mpv 重新 select 一次，万一字幕轨道被
-                                // 别的操作切走也能回来。
-                                actions.push(Action::SetSubtitle(Some(
-                                    prev.tmp_path.clone(),
-                                )));
-                                ui.close();
-                            }
-                        } else if menu_row(ui, &prev.label, false, cyan)
-                            .on_hover_text(&prev.label)
-                            .clicked()
-                        {
-                            // 未在播的预览条目：点击 = sub-add+select 切回它。
-                            actions.push(Action::SetSubtitle(Some(
-                                prev.tmp_path.clone(),
-                            )));
-                            ui.close();
-                        }
-                    }
-                }
-
-                // 段 4：在线 · 搜索结果（候选） —————————————————
-                // 来源：state.online_search_state.search 里 Loaded 的候选；
-                // 排除已经在「临时预览」段里出现过的（避免重复）。点击 =
-                // 触发预览（走 Action::PreviewOnlineSubtitle），跑完以后该条
-                // 候选会从这一段消失、出现在第 3 段并自动播放。这样用户在
-                // 同一个下拉里就能"看效果不行 → 换一条 → 满意 → 绑定"，
-                // 不用反复弹出搜索面板。
-                let candidates: Vec<crate::native_player::controller::OnlineCandidate> = state
-                    .online_search_state
-                    .lock()
-                    .ok()
-                    .and_then(|g| match &g.search {
-                        crate::native_player::controller::SearchPhase::Loaded(items) => {
-                            Some(items.clone())
-                        }
-                        _ => None,
+        // 段 2：内嵌 ——————————————————————————————
+        let internal: Vec<_> = state
+            .tracks
+            .iter()
+            .filter(|t| t.kind == "sub" && !t.external)
+            .collect();
+        if !internal.is_empty() {
+            cyber_section_title(ui, "内嵌字幕", "EMBEDDED", cyan);
+            for t in internal {
+                let display = t
+                    .title
+                    .clone()
+                    .or_else(|| t.lang.clone())
+                    .unwrap_or_else(|| format!("内嵌 #{}", t.id));
+                let active = active_internal_id == Some(t.id);
+                // 内嵌字幕 chip：语言 + codec（codec 可判断是否图形字幕）。
+                let chips = sub_meta_chips(
+                    Some("sidecar"),
+                    None,
+                    t.lang.as_deref(),
+                    t.codec.as_deref(),
+                    None,
+                );
+                let resp = ui
+                    .push_id(t.id, |ui| {
+                        let (row, _) =
+                            cyber_sub_row(ui, &display, &chips, active, cyan, None);
+                        row.on_hover_text(&display)
                     })
-                    .unwrap_or_default();
-                let busy_cid: Option<String> = state
-                    .online_search_state
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.busy_candidate.clone());
-                let unpreviewed: Vec<_> = candidates
-                    .iter()
-                    .filter(|c| {
-                        !state
-                            .preview_subtitles
-                            .iter()
-                            .any(|p| p.candidate_id == c.candidate_id)
-                    })
-                    .collect();
-                if !unpreviewed.is_empty() {
-                    section_header(ui, "在线字幕 · 搜索结果（点击预览）", cyan);
-                    for c in unpreviewed {
-                        let busy = busy_cid.as_deref() == Some(c.candidate_id.as_str());
-                        let display = if busy {
-                            format!("⏳ {}", c.label)
-                        } else {
-                            c.label.clone()
-                        };
-                        if menu_row(ui, &display, false, cyan)
-                            .on_hover_text(&c.label)
-                            .clicked()
-                            && !busy
-                        {
-                            actions.push(Action::PreviewOnlineSubtitle {
-                                candidate_id: c.candidate_id.clone(),
-                                label: c.label.clone(),
-                            });
-                            // 不 ui.close()：用户多半要继续在菜单里换字幕看
-                            // 哪条合适，关掉再开一次反而打断决策流。
-                        }
-                    }
+                    .inner;
+                if resp.clicked() {
+                    actions.push(Action::SetSubtitleTrack(t.id));
+                    close_panel(ui);
                 }
-            });
+                ui.add_space(4.0);
+            }
+        }
 
-        // 搜索在线字幕入口 —— 永远在最底（ScrollArea 之外），用户找得到。
-        ui.separator();
-        let search_resp = menu_row(
+        // 段 3：在线 · 临时预览 —————————————————————
+        if !state.preview_subtitles.is_empty() {
+            cyber_section_title(ui, "临时预览", "PREVIEW", cyan);
+            for prev in &state.preview_subtitles {
+                let active = active_external_path
+                    .map(|p| p == prev.tmp_path)
+                    .unwrap_or(false);
+                let chips: Vec<(String, ChipTone)> = vec![("预览".to_string(), ChipTone::Neutral)];
+                // 正在播的预览条目右侧挂「绑定」按钮，方便持久化。
+                let action = if active { Some(("绑定", false)) } else { None };
+                let (row, btn) = ui
+                    .push_id(&prev.candidate_id, |ui| {
+                        cyber_sub_row(ui, &prev.label, &chips, active, cyan, action)
+                    })
+                    .inner;
+                let row = row.on_hover_text(&prev.label);
+                if btn.map(|b| b.clicked()).unwrap_or(false) {
+                    actions.push(Action::BindOnlineSubtitle {
+                        candidate_id: prev.candidate_id.clone(),
+                        label: prev.label.clone(),
+                    });
+                    close_panel(ui);
+                } else if row.clicked() {
+                    actions.push(Action::SetSubtitle(Some(prev.tmp_path.clone())));
+                    close_panel(ui);
+                }
+                ui.add_space(4.0);
+            }
+        }
+
+        // 段 4：在线 · 搜索结果（点击预览）—————————————
+        let candidates: Vec<crate::native_player::controller::OnlineCandidate> = state
+            .online_search_state
+            .lock()
+            .ok()
+            .and_then(|g| match &g.search {
+                crate::native_player::controller::SearchPhase::Loaded(items) => {
+                    Some(items.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+        let busy_cid: Option<String> = state
+            .online_search_state
+            .lock()
+            .ok()
+            .and_then(|g| g.busy_candidate.clone());
+        let unpreviewed: Vec<_> = candidates
+            .iter()
+            .filter(|c| {
+                !state
+                    .preview_subtitles
+                    .iter()
+                    .any(|p| p.candidate_id == c.candidate_id)
+            })
+            .collect();
+        if !unpreviewed.is_empty() {
+            cyber_section_title(ui, "搜索结果", "SEARCH · 点击预览", cyan);
+            for c in unpreviewed {
+                let busy = busy_cid.as_deref() == Some(c.candidate_id.as_str());
+                let title = if busy {
+                    format!("⏳ {}", c.label)
+                } else {
+                    c.label.clone()
+                };
+                // 搜索候选 chip：来源/语言/格式 + 下载数/上传者/大小。
+                let mut chips = sub_meta_chips(
+                    Some("online_bound"),
+                    Some(c.source.as_str()).filter(|s| !s.is_empty()),
+                    c.language.as_deref(),
+                    c.format.as_deref(),
+                    None,
+                );
+                if let Some(dl) = c.download_number.as_deref().filter(|s| !s.is_empty()) {
+                    chips.push((format!("↓{dl}"), ChipTone::Neutral));
+                }
+                if let Some(up) = c.uploader.as_deref().filter(|s| !s.is_empty()) {
+                    chips.push((up.to_string(), ChipTone::Neutral));
+                }
+                if let Some(sz) = c.file_size.as_deref().filter(|s| !s.is_empty()) {
+                    chips.push((sz.to_string(), ChipTone::Neutral));
+                }
+                let (row, _) = ui
+                    .push_id(&c.candidate_id, |ui| {
+                        cyber_sub_row(ui, &title, &chips, false, cyan, None)
+                    })
+                    .inner;
+                if row.on_hover_text(&c.label).clicked() && !busy {
+                    actions.push(Action::PreviewOnlineSubtitle {
+                        candidate_id: c.candidate_id.clone(),
+                        label: c.label.clone(),
+                    });
+                    // 不关面板：用户多半要继续在列表里换字幕看哪条合适。
+                }
+                ui.add_space(4.0);
+            }
+        }
+
+        // 搜索在线字幕入口 —— 最底部。
+        cyber_section_title(ui, "在线字幕", "ONLINE", cyan);
+        if cyber_list_row(
             ui,
             &format!("{} 搜索在线字幕…", icons::SUBTITLE),
             false,
             cyan,
-        );
-        if search_resp.clicked() {
+        )
+        .clicked()
+        {
             actions.push(Action::OpenSubtitleSearch);
-            ui.close();
+            close_panel(ui);
         }
-        });
     });
 }
 
@@ -1850,23 +1929,19 @@ fn subtitle_button_label(state: &PlayerState) -> String {
 }
 
 /// 音轨下拉：从 mpv track-list 拉 audio 类。aid="no" 当作禁音，几乎不会出现。
+/// 与设置面板同款自管 Area 弹层（脱离 menu bar hover 联动）+ 赛博列表行视觉。
 fn draw_audio_menu(
     ui: &mut egui::Ui,
     state: &PlayerState,
     actions: &mut Vec<Action>,
     cyan: Color32,
 ) {
-    use egui::menu;
     let label = audio_button_label(state);
-    ui.scope(|ui| {
-        install_chip_style(ui, cyan);
-        let _ = menu::menu_button(ui, pill_text(&label, cyan, false), |ui| {
-        ui.set_min_width(360.0);
+    cyber_popup_panel(ui, cyan, "pc_audio_panel_open", &label, 360.0, |ui| {
+        cyber_section_title(ui, "音轨", "AUDIO", cyan);
         let audios: Vec<_> = state.audio_tracks().collect();
         if audios.is_empty() {
-            ui.label(
-                egui::RichText::new("（无音轨信息）").color(Color32::from_gray(140)),
-            );
+            ui.colored_label(Color32::from_gray(140), "（无音轨信息）");
             return;
         }
         for t in audios {
@@ -1899,14 +1974,15 @@ fn draw_audio_menu(
                 Some(title) if !title.is_empty() => format!("{}\n{}", row_label, title),
                 _ => row_label.clone(),
             };
-            let resp = menu_row(ui, &row_label, t.selected, cyan)
-                .on_hover_text(&hover_text);
+            let resp = cyber_list_row(ui, &row_label, t.selected, cyan).on_hover_text(&hover_text);
             if resp.clicked() {
                 actions.push(Action::SetAudioTrack(t.id));
-                ui.close();
+                // 选完即关面板（与旧 ui.close() 行为一致）。
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(egui::Id::new("pc_audio_panel_open"), false));
             }
+            ui.add_space(4.0);
         }
-        });
     });
 }
 
@@ -1963,7 +2039,820 @@ fn format_speed(s: f64) -> String {
     t
 }
 
+/// -1 / +1 are incremental clicks; 0 is an explicit reset. Values remain mpv-owned.
+fn settings_stepper(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &str,
+    can_decrease: bool,
+    can_increase: bool,
+    reset: bool,
+    buttons: (&str, &str),
+    cyan: Color32,
+) -> Option<i8> {
+    let mut change = None;
+    ui.horizontal(|ui| {
+        ui.add_sized([64.0, 30.0], egui::Label::new(egui::RichText::new(label).color(Color32::from_gray(200))));
+        if ui.add_enabled_ui(can_decrease, |ui| cyber_card_sized(ui, buttons.0, false, cyan, 32.0)).inner.clicked() {
+            change = Some(-1);
+        }
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(58.0, 30.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, egui::CornerRadius::same(5), Color32::from_rgba_unmultiplied(34, 211, 238, 22));
+        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, value, egui::FontId::monospace(12.0), cyan);
+        if ui.add_enabled_ui(can_increase, |ui| cyber_card_sized(ui, buttons.1, false, cyan, 32.0)).inner.clicked() {
+            change = Some(1);
+        }
+        if reset && cyber_card_sized(ui, "重置", false, cyan, 44.0).clicked() {
+            change = Some(0);
+        }
+    });
+    change
+}
+
+fn subtitle_color_swatch(ui: &mut egui::Ui, label: &str, color: Color32, active: bool, cyan: Color32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(61.0, 32.0), egui::Sense::click());
+    let enabled = ui.is_enabled();
+    let fill = if enabled { color } else { color.gamma_multiply(0.25) };
+    if active {
+        ui.painter().rect_filled(rect.expand(3.0), egui::CornerRadius::same(7), cyan.gamma_multiply(0.35));
+    }
+    ui.painter().rect_filled(rect, egui::CornerRadius::same(4), fill);
+    ui.painter().rect_stroke(rect, egui::CornerRadius::same(4), egui::Stroke::new(if active { 2.0 } else { 1.0 },
+        if active || response.hovered() { cyan } else { Color32::from_gray(90) }), egui::StrokeKind::Inside);
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER,
+        if active { format!("✓ {label}") } else { label.to_string() },
+        egui::FontId::proportional(13.0), if enabled { Color32::from_rgb(8, 18, 22) } else { Color32::from_gray(120) });
+    response.on_hover_text(format!("字幕颜色：{label}"))
+}
+
+fn subtitle_background_enabled(color: &str) -> bool {
+    let color = color.trim_start_matches('#');
+    match color.len() {
+        8 => u8::from_str_radix(&color[..2], 16).is_ok_and(|alpha| alpha > 0),
+        6 => true,
+        _ => false,
+    }
+}
+
+/// 字幕样式分区 —— 按当前选中字幕轨的 codec 智能 gating：
+///   - 图形字幕（PGS/VOBSUB 等）：样式 property 完全无效 → 灰显提示，不画控件。
+///   - ASS/SSA：自带样式，sub-color/sub-font-size 默认不生效，需开「强制覆盖」开关。
+///   - 文本字幕（srt/webvtt/mov_text 等）：字号/位置/颜色直接生效。
+fn draw_sub_style_section(
+    ui: &mut egui::Ui,
+    state: &PlayerState,
+    actions: &mut Vec<Action>,
+    cyan: Color32,
+) {
+    // 从 track-list 找当前选中的字幕轨 codec。selected=true 且 kind=="sub"。
+    let codec = state
+        .tracks
+        .iter()
+        .find(|t| t.kind == "sub" && t.selected)
+        .and_then(|t| t.codec.as_deref())
+        .map(|c| c.to_ascii_lowercase());
+
+    // 图形字幕：样式不可调，提示后直接返回。
+    let is_bitmap = matches!(
+        codec.as_deref(),
+        Some(
+            "hdmv_pgs_subtitle"
+                | "dvd_subtitle"
+                | "dvb_subtitle"
+                | "dvb_teletext"
+                | "xsub"
+                | "arib_caption"
+        )
+    );
+    if is_bitmap {
+        ui.colored_label(
+            Color32::from_gray(140),
+            "内嵌图形字幕（PGS/VOBSUB），不可更改样式",
+        );
+        return;
+    }
+
+    let is_ass = matches!(codec.as_deref(), Some("ass") | Some("ssa"));
+    if is_ass {
+        ui.colored_label(
+            Color32::from_gray(170),
+            "ASS/SSA 字幕：需开启「强制覆盖」样式才生效",
+        );
+        ui.push_id("forceass", |ui| {
+            let mut on = state.force_ass_override;
+            if ui.checkbox(&mut on, "强制覆盖 ASS 样式").changed() {
+                actions.push(Action::SetForceAssOverride(on));
+            }
+        });
+    }
+
+    if state.current_sid.as_deref() == Some("no") {
+        ui.colored_label(Color32::from_gray(140), "未开启字幕");
+        return;
+    }
+
+    // Text controls preserve the earlier button-based interaction; ASS requires override.
+    let enabled = !is_ass || state.force_ass_override;
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.push_id("subsize", |ui| {
+            if let Some(step) = settings_stepper(ui, "字号", &format!("{:.1}×", state.sub_scale),
+                state.sub_scale > 0.3, state.sub_scale < 3.0, true, ("A−", "A+"), cyan) {
+                let value = if step == 0 { 1.0 } else { ((state.sub_scale * 10.0).round() + f64::from(step)) / 10.0 };
+                actions.push(Action::SetSubScale(value.clamp(0.3, 3.0)));
+            }
+        });
+        ui.push_id("subpos", |ui| {
+            if let Some(step) = settings_stepper(ui, "位置", &state.sub_pos.to_string(),
+                state.sub_pos > 0, state.sub_pos < 150, false, ("↑", "↓"), cyan) {
+                actions.push(Action::SetSubPos((state.sub_pos + i64::from(step) * 5).clamp(0, 150)));
+            }
+        });
+        ui.push_id("subcolor", |ui| {
+            ui.label("颜色");
+            ui.horizontal_wrapped(|ui| {
+                for (lbl, hex, color) in [
+                    ("白", "#FFFFFF", Color32::WHITE),
+                    ("黄", "#FFFF00", Color32::YELLOW),
+                    ("绿", "#00FF00", Color32::GREEN),
+                    ("青", "#22D3EE", Color32::from_rgb(34, 211, 238)),
+                ] {
+                    let active = state.sub_color.eq_ignore_ascii_case(hex);
+                    if subtitle_color_swatch(ui, lbl, color, active, cyan).clicked() {
+                        actions.push(Action::SetSubColor(hex.to_string()));
+                    }
+                }
+            });
+        });
+        ui.add_space(6.0);
+        ui.push_id("subborder", |ui| {
+            if let Some(step) = settings_stepper(ui, "描边", &format!("{:.2}", state.sub_border_size),
+                state.sub_border_size > 0.0, state.sub_border_size < 10.0, false, ("−", "+"), cyan) {
+                actions.push(Action::SetSubBorderSize((state.sub_border_size + f64::from(step) * 0.5).clamp(0.0, 10.0)));
+            }
+        });
+        ui.push_id("subbackground", |ui| {
+            let on = state.sub_border_style == "background-box" && subtitle_background_enabled(&state.sub_back_color);
+            ui.horizontal(|ui| {
+                ui.add_sized([64.0, 30.0], egui::Label::new("背景"));
+                if cyber_card(ui, "关", !on, cyan).clicked() {
+                    actions.push(Action::SetSubBorderStyle("outline-and-shadow".into()));
+                    actions.push(Action::SetSubBackColor("#00000000".into()));
+                }
+                if cyber_card(ui, "开", on, cyan).clicked() {
+                    actions.push(Action::SetSubBackColor("#80000000".into()));
+                    actions.push(Action::SetSubBorderStyle("background-box".into()));
+                }
+            });
+        });
+    });
+}
+
+/// 设置齿轮面板 —— 把倍速 + 同步/字幕样式/画面/工具整合进一个下拉。
+/// 仿 draw_speed_menu 的 menu_button 外壳，内部 ScrollArea + section_header 分区。
+/// 设置面板分区标题 —— 仿网页版：暗青小字 + 拉宽字距 + `· ENGLISH` 后缀，
+/// 看着像 chapter label 而不是可点行。左边一道 2px 青色竖条做装饰。
+fn cyber_section_title(ui: &mut egui::Ui, zh: &str, en: &str, cyan: Color32) {
+    ui.add_space(10.0);
+    let avail_w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(avail_w, 16.0), egui::Sense::hover());
+    let painter = ui.painter();
+    // 左侧装饰竖条
+    painter.rect_filled(
+        egui::Rect::from_min_size(
+            egui::pos2(rect.left(), rect.center().y - 6.0),
+            egui::vec2(2.5, 12.0),
+        ),
+        egui::CornerRadius::same(1),
+        cyan,
+    );
+    let dim_cyan = Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 200);
+    // 中文标题
+    let zh_galley = painter.layout_no_wrap(
+        zh.to_string(),
+        egui::FontId::proportional(11.5),
+        dim_cyan,
+    );
+    let zh_w = zh_galley.size().x;
+    painter.galley(
+        egui::pos2(rect.left() + 10.0, rect.center().y - zh_galley.size().y / 2.0),
+        zh_galley,
+        dim_cyan,
+    );
+    // 英文后缀（更暗、更小、字距感）
+    let faint = Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 90);
+    painter.text(
+        egui::pos2(rect.left() + 10.0 + zh_w + 8.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        format!("· {en}"),
+        egui::FontId::monospace(9.5),
+        faint,
+    );
+    ui.add_space(8.0);
+}
+
+/// 设置面板里的网格卡片按钮 —— 仿网页版的实心 chip：选中态青边发光填充，
+/// 未选深底白细边，hover 青边。等宽（由 ui 的 horizontal_wrapped 自动换行）。
+fn cyber_card(ui: &mut egui::Ui, label: &str, active: bool, cyan: Color32) -> egui::Response {
+    cyber_card_sized(ui, label, active, cyan, 54.0)
+}
+
+fn cyber_card_sized(
+    ui: &mut egui::Ui,
+    label: &str,
+    active: bool,
+    cyan: Color32,
+    min_w: f32,
+) -> egui::Response {
+    let font = egui::FontId::proportional(12.5);
+    let galley = ui.fonts(|f| f.layout_no_wrap(label.into(), font.clone(), Color32::WHITE));
+    let w = (galley.size().x + 18.0).max(min_w);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 30.0), egui::Sense::click());
+    let enabled = ui.is_enabled();
+    let hovered = resp.hovered() && enabled;
+    let painter = ui.painter();
+    let r4 = egui::CornerRadius::same(5);
+
+    let (fill, stroke_c, text_c) = if !enabled {
+        (
+            Color32::from_rgba_unmultiplied(0, 0, 0, 80),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+            Color32::from_gray(110),
+        )
+    } else if active {
+        // 选中：青色半透明填充 + 实青边 + 外发光
+        painter.rect_filled(
+            rect.expand(1.5),
+            egui::CornerRadius::same(7),
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 28),
+        );
+        (
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 48),
+            cyan,
+            cyan,
+        )
+    } else if hovered {
+        (
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 22),
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 150),
+            cyan,
+        )
+    } else {
+        (
+            Color32::from_rgba_unmultiplied(0, 0, 0, 100),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 28),
+            Color32::from_gray(215),
+        )
+    };
+    painter.rect_filled(rect, r4, fill);
+    painter.rect_stroke(rect, r4, egui::Stroke::new(1.0, stroke_c), egui::StrokeKind::Inside);
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        font,
+        text_c,
+    );
+    resp
+}
+
+/// 全宽列表行卡片 —— 用于音轨/字幕这种「带长文本描述」的可选行。选中态青边
+/// 发光填充 + 左侧青竖条；hover 青边；未选深底白细边。返回 Response。
+fn cyber_list_row(ui: &mut egui::Ui, label: &str, active: bool, cyan: Color32) -> egui::Response {
+    let avail_w = ui.available_width();
+    let font = egui::FontId::proportional(13.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(avail_w, 32.0), egui::Sense::click());
+    let hovered = resp.hovered();
+    let painter = ui.painter();
+    let r5 = egui::CornerRadius::same(5);
+
+    let (fill, stroke_c, text_c) = if active {
+        painter.rect_filled(
+            rect.expand(1.0),
+            egui::CornerRadius::same(6),
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 24),
+        );
+        (
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 42),
+            cyan,
+            cyan,
+        )
+    } else if hovered {
+        (
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 20),
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 140),
+            cyan,
+        )
+    } else {
+        (
+            Color32::from_rgba_unmultiplied(0, 0, 0, 90),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 22),
+            Color32::from_gray(218),
+        )
+    };
+    painter.rect_filled(rect, r5, fill);
+    painter.rect_stroke(rect, r5, egui::Stroke::new(1.0, stroke_c), egui::StrokeKind::Inside);
+    // 选中行左侧 2.5px 青竖条
+    if active {
+        painter.rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(rect.left() + 3.0, rect.center().y - 8.0),
+                egui::vec2(2.5, 16.0),
+            ),
+            egui::CornerRadius::same(1),
+            cyan,
+        );
+    }
+    painter.text(
+        egui::pos2(rect.left() + 12.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        font,
+        text_c,
+    );
+    resp
+}
+
+/// 一枚元信息小标签的配色意图。仿网页版字幕管理的 chip 配色：来源站点用品牌色、
+/// 不兼容用红、语言用青、其余中性。
+#[derive(Clone, Copy)]
+enum ChipTone {
+    /// 来源站点（SubHD / SrtKu 等）—— 紫蓝品牌色。
+    Source,
+    /// 语言 —— 青色。
+    Lang,
+    /// 中性（格式 / 大小 / 上传者 / 下载数）—— 灰。
+    Neutral,
+    /// 警示（web 不兼容）—— 红。
+    Warn,
+}
+
+fn chip_colors(tone: ChipTone) -> (Color32, Color32) {
+    // 返回 (背景, 文字)。背景半透明，文字高亮同色系。
+    match tone {
+        ChipTone::Source => (
+            Color32::from_rgba_unmultiplied(0x81, 0x8c, 0xf8, 40),
+            Color32::from_rgb(0xb4, 0xbb, 0xfb),
+        ),
+        ChipTone::Lang => (
+            Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 38),
+            Color32::from_rgb(0x67, 0xe8, 0xf9),
+        ),
+        ChipTone::Warn => (
+            Color32::from_rgba_unmultiplied(0xef, 0x44, 0x44, 45),
+            Color32::from_rgb(0xfc, 0xa5, 0xa5),
+        ),
+        ChipTone::Neutral => (
+            Color32::from_rgba_unmultiplied(255, 255, 255, 20),
+            Color32::from_gray(190),
+        ),
+    }
+}
+
+/// 在给定起点画一枚 meta chip，返回画完后的右边缘 x（供下一枚续画）。
+/// y 为 chip 行的垂直中心。超出 max_right 时不画（截断），返回原 x。
+fn paint_meta_chip(
+    painter: &egui::Painter,
+    fonts: &egui::Context,
+    x: f32,
+    cy: f32,
+    text: &str,
+    tone: ChipTone,
+    max_right: f32,
+) -> f32 {
+    let font = egui::FontId::proportional(10.5);
+    let galley = fonts.fonts(|f| f.layout_no_wrap(text.to_string(), font.clone(), Color32::WHITE));
+    let tw = galley.size().x;
+    let pad_x = 6.0;
+    let chip_w = tw + pad_x * 2.0;
+    let chip_h = 16.0;
+    if x + chip_w > max_right {
+        return x; // 放不下就不画，避免溢出行宽
+    }
+    let (bg, fg) = chip_colors(tone);
+    let rect = egui::Rect::from_min_size(egui::pos2(x, cy - chip_h / 2.0), egui::vec2(chip_w, chip_h));
+    painter.rect_filled(rect, egui::CornerRadius::same(3), bg);
+    painter.text(
+        egui::pos2(x + pad_x, cy),
+        egui::Align2::LEFT_CENTER,
+        text,
+        font,
+        fg,
+    );
+    x + chip_w + 5.0
+}
+
+/// 字幕行卡片 —— 仿详情页字幕管理：第一行主标题，第二行一排元信息 chip
+/// （来源/语言/格式/大小/上传者/下载数/不兼容警示）。可选右侧动作按钮
+/// （删除 ✕ / 绑定）。返回 (整行 Response, 可选动作按钮 Response)。
+///   - `title`：主标题（display_name / release 名）。
+///   - `chips`：元信息列表 (文本, 色调)，按序左→右排，放不下自动截断。
+///   - `active`：是否当前播放（左竖条 + 青边发光）。
+///   - `action`：Some((按钮文本, 是否危险红)) 时右侧画按钮。
+fn cyber_sub_row(
+    ui: &mut egui::Ui,
+    title: &str,
+    chips: &[(String, ChipTone)],
+    active: bool,
+    cyan: Color32,
+    action: Option<(&str, bool)>,
+) -> (egui::Response, Option<egui::Response>) {
+    let avail_w = ui.available_width();
+    let row_h = 54.0; // 两行：标题 + chip 排，留呼吸空间不挤
+    let (rect, row_resp) = ui.allocate_exact_size(egui::vec2(avail_w, row_h), egui::Sense::click());
+    let hovered = row_resp.hovered();
+
+    // 右侧动作按钮区（先占位，决定文字可用宽度）。
+    let btn_w = 34.0_f32;
+    let has_action = action.is_some();
+    let content_right = if has_action {
+        rect.right() - btn_w - 10.0
+    } else {
+        rect.right() - 10.0
+    };
+
+    let (fill, stroke_c, title_c) = if active {
+        ui.painter().rect_filled(
+            rect.expand(1.0),
+            egui::CornerRadius::same(7),
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 22),
+        );
+        (
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 40),
+            cyan,
+            cyan,
+        )
+    } else if hovered {
+        (
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 18),
+            Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 130),
+            Color32::from_gray(235),
+        )
+    } else {
+        (
+            Color32::from_rgba_unmultiplied(0, 0, 0, 95),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 22),
+            Color32::from_gray(220),
+        )
+    };
+    let r6 = egui::CornerRadius::same(6);
+    ui.painter().rect_filled(rect, r6, fill);
+    ui.painter()
+        .rect_stroke(rect, r6, egui::Stroke::new(1.0, stroke_c), egui::StrokeKind::Inside);
+    if active {
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(rect.left() + 3.0, rect.center().y - 12.0),
+                egui::vec2(2.5, 24.0),
+            ),
+            egui::CornerRadius::same(1),
+            cyan,
+        );
+    }
+
+    let left = rect.left() + 12.0;
+    // 主标题：单行截断（省略号），绝不换行——换行会顶到下一行造成文字重叠。
+    let title_font = egui::FontId::proportional(13.0);
+    let title_top = rect.top() + 12.0;
+    {
+        let max_w = (content_right - left).max(20.0);
+        let mut job = egui::text::LayoutJob::single_section(
+            title.to_string(),
+            egui::text::TextFormat {
+                font_id: title_font.clone(),
+                color: title_c,
+                ..Default::default()
+            },
+        );
+        job.wrap = egui::text::TextWrapping {
+            max_width: max_w,
+            max_rows: 1,
+            ..Default::default()
+        };
+        let galley = ui.fonts(|f| f.layout_job(job));
+        ui.painter().galley(egui::pos2(left, title_top), galley, title_c);
+    }
+    // 第二行 chip 排
+    let chip_cy = rect.bottom() - 15.0;
+    let mut x = left;
+    let ctx = ui.ctx().clone();
+    let painter = ui.painter();
+    for (text, tone) in chips {
+        if text.is_empty() {
+            continue;
+        }
+        x = paint_meta_chip(painter, &ctx, x, chip_cy, text, *tone, content_right);
+    }
+
+    // 右侧动作按钮
+    let action_resp = if let Some((btn_label, danger)) = action {
+        let brect = egui::Rect::from_min_size(
+            egui::pos2(rect.right() - btn_w - 6.0, rect.center().y - 13.0),
+            egui::vec2(btn_w, 26.0),
+        );
+        let bresp = ui.interact(brect, row_resp.id.with("act"), egui::Sense::click());
+        let bhover = bresp.hovered();
+        let (bbg, bfg) = if danger {
+            if bhover {
+                (Color32::from_rgba_unmultiplied(0xef, 0x44, 0x44, 60), Color32::from_rgb(0xfc, 0xa5, 0xa5))
+            } else {
+                (Color32::from_rgba_unmultiplied(0xef, 0x44, 0x44, 22), Color32::from_rgb(0xf8, 0x71, 0x71))
+            }
+        } else if bhover {
+            (Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 55), cyan)
+        } else {
+            (Color32::from_rgba_unmultiplied(cyan.r(), cyan.g(), cyan.b(), 26), cyan)
+        };
+        let p = ui.painter();
+        p.rect_filled(brect, egui::CornerRadius::same(5), bbg);
+        p.rect_stroke(
+            brect,
+            egui::CornerRadius::same(5),
+            egui::Stroke::new(1.0, bfg),
+            egui::StrokeKind::Inside,
+        );
+        p.text(
+            brect.center(),
+            egui::Align2::CENTER_CENTER,
+            btn_label,
+            egui::FontId::proportional(12.0),
+            bfg,
+        );
+        Some(bresp)
+    } else {
+        None
+    };
+
+    (row_resp, action_resp)
+}
+
+/// 把一条字幕的元信息拼成 chip 列表（来源/语言/格式/大小/不兼容）。
+fn sub_meta_chips(
+    source: Option<&str>,
+    provider_name: Option<&str>,
+    language: Option<&str>,
+    format: Option<&str>,
+    web_supported: Option<bool>,
+) -> Vec<(String, ChipTone)> {
+    let mut chips: Vec<(String, ChipTone)> = Vec::new();
+    // 来源：优先在线站点名；否则按 source 给中文。
+    let src_label = provider_name
+        .map(|p| p.to_string())
+        .or_else(|| match source {
+            Some("sidecar") => Some("内嵌".to_string()),
+            Some("manual_upload") => Some("上传".to_string()),
+            Some("online_bound") => Some("在线".to_string()),
+            _ => None,
+        });
+    if let Some(s) = src_label {
+        chips.push((s, ChipTone::Source));
+    }
+    if let Some(l) = language.filter(|s| !s.is_empty()) {
+        chips.push((l.to_string(), ChipTone::Lang));
+    }
+    if let Some(f) = format.filter(|s| !s.is_empty()) {
+        chips.push((f.to_uppercase(), ChipTone::Neutral));
+    }
+    if web_supported == Some(false) {
+        chips.push(("网页不兼容".to_string(), ChipTone::Warn));
+    }
+    chips
+}
+/// 各自复制 menu_button（menu bar 的 sibling hover 联动是这批面板要根治的毛病）
+/// 与 Area 定位 / 限高 / 点击外部关闭逻辑。
+///   - `id_key`：本面板的唯一标识（open 标志 + Area 都用它派生）。
+///   - `trigger_label`：chip 上的文本（图标）。
+///   - `panel_w`：面板宽度。
+///   - `body`：在已铺好赛博 Frame + 限高 ScrollArea 的 ui 里画内容。
+fn cyber_popup_panel(
+    ui: &mut egui::Ui,
+    cyan: Color32,
+    id_key: &'static str,
+    trigger_label: &str,
+    panel_w: f32,
+    body: impl FnOnce(&mut egui::Ui),
+) {
+    let open_id = egui::Id::new(id_key);
+    let mut open = ui.ctx().data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+
+    let trigger = draw_chip_button(ui, trigger_label, cyan, open, || {
+        open = !open;
+    });
+    let trigger_rect = trigger.rect;
+    ui.ctx().data_mut(|d| d.insert_temp(open_id, open));
+
+    if !open {
+        return;
+    }
+
+    let screen = ui.ctx().screen_rect();
+    let right = trigger_rect.right();
+    let bottom_anchor = trigger_rect.top() - 10.0;
+    let max_h = (bottom_anchor - screen.top() - 16.0).clamp(160.0, 560.0);
+
+    let area_resp = egui::Area::new(open_id.with("area"))
+        .order(egui::Order::Foreground)
+        .default_size(egui::vec2(panel_w, max_h))
+        .fixed_pos(egui::pos2(right, bottom_anchor))
+        .pivot(egui::Align2::RIGHT_BOTTOM)
+        .show(ui.ctx(), |ui| {
+            egui::Frame {
+                fill: Color32::from_rgba_unmultiplied(10, 12, 18, 248),
+                stroke: egui::Stroke::new(1.2, cyan),
+                corner_radius: egui::CornerRadius::same(10),
+                inner_margin: egui::Margin::symmetric(14, 12),
+                shadow: egui::epaint::Shadow {
+                    offset: [0, 0],
+                    blur: 28,
+                    spread: 2,
+                    color: Color32::from_rgba_unmultiplied(0x22, 0xd3, 0xee, 60),
+                },
+                ..Default::default()
+            }
+            .show(ui, |ui| {
+                ui.set_width(panel_w - 28.0);
+                ui.set_min_height(max_h - 24.0);
+                egui::ScrollArea::vertical()
+                    .max_height(max_h - 24.0)
+                    .min_scrolled_height(max_h - 24.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        body(ui);
+                    });
+            });
+        });
+
+    if ui.ctx().input(|i| i.pointer.any_click()) {
+        let clicked_in = area_resp.response.hovered()
+            || ui
+                .ctx()
+                .input(|i| i.pointer.interact_pos())
+                .map(|p| area_resp.response.rect.contains(p) || trigger_rect.contains(p))
+                .unwrap_or(false);
+        if !clicked_in {
+            ui.ctx().data_mut(|d| d.insert_temp(open_id, false));
+        }
+    }
+}
+
+/// 设置齿轮面板。**不用 menu_button**——egui 的 menu bar 会让同排的字幕/音轨
+/// 按钮在面板打开时一 hover 就自动切换展开（sibling 联动）。改成：齿轮 chip
+/// 点击切换一个持久 open 标志（存 egui memory），open 时用独立 Area 把面板浮在
+/// 按钮上方，自己控位置 + 限高（不超出屏幕）+ 点击面板外关闭。彻底脱离联动。
+fn draw_settings_menu(
+    ui: &mut egui::Ui,
+    state: &PlayerState,
+    actions: &mut Vec<Action>,
+    cyan: Color32,
+) {
+    cyber_popup_panel(ui, cyan, "pc_settings_panel_open", icons::SETTINGS, 320.0, |ui| {
+        settings_panel_body(ui, state, actions, cyan);
+    });
+}
+
+/// 设置面板正文：增量按钮、真彩色块，连续调节时保持面板展开。
+fn settings_panel_body(
+    ui: &mut egui::Ui,
+    state: &PlayerState,
+    actions: &mut Vec<Action>,
+    cyan: Color32,
+) {
+    let label_color = Color32::from_gray(180);
+
+    // ===== 播放 · PLAYBACK =====
+    cyber_section_title(ui, "播放", "PLAYBACK", cyan);
+    ui.push_id("speed", |ui| {
+        ui.colored_label(label_color, "倍速");
+        ui.horizontal_wrapped(|ui| {
+            for s in [0.5, 1.0, 1.25, 1.5, 2.0] {
+                let active = (state.speed - s).abs() < 0.01;
+                if cyber_card(ui, &format!("{}x", format_speed(s)), active, cyan).clicked() {
+                    actions.push(Action::SetSpeed(s));
+                }
+            }
+        });
+    });
+    ui.add_space(6.0);
+    ui.push_id("sleep", |ui| {
+        ui.colored_label(label_color, "睡眠定时器");
+        let on = state.sleep_deadline.is_some();
+        ui.horizontal_wrapped(|ui| {
+            for m in [15u64, 30, 60, 90] {
+                if cyber_card(ui, &format!("{m}分"), false, cyan).clicked() {
+                    actions.push(Action::SetSleepTimer {
+                        minutes: m,
+                        kind: state.sleep_kind,
+                    });
+                }
+            }
+            if cyber_card(ui, "关闭", !on, cyan).clicked() {
+                actions.push(Action::CancelSleepTimer);
+            }
+        });
+    });
+    ui.add_space(6.0);
+    ui.push_id("abloop", |ui| {
+        ui.colored_label(label_color, "A-B 复读");
+        ui.horizontal_wrapped(|ui| {
+            if cyber_card(ui, "设 A 点", state.ab_loop_a.is_some(), cyan).clicked() {
+                actions.push(Action::SetAbLoopA);
+            }
+            if cyber_card(ui, "设 B 点", state.ab_loop_b.is_some(), cyan).clicked() {
+                actions.push(Action::SetAbLoopB);
+            }
+            if cyber_card(ui, "清除", false, cyan).clicked() {
+                actions.push(Action::ClearAbLoop);
+            }
+        });
+    });
+
+    // ===== 同步 · SYNC =====
+    cyber_section_title(ui, "同步", "SYNC", cyan);
+    ui.push_id("subdelay", |ui| {
+        ui.colored_label(label_color, format!("字幕偏移   {:+.1}s", state.sub_delay));
+        ui.horizontal_wrapped(|ui| {
+            for (label, delta) in [("−1.0s", -1.0), ("−0.5s", -0.5), ("+0.5s", 0.5), ("+1.0s", 1.0)] {
+                if cyber_card_sized(ui, label, false, cyan, 62.0).clicked() {
+                    actions.push(Action::SetSubDelay(((state.sub_delay + delta) * 10.0).round() / 10.0));
+                }
+            }
+        });
+    });
+    ui.add_space(4.0);
+    ui.push_id("audelay", |ui| {
+        ui.colored_label(label_color, format!("音频偏移   {:+.1}s", state.audio_delay));
+        ui.horizontal_wrapped(|ui| {
+            for (label, delta) in [("−1.0s", -1.0), ("−0.5s", -0.5), ("+0.5s", 0.5), ("+1.0s", 1.0)] {
+                if cyber_card_sized(ui, label, false, cyan, 62.0).clicked() {
+                    actions.push(Action::SetAudioDelay(((state.audio_delay + delta) * 10.0).round() / 10.0));
+                }
+            }
+        });
+    });
+
+    // ===== 字幕样式 · SUBTITLE =====
+    cyber_section_title(ui, "字幕样式", "SUBTITLE", cyan);
+    draw_sub_style_section(ui, state, actions, cyan);
+
+    // ===== 画面 · VIDEO =====
+    cyber_section_title(ui, "画面", "VIDEO", cyan);
+    for (key, lbl, val, mk) in [
+        ("bright", "亮度", state.brightness, 0u8),
+        ("contrast", "对比度", state.contrast, 1),
+        ("saturation", "饱和度", state.saturation, 2),
+        ("gamma", "Gamma", state.gamma, 3),
+    ] {
+        ui.push_id(key, |ui| {
+            if let Some(step) = settings_stepper(ui, lbl, &val.to_string(), val > -100, val < 100, false, ("−", "+"), cyan) {
+                let v = (val + i64::from(step) * 5).clamp(-100, 100);
+                actions.push(match mk {
+                    0 => Action::SetBrightness(v),
+                    1 => Action::SetContrast(v),
+                    2 => Action::SetSaturation(v),
+                    _ => Action::SetGamma(v),
+                });
+            }
+        });
+        ui.add_space(2.0);
+    }
+    if cyber_card_sized(ui, "全部重置", false, cyan, 92.0).clicked() {
+        actions.extend([Action::SetBrightness(0), Action::SetContrast(0), Action::SetSaturation(0), Action::SetGamma(0)]);
+    }
+    ui.push_id("aspect", |ui| {
+        ui.colored_label(label_color, "画面比例");
+        let cur = state.current_aspect.as_deref();
+        ui.horizontal_wrapped(|ui| {
+            for (lbl, val) in [
+                ("原始", "-1"),
+                ("16:9", "16:9"),
+                ("4:3", "4:3"),
+                ("1.85", "1.85"),
+                ("2.35", "2.35"),
+            ] {
+                let active = match val {
+                    "-1" => cur.is_none(),
+                    _ => cur == Some(val),
+                };
+                if cyber_card(ui, lbl, active, cyan).clicked() {
+                    actions.push(Action::SetAspect(val.to_string()));
+                }
+            }
+        });
+    });
+
+    // ===== 工具 · TOOLS =====
+    cyber_section_title(ui, "工具", "TOOLS", cyan);
+    ui.push_id("tools", |ui| {
+        ui.horizontal_wrapped(|ui| {
+            if cyber_card_sized(ui, "截图", false, cyan, 72.0).clicked() {
+                actions.push(Action::Screenshot);
+            }
+        });
+    });
+    ui.add_space(4.0);
+}
+
 /// 倍速下拉：固定 5 档（0.5/1.0/1.25/1.5/2.0），选中时加 ✓ 标记。
+#[allow(dead_code)]
 fn draw_speed_menu(
     ui: &mut egui::Ui,
     state: &PlayerState,

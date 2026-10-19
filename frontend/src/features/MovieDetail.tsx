@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText, FolderSync } from 'lucide-react';
 import { Movie, PlayOptions, HistoryItem } from '../types';
-import { movieService, resolveAssetUrl } from '../api';
+import { movieService, resolveAssetUrl, authService, ensureTicket, appendTicket } from '../api';
 import { shellOpen, platform } from '../platform';
 import { launchExternalPlayerNative, needsUserAgentRewrite, pickUserAgentForRewrite, getMediaProxyBase, wrapWithMediaProxy, PlaybackHandoffHint } from '../platform/nativePlayer';
 import { formatBytes, formatDuration } from '../utils';
 import { MovieCard } from '../components/movies/Cards';
 import { TechBadge } from '../components/ui/CyberComponents';
+import { ResilientImage, uniqueImageSources } from '../components/ui/ResilientImage';
 import { SubtitleManagerDialog } from './SubtitleManagerDialog';
 import potplayerIcon from '../icons/players/potplayer.png';
 import iinaIcon from '../icons/players/iina.png';
@@ -22,6 +23,7 @@ const ExternalPlayerButton: React.FC<{
   icon: string;
   /** 兜底 URL scheme（web 端唯一通路；PC 端 Rust 找不到 .exe 时也回退到这里） */
   url: string;
+  streamUrl?: string;
   /** PC 端走 Rust 命令直接 spawn .exe 时需要的元信息。给了就启用。 */
   pcLaunch?: {
     player: 'potplayer' | 'vlc';
@@ -35,10 +37,23 @@ const ExternalPlayerButton: React.FC<{
   /** 启动成功后强制再 toast 一条警告（如「VLC 不支持 PGS 字幕，已丢弃」），便于让
    *  用户知道为何加载不到字幕。 */
   subtitleNotice?: string;
-}> = ({ title, icon, url, pcLaunch, subtitleNotice }) => {
+}> = ({ title, icon, url, streamUrl, pcLaunch, subtitleNotice }) => {
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     const isPc = platform().kind === 'pc';
+    const originalStream = pcLaunch?.streamUrl || streamUrl;
+    let ticket: string | null = null;
+    if (isPc && originalStream) {
+      ticket = await ensureTicket();
+      if (!ticket) {
+        const status = await authService.getStatus();
+        if (!status || status.user_management_enabled) {
+          toast.error('无法取得播放授权，请检查后端连接或重新登录。');
+          return;
+        }
+      }
+    }
+    let effectiveStreamUrl = originalStream ? appendTicket(originalStream, ticket) : '';
     // PC + Rust 支持的播放器 → 走 launch_external_player，能带字幕。
     if (isPc && pcLaunch) {
       try {
@@ -46,20 +61,22 @@ const ExternalPlayerButton: React.FC<{
         // stream URL 包成 http://127.0.0.1:<port>/stream?u=...&ua=... 喂给
         // .exe，由 PC 本地代理把改写后的 UA 加到上游请求里。代理拿不到时
         // 降级到原 URL（百度时大概率 403，但其他云盘正常）。
-        let effectiveStreamUrl = pcLaunch.streamUrl;
         if (needsUserAgentRewrite(pcLaunch.handoffHint)) {
           const ua = pickUserAgentForRewrite(pcLaunch.handoffHint);
           if (ua) {
             const base = await getMediaProxyBase();
-            effectiveStreamUrl = wrapWithMediaProxy(pcLaunch.streamUrl, ua, base);
+            effectiveStreamUrl = wrapWithMediaProxy(effectiveStreamUrl, ua, base);
           }
         }
         const res = await launchExternalPlayerNative({
           ...pcLaunch,
           streamUrl: effectiveStreamUrl,
+          subtitleUrl: pcLaunch.subtitleUrl ? appendTicket(pcLaunch.subtitleUrl, ticket) : undefined,
         });
         if (res.launched) {
-          if (pcLaunch.subtitleUrl) {
+          if (res.subtitle_error) {
+            toast.warning(`${title} 已启动，但字幕加载失败：${res.subtitle_error}`);
+          } else if (pcLaunch.subtitleUrl) {
             toast.success(`${title} 已启动（已加载默认字幕）`);
           } else if (subtitleNotice) {
             // 没字幕 + 有提醒 = 字幕被刻意丢弃（如 sup 给 VLC）
@@ -71,15 +88,18 @@ const ExternalPlayerButton: React.FC<{
         if (res.method === 'fallback_required') {
           console.warn(`[external-player] ${title} exe not found, falling back`, res.message);
         }
-      } catch (err) {
-        console.warn(`[external-player] ${title} native launch failed, falling back:`, err);
+      } catch {
+        console.warn(`[external-player] ${title} native launch failed, falling back`);
       }
     }
     // Web 模式 / PC fallback：URL scheme。
-    shellOpen(url).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[external-player] ${title} failed:`, err);
-      toast.error(`${title} 无法启动: ${msg}`);
+    const fallbackUrl = originalStream && effectiveStreamUrl
+      ? url.replace(encodeURIComponent(originalStream), encodeURIComponent(effectiveStreamUrl))
+          .replace(originalStream, effectiveStreamUrl)
+      : url;
+    shellOpen(fallbackUrl).catch(() => {
+      console.warn(`[external-player] ${title} failed`);
+      toast.error(`${title} 无法启动，请确认已安装对应播放器。`);
     });
   };
   return (
@@ -142,8 +162,8 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
           setFullMovieData({
             ...detail,
             title: movie.title || detail.title,
-            cover_url: movie.cover_url || detail.cover_url,
-            poster_url: movie.poster_url || detail.poster_url,
+            cover_url: detail.cover_url || movie.cover_url,
+            poster_url: detail.poster_url || movie.poster_url,
             desc: detail.desc || movie.desc,
             overview: detail.overview || movie.overview,
             target_season: movie.target_season
@@ -211,8 +231,8 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
       setFullMovieData({
         ...detail,
         title: movie.title || detail.title,
-        cover_url: movie.cover_url || detail.cover_url,
-        poster_url: movie.poster_url || detail.poster_url,
+        cover_url: detail.cover_url || movie.cover_url,
+        poster_url: detail.poster_url || movie.poster_url,
         desc: detail.desc || movie.desc,
         overview: detail.overview || movie.overview,
         target_season: movie.target_season
@@ -324,7 +344,6 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
   // Dynamically compute display data based on active season
   const displayData = useMemo(() => {
      let poster = fullMovieData.cover_url || fullMovieData.poster_url;
-     console.log("MovieDetail displayData poster:", poster, "fullMovieData:", fullMovieData);
      let overview = fullMovieData.overview || fullMovieData.desc;
      
      if (activeSeason !== null && fullMovieData.season_cards) {
@@ -650,9 +669,9 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 mb-20"> 
             <div className="w-full sm:w-[300px] lg:w-[380px] xl:w-[480px] flex-shrink-0 flex flex-col gap-6"> 
                 <div className="aspect-[2/3] w-full bg-[#0a0a12] border border-white/10 relative overflow-hidden group shadow-2xl rounded-sm"> 
-                    {fullMovieData.cover_url ? (
-                        <img 
-                            src={fullMovieData.cover_url} 
+                    {uniqueImageSources([displayData.poster_url, fullMovieData.cover_url, fullMovieData.poster_asset_url, fullMovieData.poster_url, fullMovieData.backdrop_asset_url, fullMovieData.backdrop_url]).length > 0 ? (
+                        <ResilientImage 
+                            sources={[displayData.poster_url, fullMovieData.cover_url, fullMovieData.poster_asset_url, fullMovieData.poster_url, fullMovieData.backdrop_asset_url, fullMovieData.backdrop_url]} 
                             alt={fullMovieData.title} 
                             referrerPolicy="no-referrer"
                             className="absolute inset-0 w-full h-full object-cover" 
@@ -847,7 +866,7 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                                 handoffHint: (targetPlayResource as any)?.playback?.external_player ?? null,
                               }}
                             />
-                            <ExternalPlayerButton title="IINA" icon={iinaIcon} url={`iina://weblink?url=${externalVideoUrl}`} />
+                            <ExternalPlayerButton title="IINA" icon={iinaIcon} streamUrl={externalVideoUrl} url={`iina://weblink?url=${encodeURIComponent(externalVideoUrl)}`} />
                             <ExternalPlayerButton
                               title="VLC"
                               icon={vlcIcon}
@@ -860,10 +879,10 @@ export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack
                               }}
                               subtitleNotice={subtitleSkippedForVlc ? 'VLC 不支持 PGS（.sup）位图字幕，已自动跳过；如需字幕请使用 PotPlayer 或内置播放器。' : undefined}
                             />
-                            <ExternalPlayerButton title="nPlayer" icon={nplayerIcon} url={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} />
-                            <ExternalPlayerButton title="MX Player" icon={mxplayerIcon} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end`} />
-                            <ExternalPlayerButton title="MX Player Pro" icon={mxplayerProIcon} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.pro;type=video/*;end`} />
-                            <ExternalPlayerButton title="Infuse" icon={infuseIcon} url={`infuse://x-callback-url/play?url=${encodeURIComponent(externalVideoUrl)}`} />
+                            <ExternalPlayerButton title="nPlayer" icon={nplayerIcon} streamUrl={externalVideoUrl} url={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} />
+                            <ExternalPlayerButton title="MX Player" icon={mxplayerIcon} streamUrl={externalVideoUrl} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end`} />
+                            <ExternalPlayerButton title="MX Player Pro" icon={mxplayerProIcon} streamUrl={externalVideoUrl} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.pro;type=video/*;end`} />
+                            <ExternalPlayerButton title="Infuse" icon={infuseIcon} streamUrl={externalVideoUrl} url={`infuse://x-callback-url/play?url=${encodeURIComponent(externalVideoUrl)}`} />
                         </div>
                     </div>
                 )}

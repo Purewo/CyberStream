@@ -1,0 +1,15 @@
+# Publish recovery source/provenance only. Excluded local evidence is retained,
+# not disposable: never use this allow-list as permission to delete anything.
+/*
+!/.gitignore
+!/README.md
+!/FINAL_HANDOFF.json
+!/SOURCE-ARCHIVE*.json
+!/archive-repaired-sources.cjs
+!/recover-native-history.cjs
+!/recover-shell-history.cjs
+!/scan-staged-backup.cjs
+!/CyberStream-PC-recovered-source-20260930*.zip
+!/pc-source-candidate/
+!/shell-source-candidate/
+!/android-20261020/

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="12dp"
+    android:background="@drawable/player_panel_item_background"
+    android:orientation="vertical"
+    android:paddingStart="16dp"
+    android:paddingTop="15dp"
+    android:paddingEnd="16dp"
+    android:paddingBottom="15dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-medium"
+        android:text="在线字幕库"
+        android:textColor="#FFFFFFFF"
+        android:textSize="16sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="按当前影片或季集搜索，点击候选先预览；需要保存时再单独绑定。"
+        android:textColor="#8FFFFFFF"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="13dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/online_subtitle_query"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:background="@drawable/player_online_subtitle_input"
+            android:fontFamily="sans-serif"
+            android:hint="影片名 / S01E01"
+            android:imeOptions="actionSearch"
+            android:includeFontPadding="false"
+            android:inputType="text"
+            android:maxLines="1"
+            android:paddingStart="14dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#66FFFFFF"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/online_subtitle_search"
+            android:layout_width="82dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="9dp"
+            android:background="@drawable/player_quality_chip"
+            android:backgroundTint="@null"
+            android:fontFamily="sans-serif-medium"
+            android:includeFontPadding="false"
+            android:minWidth="0dp"
+            android:stateListAnimator="@null"
+            android:text="搜索"
+            android:textAllCaps="false"
+            android:textColor="#FF5BE7FF"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="11dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ProgressBar
+            android:id="@+id/online_subtitle_progress"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:indeterminateTint="#FF5BE7FF"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/online_subtitle_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:text="SubHD · SrtKu"
+            android:textColor="#9FFFFFFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

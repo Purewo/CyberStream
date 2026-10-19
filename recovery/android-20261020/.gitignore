@@ -1,0 +1,11 @@
+/*
+!/.gitignore
+!/*.cjs
+!/*.md
+!/*.json
+!/project/
+!/historical/
+!/original-apks/
+# original-debug-unpacked is fully reconstructible from original-apks.
+# Keep emulator/browser profiles, crash dumps, logs and duplicate unpacked
+# binaries local. Ignored does not mean safe to delete.

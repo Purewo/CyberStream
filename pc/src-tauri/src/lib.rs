@@ -7,7 +7,6 @@
 // HWND embedding) was removed in M3.4 because it's permanently dead
 // code.
 
-mod backend;
 mod external_player;
 mod media_proxy;
 mod native_player;
@@ -32,14 +31,25 @@ pub fn run() {
         Some(url) if !url.is_empty() => format!("--proxy-server={url}"),
         _ => "--proxy-server=direct://".to_string(),
     };
-    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", proxy_arg);
+    let mut browser_args = proxy_arg;
+    // Explicit, loopback-only inspection of development builds.
+    #[cfg(debug_assertions)]
+    if let Some(port) = std::env::var("CYBER_DEVTOOLS_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port > 0)
+    {
+        browser_args.push_str(&format!(
+            " --remote-debugging-address=127.0.0.1 --remote-debugging-port={port}"
+        ));
+    }
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", browser_args);
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(backend::BackendState::new())
         .setup(|app| {
             // splash 第一时间出现 —— 比 sidecar spawn 还要早，让用户立刻看到
             // 「应用真的启动了」。失败也不致命：退化成主窗口 visible:false
@@ -50,13 +60,9 @@ pub fn run() {
                 splash::set_phase(&app.handle(), "初始化界面 ...");
             }
 
-            // 拉起捆绑的 cyber-backend.exe。spawn_and_wait_ready 内部探活搬到
-            // 后台线程，setup 立刻返回；探活成功后会 emit `splash:phase` 切到
-            // 「准备就绪」，前端 React mount 完成后 invoke splash_done 关 splash
-            // 显主窗。
-            if let Err(e) = backend::spawn_and_wait_ready(&app.handle()) {
-                return Err(format!("backend bootstrap failed: {e}").into());
-            }
+            // PC client connects to the configured server. Restore the pc.7
+            // client-only startup: no bundled Python service or port probe.
+            splash::set_phase(&app.handle(), "准备就绪");
 
             // 启动本地媒体代理（外部播放器 UA 改写用）。绑定 127.0.0.1
             // 随机端口；失败不致命，前端拿不到 base 时降级到原 URL（百度
@@ -65,10 +71,6 @@ pub fn run() {
                 let _ = media_proxy::start().await;
             });
 
-            // 没有 sidecar 的 lite 构建直接告诉 splash 后端已就绪（前端连远程
-            // 后端，splash 关闭由前端主导）。
-            // —— 注：spawn_and_wait_ready 内部的健康探针成功时也会推 phase，
-            // 这里不重复。
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -83,9 +85,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|handle, event| {
-        backend::handle_run_event(handle, &event);
-    });
+    app.run(|_handle, _event| {});
 }
 
 /// Sanity check command invoked by the frontend platform adapter to verify the

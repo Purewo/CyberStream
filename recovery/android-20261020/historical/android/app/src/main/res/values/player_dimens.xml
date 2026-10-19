@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="player_side_panel_width">340dp</dimen>
+    <dimen name="player_portrait_video_height">232dp</dimen>
+    <dimen name="cellular_warning_art_width">300dp</dimen>
+    <dimen name="cellular_warning_art_height">169dp</dimen>
+    <dimen name="cellular_warning_actions_width">520dp</dimen>
+    <dimen name="cellular_warning_button_height">48dp</dimen>
+    <dimen name="cellular_warning_exit_height">48dp</dimen>
+    <dimen name="cellular_warning_content_vertical_padding">14dp</dimen>
+    <dimen name="player_error_card_width">330dp</dimen>
+</resources>

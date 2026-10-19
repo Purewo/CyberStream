@@ -1,0 +1,297 @@
+[
+  {
+    "name": "classes.dex",
+    "bytes": 10481460,
+    "sha256": "396d70b07c7cd4d04cf81f1ac700b58f79226e618959b63030bcb13a89c9c2f7"
+  },
+  {
+    "name": "classes2.dex",
+    "bytes": 21820,
+    "sha256": "43cbde83ff08d52a010b6f1211d018b24e0fd126ce18bb75cd814d5972cf17fd"
+  },
+  {
+    "name": "classes3.dex",
+    "bytes": 152500,
+    "sha256": "a8438ae46bd943221ce888cec0542efeba5b03994080df0114333d996770d5ff"
+  },
+  {
+    "name": "classes4.dex",
+    "bytes": 52140,
+    "sha256": "c6564c60a122611c8d76b8b9298f741ce30ebefd89be6dacc9da5cc427a519f2"
+  },
+  {
+    "name": "classes5.dex",
+    "bytes": 177320,
+    "sha256": "7e0588bb98aedb93518363b6b8625b3f499e6112ebac7547d9c3b055f18a0781"
+  },
+  {
+    "name": "classes6.dex",
+    "bytes": 273484,
+    "sha256": "83d130bc2ae2abd83df1cd5dd8ef5d790dd121193f46ef15820c0e20d121d8b9"
+  },
+  {
+    "name": "classes7.dex",
+    "bytes": 6145096,
+    "sha256": "4fdeef6c6ca854f49871d4240540e0ebc399acd32366c84a0b14a0132057bd3e"
+  },
+  {
+    "name": "lib/arm64-v8a/libffmpegJNI.so",
+    "bytes": 1610568,
+    "sha256": "5956f0e160873dba31ea2cee401550fbaea68c6a8a6e828be239fbb12757b095"
+  },
+  {
+    "name": "lib/armeabi-v7a/libffmpegJNI.so",
+    "bytes": 1504704,
+    "sha256": "90e3129a3fc859d3b2f34e9a448b14cf1a34a7a38c8ef235c8a2bf81b404ca76"
+  },
+  {
+    "name": "lib/x86/libffmpegJNI.so",
+    "bytes": 1709420,
+    "sha256": "564368ce9e0ce052684ee02e30c9f72fd2d7fcb28c5ed4bede514d2cf2096959"
+  },
+  {
+    "name": "lib/x86_64/libffmpegJNI.so",
+    "bytes": 1718688,
+    "sha256": "0cf8f1be2928cc59c55a5dd6475643945bca5728a2bd55b053ce8d499cd96a16"
+  },
+  {
+    "name": "assets/capacitor.config.json",
+    "bytes": 238,
+    "sha256": "a725d146db6e2c7a5e936d59f82da4922f60489526992ef797c9071147e10723"
+  },
+  {
+    "name": "assets/capacitor.plugins.json",
+    "bytes": 3,
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  {
+    "name": "assets/public/assets/core-DhEqZVGG.js",
+    "bytes": 2441,
+    "sha256": "8261a5e51510afea7347ee6c40e783127639b88b158982711196012d6d50ceb3"
+  },
+  {
+    "name": "assets/public/assets/iina-BxwKPL5u.png",
+    "bytes": 29453,
+    "sha256": "733d08409e43d10cd542530345299d51105043601bf7419cf143146745458a32"
+  },
+  {
+    "name": "assets/public/assets/index-BUK_GUva.js",
+    "bytes": 1242618,
+    "sha256": "429366f85c588243731d8ea058d40ebafb692b2ef3bbda40ade639394b163a64"
+  },
+  {
+    "name": "assets/public/assets/index-CRPp2LSf.js",
+    "bytes": 175,
+    "sha256": "7d2f8b5c83e592741ce6d4bb2545f9120626efb30dee342975532987c6bbfe9d"
+  },
+  {
+    "name": "assets/public/assets/index-CUl-fc3C.css",
+    "bytes": 134261,
+    "sha256": "c9722ffb088e7f434f77562a5478ba0f22fccc390e9a3c00cb942504175eb81f"
+  },
+  {
+    "name": "assets/public/assets/index-DDgTLpJK.js",
+    "bytes": 130,
+    "sha256": "c675a22d7f2fb12e418d407867945f8dc6214491805f063212d90e76ed35c850"
+  },
+  {
+    "name": "assets/public/assets/infuse-sRCgBMgG.png",
+    "bytes": 43092,
+    "sha256": "68f5c3fe389f0fba263877d3cc5ec56d67ef31485ad43a92a556f8aee8585659"
+  },
+  {
+    "name": "assets/public/assets/mxplayer-Z4qVOUI_.png",
+    "bytes": 41967,
+    "sha256": "a4cc0f5a0af171b273443c36b5a620e982fb49c41ad8622c361ce2d6d9c94a73"
+  },
+  {
+    "name": "assets/public/assets/mxplayer_pro-D5i6HSMo.png",
+    "bytes": 41375,
+    "sha256": "3e32f7736c80a732f8f764e9d7d47f55ec680e90955160bffe91888538d43457"
+  },
+  {
+    "name": "assets/public/assets/nplayer-DyxUq2ws.png",
+    "bytes": 117404,
+    "sha256": "83d02cea03eb305a758a58b6743179490d86aa78f2ab9a56be87f7a4d29f5346"
+  },
+  {
+    "name": "assets/public/assets/orbitron-latin-400-normal-DBk4Dmer.woff",
+    "bytes": 8656,
+    "sha256": "ed24ba80492abd2432aad674ea939909e31f54953f73da029cc73fe20f8f8ae6"
+  },
+  {
+    "name": "assets/public/assets/orbitron-latin-400-normal-U6xZUhur.woff2",
+    "bytes": 6396,
+    "sha256": "9320ca80be2f4275e7aaa009bc058b9ea46264d4f92b06f0b822c3405cf45841"
+  },
+  {
+    "name": "assets/public/assets/orbitron-latin-700-normal-4jsRXGGJ.woff2",
+    "bytes": 6528,
+    "sha256": "ee6acc5ad5349018f9ca71fab8118144160e110838931874150a1ac3f97db38d"
+  },
+  {
+    "name": "assets/public/assets/orbitron-latin-700-normal-DmYOh-W9.woff",
+    "bytes": 8968,
+    "sha256": "f01cf5cf431e6d9dd10db7291bc2284eb123984e74785a05ef4e034aee82c558"
+  },
+  {
+    "name": "assets/public/assets/orbitron-latin-900-normal-BbJatbhp.woff",
+    "bytes": 8404,
+    "sha256": "d85a2d2e0c8eb3badf419f27b29e8ac8517d84999bcecd609774a421de26b938"
+  },
+  {
+    "name": "assets/public/assets/orbitron-latin-900-normal-DrIi7unX.woff2",
+    "bytes": 6400,
+    "sha256": "ce87e6a1b1955bbc7b1d2d1c30fb5b53af5e34edb5b93a33e28068054892ef74"
+  },
+  {
+    "name": "assets/public/assets/potplayer-DyJzUxTO.png",
+    "bytes": 35968,
+    "sha256": "c703051e9bb58d18da739940187fa676cdc195f2d24b7ebe485c801a083563f5"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-400-normal-BdIzgbsr.woff",
+    "bytes": 55800,
+    "sha256": "5e4c76dceabb907c94272a1dfbbdc39e3b9de190f4dfd943058de81a13750924"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-400-normal-CTuj2HZW.woff2",
+    "bytes": 75744,
+    "sha256": "fddff0d50ea869f66f84183e6e0b37709c917f040da160857134ddddca4c8e00"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-500-normal-BPH8g_s8.woff",
+    "bytes": 56264,
+    "sha256": "e6f60388bbd7e330a397feedb3f141bc2a13745a52e757fa0b02a5322abca3cb"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-500-normal-B_DH_jja.woff2",
+    "bytes": 77440,
+    "sha256": "b1d1cb6385a9d5cece76e1a11935cd3a0d94f8cc6b2a95c6075387113dd1bcc7"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-600-normal-BtY48IV_.woff",
+    "bytes": 56436,
+    "sha256": "67ab4f24d60e62e9a31191130773302c60921bb9872775ef0cd68b6445976a0f"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-600-normal-DhS7ScYx.woff2",
+    "bytes": 79344,
+    "sha256": "93328dcb323f55b8d7feb192ebf969bbd4674e52d3a5a47c5cb1bce7ab266426"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-700-normal-BQQOj9BB.woff2",
+    "bytes": 77136,
+    "sha256": "52dd95964b4141bdacd5b785e68079fd40ef2c4b2483bc0eb0b1a3190cedf2bc"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-devanagari-700-normal-DBRwWuxA.woff",
+    "bytes": 53064,
+    "sha256": "f3d613809edfc8e6f8f698d562ec5e67874728cabfabcd395e998abe04db1341"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-400-normal-C6_q4usG.woff",
+    "bytes": 11764,
+    "sha256": "452fcfb283b8392577e04845f12c6c6b06d67f256fb2da1b857b63dcbcc78dd4"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-400-normal-CurJOxDW.woff2",
+    "bytes": 14976,
+    "sha256": "759a9000e47b028799d7a4ca602634a7ac7adf415775df070a335d18d9b66f38"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-500-normal-ByNUCHrt.woff2",
+    "bytes": 15084,
+    "sha256": "23afdb9b5b89b878fab04d80cc30bf41bb4f3f7e8be88e5f16a7cc7671cdb2dc"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-500-normal-DfvNI-Td.woff",
+    "bytes": 11760,
+    "sha256": "74c304eefe9b39d76d634d479f20a7332efddd120fb76ab92bbefe9eb4728625"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-600-normal-CXCVEoA9.woff2",
+    "bytes": 15732,
+    "sha256": "433a7007e4747a02a790167a6efa2625855f013970ba49b9b739a5d3db8b2601"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-600-normal-Dx02qI2_.woff",
+    "bytes": 12092,
+    "sha256": "9d9d900358819a2a710085a5630d9024a139ea57e9316499d6d9eb3281674f3a"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-700-normal-BPDUZo87.woff2",
+    "bytes": 15688,
+    "sha256": "5b7e4a6f97163c2636724d4de90304fc895653dcfe64c67a7a22f26331ca5c5f"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-700-normal-e0Uj8ZlN.woff",
+    "bytes": 12060,
+    "sha256": "e4e5272051a3882943fa3bdf5cda8eca8c1853ac66c1572eb90fda8608d9bd31"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-400-normal-DACPYgMx.woff2",
+    "bytes": 12388,
+    "sha256": "90721cae01bf677b419b28fec9896e50923c9e956817b85f4b6ab1e5ad028a56"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-400-normal-Der7ynDE.woff",
+    "bytes": 9088,
+    "sha256": "f002b5bf7ea55fcc299257087738f24cb8582eebe27821c5f83e0b015cd4e72a"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-500-normal-CyRWJZ5B.woff",
+    "bytes": 9028,
+    "sha256": "30fb2b5f61ced47a4c60b0c6bfd98b4a75deead0e51fe9efe681ce7229339c42"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-500-normal-DiyUS11w.woff2",
+    "bytes": 12380,
+    "sha256": "16fd373954f7569ad294444531caa2e7e5ffd1a6798c6df3f56b9faf691190c2"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-600-normal-BleIgkPp.woff",
+    "bytes": 9344,
+    "sha256": "73d2f45895b780e9fcb525d4b8e5cefdd8f0c155eb0f3e1ff9f5d0543535baaf"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-600-normal-C9ZjJQAt.woff2",
+    "bytes": 13124,
+    "sha256": "f57c2b379ba92460d25730ef1f7b8745afb4eadb401d652900f2059f8ee2f2b6"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-700-normal-BPaQ7tlD.woff",
+    "bytes": 9148,
+    "sha256": "e6539b4ef36036a40a83179d7adb5a3388c48f92c358a158ae5c14b66a3d0803"
+  },
+  {
+    "name": "assets/public/assets/rajdhani-latin-ext-700-normal-S6aYESQK.woff2",
+    "bytes": 12964,
+    "sha256": "c6b9df58743ccca1236e9521720b135138309bc4149d5d027a9bd10183cc8ed5"
+  },
+  {
+    "name": "assets/public/assets/vlc-C0TTjVxv.png",
+    "bytes": 26474,
+    "sha256": "d26583b3271fec276ec5535e7e72ed18aa1fe2cdf18190610ae6fc369f44037e"
+  },
+  {
+    "name": "assets/public/assets/window-BQfPANOq.js",
+    "bytes": 14616,
+    "sha256": "6e29dedec7398fa8f290423ef900c34082690bb56ee7de30037f6384d008d2b2"
+  },
+  {
+    "name": "assets/public/cordova.js",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "assets/public/cordova_plugins.js",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "assets/public/index.html",
+    "bytes": 966,
+    "sha256": "049e12e29fa7ee8cd7559fd83f54b6f6c5639ca5246033c0b47c0d7f6aac0296"
+  }
+]

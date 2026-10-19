@@ -72,6 +72,8 @@ impl MpvPlayer {
             ("input-vo-keyboard", "no"),
             ("input-cursor", "no"),
             ("osc", "no"),            // We draw our own controls
+            // Keep subtitles inside video, excluding the HUD's reserved margins.
+            ("sub-use-margins", "no"),
             // 4K HDR HEVC REMUX 启动优化：
             //   - cache-pause-initial=no：mpv 默认 yes 时会等 demuxer 缓到
             //     约 2s 才开始播；4K REMUX 100Mbps，解第一帧已经够慢，再
@@ -102,6 +104,19 @@ impl MpvPlayer {
                 let msg = mp::err_string(r);
                 mp::mpv_terminate_destroy(handle);
                 return Err(format!("set_option {k}={v}: {msg}"));
+            }
+        }
+
+        // Opt-in local test instrumentation; release builds never expose IPC.
+        #[cfg(debug_assertions)]
+        if let Ok(suffix) = std::env::var("CYBER_MPV_TEST_PIPE") {
+            if let Some(pipe) = test_pipe_path(&suffix) {
+                let value = CString::new(pipe).unwrap();
+                let r = mp::mpv_set_option_string(handle, c"input-ipc-server".as_ptr(), value.as_ptr());
+                if r < 0 {
+                    mp::mpv_terminate_destroy(handle);
+                    return Err(format!("test IPC setup: {}", mp::err_string(r)));
+                }
             }
         }
 
@@ -311,7 +326,7 @@ impl MpvPlayer {
         ptrs.push(ptr::null());
         let r = mp::mpv_command(self.handle, ptrs.as_mut_ptr());
         if r < 0 {
-            return Err(format!("mpv command {args:?}: {}", mp::err_string(r)));
+            return Err(format!("mpv command {}: {}", args.first().unwrap_or(&"unknown"), mp::err_string(r)));
         }
         Ok(())
     }}
@@ -340,6 +355,28 @@ impl MpvPlayer {
             // Other events ignored in M3.1.
         }
     }}
+}
+
+#[cfg(debug_assertions)]
+fn test_pipe_path(suffix: &str) -> Option<String> {
+    if suffix.is_empty() || suffix.len() > 48 || !suffix.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+        return None;
+    }
+    Some(format!(r"\\.\pipe\cyberstream-recovery-{suffix}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_ipc_accepts_only_bounded_pipe_suffixes() {
+        assert_eq!(test_pipe_path("test-42").as_deref(), Some(r"\\.\pipe\cyberstream-recovery-test-42"));
+        for invalid in ["", "../escape", r"\\other\pipe\remote", "a b"] {
+            assert!(test_pipe_path(invalid).is_none());
+        }
+        assert!(test_pipe_path(&"x".repeat(49)).is_none());
+    }
 }
 
 impl Drop for MpvPlayer {

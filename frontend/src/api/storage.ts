@@ -13,8 +13,11 @@ export const storageService = {
     return data || [];
   },
 
-  getSources: async (): Promise<import('../types/index').StorageSource[]> => {
-    const data = await fetchApi<import('../types/index').StorageSource[]>('/v1/storage/sources');
+  getSources: async (options: { includeHealth?: boolean } = {}): Promise<import('../types/index').StorageSource[]> => {
+    const params = new URLSearchParams();
+    if (options.includeHealth) params.set('include_health', 'true');
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const data = await fetchApi<import('../types/index').StorageSource[]>(`/v1/storage/sources${suffix}`);
     return data || [];
   },
 
@@ -174,6 +177,23 @@ export const storageService = {
     });
     if (res.ok) return { ok: true, data: res.data };
     return { ok: false, msg: res.msg || `HTTP ${res.status}`, data: res.data };
+  },
+
+  restartGuangyapanSms: async (
+    sourceId: number,
+    params: { phoneNumber?: string; rootPath?: string; captchaToken?: string } = {},
+  ): Promise<{ ok: boolean; code?: number; msg?: string; data?: any }> => {
+    const body: Record<string, string | number> = { source_id: sourceId };
+    if (params.phoneNumber) body.phone_number = params.phoneNumber;
+    if (params.rootPath) body.root_path = params.rootPath;
+    if (params.captchaToken) body.captcha_token = params.captchaToken;
+    const res = await fetchApiRaw<any>('/v1/storage/managed/guangyapan/sms/restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return { ok: true, code: res.code, data: res.data };
+    return { ok: false, code: res.code, msg: res.msg || `HTTP ${res.status}`, data: res.data };
   },
 
   // ─── 托管天翼云盘 (TianYiCloud) ───

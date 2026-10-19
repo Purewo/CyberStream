@@ -7,6 +7,9 @@ home server — this client never bundles it.
 > Status: **1.21.1 — native player + external handoff with subtitles**
 > Tracking doc: [docs/PC_CLIENT_GOAL.md](../docs/PC_CLIENT_GOAL.md)
 
+> Recovery baseline (2026-09-30): the later pc.7 player and bridge have been
+> recovered from successful historical edits. See [recovery evidence and limits](../docs/PC_RECOVERY_2026-09-30.md).
+
 ---
 
 ## What you get in 1.21.1
@@ -68,6 +71,17 @@ cd ..
 ```
 
 ## Run in dev mode
+
+On this Windows workspace, use the collision-checked helper from the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File pc/scripts/dev.ps1
+```
+
+It reuses or starts this checkout's Web server on `127.0.0.1:41731`, leaves that
+server running when the desktop window closes, and does not start a backend.
+Use `-Port` to select another free development port. The low-level default below
+still uses port 3000; do not use it if another project already owns that port.
 
 ```bash
 cd pc/src-tauri

@@ -161,6 +161,7 @@ unsafe extern "C" {
     ) -> c_int;
     pub fn mpv_get_property_string(ctx: *mut mpv_handle, name: *const c_char) -> *mut c_char;
     pub fn mpv_command(ctx: *mut mpv_handle, args: *mut *const c_char) -> c_int;
+    pub fn mpv_command_async(ctx: *mut mpv_handle, reply_userdata: u64, args: *mut *const c_char) -> c_int;
     pub fn mpv_observe_property(
         ctx: *mut mpv_handle,
         reply_userdata: u64,

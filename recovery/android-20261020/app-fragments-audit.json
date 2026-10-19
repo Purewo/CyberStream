@@ -1,0 +1,1146 @@
+[
+  {
+    "eventIndex": 20,
+    "hunkIndex": 0,
+    "header": "@@ -14,3 +14,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 20,
+    "hunkIndex": 1,
+    "header": "@@ -20,3 +20,4 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 20,
+    "hunkIndex": 2,
+    "header": "@@ -75,3 +76,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 20,
+    "hunkIndex": 3,
+    "header": "@@ -100,3 +101,31 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 20,
+    "hunkIndex": 4,
+    "header": "@@ -286,2 +315,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 20,
+    "hunkIndex": 5,
+    "header": "@@ -329,2 +359,173 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 20,
+    "hunkIndex": 6,
+    "header": "@@ -333,2 +534,6 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 32,
+    "hunkIndex": 0,
+    "header": "@@ -494,8 +494,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 33,
+    "hunkIndex": 0,
+    "header": "@@ -520,2 +520,12 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 34,
+    "hunkIndex": 0,
+    "header": "@@ -1,2 +1,2 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 34,
+    "hunkIndex": 1,
+    "header": "@@ -103,2 +103,4 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 34,
+    "hunkIndex": 2,
+    "header": "@@ -113,2 +115,9 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 41,
+    "hunkIndex": 0,
+    "header": "@@ -21,3 +21,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 41,
+    "hunkIndex": 1,
+    "header": "@@ -139,2 +144,67 @@",
+    "status": "unresolved",
+    "before": [
+      "  }, []);",
+      ""
+    ],
+    "after": [
+      "  }, []);",
+      "",
+      "  // Quality discovery stays in the WebView: CapacitorHttp can use the user's",
+      "  // HttpOnly login cookie, while the Media3 Activity only ever receives the",
+      "  // resulting ticketed media URLs. A request id makes late results harmless",
+      "  // after a source switch or player close.",
+      "  useEffect(() => {",
+      "    if (platform().kind !== 'android') return;",
+      "    let disposed = false;",
+      "    let listener: { remove: () => Promise<void> } | null = null;",
+      "",
+      "    const respond = async (",
+      "      event: { sessionId: string; requestId: string; resourceId: string },",
+      "      qualities: Array<{ id: string; label?: string; url: string; isDefault?: boolean }>,",
+      "      error?: string,",
+      "    ) => {",
+      "      if (disposed) return;",
+      "      try {",
+      "        await provideAndroidPlaybackQualities({ ...event, qualities, error });",
+      "      } catch (responseError) {",
+      "        if (!disposed) {",
+      "          console.warn('[android] unable to return lazy transcode qualities', responseError);",
+      "        }",
+      "      }",
+      "    };",
+      "",
+      "    void onAndroidPlaybackQualityRequest((event) => {",
+      "      void (async () => {",
+      "        try {",
+      "          const [response, ticket] = await Promise.all([",
+      "            resourceService.getStreamingQualities(event.resourceId),",
+      "            ensureTicket(),",
+      "          ]);",
+      "          const qualities = (response?.items || [])",
+      "            .filter((item) => item.available && !!item.resolution)",
+      "            .map((item) => ({",
+      "              id: item.resolution,",
+      "              label: item.label || item.resolution,",
+      "              url: appendTicket(",
+      "                resourceService.getTranscodedStreamUrl(event.resourceId, item.resolution),",
+      "                ticket,",
+      "              ),",
+      "              isDefault: item.resolution === response?.default_resolution,",
+      "            }));",
+      "          await respond(",
+      "            event,",
+      "            qualities,",
+      "            qualities.length === 0 ? '当前资源没有可用清晰度' : undefined,",
+      "          );",
+      "        } catch {",
+      "          // Do not expose request URLs, tickets, or backend details in the UI.",
+      "          await respond(event, [], '无法加载清晰度，请稍后重试');",
+      "        }",
+      "      })();",
+      "    }).then((handle) => {",
+      "      if (disposed) void handle.remove();",
+      "      else listener = handle;",
+      "    }).catch((error) => {",
+      "      console.warn('[android] unable to subscribe to lazy transcode qualities', error);",
+      "    });",
+      "",
+      "    return () => {",
+      "      disposed = true;",
+      "      if (listener) void listener.remove();",
+      "    };",
+      "  }, []);",
+      ""
+    ]
+  },
+  {
+    "eventIndex": 42,
+    "hunkIndex": 0,
+    "header": "@@ -500,3 +500,6 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 42,
+    "hunkIndex": 1,
+    "header": "@@ -506,29 +509,2 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 42,
+    "hunkIndex": 2,
+    "header": "@@ -553,6 +529,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 54,
+    "hunkIndex": 0,
+    "header": "@@ -118,2 +118,31 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 54,
+    "hunkIndex": 1,
+    "header": "@@ -181,2 +210,3 @@",
+    "status": "unresolved",
+    "before": [
+      "              label: item.label || item.resolution,",
+      "              url: appendTicket("
+    ],
+    "after": [
+      "              label: item.label || item.resolution,",
+      "              mimeType: mimeTypeForTranscodedFormat(item.format),",
+      "              url: appendTicket("
+    ]
+  },
+  {
+    "eventIndex": 55,
+    "hunkIndex": 0,
+    "header": "@@ -119,30 +119,2 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 55,
+    "hunkIndex": 1,
+    "header": "@@ -183,5 +155,34 @@",
+    "status": "unresolved",
+    "before": [
+      "",
+      "    const respond = async (",
+      "      event: { sessionId: string; requestId: string; resourceId: string },",
+      "      qualities: Array<{ id: string; label?: string; url: string; isDefault?: boolean }>,",
+      "      error?: string,"
+    ],
+    "after": [
+      "",
+      "    // The ticketed /stream-transcoded route has no file extension before it",
+      "    // redirects. Give Media3 an explicit protocol hint whenever the provider",
+      "    // reports one, so HLS/DASH does not get misclassified as progressive.",
+      "    const mimeTypeForTranscodedFormat = (format?: string): string | undefined => {",
+      "      switch (format?.trim().toLowerCase()) {",
+      "        case 'hls':",
+      "        case 'm3u8':",
+      "        case 'application/x-mpegurl':",
+      "        case 'application/vnd.apple.mpegurl':",
+      "          return 'application/x-mpegURL';",
+      "        case 'dash':",
+      "        case 'mpd':",
+      "        case 'application/dash+xml':",
+      "          return 'application/dash+xml';",
+      "        case 'mp4':",
+      "        case 'video/mp4':",
+      "          return 'video/mp4';",
+      "        case 'webm':",
+      "        case 'video/webm':",
+      "          return 'video/webm';",
+      "        case 'mkv':",
+      "        case 'matroska':",
+      "        case 'video/x-matroska':",
+      "          return 'video/x-matroska';",
+      "        default:",
+      "          return undefined;",
+      "      }",
+      "    };",
+      "",
+      "    const respond = async (",
+      "      event: { sessionId: string; requestId: string; resourceId: string },",
+      "      qualities: Array<{ id: string; label?: string; url: string; mimeType?: string; isDefault?: boolean }>,",
+      "      error?: string,"
+    ]
+  },
+  {
+    "eventIndex": 60,
+    "hunkIndex": 0,
+    "header": "@@ -33,5 +33,16 @@",
+    "status": "unresolved",
+    "before": [
+      "import { useAppRouting } from './hooks/useAppRouting';",
+      "import { TMDBMatchModal } from './features/TMDBMatchModal';",
+      "",
+      "const App = () => {",
+      "  useGlobalHotkeys();"
+    ],
+    "after": [
+      "import { useAppRouting } from './hooks/useAppRouting';",
+      "import { TMDBMatchModal } from './features/TMDBMatchModal';",
+      "",
+      "type AndroidLazyQualityResult = {",
+      "  qualities: Array<{",
+      "    id: string;",
+      "    label?: string;",
+      "    url: string;",
+      "    mimeType?: string;",
+      "    isDefault?: boolean;",
+      "  }>;",
+      "  error?: string;",
+      "};",
+      "",
+      "const App = () => {",
+      "  useGlobalHotkeys();"
+    ]
+  },
+  {
+    "eventIndex": 60,
+    "hunkIndex": 1,
+    "header": "@@ -109,2 +120,4 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 60,
+    "hunkIndex": 2,
+    "header": "@@ -186,3 +199,3 @@",
+    "status": "unresolved",
+    "before": [
+      "      event: { sessionId: string; requestId: string; resourceId: string },",
+      "      qualities: Array<{ id: string; label?: string; url: string; mimeType?: string; isDefault?: boolean }>,",
+      "      error?: string,"
+    ],
+    "after": [
+      "      event: { sessionId: string; requestId: string; resourceId: string },",
+      "      qualities: AndroidLazyQualityResult['qualities'],",
+      "      error?: string,"
+    ]
+  },
+  {
+    "eventIndex": 60,
+    "hunkIndex": 3,
+    "header": "@@ -199,4 +212,10 @@",
+    "status": "unresolved",
+    "before": [
+      "",
+      "    void onAndroidPlaybackQualityRequest((event) => {",
+      "      void (async () => {",
+      "        try {"
+    ],
+    "after": [
+      "",
+      "    const fetchQualities = (",
+      "      event: { sessionId: string; resourceId: string },",
+      "    ): Promise<AndroidLazyQualityResult> => {",
+      "      const key = `${event.sessionId}:${event.resourceId}`;",
+      "      const existing = androidLazyQualityRequestsRef.current.get(key);",
+      "      if (existing) return existing;",
+      "",
+      "      const request = (async (): Promise<AndroidLazyQualityResult> => {",
+      "        try {"
+    ]
+  },
+  {
+    "eventIndex": 60,
+    "hunkIndex": 4,
+    "header": "@@ -218,12 +237,22 @@",
+    "status": "unresolved",
+    "before": [
+      "            }));",
+      "          await respond(",
+      "            event,",
+      "            qualities,",
+      "            qualities.length === 0 ? '当前资源没有可用清晰度' : undefined,",
+      "          );",
+      "        } catch {",
+      "          // Do not expose request URLs, tickets, or backend details in the UI.",
+      "          await respond(event, [], '无法加载清晰度，请稍后重试');",
+      "        }",
+      "      })();",
+      "    }).then((handle) => {"
+    ],
+    "after": [
+      "            }));",
+      "          return {",
+      "            qualities,",
+      "            qualities.length === 0 ? '当前资源没有可用清晰度' : undefined,",
+      "          };",
+      "        } catch {",
+      "          // Do not expose request URLs, tickets, or backend details in the UI.",
+      "          return { qualities: [], error: '无法加载清晰度，请稍后重试' };",
+      "        }",
+      "      })();",
+      "      androidLazyQualityRequestsRef.current.set(key, request);",
+      "      void request.finally(() => {",
+      "        if (androidLazyQualityRequestsRef.current.get(key) === request) {",
+      "          androidLazyQualityRequestsRef.current.delete(key);",
+      "        }",
+      "      });",
+      "      return request;",
+      "    };",
+      "",
+      "    void onAndroidPlaybackQualityRequest((event) => {",
+      "      void fetchQualities(event).then(({ qualities, error }) => respond(event, qualities, error));",
+      "    }).then((handle) => {"
+    ]
+  },
+  {
+    "eventIndex": 61,
+    "hunkIndex": 0,
+    "header": "@@ -239,3 +239,3 @@",
+    "status": "unresolved",
+    "before": [
+      "            qualities,",
+      "            qualities.length === 0 ? '当前资源没有可用清晰度' : undefined,",
+      "          };"
+    ],
+    "after": [
+      "            qualities,",
+      "            error: qualities.length === 0 ? '当前资源没有可用清晰度' : undefined,",
+      "          };"
+    ]
+  },
+  {
+    "eventIndex": 62,
+    "hunkIndex": 0,
+    "header": "@@ -468,2 +468,15 @@",
+    "status": "unresolved",
+    "before": [
+      "",
+      "  const blockPlayIfStorageAuthExpired = async ("
+    ],
+    "after": [
+      "",
+      "  const getPlaybackResources = async (movie: Movie): Promise<Resource[]> => {",
+      "    try {",
+      "      const groups = await movieService.getResources(String(movie.id));",
+      "      const resources = (groups?.items || []) as Resource[];",
+      "      if (resources.length > 0) return resources;",
+      "    } catch (error) {",
+      "      // A detailed movie response is still enough to start playback when the",
+      "      // dedicated resource lookup is temporarily unavailable.",
+      "      console.warn('Failed to load playback resources', error);",
+      "    }",
+      "    return ((movie.resources || []) as unknown as Resource[]);",
+      "  };",
+      "",
+      "  const blockPlayIfStorageAuthExpired = async ("
+    ]
+  },
+  {
+    "eventIndex": 62,
+    "hunkIndex": 1,
+    "header": "@@ -471,10 +484,6 @@",
+    "status": "unresolved",
+    "before": [
+      "    options: PlayOptions,",
+      "  ): Promise<boolean> => {",
+      "    try {",
+      "      let resources: Resource[] = [];",
+      "      const groups = await movieService.getResources(String(movie.id));",
+      "      resources = (groups?.items || []) as Resource[];",
+      "      if (resources.length === 0) {",
+      "        resources = ((movie.resources || []) as unknown as Resource[]);",
+      "      }",
+      "      const currentResource = options.resourceId"
+    ],
+    "after": [
+      "    options: PlayOptions,",
+      "    preloadedResources?: Resource[],",
+      "  ): Promise<boolean> => {",
+      "    try {",
+      "      const resources = preloadedResources ?? await getPlaybackResources(movie);",
+      "      const currentResource = options.resourceId"
+    ]
+  },
+  {
+    "eventIndex": 62,
+    "hunkIndex": 2,
+    "header": "@@ -518,12 +527,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 62,
+    "hunkIndex": 3,
+    "header": "@@ -610,5 +615,10 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 62,
+    "hunkIndex": 4,
+    "header": "@@ -624,3 +634,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 62,
+    "hunkIndex": 5,
+    "header": "@@ -658,7 +668,22 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 69,
+    "hunkIndex": 0,
+    "header": "@@ -536,6 +536,21 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 69,
+    "hunkIndex": 1,
+    "header": "@@ -549,3 +564,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 69,
+    "hunkIndex": 2,
+    "header": "@@ -555,5 +570,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 70,
+    "hunkIndex": 0,
+    "header": "@@ -578,3 +578,5 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 88,
+    "hunkIndex": 0,
+    "header": "@@ -648,9 +648,15 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 0,
+    "header": "@@ -24,4 +24,2 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 1,
+    "header": "@@ -34,13 +32,2 @@",
+    "status": "already-present"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 2,
+    "header": "@@ -121,3 +108,2 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 3,
+    "header": "@@ -159,115 +145,3 @@",
+    "status": "already-present"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 4,
+    "header": "@@ -585,5 +459,4 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 5,
+    "header": "@@ -614,5 +487,2 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 6,
+    "header": "@@ -672,12 +542,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 106,
+    "hunkIndex": 7,
+    "header": "@@ -686,6 +547,4 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 0,
+    "header": "@@ -25,2 +25,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 1,
+    "header": "@@ -33,2 +34,7 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 2,
+    "header": "@@ -355,2 +361,41 @@",
+    "status": "unresolved",
+    "before": [
+      "",
+      "  const blockPlayIfStorageAuthExpired = async ("
+    ],
+    "after": [
+      "",
+      "  const getAndroidPlaybackCatalog = async (movie: Movie): Promise<AndroidPlaybackCatalog> => {",
+      "    try {",
+      "      const groups = await movieService.getResources(String(movie.id));",
+      "      const resources = (groups?.items || []) as Resource[];",
+      "      if (resources.length > 0) {",
+      "        const availableIds = new Set(resources.map((resource) => resource.id));",
+      "        const seasons = (groups?.groups?.seasons || [])",
+      "          .map((group) => ({",
+      "            season: Number(group.season),",
+      "            displayTitle: group.display_title || `第 ${group.season} 季`,",
+      "            resourceIds: (group.resource_ids || []).filter((id) => availableIds.has(id)),",
+      "          }))",
+      "          .filter((group) => Number.isInteger(group.season) && group.season > 0 && group.resourceIds.length > 0);",
+      "        return { resources, seasons };",
+      "      }",
+      "    } catch (error) {",
+      "      console.warn('Failed to load Android playback catalog', error);",
+      "    }",
+      "",
+      "    const resources = ((movie.resources || []) as unknown as Resource[]);",
+      "    const inferred = new Map<number, string[]>();",
+      "    resources.forEach((resource) => {",
+      "      const info = (resource as any).resource_info || {};",
+      "      const season = Number(resource.season ?? info?.display?.season);",
+      "      if (!Number.isInteger(season) || season <= 0) return;",
+      "      const ids = inferred.get(season) || [];",
+      "      ids.push(resource.id);",
+      "      inferred.set(season, ids);",
+      "    });",
+      "    const seasons = Array.from(inferred.entries())",
+      "      .sort(([left], [right]) => left - right)",
+      "      .map(([season, resourceIds]) => ({",
+      "        season,",
+      "        displayTitle: `第 ${season} 季`,",
+      "        resourceIds,",
+      "      }));",
+      "    return { resources, seasons };",
+      "  };",
+      "",
+      "  const blockPlayIfStorageAuthExpired = async ("
+    ]
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 3,
+    "header": "@@ -404,5 +449,6 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 4,
+    "header": "@@ -461,2 +507,6 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 5,
+    "header": "@@ -469,2 +519,7 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 6,
+    "header": "@@ -477,4 +532,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 7,
+    "header": "@@ -500,3 +559,7 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 8,
+    "header": "@@ -509,6 +572,6 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 9,
+    "header": "@@ -525,3 +588,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 10,
+    "header": "@@ -560,4 +623,4 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 192,
+    "hunkIndex": 11,
+    "header": "@@ -565,4 +628,4 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 218,
+    "hunkIndex": 0,
+    "header": "@@ -460,2 +460,30 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 218,
+    "hunkIndex": 1,
+    "header": "@@ -509,4 +537,5 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 218,
+    "hunkIndex": 2,
+    "header": "@@ -533,2 +562,23 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 218,
+    "hunkIndex": 3,
+    "header": "@@ -544,3 +594,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 218,
+    "hunkIndex": 4,
+    "header": "@@ -551,2 +601,26 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 218,
+    "hunkIndex": 5,
+    "header": "@@ -559,3 +633,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 218,
+    "hunkIndex": 6,
+    "header": "@@ -563,2 +637,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 260,
+    "hunkIndex": 0,
+    "header": "@@ -14,3 +14,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 260,
+    "hunkIndex": 1,
+    "header": "@@ -453,2 +453,16 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 260,
+    "hunkIndex": 2,
+    "header": "@@ -635,2 +649,11 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 260,
+    "hunkIndex": 3,
+    "header": "@@ -644,2 +667,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 284,
+    "hunkIndex": 0,
+    "header": "@@ -705,6 +705,6 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 284,
+    "hunkIndex": 1,
+    "header": "@@ -713,2 +713,5 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 284,
+    "hunkIndex": 2,
+    "header": "@@ -723,3 +726,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 291,
+    "hunkIndex": 0,
+    "header": "@@ -705,6 +705,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 291,
+    "hunkIndex": 1,
+    "header": "@@ -713,5 +715,2 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 291,
+    "hunkIndex": 2,
+    "header": "@@ -726,3 +725,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 292,
+    "hunkIndex": 0,
+    "header": "@@ -791,4 +791,28 @@",
+    "status": "unresolved",
+    "before": [
+      "      try {",
+      "        const sourcesRequest = getStorageSourcesWithHealth();",
+      "        const catalog = await getAndroidPlaybackCatalog(movie, preloadedGroups);",
+      "        if (catalog.resources.length === 0) {"
+    ],
+    "after": [
+      "      try {",
+      "        // selectedMovie may still be the lightweight list item while the",
+      "        // detail component has already hydrated its own local state. Fetch the",
+      "        // detailed record before native playback so the cellular warning gets",
+      "        // the same wide backdrop as the detail page.",
+      "        let playbackMovie = movie;",
+      "        const hasBackdrop = Boolean(",
+      "          movie.backdrop_asset_url",
+      "          || (movie.backdrop_asset_fallback_urls || []).length > 0",
+      "          || movie.backdrop_url,",
+      "        );",
+      "        if (!hasBackdrop) {",
+      "          try {",
+      "            const detailMovie = await movieService.getDetail(movie.id);",
+      "            if (detailMovie) {",
+      "              playbackMovie = {",
+      "                ...movie,",
+      "                ...detailMovie,",
+      "                target_season: movie.target_season,",
+      "              };",
+      "            }",
+      "          } catch (error) {",
+      "            console.warn('[android] failed to hydrate playback artwork', error);",
+      "          }",
+      "        }",
+      "        const sourcesRequest = getStorageSourcesWithHealth();",
+      "        const catalog = await getAndroidPlaybackCatalog(playbackMovie, preloadedGroups);",
+      "        if (catalog.resources.length === 0) {"
+    ]
+  },
+  {
+    "eventIndex": 292,
+    "hunkIndex": 1,
+    "header": "@@ -798,3 +822,3 @@",
+    "status": "unresolved",
+    "before": [
+      "        if (await blockPlayIfStorageAuthExpired(options, catalog.resources, sourcesRequest)) return;",
+      "        await launchAndroidPlayback(movie, options, false, catalog);",
+      "      } finally {"
+    ],
+    "after": [
+      "        if (await blockPlayIfStorageAuthExpired(options, catalog.resources, sourcesRequest)) return;",
+      "        await launchAndroidPlayback(playbackMovie, options, false, catalog);",
+      "      } finally {"
+    ]
+  },
+  {
+    "eventIndex": 295,
+    "hunkIndex": 0,
+    "header": "@@ -656,2 +656,8 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 295,
+    "hunkIndex": 1,
+    "header": "@@ -664,3 +670,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 295,
+    "hunkIndex": 2,
+    "header": "@@ -674,2 +680,9 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 326,
+    "hunkIndex": 0,
+    "header": "@@ -686,2 +686,5 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 0,
+    "header": "@@ -45,2 +45,21 @@",
+    "status": "unresolved",
+    "before": [
+      "",
+      "const resetStorageHealthCache = () => {"
+    ],
+    "after": [
+      "",
+      "/**",
+      " * A slow health/artwork request must never hold the native player hostage.",
+      " * The request is still allowed to finish and populate its cache; playback",
+      " * simply proceeds with the safe fallback when the deadline is reached.",
+      " */",
+      "const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> => {",
+      "  let timer: ReturnType<typeof setTimeout> | undefined;",
+      "  try {",
+      "    return await Promise.race([",
+      "      promise,",
+      "      new Promise<T>((resolve) => {",
+      "        timer = setTimeout(() => resolve(fallback), timeoutMs);",
+      "      }),",
+      "    ]);",
+      "  } finally {",
+      "    if (timer) clearTimeout(timer);",
+      "  }",
+      "};",
+      "",
+      "const resetStorageHealthCache = () => {"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 1,
+    "header": "@@ -169,3 +188,3 @@",
+    "status": "unresolved",
+    "before": [
+      "    invalidateTicket();",
+      "    if (platform().kind !== 'pc' || authStatus?.authenticated !== true) return;",
+      "    void getStorageSourcesWithHealth();"
+    ],
+    "after": [
+      "    invalidateTicket();",
+      "    if (!['pc', 'android'].includes(platform().kind) || authStatus?.authenticated !== true) return;",
+      "    void getStorageSourcesWithHealth();"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 2,
+    "header": "@@ -175,3 +194,3 @@",
+    "status": "unresolved",
+    "before": [
+      "  useEffect(() => {",
+      "    if (platform().kind !== 'pc' || authStatus?.authenticated !== true) return;",
+      "    if (overlayView !== 'detail' || !selectedMovie) return;"
+    ],
+    "after": [
+      "  useEffect(() => {",
+      "    if (!['pc', 'android'].includes(platform().kind) || authStatus?.authenticated !== true) return;",
+      "    if (overlayView !== 'detail' || !selectedMovie) return;"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 3,
+    "header": "@@ -424,2 +443,8 @@",
+    "status": "unresolved",
+    "before": [
+      "  ): Promise<AndroidPlaybackCatalog> => {",
+      "    try {"
+    ],
+    "after": [
+      "  ): Promise<AndroidPlaybackCatalog> => {",
+      "    // Detail pages normally already carry the selected resource. Use that",
+      "    // immediately instead of waiting for a second full-catalog request. The",
+      "    // complete catalog is still preferred when it is already available, and",
+      "    // the embedded movie resources remain the final fallback for offline/slow",
+      "    // storage providers.",
+      "    const immediateGroups = preloadedGroups?.items?.length ? preloadedGroups : null;",
+      "    try {"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 4,
+    "header": "@@ -427,3 +452,7 @@",
+    "status": "unresolved",
+    "before": [
+      "        ? preloadedGroups",
+      "        : await movieService.getResources(String(movie.id));",
+      "      const resources = (groups?.items || []) as Resource[];"
+    ],
+    "after": [
+      "        ? preloadedGroups",
+      "        : immediateGroups || await withTimeout(",
+      "          movieService.getResources(String(movie.id)),",
+      "          5_000,",
+      "          null,",
+      "        );",
+      "      const resources = (groups?.items || []) as Resource[];"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 5,
+    "header": "@@ -475,3 +504,10 @@",
+    "status": "unresolved",
+    "before": [
+      "      if (!sourceId) return false;",
+      "      const sources = await (sourcesRequest || getStorageSourcesWithHealth());",
+      "      const source = sources.find((s) => s.id === sourceId);"
+    ],
+    "after": [
+      "      if (!sourceId) return false;",
+      "      // A provider health probe is advisory. Do not make a user wait for a",
+      "      // slow/unreachable storage endpoint before opening the player; the",
+      "      // ticketed stream remains the authoritative check.",
+      "      const sources = await withTimeout(",
+      "        sourcesRequest || getStorageSourcesWithHealth(),",
+      "        1_500,",
+      "        [],",
+      "      );",
+      "      const source = sources.find((s) => s.id === sourceId);"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 6,
+    "header": "@@ -527,2 +563,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 7,
+    "header": "@@ -532,3 +569,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 8,
+    "header": "@@ -753,5 +790,11 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 9,
+    "header": "@@ -807,6 +850,5 @@",
+    "status": "unresolved",
+    "before": [
+      "      try {",
+      "        // selectedMovie may still be the lightweight list item while the",
+      "        // detail component has already hydrated its own local state. Fetch the",
+      "        // detailed record before native playback so the cellular warning gets",
+      "        // the same wide backdrop as the detail page.",
+      "        let playbackMovie = movie;"
+    ],
+    "after": [
+      "      try {",
+      "        // Start all independent work together. A missing backdrop is cosmetic",
+      "        // and must not delay opening the native player while a detail request",
+      "        // waits on a slow mobile connection.",
+      "        let playbackMovie = movie;"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 10,
+    "header": "@@ -817,18 +859,20 @@",
+    "status": "unresolved",
+    "before": [
+      "        );",
+      "        if (!hasBackdrop) {",
+      "          try {",
+      "            const detailMovie = await movieService.getDetail(movie.id);",
+      "            if (detailMovie) {",
+      "              playbackMovie = {",
+      "                ...movie,",
+      "                ...detailMovie,",
+      "                target_season: movie.target_season,",
+      "              };",
+      "            }",
+      "          } catch (error) {",
+      "            console.warn('[android] failed to hydrate playback artwork', error);",
+      "          }",
+      "        }",
+      "        const sourcesRequest = getStorageSourcesWithHealth();",
+      "        const catalog = await getAndroidPlaybackCatalog(playbackMovie, preloadedGroups);",
+      "        if (catalog.resources.length === 0) {"
+    ],
+    "after": [
+      "        );",
+      "        const sourcesRequest = getStorageSourcesWithHealth();",
+      "        const ticketRequest = ensureTicket().catch(() => null);",
+      "        const detailRequest = !hasBackdrop",
+      "          ? withTimeout(movieService.getDetail(movie.id), 1_500, null).catch(() => null)",
+      "          : Promise.resolve(null);",
+      "        const catalogRequest = getAndroidPlaybackCatalog(playbackMovie, preloadedGroups);",
+      "        const [detailMovie, catalog, ticket] = await Promise.all([",
+      "          detailRequest,",
+      "          catalogRequest,",
+      "          ticketRequest,",
+      "        ]);",
+      "        if (detailMovie) {",
+      "          playbackMovie = {",
+      "            ...movie,",
+      "            ...detailMovie,",
+      "            target_season: movie.target_season,",
+      "          };",
+      "        }",
+      "        if (catalog.resources.length === 0) {"
+    ]
+  },
+  {
+    "eventIndex": 339,
+    "hunkIndex": 11,
+    "header": "@@ -838,3 +882,3 @@",
+    "status": "unresolved",
+    "before": [
+      "        if (await blockPlayIfStorageAuthExpired(options, catalog.resources, sourcesRequest)) return;",
+      "        await launchAndroidPlayback(playbackMovie, options, false, catalog);",
+      "      } finally {"
+    ],
+    "after": [
+      "        if (await blockPlayIfStorageAuthExpired(options, catalog.resources, sourcesRequest)) return;",
+      "        await launchAndroidPlayback(playbackMovie, options, false, catalog, ticket);",
+      "      } finally {"
+    ]
+  },
+  {
+    "eventIndex": 350,
+    "hunkIndex": 0,
+    "header": "@@ -719,2 +719,3 @@",
+    "status": "applied"
+  },
+  {
+    "eventIndex": 365,
+    "hunkIndex": 0,
+    "header": "@@ -452,6 +452,6 @@",
+    "status": "unresolved",
+    "before": [
+      "        ? preloadedGroups",
+      "        : immediateGroups || await withTimeout(",
+      "          movieService.getResources(String(movie.id)),",
+      "          5_000,",
+      "          null,",
+      "        );"
+    ],
+    "after": [
+      "        ? preloadedGroups",
+      "        : await withTimeout(",
+      "          movieService.getResources(String(movie.id)),",
+      "          2_500,",
+      "          immediateGroups,",
+      "        );"
+    ]
+  },
+  {
+    "eventIndex": 366,
+    "hunkIndex": 0,
+    "header": "@@ -456,3 +456,3 @@",
+    "status": "unresolved",
+    "before": [
+      "          immediateGroups,",
+      "        );",
+      "      const resources = (groups?.items || []) as Resource[];"
+    ],
+    "after": [
+      "          immediateGroups,",
+      "        ).catch(() => immediateGroups);",
+      "      const resources = (groups?.items || []) as Resource[];"
+    ]
+  },
+  {
+    "eventIndex": 367,
+    "hunkIndex": 0,
+    "header": "@@ -443,7 +443,6 @@",
+    "status": "unresolved",
+    "before": [
+      "  ): Promise<AndroidPlaybackCatalog> => {",
+      "    // Detail pages normally already carry the selected resource. Use that",
+      "    // immediately instead of waiting for a second full-catalog request. The",
+      "    // complete catalog is still preferred when it is already available, and",
+      "    // the embedded movie resources remain the final fallback for offline/slow",
+      "    // storage providers.",
+      "    const immediateGroups = preloadedGroups?.items?.length ? preloadedGroups : null;"
+    ],
+    "after": [
+      "  ): Promise<AndroidPlaybackCatalog> => {",
+      "    // Detail pages normally already carry the selected resource. Prefer the",
+      "    // complete catalog when it is available; if a slow provider cannot return",
+      "    // it quickly, use the detail-page resources so opening playback is still",
+      "    // fast. The complete request is allowed to finish for the next play.",
+      "    const immediateGroups = preloadedGroups?.items?.length ? preloadedGroups : null;"
+    ]
+  }
+]

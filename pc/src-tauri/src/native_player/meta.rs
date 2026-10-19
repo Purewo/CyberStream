@@ -121,4 +121,18 @@ pub struct SubtitleMeta {
     pub format: Option<String>,
     #[serde(default)]
     pub is_default: bool,
+    /// 以下为「字幕菜单详细信息」展示字段（仿详情页字幕管理）。后端
+    /// playback.subtitles[] 已带，webview 拍扁透传。缺失为 None / 不展示。
+    /// 可读语言标签（"简体中文" / "English"）。
+    #[serde(default)]
+    pub language: Option<String>,
+    /// sidecar / online_bound / manual_upload。
+    #[serde(default)]
+    pub source: Option<String>,
+    /// 在线来源站点名（"SubHD" / "SrtKu"），仅 online_bound 有。
+    #[serde(default)]
+    pub provider_name: Option<String>,
+    /// 网页播放器是否兼容；Some(false) 时（PGS/SUP 等）UI 标「不兼容」。
+    #[serde(default)]
+    pub web_player_supported: Option<bool>,
 }

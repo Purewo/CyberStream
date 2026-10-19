@@ -143,6 +143,10 @@ export interface NativeSubtitleMeta {
   /** Format hint ("srt"/"ass"/"vtt" …). Optional, mpv will sniff. */
   format?: string;
   isDefault?: boolean;
+  language?: string;
+  source?: string;
+  providerName?: string;
+  webPlayerSupported?: boolean;
 }
 
 export interface NativeMovieMeta {
@@ -195,6 +199,8 @@ export interface NativePlayerOptions {
    *  if omitted. Format: `pc-<uuid>` so backend logs distinguish PC sessions
    *  from web sessions. */
   sessionId?: string;
+  /** Short-lived backend credential for native subtitle/history requests. */
+  playbackTicket?: string | null;
 }
 
 export async function launchNativePlayer(opts: NativePlayerOptions): Promise<void> {
@@ -208,6 +214,7 @@ export async function launchNativePlayer(opts: NativePlayerOptions): Promise<voi
       deviceId: opts.deviceId,
       apiBase: opts.apiBase,
       sessionId: opts.sessionId ?? null,
+      playbackTicket: opts.playbackTicket ?? null,
     },
   });
   // 桌面入侵：用过一次 PC 原生播放器即解锁（成就后端幂等，重复无副作用）
@@ -235,6 +242,7 @@ export interface ExternalPlayerLaunchResult {
   method: 'exe' | 'fallback_required' | 'url_scheme';
   message?: string | null;
   exePath?: string | null;
+  subtitle_error?: string | null;
 }
 
 /** 调用 Rust 端 launch_external_player 命令。失败时 throw —— 调用方 catch 后

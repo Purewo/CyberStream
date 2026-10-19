@@ -19,7 +19,23 @@ Use short, imperative commit subjects consistent with the existing history, such
 Do not hardcode new secrets in code or docs. Prefer environment variables for deployment-specific values such as `TMDB_TOKEN`, storage credentials, and path overrides. If you change `APP_VERSION`, also update the related references called out in `docs/VERSIONING.md`.
 
 ## Project Runtime Memory
+
+Recovery preservation note (2026-10-20): Android source is now isolated under
+`recovery/android-20261020/project/`; two original APKs were recovered from the
+old phone emulator. Read `docs/ANDROID_RECOVERY_2026-10-20.md` and
+`docs/GITHUB_BACKUP_2026-10-20.md` before cleanup. The former hosted-beta tree
+contained independent, uncommitted client work; a synchronized Git HEAD did
+not prove that work was backed up. Never treat ignored recovery artifacts as
+disposable without a separate inventory and explicit deletion approval.
 Keep CyberStream-specific operational facts in this repository, not in global agent memory, unless explicitly requested. Treat this file plus `docs/PROJECT_HANDOVER.md`, `docs/RUNBOOK.md`, `docs/TEST_CHECKLIST.md`, and `docs/PILOT_HARDENING_BACKLOG.md` as the project-scoped memory entry points.
+
+Current frontend ownership boundary:
+- Codex is responsible for the Web frontend workstream after the 2026-07-09 handoff.
+- This repository is the self-hosted CyberStream stack; its public Web backend base is `https://cyberstream.gameuniverse.top:40160/api`.
+- The delegated-hosting beta frontend lives in `G:\AI\AI_private\Cluade_code_projects\CyberStream-frontend-hosted-beta` and uses the hosted backend on `40162`; do not mix the two worktrees.
+- The PC client workstream is owned separately. Avoid `pc/`, PC release scripts, and PC-specific runtime files such as `frontend/src/platform/pc.ts` unless the user explicitly redirects.
+- Do not modify backend implementation code for frontend work. If a backend behavior, API contract, OpenAPI schema, deployment setting, or smoke check is wrong, report it to the user and wait for the backend owner to change it.
+- Web frontend changes may touch shared React views/components under `frontend/`; when they could affect PC behavior, call that out instead of making PC-specific adjustments.
 
 Current host notes:
 - Use explicit proxy `127.0.0.1:7890` for GitHub/overseas access.

@@ -1,5 +1,6 @@
 import { getApiBase } from '../platform';
 import { fetchApi } from './core';
+import { invalidateTicket } from './playbackTicket';
 
 /**
  * 用户管理状态。GET /api/v1/auth/me 永远返回 200——
@@ -66,6 +67,7 @@ export const authService = {
       const retry = res.headers.get('Retry-After');
       const retryAfterSec = retry ? Math.max(0, parseInt(retry, 10) || 0) : undefined;
       if (res.ok && (body?.code === 200 || body?.code === 20000)) {
+        invalidateTicket();
         return { ok: true, status: res.status, code: body.code, data: body.data as AuthStatus };
       }
       return {
@@ -81,6 +83,7 @@ export const authService = {
   },
 
   logout: async (): Promise<boolean> => {
+    invalidateTicket();
     try {
       const res = await fetch(`${getApiBase()}/v1/auth/logout`, {
         method: 'POST',

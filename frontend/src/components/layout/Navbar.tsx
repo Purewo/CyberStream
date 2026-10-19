@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, Bell, User, Clock, AlertTriangle, Film, Server, MessageSquare, ChevronLeft, Sparkles, X, Loader2, RefreshCw, Trophy } from 'lucide-react';
 import { ViewState, Notification, ScanStatus } from '../../types';
 import { systemService } from '../../api';
+import { BrandMark } from '../ui/BrandMark';
 
 interface NavbarProps {
   onNavigate: (view: ViewState) => void;
@@ -62,7 +63,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView, onSearch, onPr
       <nav className={`fixed top-0 right-0 w-full z-40 bg-gradient-to-b from-black/80 to-transparent px-6 py-6 flex items-center justify-between transition-all duration-300 md:w-full`}> 
         <div className="flex items-center gap-8 flex-1"> 
           {!hideLogo && (
-            <div className="text-2xl font-['Orbitron'] font-black text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary glitch-text cursor-pointer drop-shadow-[0_0_8px_rgba(var(--color-primary-rgb),0.5)]" onClick={() => onNavigate('home')} data-text="CYBER">CYBER</div> 
+            <BrandMark text="CYBER" variant="nav" onClick={() => onNavigate('home')} ariaLabel="CyberStream home" />
           )}
           
           {/* Scan Pulse Indicator */}

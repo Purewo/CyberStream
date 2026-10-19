@@ -6,18 +6,30 @@ export function useThemeSettings() {
   const [settings, setSettings] = useState<UserSettings>(() => {
     try {
         const saved = localStorage.getItem('cyber_settings');
-        return saved ? JSON.parse(saved) : { scanlines: false, glitch: true };
+        const parsed = saved ? JSON.parse(saved) : null;
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? { ...parsed, scanlines: typeof parsed.scanlines === 'boolean' ? parsed.scanlines : false, glitch: typeof parsed.glitch === 'boolean' ? parsed.glitch : true }
+          : { scanlines: false, glitch: true };
     } catch {
         return { scanlines: false, glitch: true };
     }
   });
 
-  const [themeName, setThemeName] = useState('CYBER'); 
-  const currentTheme = THEMES[themeName]; 
+  const [themeName, setThemeName] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cyber_theme');
+      return saved && Object.hasOwn(THEMES, saved) ? saved : 'CYBER';
+    } catch { return 'CYBER'; }
+  });
+  const currentTheme = THEMES[themeName] || THEMES.CYBER;
 
   useEffect(() => {
-    localStorage.setItem('cyber_settings', JSON.stringify(settings));
+    try { localStorage.setItem('cyber_settings', JSON.stringify(settings)); } catch { /* storage unavailable */ }
   }, [settings]);
+
+  useEffect(() => {
+    try { localStorage.setItem('cyber_theme', themeName); } catch { /* storage unavailable */ }
+  }, [themeName]);
 
   useEffect(() => { 
     const root = document.documentElement; 

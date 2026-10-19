@@ -1,0 +1,962 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronLeft, PlayCircle, Plus, Download, Share2, Star, User, RotateCcw, FileVideo, Play, Cpu, HardDrive, Music, Box, Monitor, Activity, Database, Sparkles, ArrowRight, Terminal, Zap, RefreshCw, FileText, FolderSync } from 'lucide-react';
+import { Movie, PlayOptions, HistoryItem } from '../types';
+import { movieService, resolveAssetUrl, authService, ensureTicket, appendTicket } from '../api';
+import { shellOpen, platform } from '../platform';
+import { launchExternalPlayerNative, needsUserAgentRewrite, pickUserAgentForRewrite, getMediaProxyBase, wrapWithMediaProxy, PlaybackHandoffHint } from '../platform/nativePlayer';
+import { formatBytes, formatDuration } from '../utils';
+import { MovieCard } from '../components/movies/Cards';
+import { TechBadge } from '../components/ui/CyberComponents';
+import { ResilientImage, uniqueImageSources } from '../components/ui/ResilientImage';
+import { SubtitleManagerDialog } from './SubtitleManagerDialog';
+import potplayerIcon from '../icons/players/potplayer.png';
+import iinaIcon from '../icons/players/iina.png';
+import vlcIcon from '../icons/players/vlc.png';
+import nplayerIcon from '../icons/players/nplayer.png';
+import mxplayerIcon from '../icons/players/mxplayer.png';
+import mxplayerProIcon from '../icons/players/mxplayer_pro.png';
+import infuseIcon from '../icons/players/infuse.png';
+import { toast } from '../utils';
+
+const ExternalPlayerButton: React.FC<{
+  title: string;
+  icon: string;
+  /** 兜底 URL scheme（web 端唯一通路；PC 端 Rust 找不到 .exe 时也回退到这里） */
+  url: string;
+  streamUrl?: string;
+  /** PC 端走 Rust 命令直接 spawn .exe 时需要的元信息。给了就启用。 */
+  pcLaunch?: {
+    player: 'potplayer' | 'vlc';
+    streamUrl: string;
+    subtitleUrl?: string;
+    /** 后端给的 playback.external_player handoff hint。需要 UA 改写的存储源
+     *  （比如百度网盘）会通过这里告诉调用层 stream URL 要先包一层 PC 本地
+     *  代理；hint 没标 requires_user_agent_rewrite 时按原 URL 直送 .exe。 */
+    handoffHint?: PlaybackHandoffHint | null;
+  };
+  /** 启动成功后强制再 toast 一条警告（如「VLC 不支持 PGS 字幕，已丢弃」），便于让
+   *  用户知道为何加载不到字幕。 */
+  subtitleNotice?: string;
+}> = ({ title, icon, url, streamUrl, pcLaunch, subtitleNotice }) => {
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    const isPc = platform().kind === 'pc';
+    const originalStream = pcLaunch?.streamUrl || streamUrl;
+    let ticket: string | null = null;
+    if (isPc && originalStream) {
+      ticket = await ensureTicket();
+      if (!ticket) {
+        const status = await authService.getStatus();
+        if (!status || status.user_management_enabled) {
+          toast.error('无法取得播放授权，请检查后端连接或重新登录。');
+          return;
+        }
+      }
+    }
+    let effectiveStreamUrl = originalStream ? appendTicket(originalStream, ticket) : '';
+    // PC + Rust 支持的播放器 → 走 launch_external_player，能带字幕。
+    if (isPc && pcLaunch) {
+      try {
+        // 百度网盘需要 UA 改写——PotPlayer/VLC CLI 没法传 header，必须把
+        // stream URL 包成 http://127.0.0.1:<port>/stream?u=...&ua=... 喂给
+        // .exe，由 PC 本地代理把改写后的 UA 加到上游请求里。代理拿不到时
+        // 降级到原 URL（百度时大概率 403，但其他云盘正常）。
+        if (needsUserAgentRewrite(pcLaunch.handoffHint)) {
+          const ua = pickUserAgentForRewrite(pcLaunch.handoffHint);
+          if (ua) {
+            const base = await getMediaProxyBase();
+            effectiveStreamUrl = wrapWithMediaProxy(effectiveStreamUrl, ua, base);
+          }
+        }
+        const res = await launchExternalPlayerNative({
+          ...pcLaunch,
+          streamUrl: effectiveStreamUrl,
+          subtitleUrl: pcLaunch.subtitleUrl ? appendTicket(pcLaunch.subtitleUrl, ticket) : undefined,
+        });
+        if (res.launched) {
+          if (res.subtitle_error) {
+            toast.warning(`${title} 已启动，但字幕加载失败：${res.subtitle_error}`);
+          } else if (pcLaunch.subtitleUrl) {
+            toast.success(`${title} 已启动（已加载默认字幕）`);
+          } else if (subtitleNotice) {
+            // 没字幕 + 有提醒 = 字幕被刻意丢弃（如 sup 给 VLC）
+            toast.warning(`${title} 已启动。${subtitleNotice}`);
+          }
+          return;
+        }
+        // 找不到 .exe：fallback 到 URL scheme，提示用户字幕可能不会自动加载。
+        if (res.method === 'fallback_required') {
+          console.warn(`[external-player] ${title} exe not found, falling back`, res.message);
+        }
+      } catch {
+        console.warn(`[external-player] ${title} native launch failed, falling back`);
+      }
+    }
+    // Web 模式 / PC fallback：URL scheme。
+    const fallbackUrl = originalStream && effectiveStreamUrl
+      ? url.replace(encodeURIComponent(originalStream), encodeURIComponent(effectiveStreamUrl))
+          .replace(originalStream, effectiveStreamUrl)
+      : url;
+    shellOpen(fallbackUrl).catch(() => {
+      console.warn(`[external-player] ${title} failed`);
+      toast.error(`${title} 无法启动，请确认已安装对应播放器。`);
+    });
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={title}
+      className="p-1.5 border border-white/10 hover:border-primary bg-black/40 hover:bg-primary/10 rounded transition-all"
+    >
+      <img src={icon} alt={title} width="32" height="32" className="block rounded-sm" />
+    </button>
+  );
+};
+
+interface MovieDetailProps {
+  movie: Movie;
+  history: HistoryItem[];
+  onBack: () => void;
+  onPlay: (options: PlayOptions, groups?: import('../types').MovieResourceGroups | null) => void;
+  onMovieSelect: (m: Movie) => void;
+  isFavorite: boolean;
+  onToggleFavorite: (m: Movie) => void;
+  onUpdateMovie?: (m: Movie) => void;
+}
+
+export const MovieDetail: React.FC<MovieDetailProps> = ({ movie, history, onBack, onPlay, onMovieSelect, isFavorite, onToggleFavorite, onUpdateMovie }) => {
+  const [currentPropMovie, setCurrentPropMovie] = useState(movie);
+  const [fullMovieData, setFullMovieData] = useState<Movie>(movie);
+  const [resourceGroups, setResourceGroups] = useState<import('../types').MovieResourceGroups | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [seasonLoading, setSeasonLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncingResources, setIsSyncingResources] = useState(false);
+  const [recommendations, setRecommendations] = useState<Movie[]>([]);
+  const [activeSeason, setActiveSeason] = useState<number | null>(movie.target_season ?? null);
+  const [isManagingSubtitles, setIsManagingSubtitles] = useState(false);
+  // 已 hydrate 过的季号，避免重复拉取。null 表示「无季的独立资源已加载」
+  const loadedSeasonsRef = useRef<Set<number | null>>(new Set());
+
+  // Sync state instantly when the movie prop changes (e.g. clicking a recommendation)
+  if (movie.id !== currentPropMovie.id || movie.target_season !== currentPropMovie.target_season) {
+      setCurrentPropMovie(movie);
+      setFullMovieData(movie);
+      setResourceGroups(null);
+      setRecommendations([]);
+      setActiveSeason(movie.target_season ?? null);
+      setLoading(true);
+      loadedSeasonsRef.current = new Set();
+      // Let the useEffect handle the actual fetching below based on new movie.id
+  }
+
+  const handleRefreshMovie = async () => {
+    setIsRefreshing(true);
+    try {
+      const mediaHint = (movie.type === 'series' || movie.type === 'tv') ? 'tv' : 'movie';
+      const updatedMovie = await movieService.refreshMetadata(String(movie.id), { media_type_hint: mediaHint });
+      if (updatedMovie) {
+        const detail = await movieService.getDetail(movie.id);
+        if (detail) {
+          setFullMovieData({
+            ...detail,
+            title: movie.title || detail.title,
+            cover_url: detail.cover_url || movie.cover_url,
+            poster_url: detail.poster_url || movie.poster_url,
+            desc: detail.desc || movie.desc,
+            overview: detail.overview || movie.overview,
+            target_season: movie.target_season
+          });
+          if (onUpdateMovie) onUpdateMovie(detail);
+        } else {
+          setFullMovieData((prev: any) => ({
+            ...prev,
+            ...updatedMovie,
+            resources: prev.resources,
+            tech_specs: prev.tech_specs,
+            views: prev.views,
+            target_season: movie.target_season
+          }));
+          if (onUpdateMovie) onUpdateMovie(updatedMovie);
+        }
+      }
+    } catch(e) {
+      console.warn("Refresh failed", e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleSyncResources = async () => {
+    if (isSyncingResources) return;
+    setIsSyncingResources(true);
+    try {
+      toast.info(`正在同步《${movie.title}》的资源...`);
+      const result = await movieService.syncResources(movie.id);
+      if (result.ok) {
+        toast.success(`资源同步任务已下发，可在扫描进度处查看。`);
+      } else if (result.status === 429) {
+        toast.error('扫描器正忙，请等当前任务结束后重试。');
+      } else if (result.status === 400) {
+        toast.error(result.msg || '该影片没有可同步的资源路径。');
+      } else {
+        toast.error(result.msg || '资源同步任务下发失败。');
+      }
+    } finally {
+      setIsSyncingResources(false);
+    }
+  };
+  
+  // Ref for horizontal scrolling of recommendations
+  const scrollRef = useRef<HTMLDivElement>(null); 
+  const scroll = (direction: 'left' | 'right') => { 
+    if (scrollRef.current) { 
+      const { current } = scrollRef; 
+      const scrollAmount = direction === 'left' ? -300 : 300; 
+      current.scrollBy({ left: scrollAmount, behavior: 'smooth' }); 
+    } 
+  };
+
+  // 初次进入：三个请求各自独立 fire——detail 和推荐回来快了就立刻渲染，不被
+  // resources 拖累；resources 才决定播放按钮可点（loading 只追它）。
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    const initialSeason = movie.target_season ?? undefined;
+
+    movieService.getDetail(movie.id).then(detail => {
+      if (cancelled || !detail) return;
+      setFullMovieData({
+        ...detail,
+        title: movie.title || detail.title,
+        cover_url: detail.cover_url || movie.cover_url,
+        poster_url: detail.poster_url || movie.poster_url,
+        desc: detail.desc || movie.desc,
+        overview: detail.overview || movie.overview,
+        target_season: movie.target_season
+      });
+    });
+
+    movieService.getResources(movie.id, initialSeason).then(resData => {
+      if (cancelled) return;
+      if (resData) {
+        setResourceGroups(resData);
+        loadedSeasonsRef.current.add(null);
+        const hydratedSeason = (resData as any).summary?.selected_season;
+        if (typeof hydratedSeason === 'number') {
+          loadedSeasonsRef.current.add(hydratedSeason);
+        } else if (initialSeason !== undefined) {
+          loadedSeasonsRef.current.add(initialSeason);
+        } else if (resData.groups?.seasons && resData.groups.seasons.length > 0) {
+          resData.groups.seasons.forEach(s => loadedSeasonsRef.current.add(s.season));
+        }
+
+        if (movie.target_season !== undefined && movie.target_season !== null) {
+          setActiveSeason(movie.target_season);
+        } else if (resData.groups?.seasons && resData.groups.seasons.length > 0) {
+          const firstHydrated = resData.groups.seasons.find(s => (s.resource_ids?.length || 0) > 0);
+          setActiveSeason((firstHydrated || resData.groups.seasons[0]).season);
+        }
+      }
+      setLoading(false);
+    });
+
+    movieService.getContextRecommendations(
+      String(movie.id), 8,
+      movie.type === 'tv' || movie.type === 'series' || !!movie.season ? 'tv' : 'movie'
+    ).then(recs => {
+      if (cancelled || !recs) return;
+      setRecommendations(recs);
+    });
+
+    return () => { cancelled = true; };
+  }, [movie.id]);
+
+  // 切季时按需 hydrate 缺失的季并合并到 resourceGroups.items
+  useEffect(() => {
+    if (activeSeason === null || activeSeason === undefined) return;
+    if (loadedSeasonsRef.current.has(activeSeason)) return;
+    if (!resourceGroups) return;
+
+    let cancelled = false;
+    const fetchSeason = async () => {
+      setSeasonLoading(true);
+      try {
+        const fresh = await movieService.getResources(movie.id, activeSeason);
+        if (cancelled || !fresh) return;
+
+        // 合并：以新返回的 items 覆盖同 id 的旧条目（带最新 user_data / playback 等）
+        setResourceGroups(prev => {
+          if (!prev) return fresh;
+          const byId = new Map<string, import('../types').Resource>();
+          (prev.items || []).forEach(r => byId.set(r.id, r));
+          (fresh.items || []).forEach(r => byId.set(r.id, r));
+          const mergedItems = Array.from(byId.values());
+
+          // 用新 groups.seasons 中该季的 resource_ids 替换旧的（其他季保持原状）
+          const prevSeasons = prev.groups?.seasons || [];
+          const freshSeasons = fresh.groups?.seasons || [];
+          const mergedSeasons = prevSeasons.map(ps => {
+            const updated = freshSeasons.find(fs => fs.season === ps.season);
+            if (updated && (updated.resource_ids?.length || 0) > 0) {
+              return { ...ps, ...updated };
+            }
+            return ps;
+          });
+          // 兜底：若新返回里有旧 prev 不存在的季，也并进来
+          freshSeasons.forEach(fs => {
+            if (!mergedSeasons.some(ms => ms.season === fs.season)) {
+              mergedSeasons.push(fs);
+            }
+          });
+
+          return {
+            ...prev,
+            items: mergedItems,
+            groups: {
+              ...prev.groups,
+              seasons: mergedSeasons,
+              standalone: fresh.groups?.standalone ?? prev.groups?.standalone,
+            } as any,
+            summary: fresh.summary ?? prev.summary,
+          };
+        });
+        loadedSeasonsRef.current.add(activeSeason);
+      } finally {
+        if (!cancelled) setSeasonLoading(false);
+      }
+    };
+    fetchSeason();
+    return () => { cancelled = true; };
+  }, [activeSeason, movie.id]);
+
+  const safeId = String(fullMovieData.id || 'def');
+  const hue = parseInt(safeId.split('-').pop() || '0') * 40; 
+  
+  // Resources check - prefer resourceGroups for structured display
+  const hasResources = (resourceGroups?.items?.length || 0) > 0;
+  const primaryResource = resourceGroups?.items?.[0] || null;
+  const isSeries = (resourceGroups?.summary?.season_count || 0) > 0;
+  const currentSeasonGroup = resourceGroups?.groups?.seasons?.find(g => g.season === activeSeason);
+
+  // Dynamically compute display data based on active season
+  const displayData = useMemo(() => {
+     let poster = fullMovieData.cover_url || fullMovieData.poster_url;
+     let overview = fullMovieData.overview || fullMovieData.desc;
+     
+     if (activeSeason !== null && fullMovieData.season_cards) {
+         const sc = fullMovieData.season_cards.find(c => c.season === activeSeason);
+         if (sc) {
+             if (sc.poster_url && sc.has_distinct_poster) {
+                 poster = sc.poster_url;
+             }
+             if (sc.overview) {
+                 overview = sc.overview;
+             }
+         }
+     }
+     
+     return {
+         poster_url: poster,
+         overview: overview
+     };
+  }, [fullMovieData, activeSeason]);
+
+  const currentSeasonGroupItems = useMemo(() => {
+    if (!currentSeasonGroup || !resourceGroups?.items) return [];
+    return currentSeasonGroup.resource_ids.map(id => resourceGroups.items.find(r => r.id === id)).filter(Boolean) as import('../types').Resource[];
+  }, [currentSeasonGroup, resourceGroups?.items]);
+
+  // Calculate Resume Record
+  const resumeRecord = useMemo(() => {
+    if (!resourceGroups?.items) return null;
+    // 系列剧但当前季尚未确定/未 hydrate 时，索性不显示 resume —— 宁可漏，不能跨季误显。
+    if (isSeries && !currentSeasonGroup) return null;
+
+    // First check user_data from the current active season
+    let targetUserData = currentSeasonGroup?.user_data;
+
+    // If no season user_data or it has no progress, fall back to movie-level user_data ONLY IF it's not a series
+    // If it's a series, we don't want to use movie-level user_data because it might belong to another season.
+    if (!targetUserData || typeof targetUserData.progress !== 'number') {
+      if (!isSeries && fullMovieData.user_data) {
+          targetUserData = fullMovieData.user_data;
+      }
+    }
+
+    // Validate that targetUserData belongs to the current active season if it's a series
+    let validResource = null;
+    if (targetUserData && targetUserData.resource_id) {
+        // 先用 currentSeasonGroup.resource_ids 直接判断 resource_id 归属，不依赖 items 是否已 hydrate。
+        if (isSeries && currentSeasonGroup) {
+            if (!currentSeasonGroup.resource_ids.includes(targetUserData.resource_id)) {
+                targetUserData = undefined;
+            }
+        }
+        if (targetUserData) {
+            validResource = resourceGroups.items.find(r => r.id === targetUserData!.resource_id);
+        }
+    }
+
+    // 用 resource 自己的 season 字段做最后一道闸 —— 防止后端把跨季 user_data 渗进来。
+    const matchesActiveSeason = (res: import('../types').Resource | undefined | null, ud?: { season?: number | null }) => {
+      if (!isSeries) return true;
+      const candidateSeason = ud?.season
+        ?? res?.resource_info?.display?.season
+        ?? res?.season;
+      if (candidateSeason === undefined || candidateSeason === null) return true; // 拿不到就不卡
+      return candidateSeason === activeSeason;
+    };
+
+    // Attempt to construct resume record from user_data
+    if (validResource && targetUserData && targetUserData.progress > 5 && targetUserData.duration > 0 && (targetUserData.progress / targetUserData.duration) < 0.95) {
+      if (!matchesActiveSeason(validResource, targetUserData)) return null;
+      return {
+          resourceId: targetUserData.resource_id,
+          progress: targetUserData.progress,
+          duration: targetUserData.duration,
+          filename: targetUserData.filename || validResource.resource_info?.file?.filename || validResource.filename || 'Unknown File',
+          season: targetUserData.season || validResource.resource_info?.display?.season || validResource.season,
+          episode: targetUserData.episode || validResource.resource_info?.display?.episode || validResource.episode
+      };
+    }
+
+    // Fallback to legacy history array check
+    if (history) {
+      // Create a set of resource IDs belonging to this movie/season
+      let resourceIdsToMatch: string[] = [];
+      if (isSeries) {
+          if (currentSeasonGroup) {
+              resourceIdsToMatch = currentSeasonGroup.resource_ids;
+          }
+      } else {
+          resourceIdsToMatch = resourceGroups.items.map(r => r.id);
+      }
+      const movieResourceIds = new Set(resourceIdsToMatch);
+
+      if (movieResourceIds.size > 0) {
+          // Find the first history item that exists in this season's resources
+          const match = history.find(h => movieResourceIds.has(h.resourceId));
+
+          if (match && match.progress > 5 && match.duration > 0 && (match.progress / match.duration) < 0.95) {
+              const resourceDetail = resourceGroups.items.find(r => r.id === match.resourceId);
+              if (!matchesActiveSeason(resourceDetail)) return null;
+              return {
+                  resourceId: match.resourceId,
+                  progress: match.progress,
+                  duration: match.duration,
+                  filename: resourceDetail?.resource_info?.file?.filename || resourceDetail?.filename || 'Unknown File',
+                  season: resourceDetail?.resource_info?.display?.season || resourceDetail?.season,
+                  episode: resourceDetail?.resource_info?.display?.episode || resourceDetail?.episode
+              };
+          }
+      }
+    }
+
+    return null;
+  }, [history, resourceGroups, currentSeasonGroup, isSeries, fullMovieData.user_data, activeSeason]);
+
+  const defaultPlayResource = useMemo(() => {
+    let playResource = primaryResource;
+    if (isSeries && currentSeasonGroupItems.length > 0) {
+        playResource = currentSeasonGroupItems[0];
+    }
+    return playResource;
+  }, [primaryResource, isSeries, currentSeasonGroupItems]);
+
+  const targetPlayResource = resumeRecord?.resourceId ? resourceGroups?.items?.find(r => r.id === resumeRecord.resourceId) : defaultPlayResource;
+
+  // 后端在反代后面时，stream_url / external_player.url 可能带错 scheme（实际
+  // 对外 https，Flask 内部 http 拼出 http URL）。resolveAssetUrl 会把命中本后端
+  // /api/v1/ 的绝对 URL 重新按当前 API_BASE 的 origin 拼，避免 mpv / 外部播放器
+  // 拿到错的 scheme 直接连不上。
+  const externalVideoUrl = resolveAssetUrl((targetPlayResource as any)?.playback?.external_player?.url)
+    || resolveAssetUrl((targetPlayResource as any)?.playback?.stream_url)
+    || (targetPlayResource ? movieService.getStreamUrl(targetPlayResource.id) : "");
+
+  // Web 端 + 原文件网页/外播不可播（web_player.supported===false，如夸克/UC 的
+  // 反爬下载链）：URL scheme 唤起的桌面/手机播放器拿到的也是这条不可播链，点了
+  // 只会失败。这种情况下隐藏外部播放器排，改提示用 PC 客户端。PC 端走 pcLaunch
+  // 原生 spawn + 能播原文件，不受影响；原文件可播的资源（阿里/本地等）也照常显示。
+  const isPcRuntime = platform().kind === 'pc';
+  const isAndroidRuntime = platform().kind === 'android';
+  // Android has Media3 playback even when a source is not browser-decodable.
+  // Do not show the Web-only "download the PC client" dead end there.
+  const webRawUnplayable = !isPcRuntime && !isAndroidRuntime
+    && (targetPlayResource as any)?.playback?.web_player?.supported === false;
+
+  // PC 端外部播放器要预加载的默认字幕 URL。优先级：
+  //   1. playback.subtitles.items 里 id == default_subtitle_id 的那条（最权威）
+  //   2. playback.external_player.subtitle_urls[0]（后端拍平后的兜底）
+  // web 端用不到（URL scheme 没法带字幕参数）；只 PC 通过 launch_external_player 透给 .exe。
+  const externalSubtitle = useMemo<{ url?: string; format?: string }>(() => {
+    const pb: any = (targetPlayResource as any)?.playback;
+    if (!pb) return {};
+    const subs = pb.subtitles;
+    if (subs?.items?.length) {
+      const defId = subs.default_subtitle_id;
+      const def = defId ? subs.items.find((s: any) => s.id === defId) : null;
+      const fallback = subs.items.find((s: any) => s.is_default) || subs.items[0];
+      const picked = def || fallback;
+      if (picked?.url) {
+        return { url: String(picked.url), format: picked.format ? String(picked.format).toLowerCase() : undefined };
+      }
+    }
+    const arr = pb.external_player?.subtitle_urls;
+    if (Array.isArray(arr) && arr.length > 0) {
+      return { url: String(arr[0]) };
+    }
+    return {};
+  }, [targetPlayResource]);
+  const externalSubtitleUrl = externalSubtitle.url;
+  // VLC 的 :sub-file= 只识别文本字幕（srt/ass/ssa/vtt/sub/idx）。PGS 位图字幕（.sup）
+  // VLC 会忽略，而且没任何提示。这里不下发 sup URL，避免用户以为加载了——播放页
+  // 那个按钮本身会把这个标记透给前端 toast。PotPlayer / mpv 都能解 sup，不受影响。
+  const subtitleUrlForVlc = externalSubtitle.format === 'sup' ? undefined : externalSubtitleUrl;
+  const subtitleSkippedForVlc = externalSubtitle.format === 'sup';
+
+  const handlePlay = () => {
+    // 「从头播放」语义：忽略 resumeRecord，回到当前季第一集（或唯一资源）从 0 秒起。
+    // 显式带 startTime: 0 是为了把 Player 里读到的 user_data 进度盖掉。
+    if (defaultPlayResource) {
+      onPlay({ resourceId: defaultPlayResource.id, startTime: 0 }, resourceGroups);
+    }
+  };
+
+  const handleResume = () => {
+    if (resumeRecord) {
+        onPlay({ 
+            resourceId: resumeRecord.resourceId, 
+            startTime: resumeRecord.progress 
+        }, resourceGroups);
+    }
+  };
+
+  const derivedTechSpecs = useMemo(() => {
+    // Start with the basic specs from fullMovieData
+    let specs: import('../types').TechSpecs = { ...(fullMovieData.tech_specs || {}) };
+    
+    // If we have resources, enrich or override with the most detailed info
+    if (resourceGroups?.items && resourceGroups.items.length > 0) {
+      // Find the "primary" resource for display
+      let primaryRes = null;
+      if (isSeries && activeSeason !== null && currentSeasonGroupItems.length > 0) {
+        primaryRes = currentSeasonGroupItems[0];
+      } else {
+        primaryRes = resourceGroups.items[0];
+      }
+
+      if (primaryRes) {
+        const res = primaryRes as any;
+        const tech = res.resource_info?.technical;
+        const file = res.resource_info?.file;
+
+        if (tech) {
+          let resolution = tech.video_resolution_label;
+          if (resolution && (resolution.toUpperCase().includes('2160') || resolution.toUpperCase().includes('3840') || tech.flag_is_4k)) {
+            resolution = '4K';
+          }
+          if (resolution && resolution.toUpperCase() === 'UNKNOWN') {
+            resolution = '';
+          }
+
+          specs = {
+            ...specs,
+            resolution: resolution || specs.resolution,
+            codec: (tech.video_codec_code && tech.video_codec_code.toUpperCase() !== 'UNKNOWN') ? tech.video_codec_code.toUpperCase() : specs.codec,
+            codec_label: (tech.video_codec_label && tech.video_codec_label.toUpperCase() !== 'UNKNOWN') ? tech.video_codec_label : specs.codec_label,
+            audio: (tech.audio_codec_code && tech.audio_codec_code.toUpperCase() !== 'UNKNOWN') ? tech.audio_codec_code.toUpperCase() : specs.audio,
+            audio_summary: (tech.audio_summary_label && tech.audio_summary_label.toUpperCase() !== 'UNKNOWN') ? tech.audio_summary_label : specs.audio_summary,
+            hdr: (tech.video_dynamic_range_label && tech.video_dynamic_range_label.toUpperCase() !== 'UNKNOWN') ? tech.video_dynamic_range_label : specs.hdr,
+            source_label: (tech.source_label && tech.source_label.toUpperCase() !== 'UNKNOWN') ? tech.source_label : specs.source_label,
+            bit_depth: (tech.video_bit_depth_label && tech.video_bit_depth_label.toUpperCase() !== 'UNKNOWN') ? tech.video_bit_depth_label : specs.bit_depth,
+            flag_is_4k: tech.flag_is_4k ?? specs.flag_is_4k,
+            flag_is_remux: tech.flag_is_remux ?? specs.flag_is_remux,
+            flag_is_hdr: tech.flag_is_hdr ?? specs.flag_is_hdr,
+            flag_is_dolby_vision: tech.flag_is_dolby_vision ?? specs.flag_is_dolby_vision,
+            audio_is_atmos: tech.audio_is_atmos ?? specs.audio_is_atmos,
+            extra_tags: (tech.extra_tags || specs.extra_tags)?.filter((tag: string) => 
+              tag && tag.toUpperCase() !== 'UNKNOWN' && tag.toUpperCase() !== 'REMUX'
+            ),
+            size: res.size_bytes ? formatBytes(res.size_bytes) : (file?.size_bytes ? formatBytes(file.size_bytes) : specs.size),
+            storage_name: file?.storage_source?.name || res.source_name,
+            bitrate: tech.video_bitrate_label || specs.bitrate,
+          };
+        } else if (res.media_info) {
+          let resolution = res.media_info.resolution;
+          if (resolution && (resolution.toUpperCase().includes('2160') || resolution.toUpperCase() === '4K' || resolution.toUpperCase().includes('3840'))) {
+            resolution = '4K';
+          }
+          if (resolution && resolution.toUpperCase() === 'UNKNOWN') {
+            resolution = '';
+          }
+
+          specs = {
+            ...specs,
+            resolution: resolution || specs.resolution,
+            codec: (res.media_info.video_codec && res.media_info.video_codec.toUpperCase() !== 'UNKNOWN') ? res.media_info.video_codec.toUpperCase() : specs.codec,
+            audio: (res.media_info.audio_codec && res.media_info.audio_codec.toUpperCase() !== 'UNKNOWN') ? res.media_info.audio_codec.toUpperCase() : specs.audio,
+            bitrate: res.media_info.bitrate ? `${(res.media_info.bitrate / 1000).toFixed(1)} Mbps` : specs.bitrate,
+            hdr: (res.media_info.hdr && res.media_info.hdr.toUpperCase() !== 'UNKNOWN') ? res.media_info.hdr : specs.hdr,
+            size: res.size_bytes ? formatBytes(res.size_bytes) : specs.size,
+            extra_tags: specs.extra_tags?.filter((tag: string) => 
+              tag && tag.toUpperCase() !== 'UNKNOWN' && tag.toUpperCase() !== 'REMUX'
+            ),
+          };
+        }
+      }
+    }
+    
+    return specs;
+  }, [fullMovieData.tech_specs, resourceGroups, isSeries, activeSeason, currentSeasonGroupItems]);
+
+  const shouldShowQualityBadge = useMemo(() => {
+    if (!fullMovieData.quality_badge) return false;
+    const badge = fullMovieData.quality_badge.toUpperCase();
+    
+    // If it's a REMUX, we want to show the REMUX badge specifically, 
+    // but we'll handle the redundancy here. 
+    // If flag_is_remux is true, the dedicated REMUX badge will show up below.
+    if (badge === 'REMUX' && derivedTechSpecs.flag_is_remux) return false;
+    
+    // If the resolution says 4K, we don't need a redundant 4K quality badge
+    if ((badge === '4K' || badge === '4K UHD') && 
+        (derivedTechSpecs.flag_is_4k || derivedTechSpecs.resolution?.toUpperCase().includes('4K'))) {
+      return false;
+    }
+    
+    return true;
+  }, [fullMovieData.quality_badge, derivedTechSpecs]);
+
+  return (
+    <div className="relative min-h-screen w-full text-white pt-20 pb-12 overflow-hidden" onClick={onBack}> 
+      {/* Immersive Backdrop Background */}
+      <div className="absolute inset-0 z-0 pointer-events-none"> 
+          {/* Background Color Base */}
+          <div className="absolute inset-0 bg-[#050505]"></div>
+
+          {fullMovieData.backdrop_url ? (
+            <>
+                {/* High Res Backdrop Image */}
+                <img 
+                    src={fullMovieData.backdrop_url}
+                    alt="Backdrop"
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-1000" 
+                    style={{ opacity: 0.85 }}
+                />
+                
+                {/* Gradient Overlay - Bottom Fade (Seamless blend to footer/content) */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/60 to-transparent via-40%"></div>
+                
+                {/* Gradient Overlay - Left Fade (Make text readable) */}
+                <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-[#050505]/60 to-transparent via-40%"></div>
+
+                {/* Gradient Overlay - Top Fade (Navbar visibility) */}
+                <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-[#050505]/60 to-transparent"></div>
+            </>
+          ) : (
+            /* Fallback Abstract Gradient if no backdrop */
+            <>
+                <div className="absolute inset-0 opacity-20" style={{ backgroundImage: `radial-gradient(circle at 70% 20%, hsla(${hue}, 70%, 50%, 0.3), transparent 60%)`, }}></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent"></div>
+            </>
+          )}
+      </div> 
+    
+      <div className="w-full max-w-[2500px] mx-auto px-4 md:px-8 lg:px-12 relative z-10 pt-4" onClick={(e) => e.stopPropagation()}> 
+        <button onClick={onBack} className="group flex items-center gap-2 text-gray-400 hover:text-primary mb-8 transition-colors"> <ChevronLeft className="group-hover:-translate-x-1 transition-transform" /> <span className="font-['Rajdhani'] font-bold tracking-wider">返回</span> </button> 
+        
+        <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 mb-20"> 
+            <div className="w-full sm:w-[300px] lg:w-[380px] xl:w-[480px] flex-shrink-0 flex flex-col gap-6"> 
+                <div className="aspect-[2/3] w-full bg-[#0a0a12] border border-white/10 relative overflow-hidden group shadow-2xl rounded-sm"> 
+                    {uniqueImageSources([displayData.poster_url, fullMovieData.cover_url, fullMovieData.poster_asset_url, fullMovieData.poster_url, fullMovieData.backdrop_asset_url, fullMovieData.backdrop_url]).length > 0 ? (
+                        <ResilientImage 
+                            sources={[displayData.poster_url, fullMovieData.cover_url, fullMovieData.poster_asset_url, fullMovieData.poster_url, fullMovieData.backdrop_asset_url, fullMovieData.backdrop_url]} 
+                            alt={fullMovieData.title} 
+                            referrerPolicy="no-referrer"
+                            className="absolute inset-0 w-full h-full object-cover" 
+                        />
+                    ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center border-4 border-double border-white/5 m-2"> 
+                            <div className="text-6xl mb-4 opacity-20"> {fullMovieData.title.charAt(0)} </div> 
+                            <h2 className="text-3xl font-bold text-white/80" data-text={fullMovieData.title}> {fullMovieData.title} </h2> 
+                        </div>
+                    )} 
+                </div> 
+            </div> 
+            
+            <div className="flex-1 mt-0 lg:mt-6"> 
+                <div className="flex items-start justify-between gap-4">
+                    <h1 className="text-4xl md:text-5xl font-black text-white mb-4 tracking-tight leading-tight drop-shadow-lg"> {fullMovieData.title} </h1> 
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-gray-300 font-['Rajdhani'] text-lg mb-8 drop-shadow-md font-medium"> 
+                    <div className="flex items-center gap-1 text-secondary">
+                        <Star size={18} fill="currentColor" />
+                        <span className="font-bold text-white ml-1">{fullMovieData.rating}</span>
+                    </div>
+                    <span className="w-1 h-1 bg-gray-500 rounded-full mx-1"></span>
+                    <span className="text-white">{fullMovieData.year}</span>  
+                    {(() => {
+                        const durationStr = fullMovieData.duration ? formatDuration(fullMovieData.duration) : '00:00';
+                        const isSeries = fullMovieData.type === 'series' || fullMovieData.type === 'tv' || !!fullMovieData.season;
+                        if (durationStr !== '00:00' && !isSeries) {
+                            return (
+                                <>
+                                    <span className="w-1 h-1 bg-gray-500 rounded-full mx-1"></span>
+                                    <span className="text-white">{durationStr}</span>
+                                </>
+                            );
+                        }
+                        return null;
+                    })()}
+                    {(() => {
+                        const filteredTags = fullMovieData.tags?.filter(tag => tag && tag !== '花絮' && !tag.includes('花絮')) || [];
+                        if (filteredTags.length > 0) {
+                            return (
+                                <>
+                                    <span className="w-1 h-1 bg-gray-500 rounded-full mx-1"></span>
+                                    <div className="flex flex-wrap gap-2">
+                                    {filteredTags.slice(0, 4).map((tag, idx) => (
+                                        <React.Fragment key={tag}>
+                                            <span className="text-white/90 hover:text-white transition-colors cursor-default">{tag}</span>
+                                            {idx !== Math.min(filteredTags.length, 4) - 1 && <span className="text-white/40">/</span>}
+                                        </React.Fragment>
+                                    ))}
+                                    </div>
+                                </>
+                            );
+                        }
+                        return null;
+                    })()}
+                    
+                    {fullMovieData.isUnscraped && (
+                        <>
+                            <span className="w-1 h-1 bg-gray-500 rounded-full mx-1"></span>
+                            <div className="flex items-center gap-2 bg-red-900/40 border border-red-500/50 rounded-sm px-2 py-0.5 text-red-400 ml-2">
+                                <span className="font-bold tracking-wider text-[10px]">UNSCRAPED RAW</span>
+                            </div>
+                        </>
+                    )}
+                </div> 
+
+                {/* Tech Specs Elite - The Hardcore Section */}
+                <div className="flex flex-wrap gap-3 mb-8">
+                    {/* 1. Remux (Elite First) - Blue Style */}
+                    {derivedTechSpecs.flag_is_remux && (
+                        <TechBadge className="bg-primary/20 text-primary border-primary/50 font-black shadow-[0_0_15px_rgba(var(--color-primary-rgb),0.3)] px-3 py-1.5 flex items-center gap-2">
+                             <Zap size={14} className="fill-current" />
+                             <span className="text-sm tracking-widest uppercase">REMUX</span>
+                        </TechBadge>
+                    )}
+
+                    {/* 2. Quality Badge (Primary) - Only if not redundant */}
+                    {shouldShowQualityBadge && (
+                        <TechBadge className="bg-primary/10 text-primary border-primary/30 font-bold px-3 py-1.5 flex items-center gap-2">
+                            <span className="text-sm tracking-widest">{fullMovieData.quality_badge?.toUpperCase()}</span>
+                        </TechBadge>
+                    )}
+
+                    {/* 3. Resolution (e.g. 4K, 1080P) */}
+                    {((derivedTechSpecs.resolution && derivedTechSpecs.resolution.toUpperCase() !== 'UNKNOWN') || derivedTechSpecs.flag_is_4k) && (
+                        <TechBadge className="bg-black/60 border-primary/40 text-primary px-3 py-1.5 flex items-center gap-2">
+                            <Monitor size={14} />
+                            <span className="text-sm font-bold tracking-wider">{derivedTechSpecs.resolution && derivedTechSpecs.resolution.toUpperCase() !== 'UNKNOWN' ? derivedTechSpecs.resolution : (derivedTechSpecs.flag_is_4k ? '4K' : '')}</span>
+                        </TechBadge>
+                    )}
+
+                    {/* 4. Video HDR Logic - Bright Yellow Style */}
+                    {(derivedTechSpecs.flag_is_dolby_vision || derivedTechSpecs.flag_is_hdr || (derivedTechSpecs.hdr && derivedTechSpecs.hdr.toUpperCase() !== 'UNKNOWN')) && (
+                        <TechBadge 
+                            className="bg-[rgba(245,240,11,0.05)] border-[rgba(245,240,11,0.5)] text-[rgb(245,240,11)] px-3 py-1.5 font-black uppercase text-sm tracking-tight shadow-[0_0_10px_rgba(245,240,11,0.2)]"
+                        >
+                            {derivedTechSpecs.flag_is_dolby_vision ? 'Dolby Vision' : (derivedTechSpecs.flag_is_hdr ? 'HDR10' : derivedTechSpecs.hdr)}
+                        </TechBadge>
+                    )}
+
+                    {/* 5. Audio Elite (Atmos, DTS:X etc) - Vivid Purple Style */}
+                    {(derivedTechSpecs.audio_is_atmos || (derivedTechSpecs.audio && derivedTechSpecs.audio.toUpperCase() !== 'UNKNOWN')) && (
+                        <TechBadge 
+                            className="bg-[rgba(199,34,238,0.05)] border-[rgba(199,34,238,0.5)] text-[rgb(199,34,238)] px-3 py-1.5 flex items-center gap-2 shadow-[0_0_10px_rgba(199,34,238,0.2)]"
+                        >
+                            <Music size={14} />
+                            <span className="text-sm font-bold tracking-wider uppercase">{derivedTechSpecs.audio_is_atmos ? 'Dolby Atmos' : derivedTechSpecs.audio}</span>
+                        </TechBadge>
+                    )}
+
+                    {/* 6. Size (Modified from Codec as requested) */}
+                    {derivedTechSpecs.size && (
+                        <TechBadge className="bg-black/40 border-[rgb(13,143,207)] text-[rgb(13,143,207)] px-3 py-1.5 text-xs font-['Orbitron']">
+                            {derivedTechSpecs.size}
+                        </TechBadge>
+                    )}
+
+                    {/* 7. Extra Tags */}
+                    {derivedTechSpecs.extra_tags?.filter(tag => tag && tag.toUpperCase() !== 'UNKNOWN' && tag.toUpperCase() !== 'REMUX' && tag !== '花絮' && !tag.includes('花絮')).map(tag => (
+                        <TechBadge key={tag} className="bg-black/40 border-purple-500/40 text-purple-400 px-3 py-1.5 text-xs font-['Orbitron'] uppercase tracking-widest">
+                            {tag}
+                        </TechBadge>
+                    ))}
+                </div>
+                
+                <div className="flex flex-wrap gap-4 mb-10 items-stretch">
+                    {/* Resume Button */}
+                    {resumeRecord && (
+                        <button onClick={handleResume} style={{ backgroundColor: 'var(--color-primary)' }} className="relative group h-[50px] min-w-[200px] hover:brightness-110 text-black rounded-sm border-none outline-none cursor-pointer flex-grow md:flex-grow-0 shadow-lg font-bold flex items-center justify-center px-8 transition-all">
+                            <div className="flex items-center gap-3">
+                                <RotateCcw size={18} className="group-hover:-rotate-90 transition-transform duration-500" strokeWidth={2.5} />
+                                <span className="font-['Orbitron'] tracking-wide">继续播放</span>
+                            </div>
+                        </button>
+                    )}
+
+                    <button disabled={!hasResources} onClick={handlePlay} className={`flex-1 md:flex-none h-[50px] px-8 rounded-sm font-['Orbitron'] font-bold flex items-center justify-center gap-3 transition-all text-base group shadow-lg ${hasResources ? 'bg-white text-black hover:bg-gray-200' : 'bg-white/10 text-gray-500 cursor-not-allowed'}`} > 
+                        <PlayCircle className={`w-5 h-5 ${hasResources ? 'text-black' : ''}`} /> 
+                        <span>{loading ? '加载中...' : hasResources ? (resumeRecord ? '从头播放' : '播放') : '暂无资源'}</span> 
+                    </button> 
+                    
+                    <button onClick={() => onToggleFavorite(fullMovieData)} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border shadow-lg ${isFavorite ? 'border-red-500 text-red-500 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-white/30 text-white hover:bg-white/10'} rounded-sm flex items-center justify-center transition-all`} title={isFavorite ? '取消收藏' : '加入收藏'}>
+                        <Star className={`w-5 h-5 ${isFavorite ? 'fill-red-500' : ''} transition-transform`} />
+                    </button>
+                    <button onClick={handleRefreshMovie} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border border-white/30 text-white hover:bg-white/10 hover:text-primary shadow-lg rounded-sm flex items-center justify-center transition-all`} title="轻量级同步信息">
+                        <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin text-primary' : ''}`} />
+                    </button>
+                    <button onClick={handleSyncResources} disabled={isSyncingResources} className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border border-white/30 text-white hover:bg-white/10 hover:text-primary shadow-lg rounded-sm flex items-center justify-center transition-all disabled:opacity-50`} title="同步资源（扫描补齐新增集 / 重新入库）">
+                        <FolderSync className={`w-5 h-5 ${isSyncingResources ? 'animate-spin text-primary' : ''}`} />
+                    </button>
+                    {hasResources && (
+                      <button 
+                        onClick={() => setIsManagingSubtitles(true)} 
+                        className={`flex-none w-[50px] h-[50px] bg-black/40 backdrop-blur-sm border border-white/30 text-white hover:bg-white/10 hover:text-primary shadow-lg rounded-sm flex items-center justify-center transition-all`} 
+                        title="Subtitles"
+                      > 
+                          <FileText className={`w-5 h-5`} /> 
+                      </button>
+                    )}
+                </div> 
+                
+                {!isAndroidRuntime && hasResources && externalVideoUrl && webRawUnplayable && (
+                    <div className="mb-10 w-full">
+                        <div className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <span className="w-8 h-[1px] bg-gray-600 block"></span>
+                            外部播放器
+                            <span className="w-8 h-[1px] bg-gray-600 block"></span>
+                        </div>
+                        <div className="text-[13px] text-gray-400 font-['Rajdhani'] leading-relaxed bg-black/30 border border-white/10 rounded-lg p-3">
+                            该网盘资源的原始链路无法在浏览器或外部播放器中直接播放。请在网页播放器内使用「画质」切换在线观看，或下载 PC 桌面客户端以原画质 + 外部播放器播放。
+                        </div>
+                    </div>
+                )}
+
+                {!isAndroidRuntime && hasResources && externalVideoUrl && !webRawUnplayable && (
+                    <div className="mb-10 w-full">
+                        <div className="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <span className="w-8 h-[1px] bg-gray-600 block"></span>
+                            外部播放器 (解决浏览器解码问题)
+                            <span className="w-8 h-[1px] bg-gray-600 block"></span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-primary-50">
+                            <ExternalPlayerButton
+                              title="PotPlayer"
+                              icon={potplayerIcon}
+                              url={`potplayer://${externalVideoUrl}`}
+                              pcLaunch={{
+                                player: 'potplayer',
+                                streamUrl: externalVideoUrl,
+                                subtitleUrl: externalSubtitleUrl,
+                                handoffHint: (targetPlayResource as any)?.playback?.external_player ?? null,
+                              }}
+                            />
+                            <ExternalPlayerButton title="IINA" icon={iinaIcon} streamUrl={externalVideoUrl} url={`iina://weblink?url=${encodeURIComponent(externalVideoUrl)}`} />
+                            <ExternalPlayerButton
+                              title="VLC"
+                              icon={vlcIcon}
+                              url={`vlc://${externalVideoUrl}`}
+                              pcLaunch={{
+                                player: 'vlc',
+                                streamUrl: externalVideoUrl,
+                                subtitleUrl: subtitleUrlForVlc,
+                                handoffHint: (targetPlayResource as any)?.playback?.external_player ?? null,
+                              }}
+                              subtitleNotice={subtitleSkippedForVlc ? 'VLC 不支持 PGS（.sup）位图字幕，已自动跳过；如需字幕请使用 PotPlayer 或内置播放器。' : undefined}
+                            />
+                            <ExternalPlayerButton title="nPlayer" icon={nplayerIcon} streamUrl={externalVideoUrl} url={`nplayer-${externalVideoUrl.startsWith('http') ? externalVideoUrl : `http://${externalVideoUrl}`}`} />
+                            <ExternalPlayerButton title="MX Player" icon={mxplayerIcon} streamUrl={externalVideoUrl} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end`} />
+                            <ExternalPlayerButton title="MX Player Pro" icon={mxplayerProIcon} streamUrl={externalVideoUrl} url={`intent:${externalVideoUrl}#Intent;package=com.mxtech.videoplayer.pro;type=video/*;end`} />
+                            <ExternalPlayerButton title="Infuse" icon={infuseIcon} streamUrl={externalVideoUrl} url={`infuse://x-callback-url/play?url=${encodeURIComponent(externalVideoUrl)}`} />
+                        </div>
+                    </div>
+                )}
+                
+                <div className="mb-10 relative"> 
+                    <h3 className="text-xl font-bold text-white mb-3 drop-shadow-md">剧情简介</h3> 
+                    <p className="text-gray-300 text-lg leading-relaxed font-sans max-w-4xl drop-shadow-md"> {displayData.overview || "暂无简介信息"} </p> 
+                    
+                    {fullMovieData.director && (
+                        <div className="mt-6 text-gray-400">
+                            <span className="mr-2">导演:</span>
+                            <span className="text-white hover:underline cursor-pointer">{fullMovieData.director}</span>
+                        </div>
+                    )}
+                </div>
+
+
+
+
+            </div> 
+        </div> 
+
+        {/* Recommendations Section - Horizontal Scroll */}
+        {recommendations.length > 0 && (
+          <div className="mt-16 group">
+            <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
+               <h3 className="text-xl md:text-2xl font-['Orbitron'] font-bold text-white flex items-center gap-2">
+                 <Sparkles className="text-accent" size={20} />
+                 猜你喜欢
+               </h3>
+               <div className="flex gap-2">
+                 <button onClick={() => scroll('left')} className="p-2 border border-white/10 hover:border-primary text-gray-400 hover:text-primary transition-colors bg-black/40"><ChevronLeft size={16} /></button>
+                 <button onClick={() => scroll('right')} className="p-2 border border-white/10 hover:border-primary text-gray-400 hover:text-primary transition-colors bg-black/40"><ArrowRight size={16} /></button>
+               </div>
+            </div>
+            
+            <div ref={scrollRef} className="flex gap-4 overflow-x-auto no-scrollbar pb-8 pt-2" style={{ scrollSnapType: 'x mandatory' }}>
+               {recommendations.map(movie => (
+                 <div key={movie.id} className="w-40 md:w-52 flex-shrink-0 snap-start">
+                    <MovieCard movie={movie} category={{ colorClass: 'border-white/20' }} onClick={onMovieSelect} hideRecommendationTag />
+                 </div>
+               ))}
+            </div>
+          </div>
+        )}
+
+    </div> 
+
+    {isManagingSubtitles && primaryResource && (
+        <SubtitleManagerDialog 
+           resourceId={isSeries && currentSeasonGroupItems.length > 0 ? currentSeasonGroupItems[0].id : primaryResource.id}
+           initialSubtitles={
+               (isSeries && currentSeasonGroupItems.length > 0 
+                   ? currentSeasonGroupItems[0].playback?.subtitles?.items 
+                   : primaryResource.playback?.subtitles?.items) || []
+           }
+           defaultSubtitleId={
+               isSeries && currentSeasonGroupItems.length > 0
+                   ? currentSeasonGroupItems[0].playback?.subtitles?.default_subtitle_id
+                   : primaryResource.playback?.subtitles?.default_subtitle_id
+           }
+           movieTitle={fullMovieData.title}
+           season={activeSeason || undefined}
+           episode={isSeries && currentSeasonGroupItems.length > 0 ? currentSeasonGroupItems[0].episode : undefined}
+           onClose={() => setIsManagingSubtitles(false)}
+           onSubtitlesChange={(items, defaultId) => {
+               if (onUpdateMovie) {
+                   handleRefreshMovie();
+               }
+           }}
+        />
+     )}
+  </div>); 
+};

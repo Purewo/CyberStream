@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+android/.kotlin/
+android/replay_pid*
+android/hs_err_pid*

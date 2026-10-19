@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-30",
+  "portableExecutable": "dist/CyberStream-PC-recovered-20260930/cyberstream-pc.exe",
+  "portableExecutableSha256": "ee05ea52d5b8fa7c2a7ebf511dd7e5dd5a14c5bb56b2a8e5a7929abf3468c4c4",
+  "sourceArchive": "recovery/CyberStream-PC-recovered-source-20260930-ui-controls.zip",
+  "sourceArchiveSha256": "a3eabbeb7ac8cf493a6cc1690ef220bd5cd0edeadb645287f3ad45d7ddde3461",
+  "sourceFilesVerified": 114,
+  "originalInstalledExecutableSha256": "918c407e6806aaec4ef1a121a9c8cfde06973a7c2e7482c4c1619a51df8a959f",
+  "originalInstallationChanged": false,
+  "gitCommitted": false,
+  "githubPushed": false,
+  "checks": {
+    "frontendFocusedTests": "8 passed",
+    "rustTests": "11 passed",
+    "frontendBuild": "passed with existing chunk/import warnings",
+    "releaseBuild": "passed with warnings",
+    "nativePlaybackAndSettings": "real local MP4/SRT, Win32 UI input, screenshots, mpv IPC values verified",
+    "releaseStartup": "window and embedded local JS/CSS rendered",
+    "backendSmoke": "54 of 57 passed; review thresholds and governance timeout remain",
+    "productionBackendIntegration": "CORS now permits http://tauri.localhost with credentials; rebuilt release shows the real homepage and posters",
+    "cloudPreferences": "not activated: backend /api/v1/user/preferences returns 404"
+  },
+  "uiControls": "Recovered earlier June 12 incremental buttons, real color swatches, outline/background; verified repeat-clicks do not trigger fullscreen and outline observers follow canonical mpv properties.",
+  "scopeLimit": "Historical native edits were replayed and audited; not a byte-for-byte reconstruction of every pc.7 frontend source file. External subtitle providers and all storage/player combinations were not fully exercised."
+}

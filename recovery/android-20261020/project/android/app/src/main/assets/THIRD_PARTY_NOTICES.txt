@@ -1,0 +1,33 @@
+CyberStream Android third-party notice
+======================================
+
+FFmpeg 6.0.1
+------------
+
+This application includes FFmpeg libraries built only with LGPL components.
+FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or
+later. The complete license text is included at:
+
+  licenses/FFmpeg-LGPL-2.1.txt
+
+Corresponding source:
+
+  https://ffmpeg.org/releases/ffmpeg-6.0.1.tar.xz
+
+The enabled decoders are:
+
+  aac ac3 eac3 dca truehd flac opus vorbis mp3 alac
+
+No FFmpeg encoder, muxer, network protocol, GPL component, or non-free
+component is enabled. Reproducible build details are recorded in
+android/FFMPEG_BUILD.md in the CyberStream frontend source tree.
+
+AndroidX Media3 FFmpeg decoder module 1.10.1
+--------------------------------------------
+
+Copyright 2016 The Android Open Source Project.
+Licensed under the Apache License, Version 2.0.
+
+Source:
+
+  https://github.com/androidx/media/tree/1.10.1/libraries/decoder_ffmpeg

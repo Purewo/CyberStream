@@ -1,0 +1,130 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+// Release credentials must arrive through protected CI/local environment, not
+// from a tracked project file. Gradle automatically exposes
+// ORG_GRADLE_PROJECT_<name> as a Gradle property, which is supported too.
+def signingInput = { String name ->
+    providers.gradleProperty(name)
+        .orElse(providers.environmentVariable(name))
+        .orNull
+        ?.trim()
+}
+def releaseSigningValues = [
+    storeFile    : signingInput('CYBERSTREAM_ANDROID_STORE_FILE'),
+    storePassword: signingInput('CYBERSTREAM_ANDROID_STORE_PASSWORD'),
+    keyAlias     : signingInput('CYBERSTREAM_ANDROID_KEY_ALIAS'),
+    keyPassword  : signingInput('CYBERSTREAM_ANDROID_KEY_PASSWORD'),
+]
+def releaseSigningConfigured = releaseSigningValues.values().every { it }
+
+android {
+    namespace = "com.purewo.cyberstream"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.purewo.cyberstream"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // Keep the Android shell aligned with the hosted frontend release.
+        // Reserve the final two digits for Android-only patch releases.
+        versionCode 1021017
+        versionName "1.21.1"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (releaseSigningConfigured) {
+                storeFile rootProject.file(releaseSigningValues.storeFile)
+                storePassword releaseSigningValues.storePassword
+                keyAlias releaseSigningValues.keyAlias
+                keyPassword releaseSigningValues.keyPassword
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            // A debug-signed APK cannot upgrade a release-signed APK with the
+            // same application id. Keep local/QA installs side by side.
+            applicationIdSuffix '.recovery'
+            versionNameSuffix '-recovery-20261020'
+            // Make it impossible to confuse this QA build with an older
+            // release package that may still be installed on the device.
+            resValue 'string', 'app_name', 'CyberStream 恢复测试'
+            resValue 'string', 'title_activity_main', 'CyberStream 恢复测试'
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+}
+
+// Without this guard AGP can produce an unsigned release artifact. Fail at the
+// task that would package/sign it, while leaving debug builds and signingReport
+// usable on machines that intentionally do not hold the release key.
+def releasePackagingTasks = [
+    'validateSigningRelease',
+    'packageRelease',
+    'packageReleaseBundle',
+    'packageReleaseUniversalApk',
+    'signReleaseBundle',
+]
+tasks.configureEach { task ->
+    if (releasePackagingTasks.contains(task.name)) {
+        task.doFirst {
+            if (!releaseSigningConfigured) {
+                throw new GradleException(
+                    'Release signing is not configured. Provide all four protected inputs: '
+                    + 'CYBERSTREAM_ANDROID_STORE_FILE, CYBERSTREAM_ANDROID_STORE_PASSWORD, '
+                    + 'CYBERSTREAM_ANDROID_KEY_ALIAS, CYBERSTREAM_ANDROID_KEY_PASSWORD.',
+                )
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation 'androidx.media3:media3-exoplayer:1.10.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.10.1'
+    implementation 'androidx.media3:media3-exoplayer-dash:1.10.1'
+    implementation 'androidx.media3:media3-ui:1.10.1'
+    implementation 'androidx.media3:media3-session:1.10.1'
+    // Built locally from the matching AndroidX Media3 1.10.1 tag and
+    // FFmpeg 6.0.1. See android/FFMPEG_BUILD.md for provenance and licenses.
+    implementation files('libs/media3-decoder-ffmpeg-1.10.1-ffmpeg6.0.1.aar')
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

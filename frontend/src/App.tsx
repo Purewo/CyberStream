@@ -12,15 +12,15 @@ import { ContextMenu } from './components/ui/ContextMenu';
 import { ScanProgressBar } from './components/ui/ScanProgressBar';
 import { BackgroundJobProgressBar } from './components/ui/BackgroundJobProgressBar';
 import { Toaster } from './components/ui/Toaster';
-import { movieService, libraryService, userService, resourceService } from './api';
+import { movieService, libraryService, userService, resourceService, storageService, ensureTicket, appendTicket } from './api';
 import { authService, AuthStatus } from './api/auth';
 import { Login } from './features/Login';
-import { getDeviceId } from './api/core';
+import { getDeviceId, resolveAssetUrl } from './api/core';
 import { getPublicUrlBase, writeClipboard, platform, getApiBase } from './platform';
 import { launchNativePlayer, needsUserAgentRewrite, pickUserAgentForRewrite } from './platform/nativePlayer';
 import { getStyles, toast } from './utils';
 import { useGlobalHotkeys } from './hooks/useGlobalHotkeys';
-import { Movie, ViewState, PlayOptions } from './types';
+import { Movie, ViewState, PlayOptions, Resource, StorageSource } from './types';
 import { useThemeSettings } from './hooks/useThemeSettings';
 import { useUserData } from './hooks/useUserData';
 import { useAppRouting } from './hooks/useAppRouting';
@@ -269,7 +269,55 @@ const App = () => {
   // 关闭后回到详情页并刷新历史。Web 模式仍然用 React Player overlay。
   const isPcRuntime = platform().kind === 'pc';
 
+  const storageSourceNeedsReauthorization = (source?: StorageSource | null) => {
+    const reason = String(source?.health?.reason || '').toLowerCase();
+    return Boolean(source?.requires_reauthorization) || reason === 'auth_expired';
+  };
+
+  const openStorageReauthorizationSettings = () => {
+    setProfileInitialTab('RESOURCES');
+    setCurrentView('profile');
+    setOverlayView('none');
+    setTimeout(() => {
+      if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    }, 0);
+  };
+
+  const blockPlayIfStorageAuthExpired = async (movie: Movie, options: PlayOptions = {}) => {
+    let playResources: Resource[] = [];
+    try {
+      const groups = await movieService.getResources(String(movie.id));
+      playResources = (groups?.items || []) as Resource[];
+    } catch {
+      playResources = [];
+    }
+    if (playResources.length === 0) {
+      playResources = ((movie.resources || []) as unknown as Resource[]);
+    }
+
+    const targetResource = options.resourceId
+      ? playResources.find((r) => r.id === options.resourceId)
+      : playResources[0];
+    const sourceId = targetResource?.source_id;
+    if (!sourceId) return false;
+
+    try {
+      const sources = await storageService.getSources({ includeHealth: true });
+      const source = sources.find((s) => Number(s.id) === Number(sourceId));
+      if (!storageSourceNeedsReauthorization(source)) return false;
+      const sourceLabel = source?.name || source?.display_name || '光鸭云盘';
+      toast.error(`「${sourceLabel}」登录已过期，请在设置的「资源接入与挂载」中重新授权。`, 8000);
+      openStorageReauthorizationSettings();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handlePlay = async (movie: Movie, options: PlayOptions = {}) => {
+    if (await blockPlayIfStorageAuthExpired(movie, options)) {
+      return;
+    }
     if (!isPcRuntime) {
       setPlayOptions(options);
       setOverlayView('player');
@@ -310,9 +358,17 @@ const App = () => {
       ?? resources[0]?.id
       ?? String(movie.id);
     const startTime = Number(options.startTime) || 0;
+    const ticket = await ensureTicket();
+    if (!ticket) {
+      const status = await authService.getStatus();
+      if (!status || status.user_management_enabled) {
+        toast.error('无法取得播放授权，请检查后端连接或重新登录。');
+        return;
+      }
+    }
     // 首帧 loadfile 用的 URL：一律用原始 /stream。夸克/UC 现在也是 download
     // 原文件链路，原始 URL 就能直接播且画质最高；清晰度切换由 HUD 菜单接管。
-    const url = movieService.getStreamUrl(currentResourceId);
+    const url = appendTicket(movieService.getStreamUrl(currentResourceId), ticket);
 
     // 把每条 resource 拍扁成 NativeResourceMeta：附带直链、画质标签、
     // 大小、画质 badge。badge 由 media_info / resource_info.technical
@@ -413,31 +469,22 @@ const App = () => {
       //   - 其他非 / 开头的奇怪输入：原样返回不动。
       // 注意走 getApiBase()，让用户在「系统配置 → 后端服务器」改的 URL 立即生效
       // （走 platform.getApiBase()，PC 端会读 localStorage 里的 cyber_pc_api_base）。
-      const apiBaseHost = getApiBase().replace(/\/api\/?$/, '');
       const resolveSubUrl = (u: string): string => {
-        if (!u) return '';
-        if (/^https?:\/\//i.test(u)) {
-          try {
-            const parsed = new URL(u);
-            if (parsed.pathname.startsWith('/api/v1/')) {
-              return `${apiBaseHost}${parsed.pathname}${parsed.search}`;
-            }
-          } catch { /* malformed URL, fall through */ }
-          return u;
-        }
-        if (u.startsWith('/api/')) return `${apiBaseHost}${u.substring(4)}`;
-        if (u.startsWith('/v1/')) return `${apiBaseHost}${u}`;
-        if (u.startsWith('/')) return `${apiBaseHost}${u}`;
-        return u;
+        return resolveAssetUrl(u) || '';
       };
       const subtitles = subtitlesRaw
         .map((s: any) => ({
           id: String(s.id ?? s.subtitle_id ?? ''),
-          url: resolveSubUrl(String(s.url ?? s.stream_url ?? '')),
+          url: appendTicket(resolveSubUrl(String(s.url ?? s.stream_url ?? '')), ticket),
           label: s.label || s.match || s.filename || undefined,
           displayName: s.display_name || undefined,
           format: s.format || undefined,
           isDefault: !!s.is_default,
+          language: typeof s.language === 'string'
+            ? s.language : (s.language?.label || s.language?.name || s.language?.code || undefined),
+          source: s.source || undefined,
+          providerName: s.online?.provider_name || s.online?.provider_id || undefined,
+          webPlayerSupported: s.web_player?.supported,
         }))
         .filter((s) => s.id && s.url);
       // 云端转码画质：凡 cloud_transcode.supported（夸克/UC/阿里等，按字段不按
@@ -453,7 +500,7 @@ const App = () => {
             qualities = items.map((it) => ({
               resolution: it.resolution,
               label: it.label,
-              url: resourceService.getTranscodedStreamUrl(r.id, it.resolution),
+              url: appendTicket(resourceService.getTranscodedStreamUrl(r.id, it.resolution), ticket),
               isDefault: it.resolution === q?.default_resolution,
             }));
           }
@@ -463,7 +510,7 @@ const App = () => {
       }
       return {
         id: r.id,
-        url: movieService.getStreamUrl(r.id),
+        url: appendTicket(movieService.getStreamUrl(r.id), ticket),
         filename: r.filename,
         displayLabel,
         qualityLabel: r.quality_label,
@@ -504,6 +551,7 @@ const App = () => {
       deviceId: getDeviceId(),
       apiBase: getApiBase().replace(/\/api\/?$/, ''),
       sessionId: `pc-${(crypto as any)?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,
+      playbackTicket: ticket,
       movie: {
         id: String(movie.id),
         title: movie.title || '',

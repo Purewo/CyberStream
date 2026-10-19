@@ -31,7 +31,7 @@ export const userService = {
       // 后端默认 page_size=20、上限 100。普通用户历史不会超过几十条，
       // 一次拉满 100 比做客户端翻页 UI 简单很多；上限内能完整覆盖大多数
       // 用户。真有重度用户超过 100 条时才考虑加载更多按钮。
-      const data = await fetchApi<any>('/v1/user/history?page_size=100');
+      const data = await fetchApi<any>('/v1/user/history?page_size=100', { cache: 'no-store' });
       if (!data) return [];
 
       let items: any[] = [];
@@ -48,16 +48,16 @@ export const userService = {
         const movieInfo = item.movie || item; 
         const movie = mapApiMovieToUi(movieInfo);
         
-        const updatedAt = item.updated_at || item.created_at || new Date().toISOString();
+        const updatedAt = item.last_watched || item.updated_at || item.created_at || new Date(0).toISOString();
         let dateObj = new Date(updatedAt);
-        if (isNaN(dateObj.getTime())) dateObj = new Date();
+        if (isNaN(dateObj.getTime())) dateObj = new Date(0);
         
         // Spec 1.16.0-beta uses position_sec and total_duration
         const progress = Number(item.position_sec || item.progress || 0);
         const duration = Number(item.total_duration || item.duration || movie.duration || 0);
 
         // Find matched season_card for history item
-        const targetSeason = item.season || movie.target_season;
+        const targetSeason = item.season ?? movie.target_season;
         if (targetSeason !== undefined && movie.season_cards) {
             const sc = movie.season_cards.find(c => c.season === targetSeason);
             if (sc) {
@@ -75,13 +75,13 @@ export const userService = {
         return {
           ...movie,
           target_season: targetSeason,
-          user_data: { ...(movie.user_data || {}), season: item.season || movie.user_data?.season, episode: item.episode || movie.user_data?.episode, episode_label: item.episode_label || movie.user_data?.episode_label } as any,
+          user_data: { ...(movie.user_data || {}), season: item.season ?? movie.user_data?.season, episode: item.episode ?? movie.user_data?.episode, episode_label: item.episode_label || movie.user_data?.episode_label } as any,
           resourceId: item.resource_id, 
           progress: progress,
           duration: duration, 
           time_str: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           date: dateObj.toLocaleDateString(),
-          updated_at: updatedAt
+          updated_at: dateObj.toISOString()
         } as HistoryItem;
       }).sort((a, b) => new Date(b.updated_at!).getTime() - new Date(a.updated_at!).getTime());
     } catch (e) {
@@ -155,6 +155,7 @@ export const userService = {
     const url = `${getApiBase()}/v1/user/favorites/${movieId}`;
     const res = await fetch(url, {
       method: isFavorite ? 'DELETE' : 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
     });
     if (!res.ok) {

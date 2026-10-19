@@ -36,33 +36,56 @@ pub struct LaunchResponse {
     pub message: Option<String>,
     pub exe_path: Option<String>,
     pub subtitle_path: Option<String>,
+    pub subtitle_error: Option<String>,
 }
 
 #[tauri::command]
 pub async fn launch_external_player(req: LaunchRequest) -> Result<LaunchResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || launch_external_player_blocking(req))
+        .await
+        .map_err(|_| "外部播放器启动任务失败".to_string())?
+}
+
+fn launch_external_player_blocking(req: LaunchRequest) -> Result<LaunchResponse, String> {
     let player = req.player.to_ascii_lowercase();
     if req.stream_url.trim().is_empty() {
         return Err("stream_url 为空".to_string());
     }
 
-    // 把字幕 URL 落成本地临时文件；下载失败就回 None，让 .exe 不带字幕启动。
-    let subtitle_path = req
+    if !matches!(player.as_str(), "potplayer" | "vlc") {
+        return Err(format!("不支持的外部播放器：{player}"));
+    }
+
+    // 字幕失败不阻断播放，但把错误交给前端提示。
+    let (subtitle_path, subtitle_error) = match req
         .subtitle_url
         .as_deref()
         .filter(|s| !s.trim().is_empty())
-        .and_then(|u| download_subtitle_to_temp(u).ok());
+    {
+        Some(url) => match download_subtitle_to_temp(url) {
+            Ok(path) => (Some(path), None),
+            Err(error) => (None, Some(error)),
+        },
+        None => (None, None),
+    };
 
-    match player.as_str() {
+    let mut response = match player.as_str() {
         "potplayer" => launch_potplayer(&req, subtitle_path.as_deref()),
         "vlc" => launch_vlc(&req, subtitle_path.as_deref()),
         other => Err(format!("不支持的外部播放器：{other}")),
-    }
+    }?;
+    response.subtitle_error = subtitle_error;
+    Ok(response)
 }
 
 /// 拉字幕到 temp 目录，文件名 = cyberstream_sub_<hash>.<ext>。
 /// 返回本地绝对路径或下载失败的错误（向上传播由调用方决定要不要无字幕启动）。
 fn download_subtitle_to_temp(url: &str) -> Result<PathBuf, String> {
-    let parsed = reqwest::Url::parse(url).map_err(|e| format!("字幕 URL 解析失败：{e}"))?;
+    let mut parsed = reqwest::Url::parse(url).map_err(|e| format!("字幕 URL 解析失败：{e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("字幕 URL 必须使用 HTTP 或 HTTPS".to_string());
+    }
+    parsed.set_fragment(None);
     // 用整个 URL（去 fragment）做 hash key —— 同一条字幕重复拉就命中缓存。
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     use std::hash::{Hash, Hasher};
@@ -98,19 +121,18 @@ fn download_subtitle_to_temp(url: &str) -> Result<PathBuf, String> {
         return Ok(path);
     }
 
-    // blocking client：launch_external_player 已经是 async 命令，直接 spawn_blocking。
-    let url = url.to_string();
+    let url = parsed.to_string();
     let path_clone = path.clone();
     let result = std::thread::spawn(move || -> Result<(), String> {
         let resp = crate::proxy::build_http_client(15)
             .map_err(|e| format!("reqwest 构造失败：{e}"))?
             .get(&url)
             .send()
-            .map_err(|e| format!("字幕下载失败：{e}"))?;
+            .map_err(|e| format!("字幕下载失败：{}", e.without_url()))?;
         if !resp.status().is_success() {
             return Err(format!("字幕下载 HTTP {}", resp.status()));
         }
-        let bytes = resp.bytes().map_err(|e| format!("字幕读取失败：{e}"))?;
+        let bytes = resp.bytes().map_err(|e| format!("字幕读取失败：{}", e.without_url()))?;
         fs::write(&path_clone, &bytes).map_err(|e| format!("写临时文件失败：{e}"))?;
         Ok(())
     })
@@ -130,6 +152,7 @@ fn launch_potplayer(req: &LaunchRequest, subtitle_path: Option<&std::path::Path>
                 message: Some("未找到 PotPlayer，前端可走 URL scheme 兜底".to_string()),
                 exe_path: None,
                 subtitle_path: None,
+                subtitle_error: None,
             });
         }
     };
@@ -170,6 +193,7 @@ fn launch_vlc(req: &LaunchRequest, subtitle_path: Option<&std::path::Path>) -> R
                 message: Some("未找到 VLC，前端可走 URL scheme 兜底".to_string()),
                 exe_path: None,
                 subtitle_path: None,
+                subtitle_error: None,
             });
         }
     };
@@ -226,6 +250,7 @@ fn spawn_detached(
         message: None,
         exe_path: Some(exe.display().to_string()),
         subtitle_path: subtitle_path.map(|p| p.display().to_string()),
+        subtitle_error: None,
     })
 }
 
@@ -243,6 +268,7 @@ fn spawn_detached(
         message: None,
         exe_path: Some(exe.display().to_string()),
         subtitle_path: subtitle_path.map(|p| p.display().to_string()),
+        subtitle_error: None,
     })
 }
 
@@ -442,4 +468,41 @@ fn registry_query(_: &str, _: &str) -> Option<String> {
 #[cfg(not(windows))]
 fn registry_uninstall_lookup(_: &str) -> Vec<PathBuf> {
     Vec::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subtitle_failure_is_exposed_to_the_frontend() {
+        let value = serde_json::to_value(LaunchResponse {
+            launched: true,
+            method: "exe".into(),
+            message: None,
+            exe_path: None,
+            subtitle_path: None,
+            subtitle_error: Some("字幕下载 HTTP 403 Forbidden".into()),
+        }).unwrap();
+        assert_eq!(value["subtitle_error"], "字幕下载 HTTP 403 Forbidden");
+        assert_eq!(value["launched"], true);
+    }
+
+    #[test]
+    fn subtitle_network_errors_do_not_expose_playback_tickets() {
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = socket.local_addr().unwrap();
+        drop(socket);
+        let error = download_subtitle_to_temp(&format!(
+            "http://{addr}/subtitle.srt?ticket=private-ticket-for-test"
+        )).unwrap_err();
+        assert!(!error.contains("private-ticket-for-test"));
+        assert!(!error.contains("ticket="));
+    }
+
+    #[test]
+    fn invalid_subtitle_scheme_is_rejected_before_download() {
+        let error = download_subtitle_to_temp("file:///private/subtitle.srt").unwrap_err();
+        assert!(error.contains("HTTP"));
+    }
 }

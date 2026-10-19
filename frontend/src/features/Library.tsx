@@ -104,11 +104,15 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
   });
   
   const observer = useRef<IntersectionObserver | null>(null);
+  const requestQuery = useRef('');
 
-  useEffect(() => { setFilters(prev => ({ ...prev, type: initialType })); }, [initialType]); 
+  useEffect(() => {
+    setFilters(prev => ({ ...prev, type: initialType, sort: initialSort }));
+  }, [initialType, initialSort]);
   
   // Fetch global filters or library-specific filters
   useEffect(() => {
+    let isActive = true;
     const fetchFilters = async () => {
       try {
         let data;
@@ -118,6 +122,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
           data = await movieService.getGlobalFilters();
         }
         
+        if (!isActive) return;
         if (data) {
             let processedGenres = data.genres.map(g => g.name);
 
@@ -172,6 +177,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
             });
         }
       } catch (e) {
+        if (!isActive) return;
         console.error("Failed to fetch global filters", e);
         setFilterOptions({
             genres: FILTERS.types,
@@ -182,7 +188,8 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
       }
     };
     fetchFilters();
-  }, [activeLibraryId]);
+    return () => { isActive = false; };
+  }, [activeLibraryId, refreshTrigger]);
 
   // Calculate dynamic page size
   useEffect(() => {
@@ -200,16 +207,20 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
     calculateSize();
   }, []);
 
-  // Reset list when filtering changes (EXCLUDING sort, as sort is local)
+  // Sorting is server-side: start over so an old page cannot retain the old order.
   useEffect(() => {
     setPage(1);
     setLibraryMovies([]);
     setHasMore(true);
-  }, [filters.type, filters.region, filters.year, activeLibraryId, refreshTrigger]);
+  }, [filters.type, filters.region, filters.year, filters.sort, filterOptions.earlierYearMax, activeLibraryId, refreshTrigger]);
 
   // Fetch movies from Backend 
   useEffect(() => {
     if (pageSize === 0) return;
+    const queryKey = JSON.stringify([filters, filterOptions.earlierYearMax, activeLibraryId, refreshTrigger]);
+    // The reset effect schedules page 1; do not send this render's stale page.
+    if (requestQuery.current !== queryKey && page !== 1) return;
+    requestQuery.current = queryKey;
     let isActive = true;
 
     const fetchMovies = async () => {
@@ -237,7 +248,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
         }
 
         // Use server-side sorting if possible for better consistency
-        const sortBy = filters.sort; // rating, year, update_time (id used in FILTERS)
+        const sortBy = filters.sort === 'update_time' ? 'updated_at' : filters.sort;
         const order = 'desc';
 
         let res;
@@ -258,7 +269,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
                 page,
                 {
                   genre: genreParam,
-                  sort_by: sortBy === 'update_time' ? 'date_added' : sortBy,
+                  sort_by: sortBy,
                   order: order,
                   country: filters.region !== '全部地区' ? filters.region : undefined,
                   year: yearParam
@@ -289,7 +300,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
     };
     fetchMovies();
     return () => { isActive = false; };
-  }, [page, pageSize, filters.type, filters.region, filters.year, filters.sort, activeLibraryId, refreshTrigger]); 
+  }, [page, pageSize, filters.type, filters.region, filters.year, filters.sort, filterOptions.earlierYearMax, activeLibraryId, refreshTrigger]);
 
   // Infinite Scroll Ref
   const lastMovieRef = useCallback((node: HTMLDivElement) => {
@@ -392,7 +403,7 @@ export const Library = ({ onMovieSelect, initialType = "全部类型", initialSo
              <span className="text-xs text-orange-400 border border-orange-500/30 px-1 rounded ml-2">筛选已生效</span>
           ) : null}
         </div> 
-        {/* Sort Buttons (Local Sort) */}
+        {/* Server-side sorting */}
         <div className="flex items-center gap-2 bg-black/40 border border-white/10 px-2 py-1 rounded-sm"> 
           {FILTERS.sorts.map(sort => (
             <button 

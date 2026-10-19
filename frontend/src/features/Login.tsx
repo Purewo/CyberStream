@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { authService, AuthStatus } from '../api/auth';
+import { BrandMark } from '../components/ui/BrandMark';
 import { BootTerminalLine, IdentityHUD, StampOverlay, TechBadge, FilterTag } from '../components/ui/CyberComponents';
 import { toast } from '../utils';
 
@@ -163,10 +164,7 @@ export const Login: React.FC<LoginProps> = ({ onLoggedIn, themeName = 'CYBER' })
 
       {/* 顶栏：仅保留品牌字标 */}
       <div className="absolute top-6 left-8 z-10">
-        <span className="font-['Orbitron'] tracking-[0.4em] text-sm font-black"
-          style={{ color: 'var(--color-primary)', textShadow: '0 0 10px var(--color-primary)' }}>
-          CYBER//STREAM
-        </span>
+        <BrandMark text="CYBER//STREAM" variant="login" />
       </div>
 
       {/* 中央玻璃卡 */}
@@ -753,10 +751,7 @@ const SeverMirrorScene: React.FC = () => {
       />
       {/* 顶栏字标 */}
       <div className="absolute top-6 left-8">
-        <span className="font-['Orbitron'] tracking-[0.4em] text-sm font-black"
-          style={{ color: 'var(--color-primary)', textShadow: '0 0 10px var(--color-primary)' }}>
-          CYBER//STREAM
-        </span>
+        <BrandMark text="CYBER//STREAM" variant="login" />
       </div>
       {/* 玻璃卡占位 */}
       <div className="absolute inset-0 flex items-center justify-center">

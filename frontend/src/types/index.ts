@@ -594,6 +594,7 @@ export interface StorageSource {
   config?: any;
   actions?: StorageSourceActions;
   health?: StorageSourceHealth;
+  requires_reauthorization?: boolean;
   config_valid?: boolean;
   config_error?: string;
   usage?: StorageSourceUsage;

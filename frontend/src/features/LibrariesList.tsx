@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Library, Movie } from '../types';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, FolderPlus, ArrowRight } from 'lucide-react';
 import { libraryService } from '../api';
 
 interface LibrariesListProps {
@@ -107,7 +107,16 @@ export const LibrariesList: React.FC<LibrariesListProps> = ({ libraries, onSelec
              <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
              <FolderOpen size={48} className="opacity-20 group-hover:text-primary group-hover:opacity-50 transition-all transform group-hover:scale-110" /> 
              <div className="font-['Noto_Sans_SC'] tracking-widest text-xl group-hover:text-white transition-colors">暂无专辑</div>
-             <div className="text-sm font-sans text-gray-500">当前尚未配置专辑，请与服务器同步或进行配置。</div>
+             <div className="text-sm font-sans text-gray-500">前往专辑管理创建逻辑分区，并映射底层存储目录。</div>
+             <button
+               type="button"
+               onClick={onAddLibrary}
+               className="flex items-center gap-2 px-5 py-2.5 mt-1 border border-primary/60 hover:border-primary text-primary hover:bg-primary/10 rounded-lg tracking-wider text-sm font-medium transition-all"
+             >
+               <FolderPlus size={16} />
+               <span>去创建专辑</span>
+               <ArrowRight size={15} />
+             </button>
            </div>
         </div>
       ) : (

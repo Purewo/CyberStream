@@ -1,0 +1,808 @@
+[
+  {
+    "line": 15254,
+    "resultLine": 15257,
+    "timestamp": "2026-06-17T20:22:53.423Z",
+    "toolUseId": "tooluse_rqJEOPoVxmVQG8YYHcxg7B",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\platform\\pc.ts",
+      "old_string": "/**\n * 桌面默认后端：localhost 占位。\n * - 完整版：Rust 起 sidecar 后会把这值覆盖成实际监听的 127.0.0.1:49152。\n * - lite 版：用户必须自己进「设置 → 后端服务器」填后端地址。\n *\n * 用户在「设置 → 后端服务器」填过的 localStorage 覆盖值优先生效。\n *\n * 重要：发布到 GitHub 的代码这里必须保持 localhost 占位，不能写任何\n * 真实后端地址（公网域名 / IP）——release 包一旦上传，会暴露私人服务。\n */\nconst PC_DEFAULT_API_BASE = 'http://127.0.0.1:49152/api';",
+      "new_string": "/**\n * 桌面默认后端：代托管模式直连远程托管后端（40162）。\n * - 代托管模式没有本地 sidecar，PC 一起来就连这个远程地址。\n * - 用户在「设置 → 后端服务器」填过的 localStorage 覆盖值优先生效。\n *\n * 注意：本仓库为代托管 beta 的本地开发副本，不发布到 GitHub，所以这里\n * 直接写托管地址。若将来要发公开 release 包，务必改回 localhost 占位，\n * 避免暴露私人服务地址。\n */\nconst PC_DEFAULT_API_BASE = 'https://cyberstream.gameuniverse.top:40162/api';"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 15266,
+    "resultLine": 15267,
+    "timestamp": "2026-06-17T20:23:10.451Z",
+    "toolUseId": "tooluse_VxdwUDRDFISp6ee33WiuUv",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\platform\\pc.ts",
+      "old_string": "/**\n * 桌面默认后端：代托管模式直连远程托管后端（40162）。\n * - 代托管模式没有本地 sidecar，PC 一起来就连这个远程地址。\n * - 用户在「设置 → 后端服务器」填过的 localStorage 覆盖值优先生效。\n *\n * 注意：本仓库为代托管 beta 的本地开发副本，不发布到 GitHub，所以这里\n * 直接写托管地址。若将来要发公开 release 包，务必改回 localhost 占位，\n * 避免暴露私人服务地址。\n */\nconst PC_DEFAULT_API_BASE = 'https://cyberstream.gameuniverse.top:40162/api';",
+      "new_string": "/**\n * 桌面默认后端：代托管模式直连远程托管后端（40162），写死。\n * - 代托管模式没有本地 sidecar，PC 一起来就连这个远程地址。\n * - 用户在「设置 → 后端服务器」填过的 localStorage 覆盖值仍优先生效。\n * 本版本为代托管私有部署，不开源。\n */\nconst PC_DEFAULT_API_BASE = 'https://cyberstream.gameuniverse.top:40162/api';"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 15391,
+    "resultLine": 15392,
+    "timestamp": "2026-06-21T17:03:13.146Z",
+    "toolUseId": "tooluse_8HdaZZRUx8u2JqEuwDB8s9",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\platform\\pc.ts",
+      "old_string": "function readApiBase(): string {\n  return pcStorage.get(STORAGE_KEYS.apiBase) || PC_DEFAULT_API_BASE;\n}",
+      "new_string": "/**\n * 判断一个持久化的 apiBase 是否为「已废弃的本地 sidecar 地址」。\n *\n * 迁移到代托管模式前，PC 默认连本地 Python sidecar（127.0.0.1:5004 dev /\n * 49152 冻结）。sidecar 已删除，这些旧值若残留在 localStorage 里会盖掉新的\n * 远程默认，导致升级用户全站连接失败。这里识别并丢弃它们，回退到新默认。\n *\n * 注意：只清「指向本机回环的旧后端」。用户主动填的合法远程地址（自己的\n * NAS / 其它托管域）一律尊重，不动。\n */\nfunction isStaleLocalApiBase(value: string): boolean {\n  try {\n    const u = new URL(value);\n    const host = u.hostname;\n    const isLoopback =\n      host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '0.0.0.0';\n    return isLoopback;\n  } catch {\n    // 解析不了的脏值也当陈旧处理，回退默认。\n    return true;\n  }\n}\n\nfunction readApiBase(): string {\n  const stored = pcStorage.get(STORAGE_KEYS.apiBase);\n  if (stored && !isStaleLocalApiBase(stored)) {\n    return stored;\n  }\n  // 旧的本机 sidecar 地址（或脏值）：一次性清除，回退到写死的远程默认。\n  if (stored) {\n    pcStorage.remove(STORAGE_KEYS.apiBase);\n  }\n  return PC_DEFAULT_API_BASE;\n}"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 15446,
+    "resultLine": 15447,
+    "timestamp": "2026-06-21T17:06:49.819Z",
+    "toolUseId": "tooluse_cCUK8flTMhVHFOjl7LdMjW",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\platform\\nativePlayer.ts",
+      "old_string": "export interface ExternalPlayerLaunchResult {\n  launched: boolean;\n  /** \"exe\" = 直接启动了本地可执行文件；\"fallback_required\" = 没找到，前端走\n   *  URL scheme 兜底；\"url_scheme\" = Rust 直接走了 scheme。 */\n  method: 'exe' | 'fallback_required' | 'url_scheme';\n  message?: string | null;\n  exePath?: string | null;\n}",
+      "new_string": "export interface ExternalPlayerLaunchResult {\n  launched: boolean;\n  /** \"exe\" = 直接启动了本地可执行文件；\"fallback_required\" = 没找到，前端走\n   *  URL scheme 兜底；\"url_scheme\" = Rust 直接走了 scheme。 */\n  method: 'exe' | 'fallback_required' | 'url_scheme';\n  message?: string | null;\n  exePath?: string | null;\n  /** 字幕下载失败时的错误信息（Rust 端 snake_case 序列化）。播放器仍无字幕\n   *  启动；调用方据此 toast 提示，不再静默。 */\n  subtitle_error?: string | null;\n}"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 15465,
+    "resultLine": 15466,
+    "timestamp": "2026-06-21T17:08:06.565Z",
+    "toolUseId": "tooluse_YBUez5ogx7NB2ezrX0ZmE9",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\MovieDetail.tsx",
+      "old_string": "        if (res.launched) {\n          if (pcLaunch.subtitleUrl) {\n            toast.success(`${title} 已启动（已加载默认字幕）`);\n          } else if (subtitleNotice) {\n            // 没字幕 + 有提醒 = 字幕被刻意丢弃（如 sup 给 VLC）\n            toast.warning(`${title} 已启动。${subtitleNotice}`);\n          }\n          return;\n        }",
+      "new_string": "        if (res.launched) {\n          if (res.subtitle_error) {\n            // 字幕下载失败：播放器已无字幕启动，明确告知用户而非谎报「已加载」。\n            toast.warning(`${title} 已启动，但字幕加载失败：${res.subtitle_error}`);\n          } else if (pcLaunch.subtitleUrl) {\n            toast.success(`${title} 已启动（已加载默认字幕）`);\n          } else if (subtitleNotice) {\n            // 没字幕 + 有提醒 = 字幕被刻意丢弃（如 sup 给 VLC）\n            toast.warning(`${title} 已启动。${subtitleNotice}`);\n          }\n          return;\n        }"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15695,
+    "resultLine": 15696,
+    "timestamp": "2026-06-21T17:54:35.946Z",
+    "toolUseId": "tooluse_YyxFUprj7o4l0akxQa86eI",
+    "name": "Write",
+    "input": {
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\playbackTicket.ts",
+      "content": "// 播放临时票据（playback ticket）。\n//\n// 代托管（用户管理）模式下后端 /stream 等播放端点强制要登录态（HttpOnly\n// session cookie）。但 PC 端的 mpv / 外部播放器是独立进程，拿不到 WebView 的\n// cookie，裸奔请求会 401。后端为此提供了「换票」端点：登录态换一张短期票据，\n// 票据作为 query 参数 ?ticket=... 即可通过播放端点认证。\n//\n// 契约（后端已部署到 40161/40162）：\n//   POST /api/v1/auth/playback-ticket  （需登录态，WebView fetch 带 cookie）\n//   → { ticket, expires_at(unix秒), ttl(秒，默认 43200=12h) }\n//   票据绑 user_id + session_version，不绑单个 resource，换集/切资源复用。\n//   非法/过期访问播放端点 → HTTP 401 + 业务码 40130。\n//\n// 覆盖的播放端点（mpv / 外部进程直接发起的请求才需要拼票；前端 fetchApi 走\n// cookie 的请求不需要）：\n//   /resources/{id}/stream            （主视频流）\n//   /resources/{id}/stream?subtitle_id=...（外挂字幕下载）\n//   /resources/{id}/stream-transcoded （清晰度转码档）\n//   /resources/{id}/streaming-qualities\n//   /resources/{id}/audio-transcode\n//\n// 仅 PC 用。Web 端在浏览器里，<video>/fetch 自动带 cookie，不经过这里。\n\nimport { fetchApi } from './core';\n\ninterface PlaybackTicketDto {\n  ticket: string;\n  expires_at: number; // unix 秒\n  ttl: number;        // 秒\n}\n\ninterface CachedTicket {\n  ticket: string;\n  // 本地过期时刻（unix 毫秒）。比后端 expires_at 提前 5 分钟，留足正在播放\n  // 的请求用，避免边界处刚拿就过期。\n  expiresAtMs: number;\n}\n\nlet cached: CachedTicket | null = null;\n// 并发去重：多条资源 URL 同时要票时只发一次换票请求。\nlet inflight: Promise<string | null> | null = null;\n\nconst SAFETY_MARGIN_MS = 5 * 60 * 1000; // 提前 5 分钟视为过期\n\nfunction isFresh(c: CachedTicket | null): c is CachedTicket {\n  return !!c && Date.now() < c.expiresAtMs;\n}\n\nasync function requestTicket(): Promise<string | null> {\n  const data = await fetchApi<PlaybackTicketDto>('/v1/auth/playback-ticket', {\n    method: 'POST',\n  });\n  if (!data?.ticket) return null;\n  // 优先用后端 expires_at；缺失时退到 ttl；再退到默认 12h。\n  const nowMs = Date.now();\n  const expMs = data.expires_at\n    ? data.expires_at * 1000\n    : nowMs + (data.ttl ? data.ttl * 1000 : 43200_000);\n  cached = {\n    ticket: data.ticket,\n    expiresAtMs: expMs - SAFETY_MARGIN_MS,\n  };\n  return cached.ticket;\n}\n\n/**\n * 拿一张有效票据。缓存未过期就复用；否则换新。换票失败返回 null（调用方\n * 应降级到不带票的 URL —— 在非用户管理后端上仍可播，用户管理后端会 401，\n * 但那种情况本就要登录）。并发调用共享同一次 inflight 请求。\n */\nexport async function ensureTicket(): Promise<string | null> {\n  if (isFresh(cached)) return cached.ticket;\n  if (inflight) return inflight;\n  inflight = requestTicket().finally(() => {\n    inflight = null;\n  });\n  return inflight;\n}\n\n/**\n * 作废当前缓存票据。收到后端 40130（票据过期/非法）时调用，下次 ensureTicket\n * 会重新换票。\n */\nexport function invalidateTicket(): void {\n  cached = null;\n}\n\n/**\n * 给一个播放 URL 拼上 ticket query。无票（未登录 / 换票失败）时原样返回。\n * 已带 ticket 的 URL 不重复拼。\n */\nexport function appendTicket(url: string, ticket: string | null): string {\n  if (!ticket || !url) return url;\n  if (/[?&]ticket=/.test(url)) return url;\n  const sep = url.includes('?') ? '&' : '?';\n  return `${url}${sep}ticket=${encodeURIComponent(ticket)}`;\n}\n"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15713,
+    "resultLine": 15714,
+    "timestamp": "2026-06-21T17:55:28.737Z",
+    "toolUseId": "tooluse_KBsyTm6aXQuGS8gPvr73Om",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\index.ts",
+      "old_string": "export * from './auth';",
+      "new_string": "export * from './auth';\nexport * from './playbackTicket';"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 15729,
+    "resultLine": 15730,
+    "timestamp": "2026-06-21T17:56:09.722Z",
+    "toolUseId": "tooluse_vsI6fJbtmcEAEaUNLsnINb",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "import { movieService, libraryService, userService, resourceService } from './api';",
+      "new_string": "import { movieService, libraryService, userService, resourceService, ensureTicket, appendTicket } from './api';"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15732,
+    "resultLine": 15733,
+    "timestamp": "2026-06-21T17:56:27.585Z",
+    "toolUseId": "tooluse_GbJnx6FDbImbIhvGyE2OlB",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "    const startTime = Number(options.startTime) || 0;\n    // 首帧 loadfile 用的 URL：一律用原始 /stream。夸克/UC 现在也是 download\n    // 原文件链路，原始 URL 就能直接播且画质最高；清晰度切换由 HUD 菜单接管。\n    const url = movieService.getStreamUrl(currentResourceId);",
+      "new_string": "    const startTime = Number(options.startTime) || 0;\n    // 代托管模式下 /stream 等播放端点要登录态，但 mpv 是独立进程拿不到\n    // WebView 的 HttpOnly cookie。先换一张播放票据，拼进所有交给 mpv 的 URL\n    // （?ticket=...）。换票失败返回 null，appendTicket 原样返回 URL（非用户\n    // 管理后端仍可播；用户管理后端会 401，但那种情况本就要登录）。\n    const ticket = await ensureTicket();\n    // 首帧 loadfile 用的 URL：一律用原始 /stream。夸克/UC 现在也是 download\n    // 原文件链路，原始 URL 就能直接播且画质最高；清晰度切换由 HUD 菜单接管。\n    const url = appendTicket(movieService.getStreamUrl(currentResourceId), ticket);"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15735,
+    "resultLine": 15736,
+    "timestamp": "2026-06-21T17:56:43.094Z",
+    "toolUseId": "tooluse_OO314Jn5FgsaD2D6CsyyrX",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "      const subtitles = subtitlesRaw\n        .map((s: any) => ({\n          id: String(s.id ?? s.subtitle_id ?? ''),\n          url: resolveSubUrl(String(s.url ?? s.stream_url ?? '')),\n          label: s.label || s.match || s.filename || undefined,\n          displayName: s.display_name || undefined,\n          format: s.format || undefined,\n          isDefault: !!s.is_default,\n        }))\n        .filter((s) => s.id && s.url);",
+      "new_string": "      const subtitles = subtitlesRaw\n        .map((s: any) => ({\n          id: String(s.id ?? s.subtitle_id ?? ''),\n          url: appendTicket(resolveSubUrl(String(s.url ?? s.stream_url ?? '')), ticket),\n          label: s.label || s.match || s.filename || undefined,\n          displayName: s.display_name || undefined,\n          format: s.format || undefined,\n          isDefault: !!s.is_default,\n        }))\n        .filter((s) => s.id && s.url);"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15744,
+    "resultLine": 15745,
+    "timestamp": "2026-06-21T17:57:00.004Z",
+    "toolUseId": "tooluse_8UvZQ4r8WP802VDJyfDICl",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "            qualities = items.map((it) => ({\n              resolution: it.resolution,\n              label: it.label,\n              url: resourceService.getTranscodedStreamUrl(r.id, it.resolution),\n              isDefault: it.resolution === q?.default_resolution,\n            }));",
+      "new_string": "            qualities = items.map((it) => ({\n              resolution: it.resolution,\n              label: it.label,\n              url: appendTicket(resourceService.getTranscodedStreamUrl(r.id, it.resolution), ticket),\n              isDefault: it.resolution === q?.default_resolution,\n            }));"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15750,
+    "resultLine": 15751,
+    "timestamp": "2026-06-21T17:57:26.562Z",
+    "toolUseId": "tooluse_ddYCzqvRI6MKWEhUQM1yLk",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "      return {\n        id: r.id,\n        url: movieService.getStreamUrl(r.id),\n        filename: r.filename,",
+      "new_string": "      return {\n        id: r.id,\n        url: appendTicket(movieService.getStreamUrl(r.id), ticket),\n        filename: r.filename,"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15773,
+    "resultLine": 15774,
+    "timestamp": "2026-06-21T17:58:22.586Z",
+    "toolUseId": "tooluse_eJMpFHxYBn6mbm01maQGRt",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\MovieDetail.tsx",
+      "old_string": "import { movieService, resolveAssetUrl } from '../api';",
+      "new_string": "import { movieService, resolveAssetUrl, ensureTicket, appendTicket } from '../api';"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15776,
+    "resultLine": 15777,
+    "timestamp": "2026-06-21T17:58:45.947Z",
+    "toolUseId": "tooluse_4QclJ0CY0eLEEyKXQm75hE",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\MovieDetail.tsx",
+      "old_string": "      try {\n        // 百度网盘需要 UA 改写——PotPlayer/VLC CLI 没法传 header，必须把\n        // stream URL 包成 http://127.0.0.1:<port>/stream?u=...&ua=... 喂给\n        // .exe，由 PC 本地代理把改写后的 UA 加到上游请求里。代理拿不到时\n        // 降级到原 URL（百度时大概率 403，但其他云盘正常）。\n        let effectiveStreamUrl = pcLaunch.streamUrl;\n        if (needsUserAgentRewrite(pcLaunch.handoffHint)) {\n          const ua = pickUserAgentForRewrite(pcLaunch.handoffHint);\n          if (ua) {\n            const base = await getMediaProxyBase();\n            effectiveStreamUrl = wrapWithMediaProxy(pcLaunch.streamUrl, ua, base);\n          }\n        }\n        const res = await launchExternalPlayerNative({\n          ...pcLaunch,\n          streamUrl: effectiveStreamUrl,\n        });",
+      "new_string": "      try {\n        // 代托管模式下 stream / 字幕端点要登录态，但 PotPlayer/VLC 是独立进程\n        // 拿不到 WebView 的 cookie，必须拼播放票据。先拿票，给 streamUrl +\n        // subtitleUrl 拼 ?ticket=...；换票失败 appendTicket 原样返回。\n        const ticket = await ensureTicket();\n        const ticketedStreamUrl = appendTicket(pcLaunch.streamUrl, ticket);\n        const ticketedSubtitleUrl = pcLaunch.subtitleUrl\n          ? appendTicket(pcLaunch.subtitleUrl, ticket)\n          : pcLaunch.subtitleUrl;\n        // 百度网盘需要 UA 改写——PotPlayer/VLC CLI 没法传 header，必须把\n        // stream URL 包成 http://127.0.0.1:<port>/stream?u=...&ua=... 喂给\n        // .exe，由 PC 本地代理把改写后的 UA 加到上游请求里。代理拿不到时\n        // 降级到原 URL（百度时大概率 403，但其他云盘正常）。\n        // 注意：先拼票再包代理——ticket 要在被代理编码的真实 URL 里。\n        let effectiveStreamUrl = ticketedStreamUrl;\n        if (needsUserAgentRewrite(pcLaunch.handoffHint)) {\n          const ua = pickUserAgentForRewrite(pcLaunch.handoffHint);\n          if (ua) {\n            const base = await getMediaProxyBase();\n            effectiveStreamUrl = wrapWithMediaProxy(ticketedStreamUrl, ua, base);\n          }\n        }\n        const res = await launchExternalPlayerNative({\n          ...pcLaunch,\n          streamUrl: effectiveStreamUrl,\n          subtitleUrl: ticketedSubtitleUrl,\n        });"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 15855,
+    "resultLine": 15856,
+    "timestamp": "2026-06-21T18:08:33.817Z",
+    "toolUseId": "tooluse_u1LiXH6T7REWqQVoFamlWG",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\platform\\nativePlayer.ts",
+      "old_string": "  /** Session id for this playback session. Optional — Rust generates one\n   *  if omitted. Format: `pc-<uuid>` so backend logs distinguish PC sessions\n   *  from web sessions. */\n  sessionId?: string;\n}",
+      "new_string": "  /** Session id for this playback session. Optional — Rust generates one\n   *  if omitted. Format: `pc-<uuid>` so backend logs distinguish PC sessions\n   *  from web sessions. */\n  sessionId?: string;\n  /** 播放票据（代托管模式）。HUD 内的在线字幕 worker（Rust 独立线程拿不到\n   *  cookie）拼到 ?ticket=... 上过认证。stream/字幕/转码等 mpv 直接播的 URL\n   *  已在 App.tsx 拼好票，这里单独再传一份给 Rust 内部发起的请求用。 */\n  playbackTicket?: string | null;\n}"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 15859,
+    "resultLine": 15860,
+    "timestamp": "2026-06-21T18:08:48.601Z",
+    "toolUseId": "tooluse_E7QVqDzjA9djp1UGNRFUeY",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\platform\\nativePlayer.ts",
+      "old_string": "      deviceId: opts.deviceId,\n      apiBase: opts.apiBase,\n      sessionId: opts.sessionId ?? null,\n    },",
+      "new_string": "      deviceId: opts.deviceId,\n      apiBase: opts.apiBase,\n      sessionId: opts.sessionId ?? null,\n      playbackTicket: opts.playbackTicket ?? null,\n    },"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 15909,
+    "resultLine": 15910,
+    "timestamp": "2026-06-21T18:54:04.598Z",
+    "toolUseId": "tooluse_bHGVA5qsrg0TcUuVaIxpgD",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "      deviceId: getDeviceId(),\n      apiBase: getApiBase().replace(/\\/api\\/?$/, ''),\n      sessionId: `pc-${(crypto as any)?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,",
+      "new_string": "      deviceId: getDeviceId(),\n      apiBase: getApiBase().replace(/\\/api\\/?$/, ''),\n      sessionId: `pc-${(crypto as any)?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,\n      // 代托管模式：把同一张票透传给 Rust，供 HUD 在线字幕 worker（独立线程拿不到\n      // cookie）拼到 ?ticket=... 过认证。stream/字幕/转码 URL 已在上面拼好票。\n      playbackTicket: ticket,"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 16612,
+    "resultLine": 16613,
+    "timestamp": "2026-06-23T21:14:10.023Z",
+    "toolUseId": "tooluse_KcLoI6aXIBSqpweJNwqjtE",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "      const subtitles = subtitlesRaw\n        .map((s: any) => ({\n          id: String(s.id ?? s.subtitle_id ?? ''),\n          url: appendTicket(resolveSubUrl(String(s.url ?? s.stream_url ?? '')), ticket),\n          label: s.label || s.match || s.filename || undefined,\n          displayName: s.display_name || undefined,\n          format: s.format || undefined,\n          isDefault: !!s.is_default,\n        }))\n        .filter((s) => s.id && s.url);",
+      "new_string": "      const subtitles = subtitlesRaw\n        .map((s: any) => ({\n          id: String(s.id ?? s.subtitle_id ?? ''),\n          url: appendTicket(resolveSubUrl(String(s.url ?? s.stream_url ?? '')), ticket),\n          label: s.label || s.match || s.filename || undefined,\n          displayName: s.display_name || undefined,\n          format: s.format || undefined,\n          isDefault: !!s.is_default,\n          // 详细信息（PC HUD 字幕菜单展示用，仿详情页字幕管理）。后端\n          // playback.subtitles[] 已带这些字段，这里透传给 Rust：\n          //   - language 可能是字符串或 {code,label,name}；取可读 label。\n          //   - source: sidecar / online_bound / manual_upload。\n          //   - online.provider_name: 来源站点（SubHD / SrtKu）。\n          //   - web_player.supported===false 时标记不兼容（PGS/SUP 等）。\n          language: typeof s.language === 'string'\n            ? s.language\n            : (s.language?.label || s.language?.name || s.language?.code || undefined),\n          source: s.source || undefined,\n          providerName: s.online?.provider_name || s.online?.provider_id || undefined,\n          webPlayerSupported: s.web_player?.supported,\n        }))\n        .filter((s) => s.id && s.url);"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 16619,
+    "resultLine": 16620,
+    "timestamp": "2026-06-23T21:17:09.816Z",
+    "toolUseId": "tooluse_gP9U4Ed19jIgo4tj2jjMPW",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\platform\\nativePlayer.ts",
+      "old_string": "  /** Format hint (\"srt\"/\"ass\"/\"vtt\" …). Optional, mpv will sniff. */\n  format?: string;\n  isDefault?: boolean;\n}",
+      "new_string": "  /** Format hint (\"srt\"/\"ass\"/\"vtt\" …). Optional, mpv will sniff. */\n  format?: string;\n  isDefault?: boolean;\n  /** 详细信息（PC HUD 字幕菜单展示，仿详情页字幕管理）。后端\n   *  playback.subtitles[] 已带这些字段，webview 透传给 Rust。 */\n  /** 可读语言标签（\"简体中文\" / \"English\" …）。 */\n  language?: string;\n  /** sidecar（本地内嵌伴随） / online_bound（在线绑定） / manual_upload（手动上传）。 */\n  source?: string;\n  /** 在线来源站点名（\"SubHD\" / \"SrtKu\"），仅 online_bound 有。 */\n  providerName?: string;\n  /** 网页播放器是否兼容；false 时（PGS/SUP 等）UI 标「不兼容」提示。 */\n  webPlayerSupported?: boolean;\n}"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17104,
+    "resultLine": 17105,
+    "timestamp": "2026-06-24T18:13:06.772Z",
+    "toolUseId": "tooluse_wMKSuAAQmDBWnEN1VKrAOT",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\user.ts",
+      "old_string": "  getHistory: async (): Promise<HistoryItem[]> => {\n    try {\n      // 后端默认 page_size=20、上限 100。普通用户历史不会超过几十条，\n      // 一次拉满 100 比做客户端翻页 UI 简单很多；上限内能完整覆盖大多数\n      // 用户。真有重度用户超过 100 条时才考虑加载更多按钮。\n      const data = await fetchApi<any>('/v1/user/history?page_size=100');",
+      "new_string": "  getHistory: async (): Promise<HistoryItem[]> => {\n    try {\n      // 后端默认 page_size=20、上限 100。普通用户历史不会超过几十条，\n      // 一次拉满 100 比做客户端翻页 UI 简单很多；上限内能完整覆盖大多数\n      // 用户。真有重度用户超过 100 条时才考虑加载更多按钮。\n      // cache:'no-store' 强制每次都打后端：进历史页要看到刚播完的最新进度/\n      // 排序，浏览器 HTTP 缓存会让人看到陈旧列表（刚看的片没排到最前）。\n      const data = await fetchApi<any>('/v1/user/history?page_size=100', {\n        cache: 'no-store',\n      });"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17146,
+    "resultLine": 17147,
+    "timestamp": "2026-06-24T19:04:12.274Z",
+    "toolUseId": "tooluse_h8SMiq2sIx751XwUL77nAy",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\user.ts",
+      "old_string": "        const updatedAt = item.updated_at || item.created_at || new Date().toISOString();",
+      "new_string": "        // 后端历史条目的时间字段是 last_watched（GET 按 last_watched.desc 排序、\n        // POST 写 last_watched）。早先只读 updated_at/created_at 会全部 undefined →\n        // 每条都 fallback 成 new Date()（now），下面按它降序排就退化成毫秒噪声乱排，\n        // 反复进页面顺序每次都不同。优先读 last_watched 才能拿到真实观看时刻。\n        const updatedAt = item.last_watched || item.updated_at || item.created_at || new Date().toISOString();"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17256,
+    "resultLine": 17257,
+    "timestamp": "2026-06-24T19:20:44.321Z",
+    "toolUseId": "tooluse_4ITXRXghxzln2hbU62Na7f",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\LibrariesList.tsx",
+      "old_string": "import React, { useEffect, useState } from 'react';\nimport { Library, Movie } from '../types';\nimport { FolderOpen } from 'lucide-react';\nimport { libraryService } from '../api';",
+      "new_string": "import React, { useEffect, useState } from 'react';\nimport { Library, Movie } from '../types';\nimport { FolderOpen, FolderPlus, ArrowRight } from 'lucide-react';\nimport { libraryService } from '../api';"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17265,
+    "resultLine": 17266,
+    "timestamp": "2026-06-24T19:21:27.391Z",
+    "toolUseId": "tooluse_mGiIPKdWcCSLuNuJh6d2tu",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\LibrariesList.tsx",
+      "old_string": "      {libraries.length === 0 ? (\n        <div className=\"flex flex-col items-center justify-center gap-6 mt-12 mb-12\">\n           <div className=\"h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-600 border border-white/5 bg-black/40 rounded-xl relative overflow-hidden group\"> \n             <div className=\"absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none\"></div>\n             <FolderOpen size={48} className=\"opacity-20 group-hover:text-primary group-hover:opacity-50 transition-all transform group-hover:scale-110\" /> \n             <div className=\"font-['Noto_Sans_SC'] tracking-widest text-xl group-hover:text-white transition-colors\">暂无专辑</div>\n             <div className=\"text-sm font-sans text-gray-500\">当前尚未配置专辑，请与服务器同步或进行配置。</div>\n           </div>\n        </div>\n      ) : (",
+      "new_string": "      {libraries.length === 0 ? (\n        <div className=\"flex flex-col items-center justify-center gap-6 mt-12 mb-12\">\n          {onAddLibrary ? (\n            // 有目录管理权（canManageCatalog）：引导去创建专辑，整卡可点。\n            <button\n              onClick={onAddLibrary}\n              className=\"h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-500 border border-dashed border-primary/30 hover:border-primary/70 bg-black/40 hover:bg-primary/5 rounded-xl relative overflow-hidden group transition-all\"\n            >\n              <div className=\"absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none\"></div>\n              <div className=\"p-4 border border-primary/40 group-hover:border-primary text-primary/70 group-hover:text-primary rounded-xl group-hover:shadow-[0_0_20px_var(--color-primary)] transition-all transform group-hover:scale-110\">\n                <FolderPlus size={36} />\n              </div>\n              <div className=\"font-['Noto_Sans_SC'] tracking-widest text-xl text-gray-300 group-hover:text-white transition-colors\">创建第一个专辑</div>\n              <div className=\"text-sm font-sans text-gray-500 max-w-md text-center px-6\">专辑是逻辑分区，把存储目录映射进来即可在这里聚合管理你的影视资源。</div>\n              <div className=\"flex items-center gap-1.5 text-primary/80 group-hover:text-primary text-sm font-medium tracking-wider mt-1 transition-all group-hover:gap-2.5\">\n                <span>立即配置</span>\n                <ArrowRight size={16} />\n              </div>\n            </button>\n          ) : (\n            // 无管理权的代托管普通用户：不给创建入口，提示联系管理员。\n            <div className=\"h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-600 border border-white/5 bg-black/40 rounded-xl relative overflow-hidden group\">\n              <div className=\"absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none\"></div>\n              <FolderOpen size={48} className=\"opacity-20 group-hover:text-primary group-hover:opacity-50 transition-all transform group-hover:scale-110\" />\n              <div className=\"font-['Noto_Sans_SC'] tracking-widest text-xl group-hover:text-white transition-colors\">暂无专辑</div>\n              <div className=\"text-sm font-sans text-gray-500\">管理员尚未配置任何专辑，请联系管理员添加。</div>\n            </div>\n          )}\n        </div>\n      ) : ("
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17288,
+    "resultLine": 17289,
+    "timestamp": "2026-06-24T19:24:30.796Z",
+    "toolUseId": "tooluse_P5DYXENeqMbE0K2kHKYay3",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "            {currentView === 'libraries' && (<LibrariesList libraries={libraries} onSelectLibrary={(id) => { setActiveLibraryId(id); setCurrentView('library'); }} onAddLibrary={canManageCatalog ? () => setCurrentView('add_library') : undefined} />)}",
+      "new_string": "            {currentView === 'libraries' && (<LibrariesList libraries={libraries} onSelectLibrary={(id) => { setActiveLibraryId(id); setCurrentView('library'); }} onAddLibrary={canManageCatalog ? () => { setProfileInitialTab('LIBRARIES'); setCurrentView('profile'); setOverlayView('none'); setTimeout(() => { if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0; }, 0); } : undefined} />)}"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17297,
+    "resultLine": 17298,
+    "timestamp": "2026-06-24T19:25:05.006Z",
+    "toolUseId": "tooluse_70PvCXGKxTQmvfsw0e2SsJ",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\LibrariesList.tsx",
+      "old_string": "      {libraries.length === 0 ? (\n        <div className=\"flex flex-col items-center justify-center gap-6 mt-12 mb-12\">\n          {onAddLibrary ? (\n            // 有目录管理权（canManageCatalog）：引导去创建专辑，整卡可点。\n            <button\n              onClick={onAddLibrary}\n              className=\"h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-500 border border-dashed border-primary/30 hover:border-primary/70 bg-black/40 hover:bg-primary/5 rounded-xl relative overflow-hidden group transition-all\"\n            >\n              <div className=\"absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none\"></div>\n              <div className=\"p-4 border border-primary/40 group-hover:border-primary text-primary/70 group-hover:text-primary rounded-xl group-hover:shadow-[0_0_20px_var(--color-primary)] transition-all transform group-hover:scale-110\">\n                <FolderPlus size={36} />\n              </div>\n              <div className=\"font-['Noto_Sans_SC'] tracking-widest text-xl text-gray-300 group-hover:text-white transition-colors\">创建第一个专辑</div>\n              <div className=\"text-sm font-sans text-gray-500 max-w-md text-center px-6\">专辑是逻辑分区，把存储目录映射进来即可在这里聚合管理你的影视资源。</div>\n              <div className=\"flex items-center gap-1.5 text-primary/80 group-hover:text-primary text-sm font-medium tracking-wider mt-1 transition-all group-hover:gap-2.5\">\n                <span>立即配置</span>\n                <ArrowRight size={16} />\n              </div>\n            </button>\n          ) : (\n            // 无管理权的代托管普通用户：不给创建入口，提示联系管理员。\n            <div className=\"h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-600 border border-white/5 bg-black/40 rounded-xl relative overflow-hidden group\">\n              <div className=\"absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none\"></div>\n              <FolderOpen size={48} className=\"opacity-20 group-hover:text-primary group-hover:opacity-50 transition-all transform group-hover:scale-110\" />\n              <div className=\"font-['Noto_Sans_SC'] tracking-widest text-xl group-hover:text-white transition-colors\">暂无专辑</div>\n              <div className=\"text-sm font-sans text-gray-500\">管理员尚未配置任何专辑，请联系管理员添加。</div>\n            </div>\n          )}\n        </div>\n      ) : (",
+      "new_string": "      {libraries.length === 0 ? (\n        <div className=\"flex flex-col items-center justify-center gap-6 mt-12 mb-12\">\n          {onAddLibrary ? (\n            // 有目录管理权（canManageCatalog）：引导去「设置 → 专辑管理」创建。\n            <div className=\"h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-500 border border-white/5 bg-black/40 rounded-xl\">\n              <FolderOpen size={48} className=\"opacity-20 text-primary\" />\n              <div className=\"font-['Noto_Sans_SC'] tracking-widest text-xl text-gray-300\">暂无专辑</div>\n              <div className=\"text-sm font-sans text-gray-500\">前往专辑管理创建逻辑分区，并映射底层存储目录。</div>\n              <button\n                onClick={onAddLibrary}\n                className=\"flex items-center gap-2 px-5 py-2.5 mt-1 border border-primary/60 hover:border-primary text-primary hover:bg-primary/10 rounded-lg tracking-wider text-sm font-medium hover:shadow-[0_0_15px_var(--color-primary)] transition-all\"\n              >\n                <FolderPlus size={16} />\n                <span>去创建专辑</span>\n                <ArrowRight size={15} />\n              </button>\n            </div>\n          ) : (\n            // 无管理权的代托管普通用户：不给创建入口，提示联系管理员。\n            <div className=\"h-64 w-full max-w-2xl flex flex-col items-center justify-center gap-4 text-gray-600 border border-white/5 bg-black/40 rounded-xl\">\n              <FolderOpen size={48} className=\"opacity-20\" />\n              <div className=\"font-['Noto_Sans_SC'] tracking-widest text-xl text-gray-400\">暂无专辑</div>\n              <div className=\"text-sm font-sans text-gray-500\">管理员尚未配置任何专辑，请联系管理员添加。</div>\n            </div>\n          )}\n        </div>\n      ) : ("
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17319,
+    "resultLine": 17320,
+    "timestamp": "2026-06-24T19:28:28.761Z",
+    "toolUseId": "tooluse_kpZYvc5RRlTiXjjFukawTO",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\Library.tsx",
+      "old_string": "  // Reset list when filtering changes (EXCLUDING sort, as sort is local)\n  useEffect(() => {\n    setPage(1);\n    setLibraryMovies([]);\n    setHasMore(true);\n  }, [filters.type, filters.region, filters.year, activeLibraryId, refreshTrigger]);",
+      "new_string": "  // 切换筛选或排序时重置列表回第 1 页。sort 现在是服务端排序（见下方 fetch\n  // effect 把 filters.sort 传给后端），所以换排序也必须先清空列表 + 回 page 1，\n  // 否则当用户已滚动加载到 page>1 时，fetch 走追加去重分支，新排序拉回的还是\n  // 已有 id 全被过滤掉，界面看起来「点了没反应」。\n  useEffect(() => {\n    setPage(1);\n    setLibraryMovies([]);\n    setHasMore(true);\n  }, [filters.type, filters.region, filters.year, filters.sort, activeLibraryId, refreshTrigger]);"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17352,
+    "resultLine": 17353,
+    "timestamp": "2026-06-24T19:30:37.859Z",
+    "toolUseId": "tooluse_FkQaZRhVkfkLfHhF1FaW6h",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\Library.tsx",
+      "old_string": "        // Use server-side sorting if possible for better consistency\n        const sortBy = filters.sort; // rating, year, update_time (id used in FILTERS)\n        const order = 'desc';\n\n        let res;\n        if (activeLibraryId && activeLibraryId !== -1) {\n            res = await libraryService.getFilteredMovies(\n                activeLibraryId,\n                pageSize,\n                page,\n                genreParam,\n                sortBy,\n                order,\n                filters.region,\n                yearParam\n            );\n        } else {\n            res = await movieService.getAll(\n                pageSize,\n                page,\n                {\n                  genre: genreParam,\n                  sort_by: sortBy === 'update_time' ? 'date_added' : sortBy,\n                  order: order,\n                  country: filters.region !== '全部地区' ? filters.region : undefined,\n                  year: yearParam\n                }\n            );\n        }",
+      "new_string": "        // Use server-side sorting if possible for better consistency\n        // FILTERS 里「更新时间」按钮 id 是 update_time，但后端\n        // resolve_movie_sort_column 只认 updated_at（其余 fallback 到 added_at）。\n        // 所以这里翻成 updated_at，否则点「更新时间」实际按添加时间排、语义错。\n        const sortBy = filters.sort === 'update_time' ? 'updated_at' : filters.sort; // rating, year, updated_at\n        const order = 'desc';\n\n        let res;\n        if (activeLibraryId && activeLibraryId !== -1) {\n            res = await libraryService.getFilteredMovies(\n                activeLibraryId,\n                pageSize,\n                page,\n                genreParam,\n                sortBy,\n                order,\n                filters.region,\n                yearParam\n            );\n        } else {\n            res = await movieService.getAll(\n                pageSize,\n                page,\n                {\n                  genre: genreParam,\n                  sort_by: sortBy,\n                  order: order,\n                  country: filters.region !== '全部地区' ? filters.region : undefined,\n                  year: yearParam\n                }\n            );\n        }"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17419,
+    "resultLine": 17420,
+    "timestamp": "2026-06-24T19:44:49.856Z",
+    "toolUseId": "tooluse_rOWofhvIWhcSFvuM7TfWZZ",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\user.ts",
+      "old_string": "export const userService = {\n  getHistory: async (): Promise<HistoryItem[]> => {",
+      "new_string": "export const userService = {\n  // ─── User Preferences（per-user UI 偏好，绑当前登录账号）───\n  // 后端契约（gpt 实现）：\n  //   GET /api/v1/user/preferences → data 是该用户已存的偏好 JSON（无则 {}）\n  //   PUT /api/v1/user/preferences → body 整个偏好对象，整体覆盖保存\n  // 后端不解释字段、原样存取（纯前端 UI 偏好：主题色 / 特效开关 / 默认落地页）。\n  // 代托管 PC 线程走 ?ticket= 也要能过，这两个路由需进 playback ticket 白名单。\n  // 失败静默返回 null —— 偏好同步失败时前端回退到 localStorage 缓存，不阻塞主流程。\n  getPreferences: async (): Promise<Record<string, any> | null> => {\n    try {\n      const data = await fetchApi<Record<string, any>>('/v1/user/preferences', {\n        cache: 'no-store',\n      });\n      return data || null;\n    } catch (e) {\n      console.warn('getPreferences failed', e);\n      return null;\n    }\n  },\n\n  putPreferences: async (prefs: Record<string, any>): Promise<boolean> => {\n    try {\n      const res = await fetch(`${getApiBase()}/v1/user/preferences`, {\n        method: 'PUT',\n        credentials: 'include',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify(prefs),\n      });\n      return res.ok;\n    } catch (e) {\n      console.warn('putPreferences failed', e);\n      return false;\n    }\n  },\n\n  getHistory: async (): Promise<HistoryItem[]> => {"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17437,
+    "resultLine": 17439,
+    "timestamp": "2026-06-24T19:46:49.959Z",
+    "toolUseId": "tooluse_mgNVZTIgF0VTUFWKA510fR",
+    "name": "Write",
+    "input": {
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\hooks\\useThemeSettings.ts",
+      "content": "import { useState, useEffect, useRef } from 'react';\nimport { THEMES } from '../constants/index';\nimport { UserSettings } from '../types/index';\nimport { userService } from '../api';\n\nconst LS_KEY = 'cyber_settings';\nconst LS_THEME_KEY = 'cyber_theme';\nconst DEFAULT_SETTINGS: UserSettings = { scanlines: false, glitch: true };\n\nfunction readLocalSettings(): UserSettings {\n  try {\n    const saved = localStorage.getItem(LS_KEY);\n    return saved ? JSON.parse(saved) : { ...DEFAULT_SETTINGS };\n  } catch {\n    return { ...DEFAULT_SETTINGS };\n  }\n}\n\nfunction readLocalTheme(): string {\n  try {\n    return localStorage.getItem(LS_THEME_KEY) || 'CYBER';\n  } catch {\n    return 'CYBER';\n  }\n}\n\n/**\n * 主题 / 视觉特效 / 个人偏好的状态源。\n *\n * 持久化分两层：\n *   1. localStorage —— 同步、离线、首屏不闪烁的本地缓存（始终写）。\n *   2. 后端 /user/preferences —— 绑当前登录账号，换设备不丢（登录态下读+回写）。\n *\n * 顺序：初始用 localStorage 立即渲染；登录后 GET 后端覆盖；之后任何变更\n * debounce PUT 回后端并同步写 localStorage。未登录 / 单 token 模式下后端\n * 失败静默，纯本地工作（行为同改造前）。\n */\nexport function useThemeSettings(authenticated?: boolean) {\n  const [settings, setSettings] = useState<UserSettings>(() => readLocalSettings());\n  const [themeName, setThemeName] = useState<string>(() => readLocalTheme());\n  const currentTheme = THEMES[themeName] || THEMES['CYBER'];\n\n  // 标记后端偏好是否已加载完成；加载阶段不要把本地值反向 PUT 覆盖后端。\n  const hydratedRef = useRef(false);\n  const putTimer = useRef<ReturnType<typeof setTimeout> | null>(null);\n\n  // 本地缓存：始终随状态写 localStorage（离线 / 未登录也能记住）。\n  useEffect(() => {\n    try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch { /* quota / SSR */ }\n  }, [settings]);\n  useEffect(() => {\n    try { localStorage.setItem(LS_THEME_KEY, themeName); } catch { /* quota / SSR */ }\n  }, [themeName]);\n\n  // 应用 CSS 变量（主题色 + 特效开关）。\n  useEffect(() => {\n    const root = document.documentElement;\n    root.style.setProperty('--scanline-opacity', settings.scanlines ? '0.2' : '0');\n    root.style.setProperty('--scanline-display', settings.scanlines ? 'block' : 'none');\n    root.style.setProperty('--glitch-active', settings.glitch ? 'block' : 'none');\n    root.style.setProperty('--color-primary', currentTheme.primary);\n    root.style.setProperty('--color-secondary', currentTheme.secondary);\n    root.style.setProperty('--color-bg', currentTheme.bg);\n    root.style.setProperty('--color-text', currentTheme.text);\n    root.style.setProperty('--color-accent', currentTheme.accent);\n  }, [settings, currentTheme]);\n\n  // 登录态变化时从后端拉偏好覆盖本地。authenticated 为 undefined（单 token /\n  // 未启用用户系统）时也尝试一次——后端没接口或 401 会静默返回 null，不影响本地。\n  useEffect(() => {\n    if (authenticated === false) {\n      // 明确未登录：不拉后端，保持本地缓存即可。\n      hydratedRef.current = true;\n      return;\n    }\n    let active = true;\n    (async () => {\n      const remote = await userService.getPreferences();\n      if (!active) {\n        hydratedRef.current = true;\n        return;\n      }\n      if (remote && typeof remote === 'object') {\n        const { theme, scanlines, glitch, homepage } = remote as any;\n        setSettings(prev => ({\n          ...prev,\n          ...(typeof scanlines === 'boolean' ? { scanlines } : {}),\n          ...(typeof glitch === 'boolean' ? { glitch } : {}),\n          ...(homepage ? { homepage } : {}),\n        }));\n        if (typeof theme === 'string' && THEMES[theme]) setThemeName(theme);\n      }\n      hydratedRef.current = true;\n    })();\n    return () => { active = false; };\n  }, [authenticated]);\n\n  // 任意偏好变更 → debounce 回写后端（仅在已 hydrate 后，避免加载期把旧本地值\n  // 覆盖刚拉到的后端值）。未登录 / 无接口时 PUT 静默失败，不影响本地缓存。\n  useEffect(() => {\n    if (!hydratedRef.current) return;\n    if (authenticated === false) return;\n    if (putTimer.current) clearTimeout(putTimer.current);\n    putTimer.current = setTimeout(() => {\n      void userService.putPreferences({\n        theme: themeName,\n        scanlines: settings.scanlines,\n        glitch: settings.glitch,\n        homepage: settings.homepage || {},\n      });\n    }, 600);\n    return () => { if (putTimer.current) clearTimeout(putTimer.current); };\n  }, [settings, themeName, authenticated]);\n\n  return { settings, setSettings, themeName, setThemeName, currentTheme };\n}\n"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17449,
+    "resultLine": 17450,
+    "timestamp": "2026-06-24T19:47:49.884Z",
+    "toolUseId": "tooluse_Zg6z17yqurs8KjHntx9hDj",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "const App = () => {\n  const { settings, setSettings, themeName, setThemeName, currentTheme } = useThemeSettings();\n  useGlobalHotkeys();",
+      "new_string": "const App = () => {\n  useGlobalHotkeys();"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17453,
+    "resultLine": 17454,
+    "timestamp": "2026-06-24T19:48:03.955Z",
+    "toolUseId": "tooluse_zc17FxY2XVQL21HJDEW4bj",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\App.tsx",
+      "old_string": "  const canManageStorage = !authStatus?.user_management_enabled || !!authStatus?.permissions?.manage_storage;",
+      "new_string": "  const canManageStorage = !authStatus?.user_management_enabled || !!authStatus?.permissions?.manage_storage;\n\n  // 主题 / 特效 / 个人偏好。传 authenticated 让 hook 在登录态下从 /user/preferences\n  // 拉取并回写（绑账号、换设备不丢）；未启用用户系统时 authenticated 为 false，纯本地。\n  const isAuthenticated = !authStatus?.user_management_enabled || !!authStatus?.authenticated;\n  const { settings, setSettings, themeName, setThemeName, currentTheme } = useThemeSettings(isAuthenticated);"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17734,
+    "resultLine": 17735,
+    "timestamp": "2026-06-24T20:41:44.897Z",
+    "toolUseId": "tooluse_Sam4KVKoTOYMWNWYFbzcJi",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\movie.ts",
+      "old_string": "  getGlobalFilters: async (): Promise<FilterDictionaries | null> => {\n    return await fetchApi<FilterDictionaries>('/v1/filters');\n  },\n",
+      "new_string": "  getGlobalFilters: async (): Promise<FilterDictionaries | null> => {\n    // 后端 /v1/filters 要全库聚合 genre/country/year 计数，实测 ~3s（慢查询，\n    // 已反馈后端优化）。但筛选字典几乎只在扫描入库后才变，所以做 stale-while-\n    // revalidate：有本地缓存就立即返回（筛选区秒出，不再干等 3s），同时后台静默\n    // 重拉刷新缓存，下次进就是最新。首访无缓存才走一次完整请求。\n    return fetchFiltersCached('filters_cache_global', '/v1/filters');\n  },\n"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17738,
+    "resultLine": 17739,
+    "timestamp": "2026-06-24T20:42:13.693Z",
+    "toolUseId": "tooluse_azmhRu504AhP7nN2icyrxY",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\movie.ts",
+      "old_string": "type MovieMetadataMatchRequest = components[\"schemas\"][\"MovieMetadataMatchRequest\"];\n\n\nexport const movieService = {",
+      "new_string": "type MovieMetadataMatchRequest = components[\"schemas\"][\"MovieMetadataMatchRequest\"];\n\n// ─── 筛选字典缓存（stale-while-revalidate）───\n// /v1/filters 与 /v1/libraries/{id}/filters 是慢查询（全库聚合计数，实测 ~3s）。\n// 字典内容几乎只在扫描入库后才变，所以缓存到 localStorage：命中缓存立即返回，\n// 同时后台静默重拉刷新（不阻塞本次渲染，下次进即最新）；无缓存才 await 真实请求。\nlet _filtersInflight: Record<string, Promise<FilterDictionaries | null> | undefined> = {};\n\nasync function _fetchFiltersFresh(key: string, path: string): Promise<FilterDictionaries | null> {\n  // 同一 key 的并发请求复用同一个 in-flight Promise，避免重复打慢接口。\n  if (_filtersInflight[key]) return _filtersInflight[key]!;\n  const p = (async () => {\n    try {\n      const data = await fetchApi<FilterDictionaries>(path);\n      if (data) {\n        try { localStorage.setItem(key, JSON.stringify(data)); } catch { /* quota */ }\n      }\n      return data;\n    } finally {\n      _filtersInflight[key] = undefined;\n    }\n  })();\n  _filtersInflight[key] = p;\n  return p;\n}\n\nasync function fetchFiltersCached(key: string, path: string): Promise<FilterDictionaries | null> {\n  let cached: FilterDictionaries | null = null;\n  try {\n    const raw = localStorage.getItem(key);\n    if (raw) cached = JSON.parse(raw) as FilterDictionaries;\n  } catch { cached = null; }\n\n  if (cached) {\n    // 命中缓存：立即返回，后台静默刷新（不 await）。\n    void _fetchFiltersFresh(key, path);\n    return cached;\n  }\n  // 无缓存：必须等真实请求（首访才会经历这次慢加载）。\n  return _fetchFiltersFresh(key, path);\n}\n\n\nexport const movieService = {"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17746,
+    "resultLine": 17747,
+    "timestamp": "2026-06-24T20:42:58.025Z",
+    "toolUseId": "tooluse_Da6X2lODuKf7izgTohvpzx",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\movie.ts",
+      "old_string": "async function fetchFiltersCached(key: string, path: string): Promise<FilterDictionaries | null> {",
+      "new_string": "export async function fetchFiltersCached(key: string, path: string): Promise<FilterDictionaries | null> {"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17749,
+    "resultLine": 17750,
+    "timestamp": "2026-06-24T20:43:26.560Z",
+    "toolUseId": "tooluse_A1tT9BMjkohTvHfQfHLvr7",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\library.ts",
+      "old_string": "  getFilters: async (libraryId: number): Promise<FilterDictionaries | null> => {\n    const data = await fetchApi<FilterDictionaries>(`/v1/libraries/${libraryId}/filters`);\n    return data || null;\n  },",
+      "new_string": "  getFilters: async (libraryId: number): Promise<FilterDictionaries | null> => {\n    // 同 getGlobalFilters：分库筛选字典也是慢查询，按 libraryId 分键缓存 + 后台刷新。\n    return movieService.fetchFiltersCached(`filters_cache_lib_${libraryId}`, `/v1/libraries/${libraryId}/filters`);\n  },"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17757,
+    "resultLine": 17758,
+    "timestamp": "2026-06-24T20:43:47.605Z",
+    "toolUseId": "tooluse_G47fhlsF4p9t6HLXmTwmka",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\library.ts",
+      "old_string": "import { movieService } from './movie';",
+      "new_string": "import { movieService, fetchFiltersCached } from './movie';"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17759,
+    "resultLine": 17760,
+    "timestamp": "2026-06-24T20:44:12.321Z",
+    "toolUseId": "tooluse_GQ4SsAy9Qf9yZYZ0N3cCPO",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\library.ts",
+      "old_string": "    return movieService.fetchFiltersCached(`filters_cache_lib_${libraryId}`, `/v1/libraries/${libraryId}/filters`);",
+      "new_string": "    return fetchFiltersCached(`filters_cache_lib_${libraryId}`, `/v1/libraries/${libraryId}/filters`);"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17808,
+    "resultLine": 17810,
+    "timestamp": "2026-06-24T20:51:48.187Z",
+    "toolUseId": "tooluse_FCZKOmK9lLMX5tX5zXGNcm",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\types\\index.ts",
+      "old_string": "export interface HomepageConfig {\n  hero_movie_id: string | null;\n  sections: HomepageSectionConfig[];\n  created_at?: string | null;\n  updated_at?: string | null;\n}",
+      "new_string": "export interface HomepageConfig {\n  hero_movie_id: string | null;\n  sections: HomepageSectionConfig[];\n  created_at?: string | null;\n  updated_at?: string | null;\n  /** 仅 /user/homepage/config 返回：'user'=个人配置；'global'=尚无个人配置、本次是全局回退。 */\n  source?: 'global' | 'user';\n}"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17819,
+    "resultLine": 17820,
+    "timestamp": "2026-06-24T20:52:35.395Z",
+    "toolUseId": "tooluse_YXW40OnYQtYv8c6CG6aIUg",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\home.ts",
+      "old_string": "export const homeService = {\n  getHomepage: async (): Promise<{ hero: any, sections: any[] } | null> => {\n    const data = await fetchApi<{ hero: any, sections: any[] }>('/v1/homepage');\n    return data || null;\n  },\n  getHomepageConfig: async (): Promise<HomepageConfig | null> => {\n    return await fetchApi<HomepageConfig>('/v1/homepage/config');\n  },\n  updateHomepageConfig: async (\n    patch: { hero_movie_id?: string | null; sections?: HomepageSectionConfig[] }\n  ): Promise<HomepageConfig | null> => {\n    try {\n      const res = await fetch(`${getApiBase()}/v1/homepage/config`, {\n        method: 'PATCH',\n        credentials: 'include',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify(patch),\n      });\n      if (!res.ok) return null;\n      const json = await res.json().catch(() => null);\n      // 后端 envelope: { code, msg, data: HomepageConfig }\n      return (json && (json.data || json)) as HomepageConfig;\n    } catch {\n      return null;\n    }\n  },\n};",
+      "new_string": "export const homeService = {\n  getHomepage: async (): Promise<{ hero: any, sections: any[] } | null> => {\n    const data = await fetchApi<{ hero: any, sections: any[] }>('/v1/homepage');\n    return data || null;\n  },\n  // scope='user' 走 per-user 配置（代托管下每个登录用户定制自己的首页，互不影响）；\n  // 'global'（默认）走全局配置（自部署 / 有 manage_server_config 的管理员改全站首页）。\n  // 两端点 schema 相同，user 端点额外返回 source: 'user'|'global'（global=尚无个人配置的回退）。\n  getHomepageConfig: async (scope: 'global' | 'user' = 'global'): Promise<HomepageConfig | null> => {\n    const path = scope === 'user' ? '/v1/user/homepage/config' : '/v1/homepage/config';\n    return await fetchApi<HomepageConfig>(path);\n  },\n  updateHomepageConfig: async (\n    patch: { hero_movie_id?: string | null; sections?: HomepageSectionConfig[] },\n    scope: 'global' | 'user' = 'global'\n  ): Promise<HomepageConfig | null> => {\n    try {\n      const path = scope === 'user' ? '/v1/user/homepage/config' : '/v1/homepage/config';\n      const res = await fetch(`${getApiBase()}${path}`, {\n        method: 'PATCH',\n        credentials: 'include',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify(patch),\n      });\n      if (!res.ok) return null;\n      const json = await res.json().catch(() => null);\n      // 后端 envelope: { code, msg, data: HomepageConfig }\n      return (json && (json.data || json)) as HomepageConfig;\n    } catch {\n      return null;\n    }\n  },\n};"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 17829,
+    "resultLine": 17831,
+    "timestamp": "2026-06-24T20:53:25.204Z",
+    "toolUseId": "tooluse_ZoKSCBTBIhwcTbdIAmTYer",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\HomepageEditor.tsx",
+      "old_string": "export const HomepageEditor: React.FC = () => {",
+      "new_string": "export const HomepageEditor: React.FC<{ scope?: 'global' | 'user' }> = ({ scope = 'global' }) => {"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17833,
+    "resultLine": 17834,
+    "timestamp": "2026-06-24T20:53:59.669Z",
+    "toolUseId": "tooluse_RUxm08nJ63HNvw5Hr8fZTT",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\HomepageEditor.tsx",
+      "old_string": "        homeService.getHomepageConfig(),",
+      "new_string": "        homeService.getHomepageConfig(scope),"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17835,
+    "resultLine": 17836,
+    "timestamp": "2026-06-24T20:54:23.139Z",
+    "toolUseId": "tooluse_5Mn5g6JScSfdxJxMJUlFXN",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\HomepageEditor.tsx",
+      "old_string": "    const patched = await homeService.updateHomepageConfig({ hero_movie_id: id });",
+      "new_string": "    const patched = await homeService.updateHomepageConfig({ hero_movie_id: id }, scope);"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17837,
+    "resultLine": 17838,
+    "timestamp": "2026-06-24T20:54:53.613Z",
+    "toolUseId": "tooluse_2lyWjd00XcK1akD4f02l4a",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\HomepageEditor.tsx",
+      "old_string": "    const patched = await homeService.updateHomepageConfig({ sections: config.sections });",
+      "new_string": "    const patched = await homeService.updateHomepageConfig({ sections: config.sections }, scope);"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17853,
+    "resultLine": 17854,
+    "timestamp": "2026-06-24T20:57:01.818Z",
+    "toolUseId": "tooluse_5oiVg8vXiKCNaCoktr7LN8",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\Profile.tsx",
+      "old_string": "  const { canManageServerConfig, canManageCatalog, canManageStorage } = usePermissions();",
+      "new_string": "  const { canManageServerConfig, canManageCatalog, canManageStorage, isAuthenticated } = usePermissions();"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17855,
+    "resultLine": 17856,
+    "timestamp": "2026-06-24T20:57:28.851Z",
+    "toolUseId": "tooluse_bJhcYHQPqCiNnMmk0oCaV4",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\Profile.tsx",
+      "old_string": "            {canManageServerConfig && <HomepageEditor />}",
+      "new_string": "            {/* 有 manage_server_config（自部署 / 管理员）→ 编辑全局首页（改全站）。\n                否则只要已登录 → 编辑 per-user 首页（/user/homepage/config，只改自己的，\n                代托管普通用户也能定制）。两者用同一编辑器，仅 scope 不同。 */}\n            {canManageServerConfig\n              ? <HomepageEditor scope=\"global\" />\n              : isAuthenticated && <HomepageEditor scope=\"user\" />}"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17866,
+    "resultLine": 17867,
+    "timestamp": "2026-06-24T20:58:22.784Z",
+    "toolUseId": "tooluse_4ynNxSdalC1fq2JjhUau0T",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\HomepageEditor.tsx",
+      "old_string": "export const HomepageEditor: React.FC<{ scope?: 'global' | 'user' }> = ({ scope = 'global' }) => {",
+      "new_string": "export const HomepageEditor: React.FC<{ scope?: 'global' | 'user' }> = ({ scope = 'global' }: { scope?: 'global' | 'user' }) => {"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17915,
+    "resultLine": 17916,
+    "timestamp": "2026-06-24T21:06:10.723Z",
+    "toolUseId": "tooluse_HmxIQj6BSSSukFLGF3rawR",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\HomepageEditor.tsx",
+      "old_string": "        <p className=\"text-xs text-gray-500 mb-4 leading-relaxed\">\n          钉一部影片，所有访问者打开首页都会看见。设为空表示由后端自动推荐。\n        </p>",
+      "new_string": "        <p className=\"text-xs text-gray-500 mb-4 leading-relaxed\">\n          {scope === 'user'\n            ? '钉一部影片，只有你自己打开首页时会看见。设为空表示跟随默认推荐。'\n            : '钉一部影片，所有访问者打开首页都会看见。设为空表示由后端自动推荐。'}\n        </p>"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17918,
+    "resultLine": 17919,
+    "timestamp": "2026-06-24T21:06:32.596Z",
+    "toolUseId": "tooluse_fNZQ3vX2281uJ61hpWbL9G",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\HomepageEditor.tsx",
+      "old_string": " * 数据全部走服务端 /api/v1/homepage/config，影响所有访问者。",
+      "new_string": " * 数据走 /api/v1/homepage/config（scope='global'，影响所有访问者）或\n * /api/v1/user/homepage/config（scope='user'，只影响当前登录用户）。"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 17921,
+    "resultLine": 17922,
+    "timestamp": "2026-06-24T21:07:10.814Z",
+    "toolUseId": "tooluse_elK6syno2oN2XFQCvop1wK",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\Profile.tsx",
+      "old_string": "        仅影响本机本人。和上方\"首屏大海报 / 首页分类\"那两个全局配置是两件事。\n      </p>",
+      "new_string": "        启动后默认进入哪个页面、片库默认怎么筛选排序。和上方“首屏大海报 / 首页分类”是两件事。\n      </p>"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18012,
+    "resultLine": 18014,
+    "timestamp": "2026-06-24T21:27:48.201Z",
+    "toolUseId": "tooluse_Y2m13Nk1VI8eTPTEFIovnC",
+    "name": "Write",
+    "input": {
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\components\\ui\\PosterImage.tsx",
+      "content": "import React, { useState, useEffect, useRef } from 'react';\n\ninterface PosterImageProps {\n  src?: string;\n  alt?: string;\n  className?: string;\n  /** 加载失败（重试耗尽）时渲染的占位，由调用方决定样式。 */\n  fallback?: React.ReactNode;\n  /** 最大重试次数，默认 2。 */\n  maxRetries?: number;\n}\n\n/**\n * 海报图，带失败自动重试。\n *\n * 背景：海报多为 image.tmdb.org 外链直连，国内访问不稳定。列表页一次并发几十张，\n * 偶发超时/连接失败就变灰块；重进或进详情（图少）又正常。后端正在把海报回填到\n * CDN（治本），这里先做前端缓解：onError 时隔一小段时间重试，并在 URL 上加\n * cache-busting query 强制重新请求（浏览器会缓存失败结果，不变 URL 重试无效）。\n * 重试耗尽才渲染 fallback 占位。\n */\nexport const PosterImage: React.FC<PosterImageProps> = ({ src, alt, className, fallback, maxRetries = 2 }) => {\n  const [attempt, setAttempt] = useState(0);\n  const [failed, setFailed] = useState(false);\n  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);\n\n  // src 变化（换影片/翻页复用节点）时重置重试状态。\n  useEffect(() => {\n    setAttempt(0);\n    setFailed(false);\n  }, [src]);\n\n  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);\n\n  if (!src || failed) return <>{fallback ?? null}</>;\n\n  // 重试时给 URL 追加 _r 参数绕过失败缓存；首次（attempt=0）用原始 URL，\n  // 命中浏览器/CDN 缓存的成功结果。\n  const resolvedSrc = attempt === 0\n    ? src\n    : `${src}${src.includes('?') ? '&' : '?'}_r=${attempt}`;\n\n  return (\n    <img\n      key={resolvedSrc}\n      src={resolvedSrc}\n      alt={alt}\n      referrerPolicy=\"no-referrer\"\n      className={className}\n      onError={() => {\n        if (attempt < maxRetries) {\n          // 退避重试：第 1 次 ~400ms，第 2 次 ~800ms，给瞬时网络抖动恢复时间。\n          const delay = 400 * (attempt + 1);\n          if (timer.current) clearTimeout(timer.current);\n          timer.current = setTimeout(() => setAttempt(a => a + 1), delay);\n        } else {\n          setFailed(true);\n        }\n      }}\n    />\n  );\n};\n"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18025,
+    "resultLine": 18026,
+    "timestamp": "2026-06-24T21:29:01.909Z",
+    "toolUseId": "tooluse_kNfKVVSQKv2aivPNDYE7I2",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\components\\movies\\Cards.tsx",
+      "old_string": "import React, { useState } from 'react';\nimport { Play, Star, ArrowUp, ArrowDown, Minus, Crown, Trophy, Check, Eye, Database, AlertTriangle } from 'lucide-react';\nimport { Movie } from '../../types';\nimport { TechBadge } from '../ui/CyberComponents';",
+      "new_string": "import React, { useState } from 'react';\nimport { Play, Star, ArrowUp, ArrowDown, Minus, Crown, Trophy, Check, Eye, Database, AlertTriangle } from 'lucide-react';\nimport { Movie } from '../../types';\nimport { TechBadge } from '../ui/CyberComponents';\nimport { PosterImage } from '../ui/PosterImage';"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18034,
+    "resultLine": 18035,
+    "timestamp": "2026-06-24T21:29:34.271Z",
+    "toolUseId": "tooluse_emcGd4BT1k5iqIdrQPJPbU",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\components\\movies\\Cards.tsx",
+      "old_string": "        {movie.cover_url ? (\n            <img src={movie.cover_url} alt={movie.title} referrerPolicy=\"no-referrer\" className=\"absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity\" />\n        ) : (\n            <div className=\"absolute inset-0 opacity-30 flex flex-col items-center justify-center bg-gradient-to-br from-[#1a1a20] to-black\"> \n                <div className=\"text-6xl font-black text-white/10 group-hover:text-primary/20 font-['Orbitron'] transition-colors duration-300\">{movie.title?.charAt(0) || 'M'}</div> \n            </div>\n        )} ",
+      "new_string": "        {movie.cover_url ? (\n            <PosterImage\n              src={movie.cover_url}\n              alt={movie.title}\n              className=\"absolute inset-0 w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity\"\n              fallback={\n                <div className=\"absolute inset-0 flex flex-col items-center justify-center text-center p-4 pointer-events-none bg-gradient-to-br from-[#1a1a20] to-black\">\n                  <div className=\"font-['Orbitron'] font-bold text-lg md:text-xl tracking-tighter opacity-80 group-hover:text-primary break-all line-clamp-3\">{movie.title}</div>\n                  <div className=\"text-[10px] md:text-xs text-gray-500 mt-2 font-['Rajdhani'] tracking-widest\">{safeId.toUpperCase().substring(0, 8)}...</div>\n                </div>\n              }\n            />\n        ) : (\n            <div className=\"absolute inset-0 opacity-30 flex flex-col items-center justify-center bg-gradient-to-br from-[#1a1a20] to-black\">\n                <div className=\"text-6xl font-black text-white/10 group-hover:text-primary/20 font-['Orbitron'] transition-colors duration-300\">{movie.title?.charAt(0) || 'M'}</div>\n            </div>\n        )}"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18037,
+    "resultLine": 18038,
+    "timestamp": "2026-06-24T21:30:23.565Z",
+    "toolUseId": "tooluse_bhVVB2wzSFT5qSKwdBNYd0",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\components\\movies\\Cards.tsx",
+      "old_string": "      {movie.cover_url ? (\n          <img src={movie.cover_url} alt={movie.title} referrerPolicy=\"no-referrer\" className=\"absolute inset-0 w-full h-full object-cover opacity-60\" />\n      ) : (\n          <div className=\"absolute inset-0 flex items-center justify-center\"><span className=\"text-6xl font-['Orbitron'] font-bold opacity-10 text-white\">{movie.title.charAt(0)}</span></div>\n      )} ",
+      "new_string": "      {movie.cover_url ? (\n          <PosterImage\n            src={movie.cover_url}\n            alt={movie.title}\n            className=\"absolute inset-0 w-full h-full object-cover opacity-60\"\n            fallback={<div className=\"absolute inset-0 flex items-center justify-center\"><span className=\"text-6xl font-['Orbitron'] font-bold opacity-10 text-white\">{movie.title.charAt(0)}</span></div>}\n          />\n      ) : (\n          <div className=\"absolute inset-0 flex items-center justify-center\"><span className=\"text-6xl font-['Orbitron'] font-bold opacity-10 text-white\">{movie.title.charAt(0)}</span></div>\n      )}"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18040,
+    "resultLine": 18041,
+    "timestamp": "2026-06-24T21:30:53.150Z",
+    "toolUseId": "tooluse_2qUn5u4zIR2VFBLGaWcwKF",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\components\\movies\\Cards.tsx",
+      "old_string": "          {movie.cover_url && <img src={movie.cover_url} referrerPolicy=\"no-referrer\" className=\"w-full h-full object-cover opacity-80\" alt=\"\" />}",
+      "new_string": "          {movie.cover_url && <PosterImage src={movie.cover_url} alt=\"\" className=\"w-full h-full object-cover opacity-80\" />}"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18311,
+    "resultLine": 18312,
+    "timestamp": "2026-06-24T22:44:57.176Z",
+    "toolUseId": "tooluse_Dj4PPqqexQ8EU5DGvbDzXd",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\core.ts",
+      "old_string": "    views: 'N/A',",
+      "new_string": "    // 后端 1.22+ 在 MovieSimple 返回真实播放次数（views / 兼容字段 play_count），\n    // 账号维度统计。没有该字段（旧后端/未统计）时回退 N/A。\n    views: (() => {\n      const v = (apiMovie as any).views ?? (apiMovie as any).play_count;\n      return typeof v === 'number' ? String(v) : 'N/A';\n    })(),"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18319,
+    "resultLine": 18320,
+    "timestamp": "2026-06-24T22:45:40.279Z",
+    "toolUseId": "tooluse_WzCTGSMF26nauSANptQG2X",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\api\\movie.ts",
+      "old_string": "  // Global getFeatured removed (legacy endpoint)\n  getTop: async (type: string, limit = 15): Promise<Movie[]> => {\n    // Note: use server-side sorting for accuracy\n    const data = await fetchApi<ApiMovieList>(`/v1/movies?page_size=${limit}&sort_by=rating&order=desc`);\n    if (!data) return [];\n    return movieService.flattenMovies(data.items);\n  },",
+      "new_string": "  // Global getFeatured removed (legacy endpoint)\n  // 排行榜：后端 1.22+ GET /v1/leaderboard?type=hot|rated|new&window=weekly|monthly|all_time。\n  // 返回 items = MovieSimple + rank + leaderboard{metric_name,metric_value}。\n  // 前端把 rank 注入 Movie，views 由 mapApiMovieToUi 从 MovieSimple 读真实播放量。\n  getLeaderboard: async (\n    type: 'hot' | 'rated' | 'new' = 'hot',\n    window: 'weekly' | 'monthly' | 'all_time' = 'weekly',\n    limit = 15\n  ): Promise<Movie[]> => {\n    const data = await fetchApi<ApiMovieList>(\n      `/v1/leaderboard?type=${type}&window=${window}&page_size=${limit}`\n    );\n    if (!data || !Array.isArray(data.items)) return [];\n    // 后端已按 rank 排序；保留顺序，把 rank 注入到展平后的影片上。\n    return data.items.map((item: any) => {\n      const movie = mapApiMovieToUi(item);\n      if (typeof item.rank === 'number') movie.rank = item.rank;\n      return movie;\n    });\n  },\n\n  getTop: async (type: string, limit = 15): Promise<Movie[]> => {\n    // Note: use server-side sorting for accuracy\n    const data = await fetchApi<ApiMovieList>(`/v1/movies?page_size=${limit}&sort_by=rating&order=desc`);\n    if (!data) return [];\n    return movieService.flattenMovies(data.items);\n  },"
+    },
+    "fullOriginalAvailable": false
+  },
+  {
+    "line": 18323,
+    "resultLine": 18324,
+    "timestamp": "2026-06-24T22:46:12.973Z",
+    "toolUseId": "tooluse_Nu5PAIJUkCLqlSZY612KUO",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\features\\Leaderboard.tsx",
+      "old_string": "  useEffect(() => { \n    const fetchTop = async () => { \n      setLoading(true); \n      try { \n        // OpenAPI does not have specific top endpoints yet, using getTop which now falls back to generic list + sort\n        const data = await movieService.getTop(activeType, 15);\n        if (Array.isArray(data)) { setRankList(data); } \n      } catch (e) { console.error(e); } finally { setLoading(false); } \n    }; \n    fetchTop(); \n    window.scrollTo(0, 0); \n  }, [activeType, activeTime]); ",
+      "new_string": "  useEffect(() => {\n    const fetchTop = async () => {\n      setLoading(true);\n      try {\n        // 映射 UI 维度到后端 /v1/leaderboard 参数。\n        const typeMap: Record<string, 'hot' | 'rated' | 'new'> = { HOT: 'hot', RATED: 'rated', NEW: 'new' };\n        const windowMap: Record<string, 'weekly' | 'monthly' | 'all_time'> = { WEEKLY: 'weekly', MONTHLY: 'monthly', ALL_TIME: 'all_time' };\n        const data = await movieService.getLeaderboard(typeMap[activeType] || 'hot', windowMap[activeTime] || 'weekly', 15);\n        if (Array.isArray(data)) { setRankList(data); }\n      } catch (e) { console.error(e); } finally { setLoading(false); }\n    };\n    fetchTop();\n    window.scrollTo(0, 0);\n  }, [activeType, activeTime]);"
+    },
+    "fullOriginalAvailable": true
+  },
+  {
+    "line": 18368,
+    "resultLine": 18369,
+    "timestamp": "2026-06-24T22:54:19.700Z",
+    "toolUseId": "tooluse_sv4P304JkoE9mTZ7XtfLve",
+    "name": "Edit",
+    "input": {
+      "replace_all": false,
+      "file_path": "G:\\AI\\AI_private\\Cluade_code_projects\\CyberStream-frontend-hosted-beta\\src\\types\\index.ts",
+      "old_string": "  views?: string;\n  trend?: 'up' | 'down' | 'stable';",
+      "new_string": "  views?: string;\n  rank?: number;            // 排行榜名次（/v1/leaderboard 返回，注入用）\n  trend?: 'up' | 'down' | 'stable';"
+    },
+    "fullOriginalAvailable": false
+  }
+]

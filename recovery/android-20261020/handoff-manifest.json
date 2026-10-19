@@ -1,0 +1,30 @@
+{
+  "output": "C:\\Users\\28788\\Desktop\\CyberStream-安卓恢复-20261020",
+  "files": [
+    {
+      "name": "CyberStream-Android-recovered-source-20261020.zip",
+      "bytes": 4420230,
+      "sha256": "65b61158c57b17cb25b424bfc7a66b2bdf28dba98cb8ab43616a1a09eed3155e"
+    },
+    {
+      "name": "CyberStream-Android-recovery-20261020.apk",
+      "bytes": 16631889,
+      "sha256": "572b57e4a85373f17d861249227603d224feb7eabd239731c8c98d63e732b3e3"
+    },
+    {
+      "name": "CyberStream-original-debug.apk",
+      "bytes": 16693921,
+      "sha256": "aff93bf2c009fa974b3c14cf3ed8b80baf46f1f30a0dd8977c1ceea98c0e5ce9"
+    },
+    {
+      "name": "CyberStream-original-release.apk",
+      "bytes": 9237979,
+      "sha256": "8bc5e1e4a11e628838a9232cb34e9f5b3607f18ed59ef1c3959df9191c00c9ba"
+    },
+    {
+      "name": "先读我-恢复说明.md",
+      "bytes": 7479,
+      "sha256": "b0129329f8ab16c854d411aa4517aa6279472ec1716d544505d653f4f0188be6"
+    }
+  ]
+}

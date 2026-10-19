@@ -45,7 +45,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/cyber-backend"],
     "category": "Entertainment",
     "shortDescription": "Self-hosted media center · push the ceiling",
     "longDescription": "CyberStream PC desktop client. Embedded libmpv player for hardware-accelerated 4K HEVC / Dolby Vision / HDR playback. Backend stays on your NAS or home server."

@@ -87,7 +87,7 @@ export function createPcPlatform(): Platform {
  * （pc.1 / pc.2 ...），同主版本下也能升级。发版时同步改这里和 GitHub
  * release tag —— 没有什么自动注入机制，最朴素的硬编码就是答案。
  */
-const PC_RELEASE = '1.21.1-pc.4';
+const PC_RELEASE = '1.21.1-pc.7';
 
 export function getPcRelease(): string {
   return PC_RELEASE;
@@ -99,7 +99,13 @@ export function getPcRelease(): string {
  * configurable backend — the Web build's API_BASE is baked in at build time.
  */
 export function setApiBase(value: string): void {
-  pcStorage.set(STORAGE_KEYS.apiBase, value.replace(/\/+$/, ''));
+  const url = new URL(value.trim());
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error('后端地址必须是无账号密码、查询参数或片段的 HTTP(S) 地址');
+  }
+  const path = url.pathname.replace(/\/+$/, '');
+  url.pathname = path.endsWith('/api') ? path : `${path}/api`;
+  pcStorage.set(STORAGE_KEYS.apiBase, url.href.replace(/\/+$/, ''));
 }
 
 

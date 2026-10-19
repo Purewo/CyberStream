@@ -1,0 +1,370 @@
+{
+  "event": "summary",
+  "mode": "direct",
+  "seconds": 38.266,
+  "count": 57,
+  "passed": 54,
+  "failed": 3,
+  "checks": [
+    {
+      "name": "health",
+      "ok": true,
+      "seconds": 0.36,
+      "detail": "status=up version=1.21.0 database=ok root_status=up root_database=ok expected_version=1.21.0"
+    },
+    {
+      "name": "auth_me",
+      "ok": true,
+      "seconds": 0.14,
+      "detail": "authenticated=False role=None auth_via=None user_management_enabled=False"
+    },
+    {
+      "name": "openapi_health_contract",
+      "ok": true,
+      "seconds": 0.407,
+      "detail": "operationId=apiHealthCheck public=True version=1.21.0-beta expected_openapi_version=1.21.0-beta"
+    },
+    {
+      "name": "docs_index",
+      "ok": true,
+      "seconds": 0.156,
+      "detail": "documents=17 expected=17 app_version=1.21.0 openapi_version=1.21.0-beta expected_version=1.21.0 expected_openapi_version=1.21.0-beta"
+    },
+    {
+      "name": "docs_content",
+      "ok": true,
+      "seconds": 3.219,
+      "detail": "checked=17 expected=17"
+    },
+    {
+      "name": "update_check",
+      "ok": true,
+      "seconds": 0.14,
+      "detail": "source=manifest current=1.21.0 latest=1.21.1-pc.2 update_available=True downloads=2 cdn_validated=True warnings=0"
+    },
+    {
+      "name": "openapi_modules",
+      "ok": true,
+      "seconds": 2.875,
+      "detail": "modules=11 expected=11 version=1.21.0-beta expected_openapi_version=1.21.0-beta fetched=11"
+    },
+    {
+      "name": "aggregator_sources",
+      "ok": true,
+      "seconds": 0.141,
+      "detail": "sources=7 priority=7 default=rarbt"
+    },
+    {
+      "name": "scan",
+      "ok": true,
+      "seconds": 0.172,
+      "detail": "status=idle recent_errors=0"
+    },
+    {
+      "name": "metadata_providers",
+      "ok": true,
+      "seconds": 0.14,
+      "detail": "providers=anilist,bangumi,local,nfo,tencent_video,tmdb default_order=nfo->tmdb->local"
+    },
+    {
+      "name": "tmdb_config",
+      "ok": true,
+      "seconds": 0.172,
+      "detail": "token_set=True proxy_enabled=True proxy_configured=True redacted=False"
+    },
+    {
+      "name": "metadata_overview",
+      "ok": true,
+      "seconds": 1.407,
+      "detail": "movies=383 needs_attention=18 source_groups=2 review_priorities=2 actions=2"
+    },
+    {
+      "name": "metadata_review_workbench",
+      "ok": true,
+      "seconds": 2.171,
+      "detail": "buckets=6 actions=14 quality_actions=2 movie_count=383 issue_movies=82"
+    },
+    {
+      "name": "libraries",
+      "ok": true,
+      "seconds": 0.141,
+      "detail": "items=1"
+    },
+    {
+      "name": "other_videos",
+      "ok": true,
+      "seconds": 0.172,
+      "detail": "total=0 items=0 manual=0"
+    },
+    {
+      "name": "catalog_filters",
+      "ok": true,
+      "seconds": 0.172,
+      "detail": "genres=16 years=45 countries=14"
+    },
+    {
+      "name": "catalog_metadata_filters",
+      "ok": true,
+      "seconds": 0.89,
+      "detail": "source_groups=9 review_priorities=5 issue_codes=6"
+    },
+    {
+      "name": "catalog_metadata_issue_filter",
+      "ok": true,
+      "seconds": 1.891,
+      "detail": "issue_code=fallback_pipeline_match items=1 total=71"
+    },
+    {
+      "name": "catalog_metadata_source_group_filter",
+      "ok": true,
+      "seconds": 0.313,
+      "detail": "source_group=tmdb items=1 total=365"
+    },
+    {
+      "name": "catalog_movies",
+      "ok": true,
+      "seconds": 0.156,
+      "detail": "items=1 total=313 page_size=1"
+    },
+    {
+      "name": "catalog_keyword_search",
+      "ok": true,
+      "seconds": 0.359,
+      "detail": "items=1 total=1 page_size=20 sample_found=True"
+    },
+    {
+      "name": "movie_detail",
+      "ok": true,
+      "seconds": 0.36,
+      "detail": "id=1c7f9719-77fe-4b5c-97b5-0cf2ff412c66 actors=6"
+    },
+    {
+      "name": "movie_images_status",
+      "ok": true,
+      "seconds": 0.328,
+      "detail": "id=1c7f9719-77fe-4b5c-97b5-0cf2ff412c66 kinds=backdrop,poster total=2 cached=1 missing=1"
+    },
+    {
+      "name": "movie_resources",
+      "ok": true,
+      "seconds": 0.328,
+      "detail": "id=1c7f9719-77fe-4b5c-97b5-0cf2ff412c66 items=1 total=1 playback_sources=1"
+    },
+    {
+      "name": "streaming_qualities",
+      "ok": true,
+      "seconds": 0.484,
+      "detail": "resource=172c9dcc-6b55-46e5-b763-bf402159f507 supported=False status=400 code=40074"
+    },
+    {
+      "name": "resource_stream_range",
+      "ok": true,
+      "seconds": 0.703,
+      "detail": "resource=172c9dcc-6b55-46e5-b763-bf402159f507 status=302 redirected=True bytes=965 content_range=None"
+    },
+    {
+      "name": "movie_seasons",
+      "ok": true,
+      "seconds": 0.328,
+      "detail": "id=1c7f9719-77fe-4b5c-97b5-0cf2ff412c66 seasons=0 summary_seasons=0 episode_status=unknown"
+    },
+    {
+      "name": "movie_episode_diagnostics",
+      "ok": true,
+      "seconds": 0.329,
+      "detail": "id=1c7f9719-77fe-4b5c-97b5-0cf2ff412c66 status=unknown coverage=unknown seasons=0 apply_items=0 warnings=0"
+    },
+    {
+      "name": "external_playback",
+      "ok": true,
+      "seconds": 0.64,
+      "detail": "resource=172c9dcc-6b55-46e5-b763-bf402159f507 supported=True stream=True subtitles=0 profiles=4 playlist=True"
+    },
+    {
+      "name": "subtitle_settings",
+      "ok": true,
+      "seconds": 0.469,
+      "detail": "resource=172c9dcc-6b55-46e5-b763-bf402159f507 source=default customized=False zhSize=28 enSize=22 offset=72"
+    },
+    {
+      "name": "audio_transcode_diagnostics",
+      "ok": true,
+      "seconds": 0.469,
+      "detail": "resource=172c9dcc-6b55-46e5-b763-bf402159f507 active=0 items=0 session=None"
+    },
+    {
+      "name": "featured",
+      "ok": true,
+      "seconds": 0.25,
+      "detail": "items=5 expected_limit=5"
+    },
+    {
+      "name": "homepage_config",
+      "ok": true,
+      "seconds": 0.172,
+      "detail": "sections=4 enabled=4 hero_movie_id=None"
+    },
+    {
+      "name": "homepage",
+      "ok": true,
+      "seconds": 0.593,
+      "detail": "hero_mode=latest sections=4 items=60"
+    },
+    {
+      "name": "recommendations",
+      "ok": true,
+      "seconds": 0.187,
+      "detail": "items=3 strategy=default primary_reason=high_rating"
+    },
+    {
+      "name": "movie_context_recommendations",
+      "ok": true,
+      "seconds": 0.969,
+      "detail": "anchor=1c7f9719-77fe-4b5c-97b5-0cf2ff412c66 items=3 strategy=context primary_reason=same_title_family"
+    },
+    {
+      "name": "user_history",
+      "ok": true,
+      "seconds": 0.141,
+      "detail": "items=1 total=1 page_size=1"
+    },
+    {
+      "name": "user_achievements",
+      "ok": true,
+      "seconds": 0.14,
+      "detail": "defs=33 user=33 total=33 unlocked=4 milestones=7 behaviors=26"
+    },
+    {
+      "name": "user_favorites",
+      "ok": true,
+      "seconds": 0.516,
+      "detail": "vault_required list_code=40342 state_code=40342"
+    },
+    {
+      "name": "vault_status",
+      "ok": true,
+      "seconds": 0.141,
+      "detail": "configured=True unlocked=False locked=False pin_changes_remaining_today=10"
+    },
+    {
+      "name": "metadata_work_items_contract",
+      "ok": true,
+      "seconds": 0.172,
+      "detail": "items=1 total=383 page_size=1"
+    },
+    {
+      "name": "metadata_reidentify_plan",
+      "ok": true,
+      "seconds": 0.203,
+      "detail": "dry_run=True mode=keyword_preview items=1 apply_items=1 total=1"
+    },
+    {
+      "name": "pending_review_backfill_dry_run",
+      "ok": true,
+      "seconds": 0.172,
+      "detail": "dry_run=True scanned=1 candidates=0 updated=0 skipped=0 failed=0"
+    },
+    {
+      "name": "background_jobs",
+      "ok": true,
+      "seconds": 0.14,
+      "detail": "items=1 limit=1 type=None latest=metadata_re_scrape:succeeded"
+    },
+    {
+      "name": "background_job_detail",
+      "ok": true,
+      "seconds": 0.313,
+      "detail": "id=c8756bb4-59ab-4393-8f42-13c77abe469b type=metadata_re_scrape status=succeeded"
+    },
+    {
+      "name": "background_jobs_prune",
+      "ok": true,
+      "seconds": 0.14,
+      "detail": "dry_run=True retention_days=30 matched=2 removed=0"
+    },
+    {
+      "name": "storage_provider_types",
+      "ok": true,
+      "seconds": 0.235,
+      "detail": "providers=14 expected=alist,guangyapan,local,openlist"
+    },
+    {
+      "name": "storage_capabilities",
+      "ok": true,
+      "seconds": 0.156,
+      "detail": "types=14 items=14 expected=alist,guangyapan,local,openlist"
+    },
+    {
+      "name": "storage_sources",
+      "ok": true,
+      "seconds": 0.187,
+      "detail": "sources=1 ready=1 resource_backed=1"
+    },
+    {
+      "name": "storage_source_detail",
+      "ok": true,
+      "seconds": 0.375,
+      "detail": "source=1:AList(alist) resources=471 can_stream=True has_dependents=True"
+    },
+    {
+      "name": "storage_browse",
+      "ok": true,
+      "seconds": 0.516,
+      "detail": "source=1:AList items=371 path=/"
+    },
+    {
+      "name": "metadata_fallback_pipeline_match",
+      "ok": false,
+      "seconds": 0.969,
+      "detail": "total=71 max=0 items=20 issues=total_above_max=71/0"
+    },
+    {
+      "name": "episode_review",
+      "ok": false,
+      "seconds": 1.078,
+      "detail": "total=2 max=0 items=2 issues=total_above_max=2/0"
+    },
+    {
+      "name": "resource_governance",
+      "ok": false,
+      "seconds": 8.109,
+      "detail": "GET [url-redacted] failed: The read operation timed out"
+    },
+    {
+      "name": "resource_governance_plan",
+      "ok": true,
+      "seconds": 0.61,
+      "detail": "dry_run=True items=0 apply_items=0 total=0"
+    },
+    {
+      "name": "tmdb_token",
+      "ok": true,
+      "seconds": 1.359,
+      "detail": "ready=True status=ok token_set=True token_valid=True proxy_enabled=True proxy_configured=True elapsed_ms=1209"
+    },
+    {
+      "name": "storage_health",
+      "ok": true,
+      "seconds": 0.375,
+      "detail": "checked=1 online=1"
+    }
+  ],
+  "recorded_at": "2026-09-29T21:59:12.329Z",
+  "proxy_discovery": {
+    "source": "urllib Windows system proxy discovery",
+    "configured": true,
+    "schemes": [
+      "ftp",
+      "http",
+      "https"
+    ],
+    "direct_override": true
+  },
+  "notes": [
+    "Unauthenticated read-only integration smoke; POST checks were plan or dry_run only.",
+    "Original task-owned smoke Python PID 44864 stopped after command line verification; its launcher PID 47688 exited.",
+    "No service, backend source, credentials, database records or metadata queues were changed.",
+    "Raw source URLs, response bodies and sample media titles are not retained."
+  ]
+}
+
